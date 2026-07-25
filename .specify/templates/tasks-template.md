@@ -8,11 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Verification**: Verification tasks are MANDATORY. Include every applicable
-unit, property, cross-language, Git/concurrency, end-to-end, isolation, security,
-and replay check required by the feature specification, architecture, and
-roadmap. Documentation-only work still requires relevant format, link, and
-consistency validation.
+**Verification**: Verification tasks are MANDATORY. Include every applicable unit, property, cross-language, Git/concurrency, end-to-end, isolation, security, and replay check required by the feature specification, architecture, and roadmap. Documentation-only work still requires relevant format, link, and consistency validation.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 

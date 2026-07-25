@@ -17,37 +17,29 @@
   the iteration process.
 -->
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]<br>
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]<br>
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]<br>
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]<br>
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]<br>
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]<br>
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]<br>
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]<br>
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]<br>
-**Owning Gate/Milestone**: [roadmap gate or milestone and its exit decision]<br>
-**Trust Boundaries**: [trusted/untrusted components, visibility, secrets, network and mount effects]<br>
-**Contracts/Artifacts**: [schemas, versions, canonical bytes, manifests and immutable inputs]<br>
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Owning Gate/Milestone**: [roadmap gate or milestone and its exit decision]
+**Trust Boundaries**: [trusted/untrusted components, visibility, secrets, network and mount effects]
+**Contracts/Artifacts**: [schemas, versions, canonical bytes, manifests and immutable inputs]
 **Replay Claim**: [what is deterministic, what remains stochastic, and the pinned environment]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- **Evidence before scale**: Scope is the minimum required by the owning gate or
-  milestone; thresholds, inputs, evidence, and pass/rework/stop decision are
-  predeclared.
-- **Trust boundaries**: The design preserves architecture ownership, least
-  privilege, sealed data, failure classification, and agent/solver isolation.
-- **Contracts and provenance**: Cross-runtime schemas, golden fixtures,
-  canonicalization, versions, immutable inputs, and artifact promotion rules are
-  explicit.
-- **Verification and claims**: Applicable test categories, replay limits,
-  evidence artifacts, and reporting language are named.
-- **Native bounded collaboration**: Git behavior, authentication, accounting,
-  publication slots, asynchronous execution, and matched-arm equivalence remain
-  intact, or the feature documents why they are unaffected.
+- **Evidence before scale**: Scope is the minimum required by the owning gate or milestone; thresholds, inputs, evidence, and pass/rework/stop decision are predeclared.
+- **Trust boundaries**: The design preserves architecture ownership, least privilege, sealed data, failure classification, and agent/solver isolation.
+- **Contracts and provenance**: Cross-runtime schemas, golden fixtures, canonicalization, versions, immutable inputs, and artifact promotion rules are explicit.
+- **Verification and claims**: Applicable test categories, replay limits, evidence artifacts, and reporting language are named.
+- **Native bounded collaboration**: Git behavior, authentication, accounting, publication slots, asynchronous execution, and matched-arm equivalence remain intact, or the feature documents why they are unaffected.
 
 ## Project Structure
 

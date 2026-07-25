@@ -1,8 +1,8 @@
 # Feature Specification: [FEATURE NAME]
 
-**Feature Branch**: `[###-feature-name]`<br>
-**Created**: [DATE]<br>
-**Status**: Draft<br>
+**Feature Branch**: `[###-feature-name]`
+**Created**: [DATE]
+**Status**: Draft
 **Input**: User description: "$ARGUMENTS"
 
 ## User Scenarios & Testing *(mandatory)*
@@ -77,23 +77,17 @@
 
 ## Evidence & Trust Boundaries *(mandatory)*
 
-**Owning Gate/Milestone**: [Name the roadmap gate or milestone and the question or
-exit decision this feature serves]
+**Owning Gate/Milestone**: [Name the roadmap gate or milestone and the question or exit decision this feature serves]
 
-**Minimum Scope**: [Explain why this is the least implementation needed to produce
-the required evidence or deliverable]
+**Minimum Scope**: [Explain why this is the least implementation needed to produce the required evidence or deliverable]
 
-**Predeclared Evidence**: [List frozen inputs, thresholds, environment, required
-artifacts, verification categories, and pass/rework/stop criteria]
+**Predeclared Evidence**: [List frozen inputs, thresholds, environment, required artifacts, verification categories, and pass/rework/stop criteria]
 
-**Trust & Visibility Impact**: [State which trusted/untrusted components, secrets,
-mounts, network paths, agent-visible data, and public artifacts change]
+**Trust & Visibility Impact**: [State which trusted/untrusted components, secrets, mounts, network paths, agent-visible data, and public artifacts change]
 
-**Failure Classification**: [Classify expected failures as agent outcomes,
-retryable trusted failures, or infrastructure integrity/validity failures]
+**Failure Classification**: [Classify expected failures as agent outcomes, retryable trusted failures, or infrastructure integrity/validity failures]
 
-**Invalidation Path**: [Identify upstream gates to rerun and downstream evidence
-invalidated by a failed result or design change]
+**Invalidation Path**: [Identify upstream gates to rerun and downstream evidence invalidated by a failed result or design change]
 
 ## Requirements *(mandatory)*
 
@@ -109,8 +103,7 @@ invalidated by a failed result or design change]
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
-- **FR-006**: System MUST [identify the versioned contract, canonical artifact,
-  provenance, and failure semantics for each changed boundary]
+- **FR-006**: System MUST [identify the versioned contract, canonical artifact, provenance, and failure semantics for each changed boundary]
 
 *Example of marking unclear requirements:*
 
@@ -135,8 +128,7 @@ invalidated by a failed result or design change]
 - **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
-- **SC-005**: [Evidence outcome, e.g., "Frozen inputs reproduce the same promoted
-  artifact bytes and hashes in the pinned supported environment"]
+- **SC-005**: [Evidence outcome, e.g., "Frozen inputs reproduce the same promoted artifact bytes and hashes in the pinned supported environment"]
 
 ## Assumptions
 
