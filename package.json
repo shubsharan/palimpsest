@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b",
-    "format": "oxfmt --config oxfmt.json --write package.json pnpm-workspace.yaml tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts packages tools tests specs docs fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml python",
-    "format:check": "oxfmt --config oxfmt.json --check package.json pnpm-workspace.yaml tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts packages tools tests specs docs fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml --check python",
+    "format": "oxfmt --config oxfmt.json --write README.md package.json pnpm-workspace.yaml tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts packages tools tests specs docs fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml python",
+    "format:check": "oxfmt --config oxfmt.json --check README.md package.json pnpm-workspace.yaml tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts packages tools tests specs docs fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml --check python",
     "lint": "oxlint --deny-warnings packages tools tests vitest.config.ts && uv run --offline --frozen --project python ruff check --config python/pyproject.toml python",
     "puzzle:build": "tsx tools/puzzle/build.ts",
     "puzzle:evaluate": "tsx tools/puzzle/evaluate.ts",

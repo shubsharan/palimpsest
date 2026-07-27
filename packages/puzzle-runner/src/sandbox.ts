@@ -91,6 +91,13 @@ interface CapturedProcessResult {
   signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+  timedOut: boolean;
+  cancelled: boolean;
+}
+
+interface CapturedProcessOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 interface DockerImageInspection {
@@ -123,23 +130,60 @@ function killProcessGroup(child: ChildProcess): void {
   child.kill("SIGKILL");
 }
 
-function runCaptured(command: string, args: readonly string[]): Promise<CapturedProcessResult> {
+function runCaptured(
+  command: string,
+  args: readonly string[],
+  options: CapturedProcessOptions = {},
+): Promise<CapturedProcessResult> {
+  if (options.signal?.aborted) throw abortError();
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, [...args], {
+      detached: process.platform !== "win32",
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let timedOut = false;
+    let cancelled = false;
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      killProcessGroup(child);
+    };
+    const timer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            stop();
+          }, options.timeoutMs);
+    const abort = () => {
+      cancelled = true;
+      stop();
+    };
+    const finish = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) abort();
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.once("error", reject);
+    child.once("error", (error) => {
+      finish();
+      reject(error);
+    });
     child.once("close", (exitCode, signal) => {
+      finish();
       resolveResult({
         exitCode,
         signal,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
+        timedOut,
+        cancelled,
       });
     });
   });
@@ -438,16 +482,28 @@ export class DockerCommandSandbox implements CommandSandbox {
     this.#dockerCommand = dockerCommand;
   }
 
-  async #remove(containerName: string): Promise<void> {
-    const result = await runCaptured(this.#dockerCommand, ["rm", "--force", containerName]);
-    if (
-      result.exitCode !== 0 &&
-      !result.stderr.includes("No such container") &&
-      !result.stderr.includes("No such object")
-    ) {
-      throw new SandboxInfrastructureError(
-        `Docker cleanup failed: ${result.stderr.trim() || "no error detail"}`,
-      );
+  async #remove(containerName: string, settleLateCreation = false): Promise<void> {
+    const deadline = performance.now() + 5_000;
+    while (true) {
+      const remainingMs = Math.ceil(deadline - performance.now());
+      if (remainingMs <= 0) return;
+      const result = await runCaptured(this.#dockerCommand, ["rm", "--force", containerName], {
+        timeoutMs: remainingMs,
+      });
+      if (result.timedOut) {
+        throw new SandboxInfrastructureError("Docker cleanup exceeded its 5 second deadline.");
+      }
+      const missing =
+        result.stderr.includes("No such container") || result.stderr.includes("No such object");
+      if (result.exitCode !== 0 && !missing) {
+        throw new SandboxInfrastructureError(
+          `Docker cleanup failed: ${result.stderr.trim() || "no error detail"}`,
+        );
+      }
+      if (!settleLateCreation) return;
+      // Killing `docker create` can race a daemon-side late materialization. Keep
+      // removing by the predeclared name for the bounded cleanup window.
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(100, remainingMs)));
     }
   }
 
@@ -475,6 +531,7 @@ export class DockerCommandSandbox implements CommandSandbox {
   async execute(request: SandboxCommand): Promise<SandboxCommandResult> {
     validateCommand(request);
     if (request.signal?.aborted) throw abortError();
+    const deadline = performance.now() + request.timeoutMs;
     const getUid = process.getuid;
     const getGid = process.getgid;
     if (getUid === undefined || getGid === undefined) {
@@ -491,30 +548,12 @@ export class DockerCommandSandbox implements CommandSandbox {
       },
       this.containerLabelValue,
     );
-    const created = await runCaptured(this.#dockerCommand, createArguments);
-    if (created.exitCode !== 0 || created.signal !== null) {
-      const creationError = new SandboxInfrastructureError(
-        `Docker container creation failed: ${created.stderr.trim() || "no error detail"}`,
-      );
-      try {
-        await this.#remove(containerName);
-      } catch (error) {
-        throw error instanceof SandboxInfrastructureError
-          ? error
-          : new SandboxInfrastructureError(`Docker cleanup failed: ${errorDetail(error)}`);
-      }
-      throw creationError;
-    }
-
     let removal: Promise<void> | undefined;
     const ensureRemoval = (): Promise<void> => {
       removal ??= this.#remove(containerName);
       return removal;
     };
-    let primaryError: unknown;
-    let commandResult: SandboxCommandResult | undefined;
-
-    if (request.signal?.aborted) {
+    const cleanup = async (): Promise<void> => {
       try {
         await ensureRemoval();
       } catch (error) {
@@ -522,11 +561,83 @@ export class DockerCommandSandbox implements CommandSandbox {
           ? error
           : new SandboxInfrastructureError(`Docker cleanup failed: ${errorDetail(error)}`);
       }
+    };
+    const cleanupPartialCreation = async (): Promise<void> => {
+      try {
+        await this.#remove(containerName, true);
+      } catch (error) {
+        throw error instanceof SandboxInfrastructureError
+          ? error
+          : new SandboxInfrastructureError(`Docker cleanup failed: ${errorDetail(error)}`);
+      }
+    };
+    const remainingCreateMs = Math.ceil(deadline - performance.now());
+    if (remainingCreateMs <= 0) {
+      await cleanup();
+      return {
+        exitCode: null,
+        stdout: "",
+        stderr: "Sandbox command timed out before Docker container creation.",
+        timedOut: true,
+        outputExceeded: false,
+      };
+    }
+    let created: CapturedProcessResult;
+    try {
+      created = await runCaptured(this.#dockerCommand, createArguments, {
+        timeoutMs: remainingCreateMs,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+      });
+    } catch (error) {
+      await cleanupPartialCreation();
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      throw new SandboxInfrastructureError(
+        `Docker container creation failed: ${errorDetail(error)}`,
+      );
+    }
+    if (created.cancelled) {
+      await cleanupPartialCreation();
+      throw abortError();
+    }
+    if (created.timedOut) {
+      await cleanupPartialCreation();
+      return {
+        exitCode: null,
+        stdout: created.stdout,
+        stderr:
+          `${created.stderr}\nSandbox command timed out during Docker container creation.`.trim(),
+        timedOut: true,
+        outputExceeded: false,
+      };
+    }
+    if (created.exitCode !== 0 || created.signal !== null) {
+      const creationError = new SandboxInfrastructureError(
+        `Docker container creation failed: ${created.stderr.trim() || "no error detail"}`,
+      );
+      await cleanupPartialCreation();
+      throw creationError;
+    }
+    let primaryError: unknown;
+    let commandResult: SandboxCommandResult | undefined;
+
+    if (request.signal?.aborted) {
+      await cleanup();
       throw abortError();
     }
 
     try {
       commandResult = await new Promise<SandboxCommandResult>((resolveResult, reject) => {
+        const remainingStartMs = Math.ceil(deadline - performance.now());
+        if (remainingStartMs <= 0) {
+          resolveResult({
+            exitCode: null,
+            stdout: "",
+            stderr: "Sandbox command timed out before Docker container start.",
+            timedOut: true,
+            outputExceeded: false,
+          });
+          return;
+        }
         const child = spawn(this.#dockerCommand, ["start", "--attach", containerName], {
           detached: process.platform !== "win32",
           env: process.env,
@@ -564,12 +675,13 @@ export class DockerCommandSandbox implements CommandSandbox {
         const timer = setTimeout(() => {
           timedOut = true;
           stop();
-        }, request.timeoutMs);
+        }, remainingStartMs);
         const abort = () => {
           cancelled = true;
           stop();
         };
         request.signal?.addEventListener("abort", abort, { once: true });
+        if (request.signal?.aborted) abort();
 
         child.once("error", (error) => {
           clearTimeout(timer);
@@ -625,13 +737,7 @@ export class DockerCommandSandbox implements CommandSandbox {
       primaryError = error;
     }
 
-    try {
-      await ensureRemoval();
-    } catch (error) {
-      throw error instanceof SandboxInfrastructureError
-        ? error
-        : new SandboxInfrastructureError(`Docker cleanup failed: ${errorDetail(error)}`);
-    }
+    await cleanup();
     if (primaryError !== undefined) throw primaryError;
     if (commandResult === undefined) {
       throw new SandboxInfrastructureError("Docker command ended without a result.");

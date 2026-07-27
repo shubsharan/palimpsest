@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDockerCreateArguments,
+  DockerCommandSandbox,
   SANDBOX_CONTAINER_LABEL,
   SANDBOX_POLICY,
   SANDBOX_PROFILE_LABEL,
@@ -14,6 +15,53 @@ import {
   validateSandboxImageInspection,
 } from "../src/sandbox.js";
 import { TEST_SANDBOX_IDENTITY } from "./helpers.js";
+
+async function stalledDockerFixture() {
+  const root = await mkdtemp(join(tmpdir(), "palimpsest-stalled-docker-"));
+  const workspace = join(root, "workspace");
+  const evidence = join(root, "evidence");
+  const sharedGit = join(root, "shared.git");
+  const reference = join(root, "reference");
+  const log = join(root, "docker.log");
+  const executable = join(root, "docker");
+  await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(sharedGit), mkdir(reference)]);
+  await writeFile(
+    executable,
+    [
+      "#!/bin/sh",
+      `printf '%s\\n' "$1" >> ${JSON.stringify(log)}`,
+      'if [ "$1" = "create" ]; then sleep 5; fi',
+      "",
+    ].join("\n"),
+    { encoding: "utf8", mode: 0o755 },
+  );
+  return {
+    executable,
+    log,
+    request: {
+      profile: "agent" as const,
+      command: "true",
+      timeoutMs: 1_000,
+      workspacePath: workspace,
+      evidencePath: evidence,
+      referenceCorpusPath: reference,
+      sharedGitPath: sharedGit,
+    },
+  };
+}
+
+async function waitForCreate(log: string): Promise<void> {
+  const deadline = performance.now() + 2_000;
+  while (performance.now() < deadline) {
+    try {
+      if ((await readFile(log, "utf8")).split("\n").includes("create")) return;
+    } catch {
+      // The fake Docker process has not created its log yet.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+  }
+  throw new Error("Fake Docker create did not start.");
+}
 
 describe("command sandbox contract", () => {
   it("validates the source-labelled immutable image identity", () => {
@@ -106,5 +154,39 @@ describe("command sandbox contract", () => {
     expect(joined).toContain("PALIMPSEST_OUTPUT=/workspace/out/answer.txt");
     expect(joined).not.toContain("/evidence");
     expect(joined).not.toContain("/reference");
+  });
+
+  it("applies the command deadline while Docker creates the container and still cleans up", async () => {
+    const fixture = await stalledDockerFixture();
+    const sandbox = new DockerCommandSandbox(TEST_SANDBOX_IDENTITY, fixture.executable);
+
+    await expect(sandbox.execute(fixture.request)).resolves.toMatchObject({
+      exitCode: null,
+      timedOut: true,
+      outputExceeded: false,
+    });
+    const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
+    expect(operations[0]).toBe("create");
+    expect(operations.slice(1).length).toBeGreaterThan(0);
+    expect(new Set(operations.slice(1))).toEqual(new Set(["rm"]));
+  });
+
+  it("cancels Docker container creation and still cleans up", async () => {
+    const fixture = await stalledDockerFixture();
+    const sandbox = new DockerCommandSandbox(TEST_SANDBOX_IDENTITY, fixture.executable);
+    const controller = new AbortController();
+    const execution = sandbox.execute({
+      ...fixture.request,
+      timeoutMs: 10_000,
+      signal: controller.signal,
+    });
+    await waitForCreate(fixture.log);
+    controller.abort();
+
+    await expect(execution).rejects.toMatchObject({ name: "AbortError" });
+    const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
+    expect(operations[0]).toBe("create");
+    expect(operations.slice(1).length).toBeGreaterThan(0);
+    expect(new Set(operations.slice(1))).toEqual(new Set(["rm"]));
   });
 });

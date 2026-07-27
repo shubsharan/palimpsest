@@ -9,6 +9,7 @@ Fixed operational configuration used for every untrusted command.
 | `imageTag` | Expected local sandbox tag | Exact supported tag |
 | `imageId` | Inspected immutable image identity | Non-empty `sha256:` value |
 | `sourceDigest` | Dockerfile digest stored in the image label | Must equal current Dockerfile SHA-256 |
+| `profileVersion` | Sandbox identity contract version | `1` |
 | `network` | Container network mode | Always `none` |
 | `cpus` | CPU ceiling | `2` |
 | `memoryBytes` | Memory ceiling | `2147483648` |

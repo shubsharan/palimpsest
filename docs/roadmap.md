@@ -8,7 +8,7 @@ The delivery order follows usable behavior: build the puzzle, let agents work fr
 
 ## Current Status
 
-Feature 006 defines and records the active behavior-neutral runner. Feature 008 is the current implementation work: it adds a standard Docker command boundary, repairs cross-process trace chronology and reachable-history observation, and removes the superseded Gate-era tree without changing the puzzle or rewriting feature 006.
+Feature 006 records the behavior-neutral runner design. Feature 008 implements its current operational boundary: a standard Docker command sandbox, one cross-process trace, reachable-history observation, and removal of the superseded Gate-era tree. It does not change the puzzle or rewrite feature 006.
 
 The project is complete when the documented build-run-evaluate path works end to end and the runner neither prescribes nor repairs agent collaboration.
 
@@ -66,7 +66,7 @@ Deliver `puzzle:evaluate` and the private checker.
 - Let a reviewer inspect frozen work and record the selected command and output path before execution.
 - Run the selected solver in its own sandbox with the frozen workspace, complete ciphertext, frozen Git, and temporary storage, but no oracle, peer evidence, host files, credentials, or public network.
 - Report `scored`, `not-runnable`, `no-output`, or `execution-error`.
-- Preserve raw model/tool activity, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, scores, sandbox image identity, and effective operational limits.
+- Preserve normalized model-turn summaries, full tool arguments/results, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, scores, sandbox image identity, and effective operational limits.
 - Resume one validated, redacted trace across run, overlap, and evaluation processes with contiguous sequence numbers and nondecreasing elapsed times.
 - Report only obvious exact or normalized raw overlap from unique text blobs reachable through current refs, including committed-then-deleted content; count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
 
@@ -78,9 +78,15 @@ Make the sandbox preparation and three canonical puzzle commands the project ent
 
 ```bash
 pnpm puzzle:sandbox:build
-pnpm puzzle:build
-pnpm puzzle:run
-pnpm puzzle:evaluate -- --attempt <attempt-path>
+pnpm puzzle:build -- --output artifacts/build-17 --seed 17
+pnpm puzzle:run -- \
+  --build artifacts/build-17 \
+  --output artifacts/attempt-17 \
+  --adapter openai \
+  --model "<model>" \
+  --token-budget 200000 \
+  --wall-time-ms 3600000
+pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 ```
 
 Keep code that directly supports generation, staged delivery, sessions, Git, checking, observation, evaluation, scoring, and the standard command sandbox. Remove active command paths and runtime dependencies whose purpose is Git byte accounting, publication slots, structured hypotheses, private deliverables, exact artifact replay, gate authorization, adversarial compression, hostile-solver promotion, or red-team release.
@@ -114,7 +120,7 @@ Palimpsest is delivered when:
 - only voluntary completion, per-agent cumulative token exhaustion, and the global wall-time cutoff end model work;
 - the runner freezes whatever work exists without requiring commits, checkpoints, manifests, or private submissions;
 - a reviewer can record and execute the best inferred solver path against the complete ciphertext;
-- deterministic scoring and raw observation preserve model outcomes separately from infrastructure failures;
+- deterministic scoring and normalized observation preserve model outcomes separately from infrastructure failures;
 - one validated trace preserves strict chronology across live and post-run processes;
 - obvious raw overlap covers every reachable text blob once, reports repeated tree references and skipped non-text objects, and remains observational only;
 - obsolete Gate-era code, dependencies, tracked artifacts, and specifications 001 through 005 are absent from the active tree while specification 006 remains unchanged and Git history remains the archive;

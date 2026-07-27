@@ -43,6 +43,7 @@ The existing attempt, build, trace, frozen, and session fields remain. Add:
     "imageTag": "palimpsest-puzzle-sandbox:0.1.0",
     "imageId": "sha256:...",
     "sourceDigest": "...",
+    "profileVersion": 1,
     "network": "none",
     "cpus": 2,
     "memoryBytes": 2147483648,

@@ -90,8 +90,9 @@ Host `PATH`, `HOME`, temporary paths, model credentials, and other process varia
 
 - Missing, stale, or uninspectable image: reject before starting the command and name the sandbox build command.
 - Docker inspection, creation, start, cleanup, or daemon error: reject as `SandboxInfrastructureError`.
-- Every execution uses an unpredictable container name. Normal exit, nonzero exit, timeout, cancellation, output overflow, and partial launch all run one unconditional `docker rm --force`; a regression must prove no named container survives.
-- Requested timeout or trusted cancellation: kill the Docker client process group and return or propagate the existing termination semantics.
+- Every execution uses an unpredictable container name. Normal exit, nonzero exit, timeout, cancellation, output overflow, and partial launch all remove that exact name with `docker rm --force`.
+- One absolute command deadline covers container creation and attached execution. Requested timeout or trusted cancellation kills the active Docker client process group and returns or propagates the existing termination semantics.
+- After interrupted creation, cleanup retries the predeclared name for a bounded settle window because the daemon may materialize the container after the client process has exited. Failure to complete bounded cleanup is explicit infrastructure failure.
 - Combined output beyond 4 MiB: kill the command and append an explicit host-safety message.
 - Nonzero command exit, timeout, resource kill, or output overflow: return the normal command result with explicit flags; it is not a sandbox infrastructure failure.
 - Candidate/output missing, non-regular, absolute, outside the workspace, or symlink-escaped: reject explicitly.

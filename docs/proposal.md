@@ -59,11 +59,11 @@ The selected code runs against the complete ciphertext without access to the pre
 - `no-output`: the selected execution completes without a reconstruction;
 - `execution-error`: execution fails or exceeds its evaluation limit.
 
-Missing, extra, and unresolved tokens count as incorrect where a reconstruction can still be scored. Reconstruction quality is the primary result. Changed and stable regions may be reported as descriptive slices, but agents are not required to expose the mappings or beliefs that produced them.
+Missing, extra, and unresolved tokens count as incorrect where a reconstruction can still be scored. Reconstruction quality is the primary result. The score reports matched words, total words, coverage, and accuracy; agents are not required to expose the mappings or beliefs that produced them.
 
 ## Observation
 
-Palimpsest retains the raw model and tool transcripts, session lifecycle, stage releases, aggregate checker calls, Git history, frozen workspaces, reviewer selection, execution result, and reconstruction score. The resulting chronology supports qualitative review of how agents used prior rules before and after contradictory evidence, how they communicated, and whether later code or notes reflect revision.
+Palimpsest retains normalized model-turn summaries, final response text, full tool arguments and results, session lifecycle, stage releases, aggregate checker calls, Git history, frozen workspaces, reviewer selection, execution result, and reconstruction score. It does not retain the provider's complete raw response payload. The resulting chronology supports qualitative review of how agents used prior rules before and after contradictory evidence, how they communicated, and whether later code or notes reflect revision.
 
 A deliberately narrow post-run observer may report obvious exact or normalized long-span overlap between committed content and private raw evidence. It does not block a push, warn an agent, change a score, invalidate a run, or attempt to detect compression, encoding, steganography, or every possible relay.
 
@@ -79,7 +79,7 @@ The relevant literature motivates the puzzle without defining release gates or a
 
 ## Difficulty Parameters
 
-The active puzzle profile records:
+The active puzzle profile is controlled by:
 
 1. source text and preparation seed;
 2. text length and chapter geometry;
@@ -92,7 +92,7 @@ The active puzzle profile records:
 9. reference-corpus snapshot; and
 10. final scoring policy.
 
-These parameters change the environment supplied to agents. They do not introduce roles, rounds, required artifacts, or behavioral pass conditions.
+These parameters change the environment supplied to agents. The current build manifest retains the derived build identity, stage geometry, changed-symbol set, artifact paths, and per-stage hashes. The attempt trace retains the attempt ID plus token, wall-time, stage-interval, agent-count, and stage-count settings. The CLI seed, changed-token-mass target, adapter, and model are inputs but are not independently repeated in those artifacts; operators who need them as standalone metadata must retain their invocation record. None of these parameters introduces roles, rounds, required artifacts, or behavioral pass conditions.
 
 ## References
 

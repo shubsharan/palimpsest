@@ -46,9 +46,12 @@ flowchart LR
     CHECK --> TRACE
 
     TRACE --> REVIEW["Reviewer selection"]
-    FULL --> EVAL["Final execution and scoring"]
-    REVIEW --> EVAL
-    ORACLE --> EVAL
+    FULL --> EXEC["Sandboxed reviewer execution"]
+    REVIEW --> EXEC
+    EXEC --> SCORE["Trusted host scoring"]
+    ORACLE --> SCORE
+    EXEC --> TRACE
+    SCORE --> TRACE
 ```
 
 Python owns deterministic text preparation, cipher generation, partial re-keying, aggregate checking, overlap observation, and final scoring. TypeScript/Node owns session supervision, model adapters, stage delivery, local tool exposure, Git setup, token and wall-time cutoffs, trace capture, reviewer-selected execution, and the operator commands.
@@ -57,7 +60,7 @@ The runtimes exchange plain recorded files and narrow subprocess results. A new 
 
 ## Puzzle Build
 
-`puzzle:build` prepares one attempt from recorded source inputs, seeds, and configuration.
+`puzzle:build` prepares one attempt from repository-held source fixtures and explicit CLI parameters.
 
 The builder:
 
@@ -73,7 +76,7 @@ The builder:
 
 Selected mappings differ after the transition, unselected mappings remain unchanged, and earlier stage files are never rewritten. Stage names and public configuration do not reveal the transition.
 
-The active profile uses six global stages at two-minute intervals and a changed-token-mass target of approximately 20 percent. Stage cadence, transition geometry, token budget, model, and wall-time cutoff remain recorded configuration rather than hard-coded architectural constants.
+The active profile uses six global stages at two-minute intervals and a changed-token-mass target of approximately 20 percent. Stage cadence, transition geometry, token budget, model, and wall-time cutoff remain explicit operator inputs rather than hard-coded architectural constants. The build and attempt records retain the subset needed by their current contracts; they do not repeat the CLI seed, changed-token-mass target, adapter, or model as standalone fields.
 
 ## Agent Environment
 
@@ -105,7 +108,7 @@ Model-authored shell commands run in short-lived Linux containers rather than di
 
 Containers receive an allowlisted non-secret environment, no public network, a read-only root, no added capabilities, no new privileges, and fixed host-safety limits. The runner executes an inspected image ID whose source label matches the checked-in sandbox definition. The image identity and effective limits are retained as operational attempt metadata; they do not make a run valid, change a score, or support an adversarial-containment claim.
 
-The sandbox limits what host resources a command can see without prescribing what the agent does inside its declared surfaces. Ordinary Git behavior, raw sharing, failed commands, timeouts, and resource termination remain observable model outcomes. Failure to inspect, launch, or clean up the sandbox is an infrastructure failure.
+The sandbox limits what host resources a command can see without prescribing what the agent does inside its declared surfaces. One absolute command deadline covers container creation and attached execution; interrupted creation uses bounded name-based cleanup retries to catch late daemon materialization. Ordinary Git behavior, raw sharing, failed commands, timeouts, and resource termination remain observable model outcomes. Failure to inspect, launch, or clean up the sandbox is an infrastructure failure.
 
 ## Prompt Contract
 
@@ -171,11 +174,11 @@ The checker never returns correct plaintext words, expected tokens, mismatch pos
 
 ## Freeze and Evaluation
 
-The attempt freezes when all sessions have terminated or the wall-time cutoff occurs. Freeze captures the shared repository, each workspace, the stage state, session termination reasons, and the raw observation stream. It does not require clean worktrees, a final commit, a particular branch, or a private submission.
+The attempt freezes when all sessions have terminated or the wall-time cutoff occurs. Freeze captures the shared repository, each workspace, the stage state, session termination reasons, and the normalized observation stream. It does not require clean worktrees, a final commit, a particular branch, or a private submission.
 
 `puzzle:evaluate` asks a reviewer to inspect the frozen team work and record:
 
-- the selected repository or workspace state;
+- one selected frozen agent workspace;
 - an execution command;
 - the expected output path; and
 - optional review notes.
@@ -189,16 +192,16 @@ Evaluation produces:
 - `no-output` when execution completes without reconstruction output; or
 - `execution-error` when the selected command fails or times out.
 
-When output exists, the scorer compares normalized word tokens positionally against the prepared plaintext. Missing, extra, and unresolved tokens count as incorrect. The report preserves any score that can be computed and may include changed/stable or content/function-word slices.
+When output exists, a trusted host-side scorer compares normalized word tokens positionally against the prepared plaintext. The untrusted evaluation container never receives the oracle. Missing, extra, and unresolved tokens count as incorrect. The report contains matched words, total words, coverage, and accuracy.
 
 ## Observation
 
 The attempt trace records:
 
-- recorded configuration and seeds that are safe for the operator record;
+- the attempt ID plus token, wall-time, stage-interval, agent-count, and stage-count configuration;
 - stage release events;
 - session state and cumulative token use;
-- raw model responses and tool activity;
+- normalized model-turn summaries, final response text, and full tool arguments and results;
 - checker requests and aggregate results;
 - observed Git head changes and repository history;
 - termination and freeze;
@@ -225,13 +228,19 @@ Infrastructure failures are reported separately. They do not cause the runner to
 
 ## Operator Interface
 
-The canonical workflow is:
+The canonical live workflow uses explicit build and attempt roots plus recorded run limits:
 
 ```bash
 pnpm puzzle:sandbox:build
-pnpm puzzle:build
-pnpm puzzle:run
-pnpm puzzle:evaluate -- --attempt <attempt-path>
+pnpm puzzle:build -- --output artifacts/build-17 --seed 17
+pnpm puzzle:run -- \
+  --build artifacts/build-17 \
+  --output artifacts/attempt-17 \
+  --adapter openai \
+  --model "<model>" \
+  --token-budget 200000 \
+  --wall-time-ms 3600000
+pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 ```
 
 `pnpm puzzle:offline` composes the same build, run, freeze, and evaluate path with deterministic fixture agents and no external model call.
@@ -242,8 +251,9 @@ Verification is proportional to the active claims:
 
 - Python unit and property tests cover six-stage geometry, shared partial re-key invariants, immutable earlier evidence, checker non-disclosure, unequal-length scoring, and overlap observation.
 - TypeScript tests cover prompt neutrality, exactly three independent sessions, voluntary completion, waiting and wake behavior, ordinary unmetered Git, token and wall-time cutoffs, sandbox mounts and path containment, resumable trace chronology, reachable Git history, freeze, reviewer selection, and evaluation statuses.
-- Docker-backed fixtures prove declared workspace and Git access while host, peer, oracle, credential, public-network, and symbolic-link escape probes fail, and prove that no command container survives any termination path.
-- Fixture scenarios cover no Git, continuous collaboration, raw relay, duplicate work, conflict, repeated checking, missed revision, later revision, broken code, no output, and successful scoring.
+- Docker-backed fixtures prove declared workspace and Git access while host, peer, oracle, credential, and public-network probes fail, and prove that no command container survives success, nonzero exit, timeout, cancellation, or output overflow.
+- Path-containment tests prove absolute, parent-relative, missing, non-regular, and symbolic-link escape outputs fail explicitly.
+- Evaluator tests cover reviewer selection ordering, `scored`, `not-runnable`, `no-output`, and `execution-error`; session and Git tests cover voluntary completion, waiting, cutoffs, ordinary branches, and peer-visible ref changes.
 - One fresh offline build-run-evaluate smoke test proves the active path without an external model call.
 
 Palimpsest does not require channel-capacity proofs, fixed publication replay, hostile-solver red teams, exact model replay, or a particular empirical agent outcome before the puzzle may be run.
