@@ -33,9 +33,11 @@ export async function startGitServer(options: {
   const repository = resolve(options.repository);
   const repositoryName = `/${repository.split("/").at(-1)!}`;
   const backend = resolve(
-    (await import("node:child_process")).execFileSync("git", ["--exec-path"], {
-      encoding: "utf8",
-    }).trim(),
+    (await import("node:child_process"))
+      .execFileSync("git", ["--exec-path"], {
+        encoding: "utf8",
+      })
+      .trim(),
     "git-http-backend",
   );
   const server = createServer((request, response) => {

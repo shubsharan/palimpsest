@@ -46,10 +46,7 @@ export async function startContainerRuntime(options: {
     imageId(FIXTURE_IMAGE_TAG),
     imageId(CLEAN_SOLVER_IMAGE_TAG),
   ]);
-  if (
-    fixtureImageId !== lock.fixtureAgent.imageId ||
-    solverImageId !== lock.cleanSolver.imageId
-  ) {
+  if (fixtureImageId !== lock.fixtureAgent.imageId || solverImageId !== lock.cleanSolver.imageId) {
     throw new Error("Built container image IDs do not match containers/images.lock.json.");
   }
   await execFileAsync("docker", ["network", "create", "--internal", network]);

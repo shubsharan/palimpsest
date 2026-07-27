@@ -10,9 +10,7 @@ import { replayAttempt } from "./replay.js";
 import { completeAttempt, writePredeclaration } from "./report.js";
 import { runOfflineHarness } from "./run.js";
 
-export async function runComposedOfflineHarness(
-  root = ".",
-): Promise<Record<string, unknown>> {
+export async function runComposedOfflineHarness(root = "."): Promise<Record<string, unknown>> {
   await verifyHarnessInputs(root);
   await buildHarnessBundle(root);
   await writePredeclaration(root);

@@ -6,17 +6,9 @@ import { canonicalJsonBytes } from "@palimpsest/contracts";
 
 import { buildRuntimeVerdicts } from "../../tools/evidence/compare-runtimes.js";
 
-const forbiddenPaths = [
-  "agent",
-  "apps",
-  "infra",
-  "packages/control-domain",
-  "packages/git-meter",
-  "packages/git-gateway",
-  "python/src/palimpsest/replay",
-];
+const forbiddenPaths = ["agent", "apps", "infra", "packages/control-domain", "packages/git-meter"];
 
-describe("Milestone 1 boundaries", () => {
+describe("Repository boundaries", () => {
   async function schemaFiles(directory = "packages/contracts/schemas"): Promise<string[]> {
     const entries = await readdir(directory, { withFileTypes: true });
     const files = await Promise.all(
@@ -28,7 +20,7 @@ describe("Milestone 1 boundaries", () => {
     return files.flat().sort();
   }
 
-  test("Milestone 1 schemas remain compatible and feasibility gates add only authorized schemas", async () => {
+  test("schemas remain compatible and contain only authorized contract families", async () => {
     const files = await schemaFiles();
     expect(files).toEqual([
       "packages/contracts/schemas/artifact-response-manifest.schema.json",
@@ -41,12 +33,16 @@ describe("Milestone 1 boundaries", () => {
       "packages/contracts/schemas/gate-c-decision.schema.json",
       "packages/contracts/schemas/gate-report.schema.json",
       "packages/contracts/schemas/git-genesis.schema.json",
+      "packages/contracts/schemas/grading-records.schema.json",
+      "packages/contracts/schemas/instance-records.schema.json",
       "packages/contracts/schemas/logical-git-transaction.schema.json",
+      "packages/contracts/schemas/offline-harness-report.schema.json",
       "packages/contracts/schemas/relay-attempt-result.schema.json",
       "packages/contracts/schemas/reveal-event.schema.json",
       "packages/contracts/schemas/reveal-plan.schema.json",
       "packages/contracts/schemas/revision-instance.schema.json",
       "packages/contracts/schemas/revision-trajectory.schema.json",
+      "packages/contracts/schemas/run-control-records.schema.json",
       "packages/contracts/schemas/solver-checkpoint.schema.json",
       "packages/contracts/schemas/timing-capacity-result.schema.json",
       "packages/contracts/schemas/useful-state-checkpoint.schema.json",
@@ -61,7 +57,13 @@ describe("Milestone 1 boundaries", () => {
     expect(new Set(identifiers).size).toBe(identifiers.length);
   });
 
-  test("later-milestone and agent-facing package boundaries remain absent", async () => {
+  test("only declared package roots exist and deferred boundaries remain absent", async () => {
+    const packageRoots = (await readdir("packages", { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
+      .map((entry) => entry.name)
+      .sort();
+    expect(packageRoots).toEqual(["contracts", "git-accounting", "git-gateway", "run-control"]);
+
     for (const path of forbiddenPaths) {
       await expect(access(path)).rejects.toThrow();
     }

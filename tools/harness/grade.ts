@@ -74,14 +74,10 @@ export async function gradeAttempt(
   for (const execution of executions) {
     const verdict = validateValue("solver-execution", execution);
     if (!verdict.accepted) {
-      throw new Error(
-        `Solver execution is invalid: ${verdict.reason} at ${verdict.pointer}`,
-      );
+      throw new Error(`Solver execution is invalid: ${verdict.reason} at ${verdict.pointer}`);
     }
   }
-  const score = JSON.parse(
-    await readFile(resolve(attempt, "grading/score-report.json"), "utf8"),
-  );
+  const score = JSON.parse(await readFile(resolve(attempt, "grading/score-report.json"), "utf8"));
   const verdict = validateValue("score-report", score);
   if (!verdict.accepted) {
     throw new Error(`Score report is invalid: ${verdict.reason} at ${verdict.pointer}`);

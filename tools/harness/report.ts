@@ -5,11 +5,7 @@ import { fileURLToPath } from "node:url";
 import { canonicalJsonBytes, sha256Hex, validateValue } from "@palimpsest/contracts";
 
 import { sealAttempt, verifyTerminalAttempt } from "./artifacts.js";
-import {
-  attemptPath,
-  HARNESS_ROOT,
-  type HarnessAttemptIdentity,
-} from "./config.js";
+import { attemptPath, HARNESS_ROOT, type HarnessAttemptIdentity } from "./config.js";
 import { identityFromArgs } from "./grade.js";
 import { preflightBundle } from "./preflight.js";
 

@@ -23,8 +23,7 @@ export async function replayAttempt(
     producer: "replay",
     effectId: "lifecycle-replayed",
     eventType: "lifecycle.transition",
-    monotonicElapsedNs:
-      replayed?.monotonicElapsedNs ?? String(events.events.length * 1_000_000),
+    monotonicElapsedNs: replayed?.monotonicElapsedNs ?? String(events.events.length * 1_000_000),
     payload: { state: "REPLAYED" },
   });
   const scored = events.events.find((event) => event.effectId === "lifecycle-scored");
@@ -53,12 +52,8 @@ export async function replayAttempt(
     ],
     { cwd: resolve(root), maxBuffer: 32 * 1024 * 1024 },
   );
-  const replay = JSON.parse(
-    await readFile(resolve(attempt, "replay/trusted-replay.json"), "utf8"),
-  );
-  const publicReport = JSON.parse(
-    await readFile(resolve(attempt, "public/report.json"), "utf8"),
-  );
+  const replay = JSON.parse(await readFile(resolve(attempt, "replay/trusted-replay.json"), "utf8"));
+  const publicReport = JSON.parse(await readFile(resolve(attempt, "public/report.json"), "utf8"));
   for (const [contractId, value] of [
     ["trusted-replay-bundle", replay],
     ["public-report-bundle", publicReport],

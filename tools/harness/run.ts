@@ -153,9 +153,7 @@ export async function runOfflineHarness(options: {
       const outputRoot = join(agentRoot, "private-output");
       const workspaceRoot = join(agentRoot, "workspace");
       await Promise.all(
-        [inputRoot, outputRoot, workspaceRoot].map((path) =>
-          mkdir(path, { recursive: true }),
-        ),
+        [inputRoot, outputRoot, workspaceRoot].map((path) => mkdir(path, { recursive: true })),
       );
       await cp(join(bundleRoot, "public"), join(inputRoot, "public"), { recursive: true });
       await cp(join(bundleRoot, "reference"), join(inputRoot, "reference"), {
@@ -227,56 +225,52 @@ export async function runOfflineHarness(options: {
   let workerResults;
   try {
     workerResults = await Promise.all(
-      invocations.map(async ({
-        agentId,
-        invocation,
-        containerRequestPath,
-        inputRoot,
-        outputRoot,
-      }) => {
-        const result = await runBridgeProcess({
-          command: "docker",
-          args: [
-            "run",
-            "--rm",
-            "--network",
-            containerRuntime.network,
-            "--read-only",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--pids-limit",
-            "128",
-            "--memory",
-            "512m",
-            "--cpus",
-            "1",
-            "--tmpfs",
-            "/tmp:rw,noexec,nosuid,size=32m",
-            "--volume",
-            `${containerRequestPath}:/request/invocation.json:ro`,
-            "--volume",
-            `${inputRoot}:/input:ro`,
-            "--volume",
-            `${invocation.workspacePath}:/workspace:rw`,
-            "--volume",
-            `${outputRoot}:/output:rw`,
-            containerRuntime.fixtureImageId,
-            "/request/invocation.json",
-          ],
-          adapterId: FIXTURE_ADAPTER_ID,
-          runId: options.runId,
-          agentId,
-          invocationId: invocation.invocationId,
-          timeoutMs: 60_000,
-        });
-        await writeFile(
-          join(attempt, "agents", agentId, "events.json"),
-          canonicalJsonBytes(result.events),
-        );
-        return { agentId, result };
-      }),
+      invocations.map(
+        async ({ agentId, invocation, containerRequestPath, inputRoot, outputRoot }) => {
+          const result = await runBridgeProcess({
+            command: "docker",
+            args: [
+              "run",
+              "--rm",
+              "--network",
+              containerRuntime.network,
+              "--read-only",
+              "--cap-drop",
+              "ALL",
+              "--security-opt",
+              "no-new-privileges",
+              "--pids-limit",
+              "128",
+              "--memory",
+              "512m",
+              "--cpus",
+              "1",
+              "--tmpfs",
+              "/tmp:rw,noexec,nosuid,size=32m",
+              "--volume",
+              `${containerRequestPath}:/request/invocation.json:ro`,
+              "--volume",
+              `${inputRoot}:/input:ro`,
+              "--volume",
+              `${invocation.workspacePath}:/workspace:rw`,
+              "--volume",
+              `${outputRoot}:/output:rw`,
+              containerRuntime.fixtureImageId,
+              "/request/invocation.json",
+            ],
+            adapterId: FIXTURE_ADAPTER_ID,
+            runId: options.runId,
+            agentId,
+            invocationId: invocation.invocationId,
+            timeoutMs: 60_000,
+          });
+          await writeFile(
+            join(attempt, "agents", agentId, "events.json"),
+            canonicalJsonBytes(result.events),
+          );
+          return { agentId, result };
+        },
+      ),
     );
   } finally {
     await containerRuntime.close();
