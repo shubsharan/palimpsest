@@ -48,6 +48,7 @@ class BuiltGateCInstance:
     revised_key: dict[str, str]
     changed_entries: list[dict[str, Any]]
     matched_controls: list[dict[str, Any]]
+    entity_types: tuple[str, ...]
 
 
 def _chapter_text(heading: str, text: str) -> str:
@@ -260,6 +261,16 @@ def build_gate_c_instance(root: Path = Path(".")) -> BuiltGateCInstance:
         revised_key=revision.revised_key,
         changed_entries=changed,
         matched_controls=controls,
+        entity_types=tuple(
+            sorted(
+                {
+                    replacement
+                    for entity in regenerated.entities
+                    for replacement in entity["replacementAliases"]
+                    if isinstance(replacement, str)
+                }
+            )
+        ),
     )
 
 

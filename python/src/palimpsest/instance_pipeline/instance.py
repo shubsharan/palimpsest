@@ -49,7 +49,9 @@ def build_production_instance(root: Path = Path(".")) -> ProductionInstance:
                 "changed",
                 "stable",
                 "switch",
+                "latency",
                 "collaboration",
+                "confidence",
             ],
         },
     )
