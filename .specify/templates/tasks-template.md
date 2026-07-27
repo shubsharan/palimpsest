@@ -54,7 +54,7 @@ description: "Task list template for feature implementation"
 - [ ] T002 Initialize [language] project with [framework] dependencies
 - [ ] T003 [P] Configure linting and formatting tools
 - [ ] T004 [P] Pin supported runtimes, tools, and independent lockfiles
-- [ ] T005 Define the owning gate report and immutable evidence inputs
+- [ ] T005 Define the owning milestone, end-to-end completion artifacts, and immutable evidence inputs
 
 ---
 
@@ -70,7 +70,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T007 [P] Add cross-language golden acceptance and rejection fixtures
 - [ ] T008 [P] Establish trust, visibility, mount, and network boundaries
 - [ ] T009 Implement explicit failure classification and artifact promotion rules
-- [ ] T010 Configure deterministic verification and evidence capture
+- [ ] T010 Configure deterministic verification, fake model adapters, and evidence capture
 - [ ] T011 Setup environment configuration management
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
