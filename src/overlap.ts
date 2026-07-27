@@ -22,23 +22,42 @@ export interface GitOverlapScan {
 }
 
 export interface CommittedFileCollection {
-  committed: Record<string, string>;
+  committed: readonly CommittedFile[];
   scan: GitOverlapScan;
+}
+
+export interface CommittedFile {
+  committedPath: string;
+  committedBlobId: string;
+  contentPath: string;
+}
+
+interface TreeBlob {
+  committedPath: string;
+  committedBlobId: string;
 }
 
 function nonEmptyLines(value: string): string[] {
   return value.split("\n").filter((line) => line.length > 0);
 }
 
-function parseTreeBlobIds(source: Buffer): string[] {
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function parseTreeBlobs(source: Buffer): TreeBlob[] {
   return source
     .toString("utf8")
     .split("\0")
     .filter((entry) => entry.length > 0)
     .flatMap((entry) => {
       const tab = entry.indexOf("\t");
-      const metadata = (tab === -1 ? entry : entry.slice(0, tab)).split(/\s+/);
-      return metadata[1] === "blob" && metadata[2] ? [metadata[2]] : [];
+      if (tab === -1) return [];
+      const metadata = entry.slice(0, tab).split(/\s+/);
+      const committedPath = entry.slice(tab + 1);
+      return metadata[1] === "blob" && metadata[2] && committedPath
+        ? [{ committedPath, committedBlobId: metadata[2] }]
+        : [];
     });
 }
 
@@ -90,17 +109,17 @@ export async function collectCommittedFiles(
       })
     ).stdout,
   );
-  const referencedBlobIds: string[] = [];
+  const referencedBlobs: TreeBlob[] = [];
   for (const commitId of commitIds) {
     const tree = await runProcessBuffer(
       "git",
       ["--git-dir", barePath, "ls-tree", "-r", "-z", commitId],
       { cwd: dirname(barePath) },
     );
-    referencedBlobIds.push(...parseTreeBlobIds(tree.stdout));
+    referencedBlobs.push(...parseTreeBlobs(tree.stdout));
   }
 
-  const committed: Record<string, string> = {};
+  const contentPaths = new Map<string, string>();
   let skippedNonTextBlobCount = 0;
   const decoder = new TextDecoder("utf-8", { fatal: true });
   for (const objectId of blobIds) {
@@ -122,19 +141,34 @@ export async function collectCommittedFiles(
     }
     const destination = join(
       outputRoot,
-      `${String(Object.keys(committed).length).padStart(4, "0")}-${objectId}.txt`,
+      `${String(contentPaths.size).padStart(4, "0")}-${objectId}.txt`,
     );
     await writeFile(destination, text, "utf8");
-    committed[objectId] = destination;
+    contentPaths.set(objectId, destination);
   }
 
+  const committed = [
+    ...new Map(
+      referencedBlobs.map((entry) => [`${entry.committedPath}\0${entry.committedBlobId}`, entry]),
+    ).values(),
+  ]
+    .flatMap((entry): CommittedFile[] => {
+      const contentPath = contentPaths.get(entry.committedBlobId);
+      return contentPath === undefined ? [] : [{ ...entry, contentPath }];
+    })
+    .sort(
+      (left, right) =>
+        compareText(left.committedPath, right.committedPath) ||
+        compareText(left.committedBlobId, right.committedBlobId),
+    );
+  const referencedBlobIds = referencedBlobs.map((entry) => entry.committedBlobId);
   return {
     committed,
     scan: {
       reachableObjectCount: reachableObjectIds.length,
       reachableBlobReferenceCount: referencedBlobIds.length,
       uniqueReachableBlobCount: blobIds.length,
-      uniqueTextBlobCount: Object.keys(committed).length,
+      uniqueTextBlobCount: contentPaths.size,
       repeatedTreeReferenceCount: referencedBlobIds.length - new Set(referencedBlobIds).size,
       skippedNonTextBlobCount,
     },

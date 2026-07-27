@@ -68,7 +68,7 @@ Deliver `puzzle:evaluate` and the private checker.
 - Report `scored`, `not-runnable`, `no-output`, or `execution-error`.
 - Preserve normalized model-turn summaries, full tool arguments/results, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, scores, sandbox image identity, and effective operational limits.
 - Resume one validated, redacted trace across run, overlap, and evaluation processes with contiguous sequence numbers and nondecreasing elapsed times.
-- Report only obvious exact or normalized raw overlap from unique text blobs reachable through current refs, including committed-then-deleted content; count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
+- Report only obvious exact or normalized raw overlap from logical-path/blob pairs reachable through current refs, including committed-then-deleted content; retain both path and blob provenance, materialize each unique text blob once, and count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
 
 This step is done when successful, partial, missing, ambiguous, broken, raw-sharing, repeated-checking, and no-Git fixtures all remain inspectable outcomes.
 
@@ -112,6 +112,7 @@ Run proportional verification:
 - active-path boundary checks that are invariant to ignored caches, empty directories, and unstaged moves;
 - strict current-version artifact decoder and post-freeze overlap-failure durability tests;
 - root formatting, linting, type checking, tests, and `git diff --check`.
+- one required `verify` pull-request and merge-queue check that recreates the exact pinned toolchain and fresh sandbox before running the full gate.
 
 Verification proves that the environment behaves as documented. It does not require agents to solve well, use Git, detect the re-key, collaborate effectively, or avoid workarounds.
 

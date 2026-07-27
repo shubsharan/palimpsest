@@ -91,3 +91,56 @@ def test_checker_returns_plain_error_for_an_unreadable_candidate(
         candidate_path=tmp_path / "missing.txt",
     )
     assert result == {"error": "candidate could not be read"}
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("agentCount", True, "agentCount.*integer"),
+        ("stageCount", 5, "exactly three agents"),
+        ("publicCiphertextPath", "../oracle.txt", "safe relative path"),
+    ],
+)
+def test_checker_rejects_malformed_build_manifest_before_reading_truth(
+    tmp_path: Path, field: str, value: object, match: str
+) -> None:
+    malformed_root = tmp_path / field
+    malformed_root.mkdir()
+    manifest = {
+        "schemaVersion": 1,
+        "buildId": "build-" + "a" * 64,
+        "agentCount": 3,
+        "stageCount": 6,
+        "transitionStage": 4,
+        "stageIntervalMs": 10,
+        "changedSymbols": ["alpha"],
+        "publicCiphertextPath": "evaluation/ciphertext.txt",
+        "referenceCorpusPath": "public/reference",
+        "privateStageRoots": {
+            agent_id: f"private/{agent_id}/stages" for agent_id in ("agent-1", "agent-2", "agent-3")
+        },
+        "oracleRoot": "oracle",
+        "stages": [
+            {
+                "agentId": agent_id,
+                "ordinal": ordinal,
+                "releaseOffsetMs": (ordinal - 1) * 10,
+                "sourcePath": f"private/{agent_id}/stages/{ordinal:02d}.txt",
+                "tokenCount": 1,
+                "sha256": "b" * 64,
+                "regime": "base" if ordinal < 4 else "revised",
+            }
+            for agent_id in ("agent-1", "agent-2", "agent-3")
+            for ordinal in range(1, 7)
+        ],
+    }
+    manifest[field] = value
+    (malformed_root / "puzzle-build.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        check_reconstruction(
+            build_root=malformed_root,
+            agent_id="agent-1",
+            released_ordinals=(1,),
+            candidate="candidate",
+        )

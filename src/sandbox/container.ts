@@ -34,7 +34,37 @@ export function dockerHostEnvironment(): NodeJS.ProcessEnv {
     LANG: "C.UTF-8",
     LC_ALL: "C.UTF-8",
   };
-  for (const name of ["PATH", "HOME", "TMPDIR", "DOCKER_HOST", "DOCKER_CONTEXT"] as const) {
+  for (const name of [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "DOCKER_API_VERSION",
+    "DOCKER_AUTH_CONFIG",
+    "DOCKER_BUILDKIT",
+    "DOCKER_CERT_PATH",
+    "DOCKER_CLI_EXPERIMENTAL",
+    "DOCKER_CONFIG",
+    "DOCKER_CONTENT_TRUST",
+    "DOCKER_CONTENT_TRUST_SERVER",
+    "DOCKER_CONTEXT",
+    "DOCKER_CUSTOM_HEADERS",
+    "DOCKER_DEFAULT_PLATFORM",
+    "DOCKER_HIDE_LEGACY_COMMANDS",
+    "DOCKER_HOST",
+    "DOCKER_TLS",
+    "DOCKER_TLS_VERIFY",
+    "BUILDKIT_PROGRESS",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "all_proxy",
+    "NO_COLOR",
+    "SSH_AUTH_SOCK",
+  ] as const) {
     const value = process.env[name];
     if (value !== undefined) environment[name] = value;
   }

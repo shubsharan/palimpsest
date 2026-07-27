@@ -13,6 +13,7 @@ import {
 import type { AgentSessionResult, SessionState } from "./session.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
+const GIT_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const BUILD_ID = /^build-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const STAGE_COUNT = 6;
@@ -80,6 +81,7 @@ export interface GitOverlapScan {
 
 export interface OverlapFinding {
   committedPath: string;
+  committedBlobId: string;
   sourceKind: "private-ciphertext" | "plaintext";
   sourceId: string;
   matchKind: "exact" | "normalized";
@@ -137,6 +139,14 @@ function finiteNumber(value: unknown, name: string, minimum = 0, maximum?: numbe
 function digest(value: unknown, name: string): string {
   const result = nonEmptyString(value, name);
   if (!SHA256.test(result)) throw new Error(`${name} must be a lowercase SHA-256 digest.`);
+  return result;
+}
+
+function gitObjectId(value: unknown, name: string): string {
+  const result = nonEmptyString(value, name);
+  if (!GIT_OBJECT_ID.test(result)) {
+    throw new Error(`${name} must be a lowercase SHA-1 or SHA-256 Git object ID.`);
+  }
   return result;
 }
 
@@ -464,6 +474,10 @@ export function decodeOverlapResult(value: unknown): OverlapResult {
         finding.committedPath,
         `Overlap finding ${String(index + 1)} committedPath`,
       ),
+      committedBlobId: gitObjectId(
+        finding.committedBlobId,
+        `Overlap finding ${String(index + 1)} committedBlobId`,
+      ),
       sourceKind: finding.sourceKind,
       sourceId: nonEmptyString(finding.sourceId, `Overlap finding ${String(index + 1)} sourceId`),
       matchKind: finding.matchKind,
@@ -473,7 +487,7 @@ export function decodeOverlapResult(value: unknown): OverlapResult {
   });
   const keys = findings.map(
     (finding) =>
-      `${finding.committedPath}\0${finding.sourceKind}\0${finding.sourceId}\0${finding.matchKind}`,
+      `${finding.committedPath}\0${finding.committedBlobId}\0${finding.sourceKind}\0${finding.sourceId}\0${finding.matchKind}`,
   );
   if (keys.some((key, index) => index > 0 && keys[index - 1]! >= key)) {
     throw new Error("Overlap findings must be unique and deterministically sorted.");
@@ -516,7 +530,7 @@ function decodeExecution(value: unknown): SandboxCommandResult {
   };
 }
 
-function decodeScore(value: unknown): AggregateScore {
+export function decodeAggregateScore(value: unknown): AggregateScore {
   const record = object(value, "Evaluation score");
   const totalWords = integer(record.totalWords, "Evaluation score totalWords");
   const matchedWords = integer(record.matchedWords, "Evaluation score matchedWords");
@@ -531,6 +545,10 @@ function decodeScore(value: unknown): AggregateScore {
   };
 }
 
+function executionSucceeded(execution: SandboxCommandResult): boolean {
+  return execution.exitCode === 0 && !execution.timedOut && !execution.outputExceeded;
+}
+
 export function decodeEvaluationRecord(value: unknown): EvaluationResult {
   const record = object(value, "Evaluation result");
   const status = evaluationStatus(record.status);
@@ -540,7 +558,7 @@ export function decodeEvaluationRecord(value: unknown): EvaluationResult {
     record.outputPath === undefined
       ? undefined
       : absolutePath(record.outputPath, "Evaluation outputPath");
-  const score = record.score === undefined ? undefined : decodeScore(record.score);
+  const score = record.score === undefined ? undefined : decodeAggregateScore(record.score);
   const error =
     record.error === undefined ? undefined : nonEmptyString(record.error, "Evaluation error");
 
@@ -550,18 +568,22 @@ export function decodeEvaluationRecord(value: unknown): EvaluationResult {
       execution === undefined ||
       outputPath === undefined ||
       score === undefined ||
-      error !== undefined)
+      error !== undefined ||
+      !executionSucceeded(execution))
   ) {
-    throw new Error("Scored evaluation results require selection, execution, output, and score.");
+    throw new Error(
+      "Scored evaluation results require selection, successful execution, output, and score.",
+    );
   }
   if (
     status === "not-runnable" &&
-    (execution !== undefined ||
+    (selection !== undefined ||
+      execution !== undefined ||
       outputPath !== undefined ||
       score !== undefined ||
       error !== undefined)
   ) {
-    throw new Error("Not-runnable evaluation results cannot contain execution outcomes.");
+    throw new Error("Not-runnable evaluation results cannot contain evaluation context.");
   }
   if (
     status === "no-output" &&
@@ -569,12 +591,20 @@ export function decodeEvaluationRecord(value: unknown): EvaluationResult {
       execution === undefined ||
       outputPath === undefined ||
       score !== undefined ||
-      error !== undefined)
+      error !== undefined ||
+      !executionSucceeded(execution))
   ) {
-    throw new Error("No-output evaluation results require selection, execution, and outputPath.");
+    throw new Error(
+      "No-output evaluation results require selection, successful execution, and outputPath.",
+    );
   }
-  if (status === "execution-error" && (selection === undefined || error === undefined)) {
-    throw new Error("Execution-error evaluation results require selection and an error.");
+  if (
+    status === "execution-error" &&
+    (selection === undefined || error === undefined || score !== undefined)
+  ) {
+    throw new Error(
+      "Execution-error evaluation results require selection and error without score.",
+    );
   }
 
   return {

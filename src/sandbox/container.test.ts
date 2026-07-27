@@ -2,14 +2,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   SandboxInfrastructureError,
   type AgentSandboxCommand,
   type SandboxIdentity,
 } from "./contracts.js";
-import { DockerCommandSandbox } from "./container.js";
+import { dockerHostEnvironment, DockerCommandSandbox } from "./container.js";
 
 const TEST_IDENTITY: SandboxIdentity = {
   imageTag: "palimpsest-puzzle-sandbox:0.1.0",
@@ -90,10 +90,55 @@ async function waitForCreate(log: string): Promise<void> {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true })));
 });
 
 describe("sandbox container lifecycle", () => {
+  it("passes trusted Docker client configuration without unrelated host secrets", () => {
+    const names = [
+      "DOCKER_API_VERSION",
+      "DOCKER_AUTH_CONFIG",
+      "DOCKER_BUILDKIT",
+      "DOCKER_CERT_PATH",
+      "DOCKER_CLI_EXPERIMENTAL",
+      "DOCKER_CONFIG",
+      "DOCKER_CONTENT_TRUST",
+      "DOCKER_CONTENT_TRUST_SERVER",
+      "DOCKER_CONTEXT",
+      "DOCKER_CUSTOM_HEADERS",
+      "DOCKER_DEFAULT_PLATFORM",
+      "DOCKER_HIDE_LEGACY_COMMANDS",
+      "DOCKER_HOST",
+      "DOCKER_TLS",
+      "DOCKER_TLS_VERIFY",
+      "BUILDKIT_PROGRESS",
+      "HTTP_PROXY",
+      "HTTPS_PROXY",
+      "NO_PROXY",
+      "ALL_PROXY",
+      "http_proxy",
+      "https_proxy",
+      "no_proxy",
+      "all_proxy",
+      "NO_COLOR",
+      "SSH_AUTH_SOCK",
+    ] as const;
+    for (const [index, name] of names.entries()) {
+      vi.stubEnv(name, `trusted-${String(index)}`);
+    }
+    vi.stubEnv("OPENAI_API_KEY", "provider-secret");
+    vi.stubEnv("PALIMPSEST_SENTINEL", "unrelated");
+
+    const environment = dockerHostEnvironment();
+
+    for (const [index, name] of names.entries()) {
+      expect(environment[name]).toBe(`trusted-${String(index)}`);
+    }
+    expect(environment).not.toHaveProperty("OPENAI_API_KEY");
+    expect(environment).not.toHaveProperty("PALIMPSEST_SENTINEL");
+  });
+
   it("returns the inspected command exit and always removes the container", async () => {
     const fixture = await dockerFixture("success");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);

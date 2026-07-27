@@ -129,6 +129,8 @@ A maintainer can verify the compact architecture from a clean or previously used
 - **FR-025**: Legacy Gate, harness, replay, temporary evidence, and obsolete package directories MUST be absent from the final working tree and covered by current ignore rules where they are valid generated outputs.
 - **FR-026**: Before active behavior is relocated, the system MUST capture fixed-seed build identities, puzzle geometry, reconstruction scores, checker aggregates, contractual trace relationships, and minimum operator results as scientific and command-contract golden cases.
 - **FR-027**: The existing development-time version verification capability MUST remain available after the active runtime moves.
+- **FR-028**: Every overlap finding MUST retain both its logical committed path and committed blob identity; collection MUST preserve unique path/blob pairs while materializing each unique text blob only once.
+- **FR-029**: Current build-manifest and evaluation-result readers MUST enforce all required fields and semantic invariants explicitly, including exact puzzle geometry and status-specific evaluation field combinations.
 
 ### Key Entities
 

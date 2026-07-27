@@ -21,6 +21,8 @@ Represents one deterministic construction and its three six-stage private stream
 | `oracleRoot`           | relative path        | Safe path inside build root                     |
 | `stages`               | Evidence Stage array | Exactly 18 stages; six ordered stages per agent |
 
+The current reader requires every field above, rejects Boolean values where integers are required, validates every nested stage explicitly, and reports malformed manifests as `ValueError` at both direct and checker command boundaries.
+
 ### Evidence Stage
 
 | Field             | Type          | Rules                                                      |
@@ -106,14 +108,17 @@ Represents optional analysis of unique reachable Git text.
 
 ### Overlap Finding
 
-| Field           | Type    | Rules                                      |
-| --------------- | ------- | ------------------------------------------ |
-| `committedPath` | string  | Nonempty logical Git path                  |
-| `sourceKind`    | enum    | `private-ciphertext` or `plaintext`        |
-| `sourceId`      | string  | Nonempty source identity                   |
-| `matchKind`     | enum    | `exact` or `normalized`                    |
-| `wordCount`     | integer | Positive and at least configured threshold |
-| `sha256`        | string  | Lowercase SHA-256 of matched evidence      |
+| Field             | Type    | Rules                                      |
+| ----------------- | ------- | ------------------------------------------ |
+| `committedPath`   | string  | Nonempty logical Git path                  |
+| `committedBlobId` | string  | Lowercase Git object ID for that path      |
+| `sourceKind`      | enum    | `private-ciphertext` or `plaintext`        |
+| `sourceId`        | string  | Nonempty source identity                   |
+| `matchKind`       | enum    | `exact` or `normalized`                    |
+| `wordCount`       | integer | Positive and at least configured threshold |
+| `sha256`          | string  | Lowercase SHA-256 of matched evidence      |
+
+Reachability retains every unique `(committedPath, committedBlobId)` pair. Content is materialized once per unique blob ID, so identical content at different paths retains both logical paths while historical versions of one path remain distinguishable by blob ID.
 
 ### Scan Metadata
 
@@ -138,6 +143,13 @@ Represents one reviewer selection and one-shot execution against a frozen attemp
 | `outputPath` | optional path | Validated regular file inside evaluation workspace |
 | `score` | optional Aggregate Score | Present for `scored` |
 | `error` | optional string | Present under existing error-status rules |
+
+Status-specific invariants are strict:
+
+- `scored` requires selection, successful execution, output path, and score, and forbids error.
+- `not-runnable` contains none of selection, execution, output path, score, or error.
+- `no-output` requires selection, successful execution, and output path, and forbids score and error.
+- `execution-error` requires selection and error, may retain execution and output context, and forbids score.
 
 ### Evaluation Selection
 

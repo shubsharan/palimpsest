@@ -42,6 +42,8 @@ output="$(mktemp -d)/palimpsest-offline"
 pnpm puzzle:offline -- --output "$output"
 ```
 
+Pull requests and merge-queue candidates run the same gate as the required `verify` check with the exact versions in `.tool-versions`, a freshly built sandbox image, and a base-relative whitespace check.
+
 Inspect `$output/attempt/attempt.json`, `trace.meta.json`, `trace.jsonl`, `overlap.json`, and `evaluation/result.json`.
 
 ## Operator Flow

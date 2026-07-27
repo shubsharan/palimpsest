@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
 
 AGENT_IDS = ("agent-1", "agent-2", "agent-3")
@@ -15,9 +15,60 @@ Regime = Literal["base", "revised"]
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _assert_relative_path(path: Path, name: str) -> None:
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+def _record(value: object, name: str) -> dict[str, object]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"{name} must be an object.")
+    return {key: item for key, item in value.items() if isinstance(key, str)}
+
+
+def _required(record: dict[str, object], field: str, name: str) -> object:
+    if field not in record:
+        raise ValueError(f"{name} {field} is required.")
+    return record[field]
+
+
+def _integer(value: object, name: str, minimum: int = 0) -> int:
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{name} must be an integer of at least {minimum}.")
+    return value
+
+
+def _string(value: object, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string.")
+    return value
+
+
+def _relative_path(value: object, name: str) -> Path:
+    source = _string(value, name)
+    posix = PurePosixPath(source)
+    windows = PureWindowsPath(source)
+    parts = re.split(r"[\\/]", source)
+    if (
+        "\0" in source
+        or posix.is_absolute()
+        or windows.is_absolute()
+        or bool(windows.drive)
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
         raise ValueError(f"{name} must be a safe relative path.")
+    return Path(source)
+
+
+def _agent_id(value: object, name: str) -> AgentId:
+    if value == "agent-1" or value == "agent-2" or value == "agent-3":
+        return value
+    raise ValueError(f"{name} must identify one declared agent.")
+
+
+def _regime(value: object, name: str) -> Regime:
+    if value == "base" or value == "revised":
+        return value
+    raise ValueError(f"{name} must be base or revised.")
+
+
+def _assert_relative_path(path: Path, name: str) -> None:
+    _relative_path(path.as_posix(), name)
 
 
 @dataclass(frozen=True)
@@ -56,6 +107,38 @@ class EvidenceStage:
             "sha256": self.sha256,
             "regime": regime,
         }
+
+    @classmethod
+    def from_dict(cls, value: object, *, name: str = "Evidence stage") -> EvidenceStage:
+        stage = _record(value, name)
+        agent_id = _agent_id(_required(stage, "agentId", name), f"{name} agentId")
+        ordinal = _integer(_required(stage, "ordinal", name), f"{name} ordinal", 1)
+        release_offset_ms = _integer(
+            _required(stage, "releaseOffsetMs", name),
+            f"{name} releaseOffsetMs",
+        )
+        source_path = _relative_path(
+            _required(stage, "sourcePath", name),
+            f"{name} sourcePath",
+        )
+        token_count = _integer(
+            _required(stage, "tokenCount", name),
+            f"{name} tokenCount",
+            1,
+        )
+        sha256 = _string(_required(stage, "sha256", name), f"{name} sha256")
+        if _DIGEST.fullmatch(sha256) is None:
+            raise ValueError(f"{name} sha256 must be a lowercase SHA-256 digest.")
+        regime = _regime(_required(stage, "regime", name), f"{name} regime")
+        return cls(
+            agent_id=agent_id,
+            ordinal=ordinal,
+            release_offset_ms=release_offset_ms,
+            source_path=source_path,
+            token_count=token_count,
+            sha256=sha256,
+            regime=regime,
+        )
 
 
 @dataclass(frozen=True)
@@ -132,31 +215,99 @@ class PuzzleBuild:
         }
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> PuzzleBuild:
-        if value.get("schemaVersion") != 1:
-            raise ValueError("Unsupported puzzle build schema version.")
-        raw_stages = value.get("stages")
-        if not isinstance(raw_stages, list):
-            raise ValueError("Puzzle build stages must be an array.")
-        stages = tuple(
-            EvidenceStage(
-                agent_id=stage["agentId"],
-                ordinal=stage["ordinal"],
-                release_offset_ms=stage["releaseOffsetMs"],
-                source_path=Path(stage["sourcePath"]),
-                token_count=stage["tokenCount"],
-                sha256=stage["sha256"],
-                regime=stage["regime"],
-            )
-            for stage in raw_stages
+    def from_dict(cls, value: object) -> PuzzleBuild:
+        manifest = _record(value, "Puzzle build manifest")
+        schema_version = _integer(
+            _required(manifest, "schemaVersion", "Puzzle build manifest"),
+            "Puzzle build schemaVersion",
         )
+        if schema_version != 1:
+            raise ValueError("Unsupported puzzle build schema version.")
+        build_id = _string(
+            _required(manifest, "buildId", "Puzzle build manifest"),
+            "Puzzle build buildId",
+        )
+        agent_count = _integer(
+            _required(manifest, "agentCount", "Puzzle build manifest"),
+            "Puzzle build agentCount",
+        )
+        stage_count = _integer(
+            _required(manifest, "stageCount", "Puzzle build manifest"),
+            "Puzzle build stageCount",
+        )
+        if agent_count != len(AGENT_IDS) or stage_count != STAGE_COUNT:
+            raise ValueError("Puzzle build must describe exactly three agents and six stages.")
+        transition_stage = _integer(
+            _required(manifest, "transitionStage", "Puzzle build manifest"),
+            "Puzzle build transitionStage",
+            2,
+        )
+        if transition_stage > STAGE_COUNT:
+            raise ValueError("Puzzle build transitionStage must be between 2 and 6.")
+        stage_interval_ms = _integer(
+            _required(manifest, "stageIntervalMs", "Puzzle build manifest"),
+            "Puzzle build stageIntervalMs",
+            1,
+        )
+
+        raw_changed_symbols = _required(manifest, "changedSymbols", "Puzzle build manifest")
+        if not isinstance(raw_changed_symbols, list) or not raw_changed_symbols:
+            raise ValueError("Puzzle build changedSymbols must be a non-empty array.")
+        changed_symbols = tuple(
+            _string(symbol, f"Puzzle build changedSymbols[{index}]")
+            for index, symbol in enumerate(raw_changed_symbols)
+        )
+        if (
+            len(set(changed_symbols)) != len(changed_symbols)
+            or tuple(sorted(changed_symbols)) != changed_symbols
+        ):
+            raise ValueError("Puzzle build changedSymbols must be unique and sorted.")
+
+        public_ciphertext_path = _relative_path(
+            _required(manifest, "publicCiphertextPath", "Puzzle build manifest"),
+            "Puzzle build publicCiphertextPath",
+        )
+        reference_corpus_path = _relative_path(
+            _required(manifest, "referenceCorpusPath", "Puzzle build manifest"),
+            "Puzzle build referenceCorpusPath",
+        )
+        oracle_root = _relative_path(
+            _required(manifest, "oracleRoot", "Puzzle build manifest"),
+            "Puzzle build oracleRoot",
+        )
+
+        private_stage_roots = _record(
+            _required(manifest, "privateStageRoots", "Puzzle build manifest"),
+            "Puzzle build privateStageRoots",
+        )
+        if set(private_stage_roots) != set(AGENT_IDS):
+            raise ValueError("Puzzle build privateStageRoots must contain exactly three agents.")
+        for agent_id in AGENT_IDS:
+            _relative_path(
+                private_stage_roots[agent_id],
+                f"Puzzle build {agent_id} private stage root",
+            )
+
+        raw_stages = _required(manifest, "stages", "Puzzle build manifest")
+        if not isinstance(raw_stages, list) or len(raw_stages) != len(AGENT_IDS) * STAGE_COUNT:
+            raise ValueError("Puzzle build must contain exactly three six-stage streams.")
+        stages = tuple(
+            EvidenceStage.from_dict(raw_stage, name=f"Puzzle build stage {index + 1}")
+            for index, raw_stage in enumerate(raw_stages)
+        )
+        for index, stage in enumerate(stages):
+            expected_agent = AGENT_IDS[index // STAGE_COUNT]
+            expected_ordinal = index % STAGE_COUNT + 1
+            if stage.agent_id != expected_agent or stage.ordinal != expected_ordinal:
+                raise ValueError("Puzzle build stages must contain six ordered stages per agent.")
+
         return cls(
-            build_id=value["buildId"],
-            stage_interval_ms=value["stageIntervalMs"],
-            transition_stage=value["transitionStage"],
-            changed_symbols=tuple(value["changedSymbols"]),
-            public_ciphertext_path=Path(value["publicCiphertextPath"]),
-            reference_corpus_path=Path(value["referenceCorpusPath"]),
-            oracle_root=Path(value["oracleRoot"]),
+            build_id=build_id,
+            stage_interval_ms=stage_interval_ms,
+            transition_stage=transition_stage,
+            changed_symbols=changed_symbols,
+            public_ciphertext_path=public_ciphertext_path,
+            reference_corpus_path=reference_corpus_path,
+            oracle_root=oracle_root,
             stages=stages,
         )

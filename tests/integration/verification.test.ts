@@ -11,6 +11,7 @@ import {
 } from "../../tools/verify-versions.js";
 
 const ROOT_CONFIGURATION_PATHS = new Set([
+  ".github/workflows/verify.yml",
   "oxfmt.json",
   "oxlint.json",
   "package.json",
@@ -20,6 +21,20 @@ const ROOT_CONFIGURATION_PATHS = new Set([
   "tsconfig.base.json",
   "tsconfig.json",
   "vitest.config.ts",
+]);
+
+const CURRENT_GUIDANCE_PATHS = new Set([
+  "README.md",
+  "docs/architecture.md",
+  "docs/roadmap.md",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "specs/009-refactor-puzzle-architecture/spec.md",
+  "specs/009-refactor-puzzle-architecture/data-model.md",
+  "specs/009-refactor-puzzle-architecture/contracts/attempt-artifacts.md",
+  "specs/009-refactor-puzzle-architecture/contracts/behavior-baseline.md",
+  "specs/009-refactor-puzzle-architecture/contracts/command-sandbox.md",
+  "specs/009-refactor-puzzle-architecture/contracts/operator-cli.md",
 ]);
 
 const DELETED_LAYOUT_PATHS = [
@@ -95,7 +110,8 @@ async function activeRepositoryPaths(): Promise<string[]> {
 function isActiveReferenceScope(path: string): boolean {
   return (
     path !== "tests/integration/verification.test.ts" &&
-    (ROOT_CONFIGURATION_PATHS.has(path) ||
+    (CURRENT_GUIDANCE_PATHS.has(path) ||
+      ROOT_CONFIGURATION_PATHS.has(path) ||
       path.startsWith("src/") ||
       path.startsWith("python/palimpsest/") ||
       path.startsWith("python/tests/") ||
@@ -192,6 +208,17 @@ describe("active repository boundary", () => {
 
   test("has no active references to deleted paths or names", async () => {
     expect(await deletedReferences(await activeRepositoryPaths())).toEqual([]);
+  });
+
+  test("keeps migration-history guidance targeted to the current acceptance flow", async () => {
+    const quickstart = await readFile(
+      "specs/009-refactor-puzzle-architecture/quickstart.md",
+      "utf8",
+    );
+    expect(quickstart).toContain("one root `src/` application");
+    expect(quickstart).toContain("one `python/palimpsest` distribution");
+    expect(quickstart).not.toMatch(/\ball \d+ TypeScript cases pass\b/);
+    expect(quickstart).not.toMatch(/\ball \d+ .*Python cases.*pass\b/);
   });
 
   test("has no retired specification, evidence, package, or tool-state roots", async () => {

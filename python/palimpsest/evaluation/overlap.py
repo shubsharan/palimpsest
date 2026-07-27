@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -16,11 +16,26 @@ SourceKind = Literal["private-ciphertext", "plaintext"]
 MatchKind = Literal["exact", "normalized"]
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_GIT_OBJECT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+@dataclass(frozen=True)
+class CommittedContent:
+    committed_path: str
+    committed_blob_id: str
+    content: str | bytes
+
+    def __post_init__(self) -> None:
+        if not self.committed_path:
+            raise ValueError("Committed path must be non-empty.")
+        if _GIT_OBJECT_ID.fullmatch(self.committed_blob_id) is None:
+            raise ValueError("Committed blob ID must be a lowercase Git object ID.")
 
 
 @dataclass(frozen=True)
 class OverlapFinding:
     committed_path: str
+    committed_blob_id: str
     source_kind: SourceKind
     source_id: str
     match_kind: MatchKind
@@ -30,12 +45,15 @@ class OverlapFinding:
     def __post_init__(self) -> None:
         if not self.committed_path or not self.source_id:
             raise ValueError("Overlap finding paths and source identities must be non-empty.")
+        if _GIT_OBJECT_ID.fullmatch(self.committed_blob_id) is None:
+            raise ValueError("Overlap finding blob ID must be a lowercase Git object ID.")
         if self.word_count < 1 or _DIGEST.fullmatch(self.sha256) is None:
             raise ValueError("Overlap finding span evidence is invalid.")
 
     def to_dict(self) -> dict[str, str | int]:
         return {
             "committedPath": self.committed_path,
+            "committedBlobId": self.committed_blob_id,
             "sourceKind": self.source_kind,
             "sourceId": self.source_id,
             "matchKind": self.match_kind,
@@ -108,7 +126,7 @@ def _exact_match(candidate: str, source: str, minimum_words: int) -> tuple[int, 
 
 def observe_long_span_overlap(
     *,
-    committed: Mapping[str, str | bytes],
+    committed: Iterable[CommittedContent],
     private_sources: Mapping[str, str],
     plaintext_sources: Mapping[str, str],
     minimum_words: int = 32,
@@ -126,8 +144,11 @@ def observe_long_span_overlap(
         ),
     ]
     findings: list[OverlapFinding] = []
-    for committed_path, raw_candidate in sorted(committed.items()):
-        candidate = _text(raw_candidate)
+    for committed_entry in sorted(
+        committed,
+        key=lambda item: (item.committed_path, item.committed_blob_id),
+    ):
+        candidate = _text(committed_entry.content)
         if candidate is None:
             continue
         candidate_words = _normalized_words(candidate)
@@ -145,7 +166,8 @@ def observe_long_span_overlap(
                 continue
             findings.append(
                 OverlapFinding(
-                    committed_path=committed_path,
+                    committed_path=committed_entry.committed_path,
+                    committed_blob_id=committed_entry.committed_blob_id,
                     source_kind=source_kind,
                     source_id=source_id,
                     match_kind=match_kind,
@@ -158,6 +180,7 @@ def observe_long_span_overlap(
             findings,
             key=lambda item: (
                 item.committed_path,
+                item.committed_blob_id,
                 item.source_kind,
                 item.source_id,
                 item.match_kind,
@@ -172,6 +195,39 @@ def _path_map(value: object, name: str) -> dict[str, str | bytes]:
     ):
         raise ValueError(f"{name} must map logical identifiers to file paths.")
     return {item_id: Path(path).read_bytes() for item_id, path in value.items()}
+
+
+def _committed_entries(value: object) -> tuple[CommittedContent, ...]:
+    if not isinstance(value, list):
+        raise ValueError("committed must be an array of provenance entries.")
+    entries: list[CommittedContent] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != {
+            "committedPath",
+            "committedBlobId",
+            "contentPath",
+        }:
+            raise ValueError(f"committed entry {index + 1} must contain exactly its provenance.")
+        committed_path = item["committedPath"]
+        committed_blob_id = item["committedBlobId"]
+        content_path = item["contentPath"]
+        if (
+            not isinstance(committed_path, str)
+            or not isinstance(committed_blob_id, str)
+            or not isinstance(content_path, str)
+        ):
+            raise ValueError(f"committed entry {index + 1} provenance must be strings.")
+        entries.append(
+            CommittedContent(
+                committed_path=committed_path,
+                committed_blob_id=committed_blob_id,
+                content=Path(content_path).read_bytes(),
+            )
+        )
+    keys = [(entry.committed_path, entry.committed_blob_id) for entry in entries]
+    if len(set(keys)) != len(keys):
+        raise ValueError("committed provenance entries must contain unique path and blob pairs.")
+    return tuple(entries)
 
 
 def validate_scan_metadata(value: object) -> dict[str, int]:
@@ -193,7 +249,7 @@ def main() -> None:
     request = json.loads(args.request.read_text(encoding="utf-8"))
     if not isinstance(request, dict):
         raise ValueError("Overlap request must be an object.")
-    committed = _path_map(request.get("committed"), "committed")
+    committed = _committed_entries(request.get("committed"))
     private = _path_map(request.get("privateSources"), "privateSources")
     plaintext = _path_map(request.get("plaintextSources"), "plaintextSources")
     scan = validate_scan_metadata(request.get("scan"))

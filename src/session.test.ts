@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { decodeAttemptSummary } from "./artifacts.js";
 import type { ModelAdapter, ModelSession, ModelTurn } from "./model.js";
+import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "./sandbox/contracts.js";
 import { runAgentSession } from "./session.js";
 import type { AgentToolSet } from "./tools.js";
 
@@ -83,6 +85,50 @@ describe("model session lifecycle", () => {
       { previous: "working", state: "finished", reason: "voluntary final response" },
       "agent-1",
     );
+  });
+
+  it("keeps an absent final response absent in the persisted session shape", async () => {
+    const result = await runAgentSession({
+      agentId: "agent-1",
+      prompt: "solve",
+      adapter: adapterWith({
+        respond: async () => ({
+          toolCalls: [],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        }),
+      }),
+      tools: createTools(),
+      tokenBudget: 20,
+      signal: new AbortController().signal,
+      getActivityCursor: () => 0,
+    });
+
+    expect(result).toEqual({
+      agentId: "agent-1",
+      state: "finished",
+      inputTokens: 1,
+      outputTokens: 1,
+      activityCursor: 0,
+      terminationReason: "voluntary final response",
+    });
+    expect(result).not.toHaveProperty("finalResponse");
+
+    const summary = decodeAttemptSummary({
+      attemptId: "attempt-no-text",
+      buildRoot: "/tmp/build",
+      tracePath: "/tmp/attempt/trace.jsonl",
+      traceMetadataPath: "/tmp/attempt/trace.meta.json",
+      frozenRoot: "/tmp/attempt/frozen",
+      sandbox: {
+        imageTag: SANDBOX_IMAGE_TAG,
+        imageId: `sha256:${"1".repeat(64)}`,
+        sourceDigest: "2".repeat(64),
+        profileVersion: 1,
+        ...SANDBOX_POLICY,
+      },
+      sessions: [result, { ...result, agentId: "agent-2" }, { ...result, agentId: "agent-3" }],
+    });
+    expect(summary.sessions[0]).not.toHaveProperty("finalResponse");
   });
 
   it("stops at the cumulative model-token boundary and cancels the session", async () => {

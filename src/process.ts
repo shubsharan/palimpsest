@@ -7,7 +7,7 @@ export interface ProcessOptions {
   deadline?: number;
   signal?: AbortSignal;
   maxOutputBytes?: number;
-  stdio?: "capture" | "inherit";
+  stdio?: "capture" | "inherit" | "stderr";
 }
 
 export interface ProcessResult {
@@ -51,16 +51,17 @@ export function runProcess(
   }
 
   return new Promise((resolveResult, reject) => {
-    const capture = options.stdio !== "inherit";
+    const capture = options.stdio === undefined || options.stdio === "capture";
+    const childOutput = capture
+      ? ("pipe" as const)
+      : options.stdio === "stderr"
+        ? process.stderr
+        : ("inherit" as const);
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       detached: process.platform !== "win32",
       env: options.env ?? {},
-      stdio: [
-        options.input === undefined ? "ignore" : "pipe",
-        capture ? "pipe" : "inherit",
-        capture ? "pipe" : "inherit",
-      ],
+      stdio: [options.input === undefined ? "ignore" : "pipe", childOutput, childOutput],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];

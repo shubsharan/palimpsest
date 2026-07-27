@@ -1,7 +1,6 @@
 # Tasks: Puzzle Architecture Refactor
 
-**Input**: Design documents from `/specs/009-refactor-puzzle-architecture/`  
-**Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`
+**Input**: Design documents from `/specs/009-refactor-puzzle-architecture/` **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`
 
 **Verification**: Tests are mandatory for deterministic puzzle mechanics, the five-command operator contract, current-version artifact decoding, trace partial order, sandbox behavior, focused ownership boundaries, overlap-failure durability, and a fresh offline flow.
 
@@ -164,6 +163,20 @@
 - [x] T047 Remove superseded specifications 006 and 008, `.artifacts-tmp`, ignored Gate/harness/replay output, obsolete package roots, generated caches, and unused Cursor state after confirming none are active runtime inputs
 - [x] T048 Recreate `python/.venv` from the frozen current lock so obsolete legacy dependencies are absent
 - [x] T049 Refresh `.gitignore`, align Feature 009 and current documentation with the clean-tree policy, run full verification, and audit the final tree for legacy folders and references
+
+---
+
+## Phase 9: Review Remediation and Continuous Verification
+
+**Purpose**: Resolve post-implementation review findings, strengthen current-record provenance and validation, and make the complete verification gate enforceable on every proposed change.
+
+- [x] T050 [P] Preserve the one-object CLI stdout contract during sandbox image builds, retain absent model final responses without synthesizing invalid empty strings, reject blank reviewer commands before evaluation side effects, and pass documented Docker client configuration through trusted host processes in `src/process.ts`, `src/build.ts`, `src/session.ts`, `src/evaluate.ts`, `src/sandbox/container.ts`, and focused tests
+- [x] T051 [P] Preserve logical Git path and blob provenance independently during overlap collection, add `committedBlobId` to current overlap findings, deduplicate materialized text by blob ID, and cover identical blobs at different paths plus historical blobs at one path in `src/overlap.ts`, `src/artifacts.ts`, `python/palimpsest/evaluation/overlap.py`, and focused tests
+- [x] T052 [P] Make the Python puzzle manifest reader validate every required field and semantic invariant and enforce status-specific TypeScript evaluation-record invariants in `python/palimpsest/puzzle/manifest.py`, `python/tests/`, `src/artifacts.ts`, and `src/artifacts.test.ts`
+- [x] T053 Update current Feature 009 artifact documentation for overlap provenance and strict evaluation/manifest semantics, remove stale exact test totals, and expand active-layout/reference verification in `specs/009-refactor-puzzle-architecture/`, `README.md`, `docs/architecture.md`, `docs/roadmap.md`, `AGENTS.md`, `CLAUDE.md`, and `tests/integration/verification.test.ts`
+- [x] T054 Add `.github/workflows/verify.yml` with exact tool pins, full-history checkout, dependency bootstrap, sandbox build, `pnpm verify`, and base-relative whitespace validation for pull requests and merge queues
+- [x] T055 Run focused TypeScript and Python regressions, formatting, linting, type checking, a fresh sandbox build, full `pnpm verify`, base-relative and working-tree whitespace checks, and a fresh offline build-run-overlap-evaluate-score flow
+- [ ] T056 Commit and push the remediation, obtain a green `verify` check on PR #15, require the strict `verify` status on `main`, update the PR description with qualitative verification evidence, and complete a final P1/P2 review
 
 ---
 

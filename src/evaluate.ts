@@ -1,7 +1,13 @@
 import { chmod, cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
 
-import { decodeAttemptSummary, decodeBuildManifest, decodeEvaluationRecord } from "./artifacts.js";
+import {
+  type AggregateScore,
+  decodeAggregateScore,
+  decodeAttemptSummary,
+  decodeBuildManifest,
+  decodeEvaluationRecord,
+} from "./artifacts.js";
 import type { AgentId } from "./model.js";
 import {
   type CommandSandbox,
@@ -26,14 +32,14 @@ export interface EvaluationSelection {
 export type ScoreHook = (request: {
   outputPath: string;
   ciphertextPath: string;
-}) => Promise<unknown>;
+}) => Promise<AggregateScore>;
 
 export interface EvaluationResult {
   status: EvaluationStatus;
   selection?: EvaluationSelection;
   execution?: SandboxCommandResult;
   outputPath?: string;
-  score?: unknown;
+  score?: AggregateScore;
   error?: string;
 }
 
@@ -95,6 +101,35 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   });
 }
 
+async function writeEvaluationResult(
+  evaluationRoot: string,
+  value: EvaluationResult,
+): Promise<EvaluationResult> {
+  const result = decodeEvaluationRecord(value);
+  await writeJson(join(evaluationRoot, "result.json"), result);
+  return result;
+}
+
+function validateReviewerSelection(selection: EvaluationSelection | undefined): void {
+  if (selection?.command !== undefined && selection.command.trim().length === 0) {
+    throw new Error("Reviewer command must contain non-whitespace shell source.");
+  }
+  if (selection?.notes !== undefined && selection.notes.trim().length === 0) {
+    throw new Error("Reviewer notes must contain non-whitespace text.");
+  }
+  if (selection !== undefined) {
+    const parts = selection.outputPath.split(/[\\/]/);
+    if (
+      posix.isAbsolute(selection.outputPath) ||
+      win32.isAbsolute(selection.outputPath) ||
+      selection.outputPath.includes("\0") ||
+      parts.some((part) => part.length === 0 || part === "." || part === "..")
+    ) {
+      throw new Error("Reviewer outputPath must be a safe relative path.");
+    }
+  }
+}
+
 export async function evaluateFrozenAttempt(options: {
   frozenWorkspacePath: string;
   frozenGitPath: string;
@@ -106,6 +141,7 @@ export async function evaluateFrozenAttempt(options: {
   observe?: EvaluationObserver;
   timeoutMs?: number;
 }): Promise<EvaluationResult> {
+  validateReviewerSelection(options.selection);
   await mkdir(options.evaluationRoot, { recursive: false });
   await writeJson(join(options.evaluationRoot, "selection.json"), {
     selectedAt: new Date().toISOString(),
@@ -114,8 +150,7 @@ export async function evaluateFrozenAttempt(options: {
   await options.observe?.("reviewer.selection", { selection: options.selection });
   if (options.selection === undefined || options.selection.command.trim().length === 0) {
     const result = withSelection("not-runnable", options.selection);
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return writeEvaluationResult(options.evaluationRoot, result);
   }
 
   let outputPath: string;
@@ -132,8 +167,7 @@ export async function evaluateFrozenAttempt(options: {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const result = withSelection("execution-error", options.selection, { error: detail });
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return writeEvaluationResult(options.evaluationRoot, result);
   }
 
   await options.observe?.("evaluation.started", {
@@ -160,8 +194,7 @@ export async function evaluateFrozenAttempt(options: {
       { error: detail },
     );
     const result = withSelection("execution-error", options.selection, { error: detail });
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return writeEvaluationResult(options.evaluationRoot, result);
   }
   await options.observe?.("evaluation.completed", { execution });
   if (execution.exitCode !== 0 || execution.timedOut) {
@@ -171,8 +204,7 @@ export async function evaluateFrozenAttempt(options: {
         ? "Reviewer-selected command timed out."
         : `Reviewer-selected command exited ${String(execution.exitCode)}.`,
     });
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return writeEvaluationResult(options.evaluationRoot, result);
   }
 
   try {
@@ -183,14 +215,12 @@ export async function evaluateFrozenAttempt(options: {
     );
     if ((await readFile(outputPath)).byteLength === 0) {
       const result = withSelection("no-output", options.selection, { execution, outputPath });
-      await writeJson(join(options.evaluationRoot, "result.json"), result);
-      return result;
+      return writeEvaluationResult(options.evaluationRoot, result);
     }
   } catch (error) {
     if (error instanceof WorkspaceFileError && error.failure === "missing") {
       const result = withSelection("no-output", options.selection, { execution, outputPath });
-      await writeJson(join(options.evaluationRoot, "result.json"), result);
-      return result;
+      return writeEvaluationResult(options.evaluationRoot, result);
     }
     const detail = error instanceof Error ? error.message : String(error);
     const result = withSelection("execution-error", options.selection, {
@@ -198,16 +228,14 @@ export async function evaluateFrozenAttempt(options: {
       outputPath,
       error: detail,
     });
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return writeEvaluationResult(options.evaluationRoot, result);
   }
 
   try {
     const score = await options.score({ outputPath, ciphertextPath: options.ciphertextPath });
     await options.observe?.("evaluation.scored", { score });
     const result = withSelection("scored", options.selection, { execution, outputPath, score });
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return await writeEvaluationResult(options.evaluationRoot, result);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await options.observe?.("evaluation.error", { error: detail });
@@ -216,8 +244,7 @@ export async function evaluateFrozenAttempt(options: {
       outputPath,
       error: detail,
     });
-    await writeJson(join(options.evaluationRoot, "result.json"), result);
-    return result;
+    return writeEvaluationResult(options.evaluationRoot, result);
   }
 }
 
@@ -232,6 +259,15 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if ((options.command === undefined) !== (options.outputPath === undefined)) {
     throw new Error("Reviewer command and output path must be provided together.");
   }
+  validateReviewerSelection(
+    options.command === undefined || options.outputPath === undefined
+      ? undefined
+      : {
+          command: options.command,
+          outputPath: options.outputPath,
+          ...(options.notes === undefined ? {} : { notes: options.notes }),
+        },
+  );
   const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
   const workspace = options.workspace ?? "agent-1";
   const selection: EvaluationSelection | undefined =
@@ -257,12 +293,14 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
     sandbox,
     selection,
     score: async ({ outputPath }) =>
-      runPythonJson(root, "palimpsest.evaluation.score", [
-        "--truth",
-        join(attempt.buildRoot, build.oracleRoot, "plaintext.txt"),
-        "--candidate",
-        outputPath,
-      ]),
+      decodeAggregateScore(
+        await runPythonJson(root, "palimpsest.evaluation.score", [
+          "--truth",
+          join(attempt.buildRoot, build.oracleRoot, "plaintext.txt"),
+          "--candidate",
+          outputPath,
+        ]),
+      ),
     observe: async (kind, data) => appendTraceEvent(attempt.tracePath, kind, data),
   });
   return decodeEvaluationRecord(

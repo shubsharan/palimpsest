@@ -27,7 +27,7 @@ The build manifest remains schema version 1:
 }
 ```
 
-Each stage retains `agentId`, `ordinal`, `releaseOffsetMs`, `sourcePath`, `tokenCount`, `sha256`, and `regime`.
+Each stage retains `agentId`, `ordinal`, `releaseOffsetMs`, `sourcePath`, `tokenCount`, `sha256`, and `regime`. The reader requires every declared field, rejects Boolean values in integer positions, validates safe relative paths and exact agent keys, and enforces the complete three-agent, six-stage geometry before either a direct consumer or the checker can use the build.
 
 ## `trace.meta.json`
 
@@ -110,7 +110,17 @@ On success the artifact remains:
 
 ```json
 {
-  "findings": [],
+  "findings": [
+    {
+      "committedPath": "notes/finding.txt",
+      "committedBlobId": "0123456789abcdef0123456789abcdef01234567",
+      "sourceKind": "plaintext",
+      "sourceId": "complete",
+      "matchKind": "normalized",
+      "wordCount": 32,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
   "scan": {
     "reachableObjectCount": 0,
     "reachableBlobReferenceCount": 0,
@@ -122,7 +132,7 @@ On success the artifact remains:
 }
 ```
 
-The scan describes current-ref reachability and never changes score or attempt validity.
+The scan describes current-ref reachability and never changes score or attempt validity. Each unique logical-path/blob pair remains observable, while the materialized text file is deduplicated by blob ID. The finding records both identities so identical content at multiple paths and historical versions at one path cannot collapse into one ambiguous path.
 
 If observation fails:
 
@@ -165,7 +175,12 @@ When a runnable selection exists, `selection.json` is persisted before command e
 }
 ```
 
-The optional `selection`, `execution`, `outputPath`, `score`, and `error` fields remain governed by `scored`, `not-runnable`, `no-output`, and `execution-error` semantics.
+The fields are governed by strict status invariants:
+
+- `scored` requires selection, successful execution, output path, and score, and forbids error.
+- `not-runnable` forbids selection, execution, output path, score, and error.
+- `no-output` requires selection, successful execution, and output path, and forbids score and error.
+- `execution-error` requires selection and error, permits execution and output context, and forbids score.
 
 ## Decoder Failure Rules
 

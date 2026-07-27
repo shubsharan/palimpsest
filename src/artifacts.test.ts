@@ -88,6 +88,7 @@ function overlapResult(): Record<string, unknown> {
     findings: [
       {
         committedPath: "notes/finding.txt",
+        committedBlobId: "b".repeat(40),
         sourceKind: "plaintext",
         sourceId: "complete",
         matchKind: "normalized",
@@ -270,6 +271,15 @@ describe("stored artifact decoders", () => {
       },
     ],
     [
+      "invalid committed blob id",
+      () => {
+        const value = overlapResult();
+        const findings = [...(value.findings as Record<string, unknown>[])];
+        findings[0] = { ...findings[0], committedBlobId: "not-an-object-id" };
+        return decodeOverlapResult({ ...value, findings });
+      },
+    ],
+    [
       "invalid finding enum",
       () => {
         const value = overlapResult();
@@ -347,8 +357,80 @@ describe("stored artifact decoders", () => {
       "status-field mismatch",
       () => decodeEvaluationRecord({ ...evaluationRecord(), status: "not-runnable" }),
     ],
+    [
+      "scored execution exited nonzero",
+      () => {
+        const value = evaluationRecord();
+        return decodeEvaluationRecord({
+          ...value,
+          execution: { ...(value.execution as object), exitCode: 1 },
+        });
+      },
+    ],
+    [
+      "scored execution timed out",
+      () => {
+        const value = evaluationRecord();
+        return decodeEvaluationRecord({
+          ...value,
+          execution: { ...(value.execution as object), timedOut: true },
+        });
+      },
+    ],
+    [
+      "no-output execution exceeded output",
+      () => {
+        const value = evaluationRecord();
+        return decodeEvaluationRecord({
+          ...value,
+          status: "no-output",
+          score: undefined,
+          execution: { ...(value.execution as object), outputExceeded: true },
+        });
+      },
+    ],
+    [
+      "not-runnable contains selection",
+      () =>
+        decodeEvaluationRecord({
+          status: "not-runnable",
+          selection: { command: "true", outputPath: "answer.txt" },
+        }),
+    ],
+    [
+      "execution-error contains score",
+      () =>
+        decodeEvaluationRecord({
+          ...evaluationRecord(),
+          status: "execution-error",
+          error: "scoring failed",
+        }),
+    ],
   ])("rejects malformed evaluation data: %s", (_name, decode) => {
     expect(decode).toThrow();
+  });
+
+  it.each([
+    ["not-runnable", { status: "not-runnable" }],
+    [
+      "no-output",
+      {
+        ...evaluationRecord(),
+        status: "no-output",
+        score: undefined,
+      },
+    ],
+    [
+      "execution-error after successful execution",
+      {
+        ...evaluationRecord(),
+        status: "execution-error",
+        score: undefined,
+        error: "output could not be scored",
+      },
+    ],
+  ])("accepts the valid %s field combination", (_name, value) => {
+    expect(decodeEvaluationRecord(value).status).toBe(value.status);
   });
 
   it.each(["puzzle-build.json", "attempt.json", "overlap.json", "result.json"])(

@@ -1,6 +1,7 @@
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -58,6 +59,36 @@ describe("trusted host process", () => {
       credential: null,
     });
     expect(result.stderr).toHaveLength(0);
+  });
+
+  it("can stream both child output channels to the parent stderr channel", async () => {
+    const root = await temporaryRoot();
+    const moduleUrl = pathToFileURL(join(process.cwd(), "src", "process.ts")).href;
+    const nestedSource = [
+      `const { runProcess } = await import(${JSON.stringify(moduleUrl)});`,
+      "const result = await runProcess(",
+      "  process.execPath,",
+      `  ["-e", ${JSON.stringify(
+        'process.stdout.write("child stdout\\n"); process.stderr.write("child stderr\\n");',
+      )}],`,
+      `  { cwd: ${JSON.stringify(root)}, env: {}, stdio: "stderr" },`,
+      ");",
+      "if (result.stdout.length !== 0 || result.stderr.length !== 0) process.exitCode = 2;",
+    ].join("\n");
+
+    const result = await runProcess(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "--eval", nestedSource],
+      {
+        cwd: process.cwd(),
+        env: {},
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toHaveLength(0);
+    expect(result.stderr.toString("utf8")).toContain("child stdout\n");
+    expect(result.stderr.toString("utf8")).toContain("child stderr\n");
   });
 
   it("applies an absolute deadline to the entire process group", async () => {

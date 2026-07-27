@@ -5,7 +5,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from palimpsest.evaluation.overlap import main, observe_long_span_overlap, validate_scan_metadata
+from palimpsest.evaluation.overlap import (
+    CommittedContent,
+    main,
+    observe_long_span_overlap,
+    validate_scan_metadata,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 GOLDEN = json.loads((ROOT / "tests/golden/behavior.json").read_text(encoding="utf-8"))
@@ -16,11 +21,22 @@ def words(prefix: str, count: int) -> str:
     return " ".join(f"{prefix}{index}" for index in range(count))
 
 
+def committed(path: str, content: str | bytes, blob: str = "a") -> CommittedContent:
+    return CommittedContent(
+        committed_path=path,
+        committed_blob_id=blob * 40,
+        content=content,
+    )
+
+
 def test_reports_obvious_exact_and_normalized_long_spans_without_content() -> None:
     raw = words("cipher", 48)
     normalized_copy = raw.upper().replace(" ", "  \n")
     findings = observe_long_span_overlap(
-        committed={"raw.txt": raw, "normalized.txt": normalized_copy},
+        committed=(
+            committed("raw.txt", raw),
+            committed("normalized.txt", normalized_copy, "b"),
+        ),
         private_sources={"agent-1/stage-01": raw},
         plaintext_sources={},
         minimum_words=32,
@@ -37,11 +53,11 @@ def test_reports_obvious_exact_and_normalized_long_spans_without_content() -> No
 def test_ignores_short_common_phrases_binary_blobs_and_encoded_content() -> None:
     raw = words("cipher", 20)
     findings = observe_long_span_overlap(
-        committed={
-            "short.txt": f"prefix {raw} suffix",
-            "binary.bin": b"\xff\xfe\x00\x01",
-            "encoded.txt": raw.encode().hex(),
-        },
+        committed=(
+            committed("short.txt", f"prefix {raw} suffix"),
+            committed("binary.bin", b"\xff\xfe\x00\x01", "b"),
+            committed("encoded.txt", raw.encode().hex(), "c"),
+        ),
         private_sources={"agent-1/stage-01": raw},
         plaintext_sources={},
         minimum_words=32,
@@ -54,7 +70,10 @@ def test_labels_plaintext_and_private_cipher_sources_separately() -> None:
     private = words("opaque", 40)
     plaintext = words("plain", 40)
     findings = observe_long_span_overlap(
-        committed={"relay.txt": private, "answer.txt": plaintext},
+        committed=(
+            committed("relay.txt", private),
+            committed("answer.txt", plaintext, "b"),
+        ),
         private_sources={"agent-3/stage-06": private},
         plaintext_sources={"complete": plaintext},
         minimum_words=32,
@@ -81,7 +100,23 @@ def test_cli_preserves_findings_and_echoes_validated_scan(
     request.write_text(
         json.dumps(
             {
-                "committed": {"raw.txt": str(committed)},
+                "committed": [
+                    {
+                        "committedPath": "raw.txt",
+                        "committedBlobId": "a" * 40,
+                        "contentPath": str(committed),
+                    },
+                    {
+                        "committedPath": "copies/raw.txt",
+                        "committedBlobId": "a" * 40,
+                        "contentPath": str(committed),
+                    },
+                    {
+                        "committedPath": "raw.txt",
+                        "committedBlobId": "b" * 40,
+                        "contentPath": str(committed),
+                    },
+                ],
                 "privateSources": {"agent-1/stage-01": str(private)},
                 "plaintextSources": {},
                 "scan": scan,
@@ -95,9 +130,43 @@ def test_cli_preserves_findings_and_echoes_validated_scan(
 
     result = json.loads(capsys.readouterr().out)
     assert result["scan"] == scan
-    assert [(finding["committedPath"], finding["matchKind"]) for finding in result["findings"]] == [
-        ("raw.txt", "exact")
+    assert [
+        (finding["committedPath"], finding["committedBlobId"], finding["matchKind"])
+        for finding in result["findings"]
+    ] == [
+        ("copies/raw.txt", "a" * 40, "exact"),
+        ("raw.txt", "a" * 40, "exact"),
+        ("raw.txt", "b" * 40, "exact"),
     ]
+
+
+def test_cli_rejects_duplicate_path_and_blob_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = tmp_path / "committed.txt"
+    content.write_text("committed content\n", encoding="utf-8")
+    entry = {
+        "committedPath": "notes.txt",
+        "committedBlobId": "a" * 40,
+        "contentPath": str(content),
+    }
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "committed": [entry, entry],
+                "privateSources": {},
+                "plaintextSources": {},
+                "scan": GOLDEN_OVERLAP["scan"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["palimpsest.evaluation.overlap", "--request", str(request)])
+
+    with pytest.raises(ValueError, match="unique path and blob"):
+        main()
 
 
 @pytest.mark.parametrize(

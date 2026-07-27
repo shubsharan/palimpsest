@@ -32,8 +32,7 @@ git diff --check
 
 Expected:
 
-- all 44 TypeScript cases pass;
-- all 37 retained Python cases, plus new focused cases, pass;
+- the complete TypeScript and Python suites pass;
 - ignored caches and empty directories do not affect repository-boundary verification;
 - version verification, formatting, linting, type checking, and both test runtimes are green.
 

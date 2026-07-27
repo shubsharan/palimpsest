@@ -78,7 +78,7 @@ async function buildImage(root: string, sourceDigest: string): Promise<void> {
     {
       cwd: root,
       env: dockerHostEnvironment(),
-      stdio: "inherit",
+      stdio: "stderr",
     },
   );
   if (result.signal !== null || result.exitCode !== 0) {

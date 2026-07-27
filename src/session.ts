@@ -143,7 +143,7 @@ export async function runAgentSession(options: {
       break;
     }
     if (turn.toolCalls.length === 0) {
-      finalResponse = turn.finalResponse ?? "";
+      finalResponse = turn.finalResponse;
       await transition("finished", "voluntary final response");
       break;
     }

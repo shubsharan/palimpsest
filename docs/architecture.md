@@ -215,7 +215,7 @@ The attempt trace records:
 
 This chronology lets a reviewer compare the hidden transition's evidence arrival with continued use of an older rule, peer communication, and later code or note changes. It does not require a canonical belief artifact and does not claim access to private chain of thought.
 
-The overlap observer searches only for obvious exact or normalized long spans shared between committed blobs and private evidence. It scans every unique text blob reachable from current Git refs, including content committed and later deleted, and processes each blob identity once. A separate traversal counts repeated blob references across reachable commit trees; binary and invalid UTF-8 blobs are skipped and counted. Reflog-only and unreachable objects are outside the observation. The observer runs after the attempt and never blocks Git, changes a score, invalidates a run, or expands into adversarial encoding detection.
+The overlap observer searches only for obvious exact or normalized long spans shared between committed blobs and private evidence. It retains every unique logical-path/blob pair reachable from current Git refs, including content committed and later deleted, while materializing each unique text blob only once. Findings record both `committedPath` and `committedBlobId`, so identical content at different paths and historical content at one path remain distinguishable. A separate traversal counts repeated blob references across reachable commit trees; binary and invalid UTF-8 blobs are skipped and counted. Reflog-only and unreachable objects are outside the observation. The observer runs after the attempt and never blocks Git, changes a score, invalidates a run, or expands into adversarial encoding detection.
 
 ## Failure Semantics
 
@@ -259,7 +259,7 @@ Verification is proportional to the active claims:
 - Evaluator tests cover reviewer selection ordering, `scored`, `not-runnable`, `no-output`, and `execution-error`; session and Git tests cover voluntary completion, waiting, cutoffs, ordinary branches, and peer-visible ref changes.
 - One fresh offline build-run-evaluate smoke test proves the active path without an external model call.
 
-The canonical acceptance commands are `pnpm verify`, `git diff --check`, and a fresh `pnpm puzzle:offline` run following `specs/009-refactor-puzzle-architecture/quickstart.md`.
+The canonical acceptance commands are `pnpm verify`, `git diff --check`, and a fresh `pnpm puzzle:offline` run following `specs/009-refactor-puzzle-architecture/quickstart.md`. Pull requests and merge-queue candidates reproduce the pinned environment, build the sandbox, and run the same verification as the required `verify` status check.
 
 Palimpsest does not require channel-capacity proofs, fixed publication replay, hostile-solver red teams, exact model replay, or a particular empirical agent outcome before the puzzle may be run.
 
