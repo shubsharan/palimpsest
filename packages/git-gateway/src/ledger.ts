@@ -31,7 +31,7 @@ export class CumulativeLedger {
     }
     const before = this.remainingBytes;
     const accepted = chargeBytes <= before;
-    const entry: LedgerEntry = {
+    const entry: LedgerEntry = Object.freeze({
       schemaVersion: 1,
       contractId: "push-ledger-entry",
       runId: this.runId,
@@ -42,7 +42,7 @@ export class CumulativeLedger {
       budgetBefore: before,
       budgetAfter: accepted ? before - chargeBytes : before,
       result: accepted ? "accepted" : "rejected",
-    };
+    });
     this.#effects.set(transactionId, entry);
     this.#entries.push(entry);
     return entry;
