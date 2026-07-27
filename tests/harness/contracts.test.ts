@@ -36,4 +36,29 @@ describe("offline harness contract families", () => {
       });
     });
   }
+
+  test("requires zero provider calls for an authorized completion", async () => {
+    const report = JSON.parse(
+      await readFile("packages/contracts/fixtures/valid/offline-harness-report.json", "utf8"),
+    );
+    report.externalModelRequestCount = 1;
+    expect(validateValue("offline-harness-report", report)).toMatchObject({
+      accepted: false,
+    });
+    report.result = "invalid";
+    report.liveModelValidationAuthorized = false;
+    expect(validateValue("offline-harness-report", report)).toMatchObject({
+      accepted: true,
+    });
+  });
+
+  test("keeps the frozen predeclaration schema-valid", async () => {
+    const predeclaration = JSON.parse(
+      await readFile("artifacts/harness/predeclaration.json", "utf8"),
+    );
+    expect(predeclaration).not.toHaveProperty("declarationInputs");
+    expect(validateValue("offline-harness-report", predeclaration)).toMatchObject({
+      accepted: true,
+    });
+  });
 });

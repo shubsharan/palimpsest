@@ -36,3 +36,16 @@ def test_harness_contract_families_reject_unknown_fields() -> None:
         verdict = validate_value(contract_id, value)
         assert not verdict.accepted
         assert verdict.reason == "unknown_field"
+
+
+def test_authorized_completion_requires_zero_provider_calls() -> None:
+    report = json.loads(
+        (ROOT / "packages/contracts/fixtures/valid/offline-harness-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    report["externalModelRequestCount"] = 1
+    assert not validate_value("offline-harness-report", report).accepted
+    report["result"] = "invalid"
+    report["liveModelValidationAuthorized"] = False
+    assert validate_value("offline-harness-report", report).accepted

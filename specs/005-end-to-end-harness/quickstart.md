@@ -58,14 +58,13 @@ The completion command verifies the exact terminal output set and writes the imm
 pnpm harness:offline
 ```
 
-The composed command runs build, preflight, one fresh fixture attempt, clean solve, grade, replay, redaction, and completion. It never discovers evidence through `current.json`.
+The composed command runs build and preflight once, then executes two fresh fixture attempts through clean solve, grade, replay, redaction, and completion. The first attempt is sealed as `rework` because no prior attempt exists; the second must leave it byte-identical and independently replayable before receiving a passing authorization. The command never discovers evidence through `current.json`.
 
 ## 7. Verify retry isolation and repository quality
 
 ```bash
-pnpm harness:offline
 pnpm verify
 git diff --check
 ```
 
-The second attempt must leave the first byte-identical and independently replayable. A passing completion report authorizes later Gate C/D model evaluation only; it does not claim empirical solver, revision, or communication performance.
+The passing completion report authorizes later Gate C/D model evaluation only; it does not claim empirical solver, revision, or communication performance.
