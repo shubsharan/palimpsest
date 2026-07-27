@@ -374,6 +374,13 @@ export async function runOfflineHarness(options: {
       freezeId: freeze.freezeId,
       externalModelRequestCount: 0,
       fixtureBehaviorIsEmpiricalModelEvidence: false,
+      containerEvidence: {
+        fixtureImageId: containerRuntime.fixtureImageId,
+        solverImageId: containerRuntime.solverImageId,
+        fixtureNetworkMode: "internal",
+        cleanSolverNetworkMode: "none",
+        authenticatedSmartHttpGateway: true,
+      },
     }),
   );
   return identity;

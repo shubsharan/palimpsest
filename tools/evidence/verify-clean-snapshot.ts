@@ -112,6 +112,7 @@ async function main(): Promise<void> {
         git: "2.48.1",
       },
       dependencyResolution: "offline-frozen",
+      excludedAcquiredInputs: ["artifacts/gate-b/inputs/models/", "artifacts/harness/attempts/"],
       sourceTreeChangesAfterVerification: 0,
       verifiedCommands: [
         "pnpm install --offline --frozen-lockfile",

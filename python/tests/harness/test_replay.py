@@ -21,6 +21,12 @@ ATTEMPT = (
     / "a06415240ffd63cdcad45fc1886b7a8989ad4c312b6827d54f5eae6ec62f654d"
     / "container-001"
 )
+pytestmark = pytest.mark.skipif(
+    not ATTEMPT.is_dir(),
+    reason=(
+        "the immutable replay attempt is runtime evidence and is intentionally excluded from Git"
+    ),
+)
 
 
 def test_reconstructs_event_freeze_git_ledger_and_submission_state() -> None:

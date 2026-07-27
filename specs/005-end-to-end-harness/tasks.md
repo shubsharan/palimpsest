@@ -119,7 +119,7 @@
 - [x] T057 [P] [US3] Add ref, object, snapshot, visibility, ledger, event, freeze, solver, score, and report replay tests in `python/tests/harness/test_replay.py`
 - [x] T058 [P] [US3] Add public report redaction and narrow-claim tests in `python/tests/harness/test_public_report.py`
 - [x] T059 [P] [US3] Add exact-attempt TypeScript/Python replay parity and tamper tests in `tests/harness/replay.test.ts`
-- [ ] T060 [P] [US3] Add build-to-report, zero-provider-call, and second-attempt isolation tests in `tests/harness/end-to-end.test.ts`
+- [x] T060 [P] [US3] Add build-to-report, zero-provider-call, and second-attempt isolation tests in `tests/harness/end-to-end.test.ts`
 
 ### Implementation for User Story 3
 
@@ -128,10 +128,10 @@
 - [x] T063 [P] [US3] Complete versioned score formulas and report assembly in `python/src/palimpsest/grading/score_report.py`
 - [x] T064 [US3] Implement trusted run-state and score replay in `python/src/palimpsest/replay/harness.py`
 - [x] T065 [US3] Implement redacted public report projection in `python/src/palimpsest/replay/public_report.py`
-- [ ] T066 [US3] Implement explicit-attempt grading orchestration in `tools/harness/grade.ts`
+- [x] T066 [US3] Implement explicit-attempt grading orchestration in `tools/harness/grade.ts`
 - [x] T067 [US3] Implement explicit-attempt replay orchestration in `tools/harness/replay.ts`
-- [ ] T068 [US3] Implement completion predicates, promotion, and live-model authorization decision in `tools/harness/report.ts`
-- [ ] T069 [US3] Implement the composed no-provider build-to-report command in `tools/harness/offline.ts`
+- [x] T068 [US3] Implement completion predicates, promotion, and live-model authorization decision in `tools/harness/report.ts`
+- [x] T069 [US3] Implement the composed no-provider build-to-report command in `tools/harness/offline.ts`
 
 **Checkpoint**: One command produces a replayable, redacted completion report whose only new authorization is later live Gate C/D validation.
 
@@ -146,8 +146,8 @@
 - [ ] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
 - [ ] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
 - [ ] T074 Validate every command and claim in `specs/005-end-to-end-harness/quickstart.md`
-- [ ] T075 Run two fresh `pnpm harness:offline` attempts and prove the first remains byte-identical and independently replayable
-- [ ] T076 Run `pnpm verify`, `pnpm verify:clean-snapshot`, and `git diff --check`
+- [x] T075 Run two fresh `pnpm harness:offline` attempts and prove the first remains byte-identical and independently replayable
+- [x] T076 Run `pnpm verify`, `pnpm verify:clean-snapshot`, and `git diff --check`
 - [ ] T077 Complete the exact Milestone 6 report and update implementation status in `docs/roadmap.md`
 
 ---

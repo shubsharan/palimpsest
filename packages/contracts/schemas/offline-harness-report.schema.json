@@ -47,7 +47,7 @@
         ]
       }
     },
-    "externalModelRequestCount": { "type": "integer", "const": 0 },
+    "externalModelRequestCount": { "type": "integer", "minimum": 0 },
     "liveModelValidationAuthorized": { "type": "boolean" },
     "empiricalModelEvidence": { "const": false }
   },
@@ -61,6 +61,7 @@
         "properties": {
           "state": { "const": "completed" },
           "completedStages": { "type": "array", "minItems": 10, "maxItems": 10 },
+          "externalModelRequestCount": { "type": "integer", "const": 0 },
           "liveModelValidationAuthorized": { "type": "boolean", "const": true }
         }
       },
