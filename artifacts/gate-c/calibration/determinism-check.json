@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runsCompared": 2,
+  "matching": true,
+  "firstRun": {
+    "privateInstanceSha256": "874bb7a6ab5af18e0b650761e37f488fcc0ed948c748517cc798a0d2d29c6e58",
+    "revealPlanSha256": "ef5a05e11ba88c9faa95d9ff2340a0aef8d2736d1276df9cadadf6ae6f295f4b"
+  },
+  "secondRun": {
+    "privateInstanceSha256": "874bb7a6ab5af18e0b650761e37f488fcc0ed948c748517cc798a0d2d29c6e58",
+    "revealPlanSha256": "ef5a05e11ba88c9faa95d9ff2340a0aef8d2736d1276df9cadadf6ae6f295f4b"
+  }
+}
