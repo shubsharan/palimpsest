@@ -16,13 +16,14 @@ Sync Impact Report
   - reviewed, no change: .specify/templates/checklist-template.md
   - reviewed, no change: .specify/templates/constitution-template.md
 - Runtime guidance:
-  - pending feature plan: AGENTS.md
-  - pending feature plan: CLAUDE.md
-  - pending feature implementation: docs/proposal.md
-  - pending feature implementation: docs/architecture.md
-  - pending feature implementation: docs/roadmap.md
-- Follow-up TODOs: clear pending entries before feature completion
+  - aligned: AGENTS.md
+  - aligned: CLAUDE.md
+  - aligned: docs/proposal.md
+  - aligned: docs/architecture.md
+  - aligned: docs/roadmap.md
+- Follow-up TODOs: none
 -->
+
 # Palimpsest Constitution
 
 ## Core Principles
