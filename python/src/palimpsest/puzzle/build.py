@@ -9,17 +9,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from palimpsest.contracts import canonical_json_bytes, sha256_hex
-from palimpsest.corpus.sources import SourceDefinition, load_chapters
-from palimpsest.gate_c.revision import build_revision
-from palimpsest.generation.cipher import apply_mapping
-from palimpsest.generation.key import stationary_key
-from palimpsest.generation.text import canonicalize_capitalization, render, tokenize, word_tokens
-from palimpsest.instance_pipeline.corpus import build_reference_corpus
-
+from .cipher import apply_mapping, stationary_key
+from .corpus import SourceDefinition, build_reference_corpus, load_chapters
 from .model import AGENT_IDS, STAGE_COUNT, EvidenceStage, PuzzleBuild
+from .revision import build_revision
+from .serialization import canonical_json_bytes, sha256_hex
+from .text import canonicalize_capitalization, render, tokenize, word_tokens
 
-SOURCE_PATH = Path("artifacts/gate-a/inputs/sources/middlemarch.txt")
+SOURCE_PATH = Path("fixtures/corpus/middlemarch.txt")
 SOURCE_ID = "middlemarch"
 SOURCE_FORMAT = "gutenberg-text"
 START_CHAPTER = 10

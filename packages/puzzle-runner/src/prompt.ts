@@ -1,10 +1,8 @@
 import type { AgentId } from "./config.js";
+import { SANDBOX_PATHS } from "./sandbox.js";
 
 export interface AgentPromptPaths {
   agentId: AgentId;
-  workspacePath: string;
-  evidencePath: string;
-  referenceCorpusPath: string;
 }
 
 export function buildAgentPrompt(paths: AgentPromptPaths): string {
@@ -14,8 +12,8 @@ export function buildAgentPrompt(paths: AgentPromptPaths): string {
     "",
     "Recover the plaintext of the complete ciphertext as accurately as you can. New private evidence may appear while you work. You can inspect your private evidence directory, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence, use ordinary Git, or wait for new activity. Return a final response when you are done.",
     "",
-    `Workspace: ${paths.workspacePath}`,
-    `Private evidence: ${paths.evidencePath}`,
-    `Reference corpus: ${paths.referenceCorpusPath}`,
+    `Workspace: ${SANDBOX_PATHS.workspace}`,
+    `Private evidence: ${SANDBOX_PATHS.evidence}`,
+    `Reference corpus: ${SANDBOX_PATHS.reference}`,
   ].join("\n");
 }

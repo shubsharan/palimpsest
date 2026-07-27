@@ -1,5 +1,6 @@
 import type { AgentAdapter, AgentModelRequest, AgentToolResult, TokenUsage } from "./adapters.js";
 import type { AgentId } from "./config.js";
+import { SandboxInfrastructureError } from "./sandbox.js";
 import type { AgentToolSet } from "./tools.js";
 
 export type SessionState =
@@ -168,6 +169,14 @@ export async function runAgentSession(options: {
           break;
         }
         const detail = error instanceof Error ? error.message : String(error);
+        if (error instanceof SandboxInfrastructureError) {
+          await observe("infrastructure.error", {
+            component: "command-sandbox",
+            error: detail,
+          });
+          await transition("infrastructure-error", detail);
+          break;
+        }
         output = { error: detail };
         await observe("tool.error", { id: call.id, name: call.name, error: detail });
       }

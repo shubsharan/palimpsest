@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -12,7 +12,9 @@ import {
   type AttemptConfig,
   type AttemptResult,
   type CheckerHook,
+  createDockerCommandSandbox,
   runAttempt,
+  SANDBOX_POLICY,
 } from "../../packages/puzzle-runner/src/index.js";
 
 import {
@@ -23,6 +25,7 @@ import {
   readJsonObject,
   requiredFlag,
   runProcess,
+  runProcessBuffer,
   runPythonJson,
 } from "./common.js";
 
@@ -244,46 +247,133 @@ function checkerHook(root: string, buildRoot: string): CheckerHook {
   };
 }
 
-async function collectCommittedFiles(
+export interface GitOverlapScan {
+  reachableObjectCount: number;
+  reachableBlobReferenceCount: number;
+  uniqueReachableBlobCount: number;
+  uniqueTextBlobCount: number;
+  repeatedTreeReferenceCount: number;
+  skippedNonTextBlobCount: number;
+}
+
+export interface CommittedFileCollection {
+  committed: Record<string, string>;
+  scan: GitOverlapScan;
+}
+
+function nonEmptyLines(value: string): string[] {
+  return value.split("\n").filter((line) => line.length > 0);
+}
+
+function parseTreeBlobIds(source: Buffer): string[] {
+  return source
+    .toString("utf8")
+    .split("\0")
+    .filter((entry) => entry.length > 0)
+    .flatMap((entry) => {
+      const tab = entry.indexOf("\t");
+      const metadata = (tab === -1 ? entry : entry.slice(0, tab)).split(/\s+/);
+      return metadata[1] === "blob" && metadata[2] ? [metadata[2]] : [];
+    });
+}
+
+export async function collectCommittedFiles(
   barePath: string,
   outputRoot: string,
-): Promise<Record<string, string>> {
+): Promise<CommittedFileCollection> {
   await mkdir(outputRoot, { recursive: true });
-  const refs = (
-    await runProcess(
-      "git",
-      ["--git-dir", barePath, "for-each-ref", "--format=%(refname)", "refs/heads"],
-      { cwd: dirname(barePath) },
-    )
-  ).stdout
-    .split("\n")
-    .filter((ref) => ref.length > 0);
-  const committed: Record<string, string> = {};
-  for (const ref of refs) {
-    const paths = (
-      await runProcess("git", ["--git-dir", barePath, "ls-tree", "-r", "--name-only", ref], {
+  const reachableObjectIds = [
+    ...new Set(
+      nonEmptyLines(
+        (
+          await runProcess(
+            "git",
+            ["--git-dir", barePath, "rev-list", "--objects", "--all", "--no-object-names"],
+            { cwd: dirname(barePath) },
+          )
+        ).stdout,
+      ),
+    ),
+  ];
+  const classifications =
+    reachableObjectIds.length === 0
+      ? ""
+      : (
+          await runProcess(
+            "git",
+            [
+              "--git-dir",
+              barePath,
+              "cat-file",
+              "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+            ],
+            {
+              cwd: dirname(barePath),
+              input: `${reachableObjectIds.join("\n")}\n`,
+            },
+          )
+        ).stdout;
+  const blobIds = nonEmptyLines(classifications).flatMap((line) => {
+    const [objectId, objectType] = line.split(" ");
+    return objectType === "blob" && objectId ? [objectId] : [];
+  });
+
+  const commitIds = nonEmptyLines(
+    (
+      await runProcess("git", ["--git-dir", barePath, "rev-list", "--all"], {
         cwd: dirname(barePath),
       })
-    ).stdout
-      .split("\n")
-      .filter((path) => path.length > 0);
-    for (const path of paths) {
-      const logicalId = `${ref}:${path}`;
-      if (committed[logicalId] !== undefined) continue;
-      const content = (
-        await runProcess("git", ["--git-dir", barePath, "show", `${ref}:${path}`], {
-          cwd: dirname(barePath),
-        })
-      ).stdout;
-      const destination = join(
-        outputRoot,
-        `${String(Object.keys(committed).length).padStart(4, "0")}-${basename(path)}`,
-      );
-      await writeFile(destination, content, "utf8");
-      committed[logicalId] = destination;
-    }
+    ).stdout,
+  );
+  const referencedBlobIds: string[] = [];
+  for (const commitId of commitIds) {
+    const tree = await runProcessBuffer(
+      "git",
+      ["--git-dir", barePath, "ls-tree", "-r", "-z", commitId],
+      { cwd: dirname(barePath) },
+    );
+    referencedBlobIds.push(...parseTreeBlobIds(tree.stdout));
   }
-  return committed;
+
+  const committed: Record<string, string> = {};
+  let skippedNonTextBlobCount = 0;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  for (const objectId of blobIds) {
+    const content = (
+      await runProcessBuffer("git", ["--git-dir", barePath, "cat-file", "blob", objectId], {
+        cwd: dirname(barePath),
+      })
+    ).stdout;
+    let text: string;
+    try {
+      text = decoder.decode(content);
+    } catch {
+      skippedNonTextBlobCount += 1;
+      continue;
+    }
+    if (text.includes("\0")) {
+      skippedNonTextBlobCount += 1;
+      continue;
+    }
+    const destination = join(
+      outputRoot,
+      `${String(Object.keys(committed).length).padStart(4, "0")}-${objectId}.txt`,
+    );
+    await writeFile(destination, text, "utf8");
+    committed[objectId] = destination;
+  }
+
+  return {
+    committed,
+    scan: {
+      reachableObjectCount: reachableObjectIds.length,
+      reachableBlobReferenceCount: referencedBlobIds.length,
+      uniqueReachableBlobCount: blobIds.length,
+      uniqueTextBlobCount: Object.keys(committed).length,
+      repeatedTreeReferenceCount: referencedBlobIds.length - new Set(referencedBlobIds).size,
+      skippedNonTextBlobCount,
+    },
+  };
 }
 
 async function observeOverlap(
@@ -293,7 +383,10 @@ async function observeOverlap(
 ): Promise<Record<string, unknown>> {
   const overlapRoot = join(dirname(result.tracePath), "overlap-input");
   const manifest = requireBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  const committed = await collectCommittedFiles(result.frozen.barePath, join(overlapRoot, "git"));
+  const { committed, scan } = await collectCommittedFiles(
+    result.frozen.barePath,
+    join(overlapRoot, "git"),
+  );
   const privateSources = Object.fromEntries(
     manifest.stages.map((stage) => [
       `${stage.agentId}-stage-${stage.ordinal}`,
@@ -306,7 +399,7 @@ async function observeOverlap(
   const requestPath = join(overlapRoot, "request.json");
   await writeFile(
     requestPath,
-    `${JSON.stringify({ committed, privateSources, plaintextSources }, null, 2)}\n`,
+    `${JSON.stringify({ committed, privateSources, plaintextSources, scan }, null, 2)}\n`,
     "utf8",
   );
   const overlap = await runPythonJson(root, "palimpsest.puzzle.overlap", [
@@ -355,10 +448,12 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     if (!options.model) throw new Error("--model is required for the live OpenAI adapter.");
     adapter = openAIAdapter(options.model);
   }
+  const sandbox = await createDockerCommandSandbox({ root });
   const result = await runAttempt({
     config,
     adapter,
     checker: checkerHook(root, buildRoot),
+    sandbox,
   });
   const overlap = await observeOverlap(root, buildRoot, result);
   await writeFile(
@@ -368,7 +463,9 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
         attemptId: result.attemptId,
         buildRoot,
         tracePath: result.tracePath,
+        traceMetadataPath: result.traceMetadataPath,
         frozenRoot: result.frozen.root,
+        sandbox: { ...result.sandbox, ...SANDBOX_POLICY },
         sessions: result.sessions,
       },
       null,

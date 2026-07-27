@@ -12,6 +12,7 @@ import {
 } from "./git.js";
 import { JsonlObservationLog } from "./observations.js";
 import { buildAgentPrompt } from "./prompt.js";
+import type { CommandSandbox, SandboxIdentity } from "./sandbox.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 
@@ -20,12 +21,15 @@ export interface AttemptResult {
   sessions: readonly AgentSessionResult[];
   frozen: FrozenGitEnvironment;
   tracePath: string;
+  traceMetadataPath: string;
+  sandbox: SandboxIdentity;
 }
 
 export interface RunAttemptOptions {
   config: AttemptConfig;
   adapter: AgentAdapter;
   checker: CheckerHook;
+  sandbox: CommandSandbox;
   gitPollIntervalMs?: number;
 }
 
@@ -111,7 +115,9 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   // while the host is preparing Git clones and private directories.
   const startedAt = performance.now();
   const tracePath = join(config.artifactRoot, "trace.jsonl");
-  const observationLog = new JsonlObservationLog(tracePath, () => performance.now() - startedAt);
+  const observationLog = await JsonlObservationLog.create(tracePath, {
+    nowMs: () => performance.now() - startedAt,
+  });
   await observationLog.append("attempt.configured", {
     attemptId: config.attemptId,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
@@ -173,6 +179,10 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     const tools = createAgentTools({
       agentId,
       workspacePath: workspace.path,
+      evidencePath: evidencePaths[agentId],
+      referenceCorpusPath: config.referenceCorpusPath,
+      sharedGitPath: git.barePath,
+      sandbox: options.sandbox,
       activity,
       checker: options.checker,
       getReleasedStages: () => [...releasedStages[agentId]].sort((left, right) => left - right),
@@ -183,9 +193,6 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     });
     const prompt = buildAgentPrompt({
       agentId,
-      workspacePath: workspace.path,
-      evidencePath: evidencePaths[agentId],
-      referenceCorpusPath: config.referenceCorpusPath,
     });
     return runAgentSession({
       agentId,
@@ -229,7 +236,14 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     workspaces: frozen.workspaces,
   });
   await observationLog.flush();
-  return { attemptId: config.attemptId, sessions, frozen, tracePath };
+  return {
+    attemptId: config.attemptId,
+    sessions,
+    frozen,
+    tracePath,
+    traceMetadataPath: observationLog.metadataPath,
+    sandbox: options.sandbox.identity,
+  };
 }
 
 export class Supervisor {

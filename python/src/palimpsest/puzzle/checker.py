@@ -4,10 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
-from palimpsest.contracts import canonical_json_bytes
-
 from .model import AGENT_IDS, PuzzleBuild
 from .score import score_reconstruction
+from .serialization import canonical_json_bytes
 
 
 def load_puzzle_build(build_root: Path) -> PuzzleBuild:

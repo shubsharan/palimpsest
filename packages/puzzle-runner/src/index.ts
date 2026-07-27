@@ -5,6 +5,7 @@ export * from "./evaluator.js";
 export * from "./git.js";
 export * from "./observations.js";
 export * from "./prompt.js";
+export * from "./sandbox.js";
 export * from "./session.js";
 export * from "./supervisor.js";
 export * from "./tools.js";

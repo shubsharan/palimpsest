@@ -3,10 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from palimpsest.contracts import canonical_json_bytes
-from palimpsest.generation.text import word_tokens
-
 from .model import AggregateScore
+from .serialization import canonical_json_bytes
+from .text import word_tokens
 
 
 def _normalized_words(value: str) -> list[str]:

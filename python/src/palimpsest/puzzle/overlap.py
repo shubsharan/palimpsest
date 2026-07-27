@@ -7,10 +7,18 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
-from palimpsest.contracts import canonical_json_bytes
-from palimpsest.generation.text import word_tokens
-
 from .model import MatchKind, OverlapFinding, SourceKind
+from .serialization import canonical_json_bytes
+from .text import word_tokens
+
+SCAN_FIELDS = (
+    "reachableObjectCount",
+    "reachableBlobReferenceCount",
+    "uniqueReachableBlobCount",
+    "uniqueTextBlobCount",
+    "repeatedTreeReferenceCount",
+    "skippedNonTextBlobCount",
+)
 
 
 def _text(value: str | bytes) -> str | None:
@@ -133,6 +141,17 @@ def _path_map(value: object, name: str) -> dict[str, str | bytes]:
     return {item_id: Path(path).read_bytes() for item_id, path in value.items()}
 
 
+def validate_scan_metadata(value: object) -> dict[str, int]:
+    if not isinstance(value, dict) or set(value) != set(SCAN_FIELDS):
+        raise ValueError("scan must contain exactly the declared reachability counters.")
+    if any(
+        isinstance(value[field], bool) or not isinstance(value[field], int) or value[field] < 0
+        for field in SCAN_FIELDS
+    ):
+        raise ValueError("scan counters must be non-negative integers.")
+    return {field: value[field] for field in SCAN_FIELDS}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", type=Path, required=True)
@@ -144,6 +163,7 @@ def main() -> None:
     committed = _path_map(request.get("committed"), "committed")
     private = _path_map(request.get("privateSources"), "privateSources")
     plaintext = _path_map(request.get("plaintextSources"), "plaintextSources")
+    scan = validate_scan_metadata(request.get("scan"))
     findings = observe_long_span_overlap(
         committed=committed,
         private_sources={
@@ -154,7 +174,14 @@ def main() -> None:
         },
         minimum_words=args.minimum_words,
     )
-    print(canonical_json_bytes({"findings": [finding.to_dict() for finding in findings]}).decode())
+    print(
+        canonical_json_bytes(
+            {
+                "findings": [finding.to_dict() for finding in findings],
+                "scan": scan,
+            }
+        ).decode()
+    )
 
 
 if __name__ == "__main__":

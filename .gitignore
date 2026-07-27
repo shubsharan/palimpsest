@@ -12,6 +12,7 @@ node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 __pycache__/
 *.py[cod]
@@ -22,12 +23,4 @@ __pycache__/
 python/.venv/
 *.egg-info/
 
-.artifacts-tmp/
-artifacts/milestone-1/attempts/
-artifacts/gate-a/attempts/
-artifacts/**/attempts/
-artifacts/**/current.json
-artifacts/**/work/
-
-# Reproducibly acquired from the digest-pinned Hugging Face revision.
-artifacts/gate-b/inputs/models/
+artifacts/

@@ -1,11 +1,49 @@
-import { mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { ActivityBus } from "../src/activity.js";
-import { createAgentTools, executeLocalCommand, TOOL_DEFINITIONS } from "../src/tools.js";
+import { createAgentTools, TOOL_DEFINITIONS } from "../src/tools.js";
+import { FakeCommandSandbox } from "./helpers.js";
+
+async function toolFixture() {
+  const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
+  const workspace = join(root, "workspace");
+  const evidence = join(root, "evidence");
+  const sharedGit = join(root, "shared.git");
+  const reference = join(root, "reference.txt");
+  await Promise.all([
+    mkdir(workspace),
+    mkdir(evidence),
+    mkdir(sharedGit),
+    writeFile(reference, "reference\n"),
+  ]);
+  const sandbox = new FakeCommandSandbox();
+  const checkerRequests: string[] = [];
+  const tools = createAgentTools({
+    agentId: "agent-1",
+    workspacePath: workspace,
+    evidencePath: evidence,
+    referenceCorpusPath: reference,
+    sharedGitPath: sharedGit,
+    sandbox,
+    activity: new ActivityBus(),
+    getActivityCursor: () => 0,
+    checker: async ({ candidatePath }) => {
+      checkerRequests.push(candidatePath);
+      return {
+        matchedWords: 1,
+        totalWords: 2,
+        coverage: 1,
+        accuracy: 0.5,
+      };
+    },
+    getReleasedStages: () => [1],
+  });
+  return { root, workspace, evidence, sharedGit, reference, sandbox, checkerRequests, tools };
+}
 
 describe("agent tools", () => {
   it("gives every agent the same command, checker, and waiting tools", () => {
@@ -16,30 +54,26 @@ describe("agent tools", () => {
     ]);
   });
 
-  it("executes commands in the workspace and exposes only aggregate checker output", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
+  it("routes commands through the injected sandbox and exposes only aggregate checker output", async () => {
+    const fixture = await toolFixture();
+    const { sandbox, tools, workspace } = fixture;
     await writeFile(join(workspace, "candidate.txt"), "one two\n", "utf8");
-    const command = await executeLocalCommand({
+    const command = await tools.execute("run_command", {
       command: "pwd",
-      cwd: workspace,
       timeoutMs: 1_000,
     });
-    expect(command.exitCode).toBe(0);
-    expect(command.stdout.trim()).toBe(await realpath(workspace));
-
-    const tools = createAgentTools({
-      agentId: "agent-1",
-      workspacePath: workspace,
-      activity: new ActivityBus(),
-      getActivityCursor: () => 0,
-      checker: async () => ({
-        matchedWords: 1,
-        totalWords: 2,
-        coverage: 1,
-        accuracy: 0.5,
+    expect(command).toMatchObject({ exitCode: 0, timedOut: false });
+    expect(sandbox.requests).toEqual([
+      expect.objectContaining({
+        profile: "agent",
+        command: "pwd",
+        workspacePath: fixture.workspace,
+        evidencePath: fixture.evidence,
+        referenceCorpusPath: fixture.reference,
+        sharedGitPath: fixture.sharedGit,
       }),
-      getReleasedStages: () => [1],
-    });
+    ]);
+
     const checked = await tools.execute("check_reconstruction", {
       candidatePath: "candidate.txt",
     });
@@ -52,13 +86,44 @@ describe("agent tools", () => {
     expect(JSON.stringify(checked)).not.toMatch(/expected|mismatch|correctWords/);
   });
 
-  it("times out a long-running local command", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "palimpsest-timeout-"));
-    const result = await executeLocalCommand({
-      command: "sleep 2",
-      cwd: workspace,
-      timeoutMs: 20,
-    });
-    expect(result.timedOut).toBe(true);
+  it("rejects a checker candidate whose symlink escapes the workspace", async () => {
+    const { root, workspace, tools, checkerRequests } = await toolFixture();
+    const outside = join(root, "outside.txt");
+    await writeFile(outside, "secret\n");
+    await symlink(outside, join(workspace, "candidate.txt"));
+
+    await expect(
+      tools.execute("check_reconstruction", { candidatePath: "candidate.txt" }),
+    ).rejects.toThrow("resolves outside");
+    expect(checkerRequests).toEqual([]);
+  });
+
+  it("accepts a contained symlink to a regular checker candidate", async () => {
+    const { workspace, tools, checkerRequests } = await toolFixture();
+    await writeFile(join(workspace, "answer.txt"), "candidate\n");
+    await symlink("answer.txt", join(workspace, "candidate.txt"));
+
+    await expect(
+      tools.execute("check_reconstruction", { candidatePath: "candidate.txt" }),
+    ).resolves.toMatchObject({ matchedWords: 1 });
+    expect(checkerRequests).toHaveLength(1);
+  });
+
+  it("rejects checker directories and missing files", async () => {
+    const { workspace, tools } = await toolFixture();
+    await mkdir(join(workspace, "directory"));
+
+    await expect(
+      tools.execute("check_reconstruction", { candidatePath: "directory" }),
+    ).rejects.toThrow("regular file");
+    await expect(
+      tools.execute("check_reconstruction", { candidatePath: "missing.txt" }),
+    ).rejects.toThrow("does not exist");
+    await expect(
+      tools.execute("check_reconstruction", { candidatePath: "../outside.txt" }),
+    ).rejects.toThrow("inside the workspace");
+    await expect(
+      tools.execute("check_reconstruction", { candidatePath: "/absolute.txt" }),
+    ).rejects.toThrow("relative");
   });
 });

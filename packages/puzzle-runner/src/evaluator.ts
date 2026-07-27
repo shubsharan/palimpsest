@@ -1,7 +1,14 @@
 import { chmod, cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
-import { executeLocalCommand, type LocalCommandResult } from "./tools.js";
+import {
+  type CommandSandbox,
+  resolveWorkspacePath,
+  resolveWorkspaceRegularFile,
+  SandboxInfrastructureError,
+  type SandboxCommandResult,
+  WorkspaceFileError,
+} from "./sandbox.js";
 
 export type EvaluationStatus = "scored" | "not-runnable" | "no-output" | "execution-error";
 
@@ -19,7 +26,7 @@ export type ScoreHook = (request: {
 export interface EvaluationResult {
   status: EvaluationStatus;
   selection?: EvaluationSelection;
-  execution?: LocalCommandResult;
+  execution?: SandboxCommandResult;
   outputPath?: string;
   score?: unknown;
   error?: string;
@@ -76,8 +83,10 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 export async function evaluateFrozenAttempt(options: {
   frozenWorkspacePath: string;
+  frozenGitPath: string;
   evaluationRoot: string;
   ciphertextPath: string;
+  sandbox: CommandSandbox;
   selection: EvaluationSelection | undefined;
   score: ScoreHook;
   observe?: EvaluationObserver;
@@ -105,6 +114,7 @@ export async function evaluateFrozenAttempt(options: {
     });
     await makeWritable(workspacePath);
     outputPath = resolveOutputPath(workspacePath, options.selection.outputPath);
+    await resolveWorkspacePath(workspacePath, options.selection.outputPath, "Reviewer outputPath");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const result = withSelection("execution-error", options.selection, { error: detail });
@@ -116,20 +126,25 @@ export async function evaluateFrozenAttempt(options: {
     command: options.selection.command,
     outputPath: options.selection.outputPath,
   });
-  let execution: LocalCommandResult;
+  let execution: SandboxCommandResult;
   try {
-    execution = await executeLocalCommand({
+    execution = await options.sandbox.execute({
+      profile: "evaluation",
       command: options.selection.command,
-      cwd: workspacePath,
       timeoutMs: options.timeoutMs ?? 30_000,
-      env: {
-        PALIMPSEST_CIPHERTEXT: options.ciphertextPath,
-        PALIMPSEST_OUTPUT: outputPath,
-      },
+      workspacePath,
+      ciphertextPath: options.ciphertextPath,
+      frozenGitPath: options.frozenGitPath,
+      outputPath: options.selection.outputPath,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    await options.observe?.("evaluation.error", { error: detail });
+    await options.observe?.(
+      error instanceof SandboxInfrastructureError
+        ? "evaluation.infrastructure-error"
+        : "evaluation.error",
+      { error: detail },
+    );
     const result = withSelection("execution-error", options.selection, { error: detail });
     await writeJson(join(options.evaluationRoot, "result.json"), result);
     return result;
@@ -147,15 +162,18 @@ export async function evaluateFrozenAttempt(options: {
   }
 
   try {
+    outputPath = await resolveWorkspaceRegularFile(
+      workspacePath,
+      options.selection.outputPath,
+      "Reviewer outputPath",
+    );
     if ((await readFile(outputPath)).byteLength === 0) {
       const result = withSelection("no-output", options.selection, { execution, outputPath });
       await writeJson(join(options.evaluationRoot, "result.json"), result);
       return result;
     }
   } catch (error) {
-    const code =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
+    if (error instanceof WorkspaceFileError && error.failure === "missing") {
       const result = withSelection("no-output", options.selection, { execution, outputPath });
       await writeJson(join(options.evaluationRoot, "result.json"), result);
       return result;
