@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "fixedSeed17Build": {
+    "inputs": {
+      "seed": 17,
+      "stageIntervalMs": 25,
+      "transitionStage": 4,
+      "changedTokenMass": 0.2
+    },
+    "buildId": "build-3288b873a2da8ee75f4289f86ccf82c699292d975e263a3a07039cca62e20301",
+    "geometry": {
+      "agentCount": 3,
+      "stageCount": 6,
+      "transitionStage": 4
+    }
+  },
+  "offlineFixture": {
+    "inputs": {
+      "seed": 0,
+      "stageIntervalMs": 20,
+      "transitionStage": 4,
+      "changedTokenMass": 0.2,
+      "scenario": "collaborative-revision",
+      "tokenBudget": 100,
+      "wallTimeMs": 10000
+    },
+    "buildId": "build-ae72df272e36e174166945c67429f6ecfaf510a07f9be8821d044a26dc171dd1",
+    "agent1Stage1Checker": {
+      "matchedWords": 1528,
+      "totalWords": 1528,
+      "coverage": 1,
+      "accuracy": 1
+    },
+    "evaluationScore": {
+      "matchedWords": 0,
+      "totalWords": 27504,
+      "coverage": 1,
+      "accuracy": 0
+    },
+    "sessionTokenTotals": {
+      "agent-1": {
+        "inputTokens": 5,
+        "outputTokens": 4
+      },
+      "agent-2": {
+        "inputTokens": 13,
+        "outputTokens": 11
+      },
+      "agent-3": {
+        "inputTokens": 4,
+        "outputTokens": 3
+      }
+    },
+    "overlap": {
+      "findings": [],
+      "scan": {
+        "reachableObjectCount": 9,
+        "reachableBlobReferenceCount": 3,
+        "uniqueReachableBlobCount": 3,
+        "uniqueTextBlobCount": 3,
+        "repeatedTreeReferenceCount": 0,
+        "skippedNonTextBlobCount": 0
+      }
+    }
+  },
+  "minimumCliResults": {
+    "sandbox-build": ["imageTag", "imageId", "sourceDigest", "profileVersion"],
+    "build": ["buildId", "buildPath"],
+    "run": ["attemptId", "attemptRoot"],
+    "evaluate": ["status"],
+    "offline": ["build", "run", "evaluation"]
+  },
+  "traceInvariants": {
+    "firstEvent": "attempt.configured",
+    "stageReleaseCount": 18,
+    "releaseOffsetFormula": "(ordinal - 1) * 20",
+    "requiredOrder": [
+      ["agent-first-evidence", "agent-first-model-request"],
+      ["attempt.sessions-ended", "attempt.frozen"],
+      ["attempt.frozen", "overlap.observed"],
+      ["overlap.observed", "reviewer.selection"],
+      ["reviewer.selection", "evaluation.started"],
+      ["reviewer.selection", "evaluation.completed"],
+      ["reviewer.selection", "evaluation.scored"]
+    ],
+    "sequencesStartAt": 1,
+    "sequencesAreContiguous": true,
+    "elapsedTimesAreFiniteNonnegativeAndNondecreasing": true,
+    "fixtureInitialRulePrecedesStageFour": true,
+    "fixtureRevisedRuleFollowsStageFour": true
+  },
+  "deliberatelyNonGolden": [
+    "wall-clock timestamps",
+    "exact elapsed durations",
+    "temporary or absolute host paths",
+    "Docker image IDs",
+    "container names",
+    "Git commit or object IDs",
+    "exact git.changed count or placement",
+    "unconstrained concurrent event interleaving",
+    "provider or model behavior",
+    "exact JSON key sets"
+  ]
+}

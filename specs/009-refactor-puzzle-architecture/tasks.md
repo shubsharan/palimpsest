@@ -19,8 +19,9 @@
 
 **Purpose**: Capture only the protected scientific, command, historical, and user-owned inputs before relocating active code.
 
-- [ ] T001 Record the fixed seed-17 and seed-0 scientific values, normalized minimum CLI results, and contractual trace partial-order assertions from `specs/009-refactor-puzzle-architecture/contracts/behavior-baseline.md` in `tests/golden/behavior.json`
-- [ ] T002 Capture pre-migration digests for `specs/006-behavior-neutral-runner/`, `specs/008-runner-hardening-cleanup/`, `docs/proposal.md`, and the existing `.artifacts-tmp/gate-b-contract-cases.json`, record the values beside T002 in `specs/009-refactor-puzzle-architecture/tasks.md`, and do not modify, stage, move, or archive the protected paths
+- [x] T001 Record the fixed seed-17 and seed-0 scientific values, normalized minimum CLI results, and contractual trace partial-order assertions from `specs/009-refactor-puzzle-architecture/contracts/behavior-baseline.md` in `tests/golden/behavior.json`
+- [x] T002 Capture pre-migration digests for `specs/006-behavior-neutral-runner/`, `specs/008-runner-hardening-cleanup/`, `docs/proposal.md`, and the existing `.artifacts-tmp/gate-b-contract-cases.json`, record the values beside T002 in `specs/009-refactor-puzzle-architecture/tasks.md`, and do not modify, stage, move, or archive the protected paths
+  - Pre-migration evidence: Git tree `specs/006-behavior-neutral-runner/` = `fd426ed76cf31b1abd428a7c8f5b4c1dbf9cd9b7`; Git tree `specs/008-runner-hardening-cleanup/` = `3ad167d12a3d8d82d8c33e3e295e49919a9c053b`; Git blob `docs/proposal.md` = `7e0278e3d479c5bfdffdecc575259b43b7afa882`; SHA-256 `.artifacts-tmp/gate-b-contract-cases.json` = `b8ff040e34b865b9749dd545a83dbaf3f2dfcbb8245dddd0fe6e93c03f278c04`.
 
 **Checkpoint**: The narrow behavior baseline and preservation boundaries are recorded before any source path changes.
 
@@ -30,9 +31,12 @@
 
 **Purpose**: Prove the captured expectations against the current implementation before changing source discovery or command paths.
 
-- [ ] T003 Run the pre-move TypeScript suite from `package.json`, confirm the stable 43-of-44 baseline and isolated Docker rerun described in `specs/009-refactor-puzzle-architecture/contracts/behavior-baseline.md`, and record the results beside T003 in `specs/009-refactor-puzzle-architecture/tasks.md`
-- [ ] T004 Run the pre-move Python suite configured by `python/pyproject.toml`, confirm all 37 deterministic cases pass, and record the result beside T004 in `specs/009-refactor-puzzle-architecture/tasks.md`
-- [ ] T005 Execute the pre-move seed-17 build and seed-0 offline fixture through the scripts in `package.json` and confirm `tests/golden/behavior.json` contains every declared stable value and none of the deliberately non-golden values
+- [x] T003 Run the pre-move TypeScript suite from `package.json`, confirm the stable 43-of-44 baseline and isolated Docker rerun described in `specs/009-refactor-puzzle-architecture/contracts/behavior-baseline.md`, and record the results beside T003 in `specs/009-refactor-puzzle-architecture/tasks.md`
+  - Pre-move evidence (2026-07-27): after rebuilding the sandbox with system-level Git trust for the host-UID bind roots and running through the pinned Docker 29.2.1 client, the full suite reported 42/44: the expected repository-boundary defect plus the documented full-suite cancellation/cleanup timing blip. The immediate isolated Docker rerun passed 3/3, and the focused sandbox unit suite passed 5/5. No active source path had moved.
+- [x] T004 Run the pre-move Python suite configured by `python/pyproject.toml`, confirm all 37 deterministic cases pass, and record the result beside T004 in `specs/009-refactor-puzzle-architecture/tasks.md`
+  - Pre-move evidence (2026-07-27): `uv run --offline --locked pytest` from `python/` collected 37 tests and passed 37/37 with Python 3.12.4 and pytest 9.1.1.
+- [x] T005 Execute the pre-move seed-17 build and seed-0 offline fixture through the scripts in `package.json` and confirm `tests/golden/behavior.json` contains every declared stable value and none of the deliberately non-golden values
+  - Pre-move evidence (2026-07-27): the seed-17 build reproduced `build-3288b873a2da8ee75f4289f86ccf82c699292d975e263a3a07039cca62e20301` with 3 agents, 6 stages, and transition stage 4. A fresh seed-0 offline run reproduced `build-ae72df272e36e174166945c67429f6ecfaf510a07f9be8821d044a26dc171dd1`, token totals 5/4, 13/11, and 4/3, the 9/3/3/3 overlap scan with no findings, score 0/27504 with coverage 1 and accuracy 0, and every declared trace partial order. `tests/golden/behavior.json` contains the declared scientific/minimum-command values and explicitly excludes all deliberately non-golden categories.
 
 **Checkpoint**: The current implementation satisfies the narrow scientific/command baseline, apart from the already classified repository-boundary defect.
 
@@ -48,19 +52,20 @@
 
 > Write these assertions before the relocation and confirm they protect behavior rather than exact private representations.
 
-- [ ] T006 [P] [US1] Extend all five command contract cases for names, accepted flags, defaults, required relationships, absolute paths, minimum success fields, allowed extra fields, one-object stdout, and nonzero stderr failures in `tests/puzzle/cli.test.ts`
-- [ ] T007 [P] [US1] Add fixed-seed build identity, checker aggregate, reconstruction score, session totals, and trace partial-order golden assertions without exact event interleaving or exact JSON key equality in `tests/puzzle/offline.test.ts`
-- [ ] T008 [P] [US1] Reorganize deterministic build, geometry, checker, overlap, and scoring regressions at `python/tests/puzzle/` and `python/tests/evaluation/` against the values in `tests/golden/behavior.json`
-- [ ] T009 [P] [US1] Retain real-container identity, mounts, environment, resource limits, path containment, timeout, cancellation, output overflow, cleanup, and evaluation-image mismatch coverage in `tests/puzzle/sandbox.integration.test.ts`
+- [x] T006 [P] [US1] Extend all five command contract cases for names, accepted flags, defaults, required relationships, absolute paths, minimum success fields, allowed extra fields, one-object stdout, and nonzero stderr failures in `tests/puzzle/cli.test.ts`
+- [x] T007 [P] [US1] Add fixed-seed build identity, checker aggregate, reconstruction score, session totals, and trace partial-order golden assertions without exact event interleaving or exact JSON key equality in `tests/puzzle/offline.test.ts`
+- [x] T008 [P] [US1] Reorganize deterministic build, geometry, checker, overlap, and scoring regressions at `python/tests/puzzle/` and `python/tests/evaluation/` against the values in `tests/golden/behavior.json`
+- [x] T009 [P] [US1] Retain real-container identity, mounts, environment, resource limits, path containment, timeout, cancellation, output overflow, cleanup, and evaluation-image mismatch coverage in `tests/puzzle/sandbox.integration.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Relocate the TypeScript runtime and colocated Vitest inputs from `packages/puzzle-runner/` into the planned root modules under `src/`, preserving prompt text, tools, session outcomes, voluntary Git behavior, checker disclosure, trace semantics, and sandbox request/result contracts
-- [ ] T011 [US1] Consolidate `tools/puzzle/` into `src/cli.ts`, `src/flags.ts`, `src/build.ts`, `src/run.ts`, `src/evaluate.ts`, `src/offline.ts`, and `src/python.ts`, then atomically switch all five scripts and TypeScript/Vitest/lint/format discovery in `package.json`, `tsconfig.json`, `vitest.config.ts`, `oxlint.json`, and `oxfmt.json`
-- [ ] T012 [US1] Delete `packages/puzzle-runner/package.json`, `packages/puzzle-runner/tsconfig.json`, `pnpm-workspace.yaml`, the `@palimpsest/puzzle-runner` alias, and the obsolete workspace importer in `pnpm-lock.yaml` in the same slice that makes the root application test-discoverable
-- [ ] T013 [US1] Move `python/src/palimpsest` to `python/palimpsest`, move checker/overlap/score modules and tests into `python/palimpsest/evaluation/` and `python/tests/evaluation/`, update package discovery and pytest/Ruff roots in `python/pyproject.toml`, update TypeScript module invocations in `src/python.ts`, and regenerate `python/uv.lock` without changing dependency versions
-- [ ] T014 [US1] Centralize strict current-version build, attempt, overlap, and evaluation readers in `src/artifacts.ts`, wire them through `src/build.ts`, `src/run.ts`, `src/evaluate.ts`, and `src/offline.ts`, and verify a fresh artifact chain is consumed only by those readers
-- [ ] T015 [US1] Run `tests/puzzle/cli.test.ts`, `tests/puzzle/offline.test.ts`, `tests/puzzle/sandbox.integration.test.ts`, `python/tests/puzzle/`, and `python/tests/evaluation/` and reconcile every result with `tests/golden/behavior.json`
+- [x] T010 [US1] Relocate the TypeScript runtime and colocated Vitest inputs from `packages/puzzle-runner/` into the planned root modules under `src/`, preserving prompt text, tools, session outcomes, voluntary Git behavior, checker disclosure, trace semantics, and sandbox request/result contracts
+- [x] T011 [US1] Consolidate `tools/puzzle/` into `src/cli.ts`, `src/flags.ts`, `src/build.ts`, `src/run.ts`, `src/evaluate.ts`, `src/offline.ts`, and `src/python.ts`, then atomically switch all five scripts and TypeScript/Vitest/lint/format discovery in `package.json`, `tsconfig.json`, `vitest.config.ts`, `oxlint.json`, and `oxfmt.json`
+- [x] T012 [US1] Delete `packages/puzzle-runner/package.json`, `packages/puzzle-runner/tsconfig.json`, `pnpm-workspace.yaml`, the `@palimpsest/puzzle-runner` alias, and the obsolete workspace importer in `pnpm-lock.yaml` in the same slice that makes the root application test-discoverable
+- [x] T013 [US1] Move `python/src/palimpsest` to `python/palimpsest`, move checker/overlap/score modules and tests into `python/palimpsest/evaluation/` and `python/tests/evaluation/`, update package discovery and pytest/Ruff roots in `python/pyproject.toml`, update TypeScript module invocations in `src/python.ts`, and regenerate `python/uv.lock` without changing dependency versions
+- [x] T014 [US1] Centralize strict current-version build, attempt, overlap, and evaluation readers in `src/artifacts.ts`, wire them through `src/build.ts`, `src/run.ts`, `src/evaluate.ts`, and `src/offline.ts`, and verify a fresh artifact chain is consumed only by those readers
+- [x] T015 [US1] Run `tests/puzzle/cli.test.ts`, `tests/puzzle/offline.test.ts`, `tests/puzzle/sandbox.integration.test.ts`, `python/tests/puzzle/`, and `python/tests/evaluation/` and reconcile every result with `tests/golden/behavior.json`
+  - Post-move checkpoint (2026-07-27): the three focused TypeScript/Docker files passed 17/17 and the reorganized Python ownership suites passed 37/37. Fixed-seed identities, aggregate checker/scoring values, token totals, overlap counts, trace relationships, sandbox contracts, command boundaries, and minimum extensible results match `tests/golden/behavior.json`.
 
 **Checkpoint**: The root commands operate the same puzzle with the declared minimum results, and no operator workflow depends on the deleted command or package paths.
 
@@ -74,20 +79,20 @@
 
 ### Verification for User Story 2
 
-- [ ] T016 [P] [US2] Add active-layout assertions for one root application, one Python distribution, no workspace/alias/barrel/compatibility facade, and no references to deleted paths or names in `tests/integration/verification.test.ts`
-- [ ] T017 [P] [US2] Add focused provider decoding, exhaustive fixture-scenario, session lifecycle, and clock-controlled reveal tests in `src/provider.test.ts`, `src/fixture.test.ts`, `src/session.test.ts`, and `src/reveal.test.ts`
-- [ ] T018 [P] [US2] Move and extend focused activity, Git, overlap, trace, prompt, and tool tests in `src/activity.test.ts`, `src/git.test.ts`, `src/overlap.test.ts`, `src/trace.test.ts`, `src/prompt.test.ts`, and `src/tools.test.ts`
-- [ ] T019 [P] [US2] Add trusted-process lifecycle coverage in `src/process.test.ts` and split sandbox coverage among path containment, image/argument construction, and container lifecycle owners in `src/sandbox/workspace.test.ts`, `src/sandbox/docker.test.ts`, and `src/sandbox/container.test.ts`
-- [ ] T020 [P] [US2] Add pure manifest and shard/transition geometry tests plus evaluation-owner tests in `python/tests/puzzle/test_manifest.py`, `python/tests/puzzle/test_shards.py`, and `python/tests/evaluation/`
+- [x] T016 [P] [US2] Add active-layout assertions for one root application, one Python distribution, no workspace/alias/barrel/compatibility facade, and no references to deleted paths or names in `tests/integration/verification.test.ts`
+- [x] T017 [P] [US2] Add focused provider decoding, exhaustive fixture-scenario, session lifecycle, and clock-controlled reveal tests in `src/provider.test.ts`, `src/fixture.test.ts`, `src/session.test.ts`, and `src/reveal.test.ts`
+- [x] T018 [P] [US2] Move and extend focused activity, Git, overlap, trace, prompt, and tool tests in `src/activity.test.ts`, `src/git.test.ts`, `src/overlap.test.ts`, `src/trace.test.ts`, `src/prompt.test.ts`, and `src/tools.test.ts`
+- [x] T019 [P] [US2] Add trusted-process lifecycle coverage in `src/process.test.ts` and split sandbox coverage among path containment, image/argument construction, and container lifecycle owners in `src/sandbox/workspace.test.ts`, `src/sandbox/docker.test.ts`, and `src/sandbox/container.test.ts`
+- [x] T020 [P] [US2] Add pure manifest and shard/transition geometry tests plus evaluation-owner tests in `python/tests/puzzle/test_manifest.py`, `python/tests/puzzle/test_shards.py`, and `python/tests/evaluation/`
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Make `src/cli.ts` a dispatcher only and make `src/run.ts` lifecycle-only by moving stored-record, checker, overlap, Git, trace, prompt, and tool behavior to `src/artifacts.ts`, `src/checker.ts`, `src/overlap.ts`, `src/git.ts`, `src/trace.ts`, `src/prompt.ts`, and `src/tools.ts`
-- [ ] T022 [US2] Replace `AgentAdapter` with the single `ModelAdapter` contract in `src/model.ts`, move live OpenAI construction/decoding to `src/provider.ts`, move deterministic `collaborative-revision` behavior to `src/fixture.ts`, and inject one `MonotonicClock` from `src/reveal.ts` through `src/run.ts`
-- [ ] T023 [US2] Implement the explicit-environment, deadline/abort, process-group, listener-cleanup, and byte-limit primitive in `src/process.ts`, then split sandbox contracts/policy, workspace validation, Docker identity/arguments, and execution/cleanup into `src/sandbox/contracts.ts`, `src/sandbox/workspace.ts`, `src/sandbox/docker.ts`, and `src/sandbox/container.ts` without changing domain error classification
-- [ ] T024 [US2] Replace the mixed Python model with manifest-owned build/stage records in `python/palimpsest/puzzle/manifest.py`, pure geometry in `python/palimpsest/puzzle/shards.py`, score/overlap types beside `python/palimpsest/evaluation/score.py` and `python/palimpsest/evaluation/overlap.py`, and canonical JSON only in `python/palimpsest/serialization.py`
-- [ ] T025 [US2] Delete the unused `Supervisor`, `parseAttemptConfig`, deprecated adapter names, forwarding wrappers, package barrel, and residual deleted-layout imports from `src/`, `package.json`, `tsconfig.json`, `vitest.config.ts`, `python/pyproject.toml`, `pnpm-lock.yaml`, and `python/uv.lock`
-- [ ] T026 [US2] Run the colocated TypeScript suite under `src/`, the reorganized Python suite under `python/tests/`, and the active-layout assertions in `tests/integration/verification.test.ts`
+- [x] T021 [US2] Make `src/cli.ts` a dispatcher only and make `src/run.ts` lifecycle-only by moving stored-record, checker, overlap, Git, trace, prompt, and tool behavior to `src/artifacts.ts`, `src/checker.ts`, `src/overlap.ts`, `src/git.ts`, `src/trace.ts`, `src/prompt.ts`, and `src/tools.ts`
+- [x] T022 [US2] Replace `AgentAdapter` with the single `ModelAdapter` contract in `src/model.ts`, move live OpenAI construction/decoding to `src/provider.ts`, move deterministic `collaborative-revision` behavior to `src/fixture.ts`, and inject one `MonotonicClock` from `src/reveal.ts` through `src/run.ts`
+- [x] T023 [US2] Implement the explicit-environment, deadline/abort, process-group, listener-cleanup, and byte-limit primitive in `src/process.ts`, then split sandbox contracts/policy, workspace validation, Docker identity/arguments, and execution/cleanup into `src/sandbox/contracts.ts`, `src/sandbox/workspace.ts`, `src/sandbox/docker.ts`, and `src/sandbox/container.ts` without changing domain error classification
+- [x] T024 [US2] Replace the mixed Python model with manifest-owned build/stage records in `python/palimpsest/puzzle/manifest.py`, pure geometry in `python/palimpsest/puzzle/shards.py`, score/overlap types beside `python/palimpsest/evaluation/score.py` and `python/palimpsest/evaluation/overlap.py`, and canonical JSON only in `python/palimpsest/serialization.py`
+- [x] T025 [US2] Delete the unused `Supervisor`, `parseAttemptConfig`, deprecated adapter names, forwarding wrappers, package barrel, and residual deleted-layout imports from `src/`, `package.json`, `tsconfig.json`, `vitest.config.ts`, `python/pyproject.toml`, `pnpm-lock.yaml`, and `python/uv.lock`
+- [x] T026 [US2] Run the colocated TypeScript suite under `src/`, the reorganized Python suite under `python/tests/`, and the active-layout assertions in `tests/integration/verification.test.ts`
 
 **Checkpoint**: Maintainers can trace each command and runtime concern to one owner, with no compatibility-only surface.
 
@@ -101,16 +106,16 @@
 
 ### Verification for User Story 3
 
-- [ ] T027 [P] [US3] Add strict malformed build, attempt, overlap, trace, and evaluation decoder cases for invalid JSON, versions, types, enums, counters, paths, sandbox identity, and stage geometry in `src/artifacts.test.ts` and `src/trace.test.ts`
-- [ ] T028 [US3] Add post-freeze overlap-failure coverage proving nonzero stderr, no success stdout, readable `attempt.json`, intact trace/frozen inputs, no fabricated `overlap.json`, no failure sidecar, and successful later evaluation in `tests/puzzle/attempt-durability.test.ts`
-- [ ] T029 [US3] Extend `tests/puzzle/attempt-durability.test.ts` with an attempt-write failure that never starts overlap or exposes a partial summary and a diagnostic-append failure that leaves the original overlap error primary
+- [x] T027 [P] [US3] Add strict malformed build, attempt, overlap, trace, and evaluation decoder cases for invalid JSON, versions, types, enums, counters, paths, sandbox identity, and stage geometry in `src/artifacts.test.ts` and `src/trace.test.ts`
+- [x] T028 [US3] Add post-freeze overlap-failure coverage proving nonzero stderr, no success stdout, readable `attempt.json`, intact trace/frozen inputs, no fabricated `overlap.json`, no failure sidecar, and successful later evaluation in `tests/puzzle/attempt-durability.test.ts`
+- [x] T029 [US3] Extend `tests/puzzle/attempt-durability.test.ts` with an attempt-write failure that never starts overlap or exposes a partial summary and a diagnostic-append failure that leaves the original overlap error primary
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement complete same-directory temporary summary writing and atomic rename inside the exclusively created attempt root in `src/artifacts.ts`, without locks, hard-link publication, retries for concurrent writers, or migration machinery
-- [ ] T031 [US3] Reorder `src/run.ts` to end sessions, flush trace, freeze Git/workspaces, publish `attempt.json`, then observe overlap; on observation failure append `overlap.failed` best-effort and rethrow the original error without success JSON or `overlap.json`
-- [ ] T032 [US3] Allow `src/evaluate.ts` to evaluate every strictly decoded summarized attempt regardless of overlap presence while preserving selection-before-execution and status-specific score/error results
-- [ ] T033 [US3] Run `src/artifacts.test.ts`, `src/trace.test.ts`, and `tests/puzzle/attempt-durability.test.ts` and inspect the injected failure directories to confirm no partial summary or invented diagnostic artifact is visible
+- [x] T030 [US3] Implement complete same-directory temporary summary writing and atomic rename inside the exclusively created attempt root in `src/artifacts.ts`, without locks, hard-link publication, retries for concurrent writers, or migration machinery
+- [x] T031 [US3] Reorder `src/run.ts` to end sessions, flush trace, freeze Git/workspaces, publish `attempt.json`, then observe overlap; on observation failure append `overlap.failed` best-effort and rethrow the original error without success JSON or `overlap.json`
+- [x] T032 [US3] Allow `src/evaluate.ts` to evaluate every strictly decoded summarized attempt regardless of overlap presence while preserving selection-before-execution and status-specific score/error results
+- [x] T033 [US3] Run `src/artifacts.test.ts`, `src/trace.test.ts`, and `tests/puzzle/attempt-durability.test.ts` and inspect the injected failure directories to confirm no partial summary or invented diagnostic artifact is visible
 
 **Checkpoint**: A frozen run survives optional observation failure as a strict, readable, evaluatable current-version attempt.
 
@@ -124,15 +129,15 @@
 
 ### Verification for User Story 4
 
-- [ ] T034 [P] [US4] Derive active repository paths from cached plus nonignored untracked paths minus deleted paths and add ignored-cache, empty-directory, and unstaged-move cases in `tests/integration/verification.test.ts`
-- [ ] T035 [P] [US4] Add explicit `collaborative-revision` default/selection and unknown-scenario-before-side-effects cases in `src/fixture.test.ts` and `tests/puzzle/cli.test.ts`
-- [ ] T036 [P] [US4] Add a fresh build-run-overlap-evaluate decoder-chain assertion and minimum nested offline result checks in `tests/puzzle/offline.test.ts`
+- [x] T034 [P] [US4] Derive active repository paths from cached plus nonignored untracked paths minus deleted paths and add ignored-cache, empty-directory, and unstaged-move cases in `tests/integration/verification.test.ts`
+- [x] T035 [P] [US4] Add explicit `collaborative-revision` default/selection and unknown-scenario-before-side-effects cases in `src/fixture.test.ts` and `tests/puzzle/cli.test.ts`
+- [x] T036 [P] [US4] Add a fresh build-run-overlap-evaluate decoder-chain assertion and minimum nested offline result checks in `tests/puzzle/offline.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T037 [US4] Restrict `tests/integration/verification.test.ts` to current active scopes while excluding historical specifications from deleted-name assertions and proving ignored caches cannot change the result
-- [ ] T038 [US4] Ensure `package.json`, `tsconfig.json`, `vitest.config.ts`, `oxlint.json`, `oxfmt.json`, and `python/pyproject.toml` discover every relocated source/test path and no deleted path, while retaining `tools/verify-versions.ts`
-- [ ] T039 [US4] Run boundary verification twice with representative ignored caches present and absent, then run the unknown fixture failure and fresh offline flow from `specs/009-refactor-puzzle-architecture/quickstart.md`
+- [x] T037 [US4] Restrict `tests/integration/verification.test.ts` to current active scopes while excluding historical specifications from deleted-name assertions and proving ignored caches cannot change the result
+- [x] T038 [US4] Ensure `package.json`, `tsconfig.json`, `vitest.config.ts`, `oxlint.json`, `oxfmt.json`, and `python/pyproject.toml` discover every relocated source/test path and no deleted path, while retaining `tools/verify-versions.ts`
+- [x] T039 [US4] Run boundary verification twice with representative ignored caches present and absent, then run the unknown fixture failure and fresh offline flow from `specs/009-refactor-puzzle-architecture/quickstart.md`
 
 **Checkpoint**: Verification reports the active repository and fresh workflow identically in clean and previously used checkouts.
 
@@ -142,13 +147,13 @@
 
 **Purpose**: Align current documentation, remove only proven-obsolete material, and verify the complete greenfield cut.
 
-- [ ] T040 [P] Update the active root layout, command dispatcher, runtime ownership, artifact durability, current-version boundary, and verification commands in `README.md`, `docs/architecture.md`, `docs/roadmap.md`, `AGENTS.md`, and `CLAUDE.md`
-- [ ] T041 [P] Verify `docs/proposal.md` remains semantically unchanged, `specs/006-behavior-neutral-runner/` and `specs/008-runner-hardening-cleanup/` retain their pre-migration digests, and `.artifacts-tmp/gate-b-contract-cases.json` retains its pre-migration byte hash
-- [ ] T042 Remove only confirmed generated caches and empty legacy directories under `packages/puzzle-runner/`, `tools/puzzle/`, and `python/src/` after `tests/integration/verification.test.ts` proves no tracked or active source depends on them
-- [ ] T043 Build the current sandbox image, run focused TypeScript/Python/Docker suites, and confirm its returned identity fields and immutable ID through `containers/puzzle-sandbox/Dockerfile` and `tests/puzzle/sandbox.integration.test.ts`
-- [ ] T044 Run `pnpm verify` and `git diff --check`, then audit `src/`, `python/palimpsest/`, `tests/`, `package.json`, `tsconfig.json`, `vitest.config.ts`, `oxlint.json`, `oxfmt.json`, `pnpm-lock.yaml`, and `python/uv.lock` for deleted paths/names, compatibility aliases, migrations, replay paths, and exact-key assertions
-- [ ] T045 Execute a new `puzzle:offline` output using `specs/009-refactor-puzzle-architecture/quickstart.md`, decode every build/attempt/overlap/evaluation artifact through the active implementation, and compare only `tests/golden/behavior.json` scientific and minimum-CLI guarantees
-- [ ] T046 Audit every FR and SC in `specs/009-refactor-puzzle-architecture/spec.md` against source, focused tests, full verification, and the fresh offline artifacts, then mark completed tasks in `specs/009-refactor-puzzle-architecture/tasks.md`
+- [x] T040 [P] Update the active root layout, command dispatcher, runtime ownership, artifact durability, current-version boundary, and verification commands in `README.md`, `docs/architecture.md`, `docs/roadmap.md`, `AGENTS.md`, and `CLAUDE.md`
+- [x] T041 [P] Verify `docs/proposal.md` remains semantically unchanged, `specs/006-behavior-neutral-runner/` and `specs/008-runner-hardening-cleanup/` retain their pre-migration digests, and `.artifacts-tmp/gate-b-contract-cases.json` retains its pre-migration byte hash
+- [x] T042 Remove only confirmed generated caches and empty legacy directories under `packages/puzzle-runner/`, `tools/puzzle/`, and `python/src/` after `tests/integration/verification.test.ts` proves no tracked or active source depends on them
+- [x] T043 Build the current sandbox image, run focused TypeScript/Python/Docker suites, and confirm its returned identity fields and immutable ID through `containers/puzzle-sandbox/Dockerfile` and `tests/puzzle/sandbox.integration.test.ts`
+- [x] T044 Run `pnpm verify` and `git diff --check`, then audit `src/`, `python/palimpsest/`, `tests/`, `package.json`, `tsconfig.json`, `vitest.config.ts`, `oxlint.json`, `oxfmt.json`, `pnpm-lock.yaml`, and `python/uv.lock` for deleted paths/names, compatibility aliases, migrations, replay paths, and exact-key assertions
+- [x] T045 Execute a new `puzzle:offline` output using `specs/009-refactor-puzzle-architecture/quickstart.md`, decode every build/attempt/overlap/evaluation artifact through the active implementation, and compare only `tests/golden/behavior.json` scientific and minimum-CLI guarantees
+- [x] T046 Audit every FR and SC in `specs/009-refactor-puzzle-architecture/spec.md` against source, focused tests, full verification, and the fresh offline artifacts, then mark completed tasks in `specs/009-refactor-puzzle-architecture/tasks.md`
 
 ---
 

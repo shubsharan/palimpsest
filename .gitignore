@@ -1,4 +1,5 @@
 .DS_Store
+Thumbs.db
 .env
 .env.*
 !.env.example
@@ -20,7 +21,9 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .venv/
+venv/
 python/.venv/
 *.egg-info/
 
 artifacts/
+runs/

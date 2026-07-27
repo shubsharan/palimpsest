@@ -13,15 +13,16 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/palimpsest"]
+packages = ["palimpsest"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers"]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+src = ["."]
 target-version = "py312"
 
 [tool.ruff.lint]

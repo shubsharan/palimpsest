@@ -15,6 +15,8 @@ RUN apt-get update \
         sed \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /evidence /reference /git/shared.git /input \
+    && git config --system --add safe.directory /workspace \
+    && git config --system --add safe.directory /git/shared.git \
     && touch /input/ciphertext.txt
 
 WORKDIR /workspace
