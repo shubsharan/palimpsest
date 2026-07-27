@@ -23,7 +23,9 @@ ATTEMPT = (
 )
 pytestmark = pytest.mark.skipif(
     not ATTEMPT.is_dir(),
-    reason="the immutable replay attempt is runtime evidence and is intentionally excluded from Git",
+    reason=(
+        "the immutable replay attempt is runtime evidence and is intentionally excluded from Git"
+    ),
 )
 
 
