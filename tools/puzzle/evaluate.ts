@@ -5,6 +5,7 @@ import {
   type AgentId,
   type EvaluationResult,
   type EvaluationSelection,
+  createDockerCommandSandbox,
   evaluateFrozenAttempt,
 } from "../../packages/puzzle-runner/src/index.js";
 
@@ -37,9 +38,12 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if (
     typeof attempt.buildRoot !== "string" ||
     typeof attempt.tracePath !== "string" ||
-    typeof attempt.frozenRoot !== "string"
+    typeof attempt.frozenRoot !== "string" ||
+    typeof attempt.sandbox !== "object" ||
+    attempt.sandbox === null ||
+    typeof (attempt.sandbox as { imageId?: unknown }).imageId !== "string"
   ) {
-    throw new Error("Attempt summary is missing build, trace, or frozen paths.");
+    throw new Error("Attempt summary is missing build, trace, frozen, or sandbox identity.");
   }
   if ((options.command === undefined) !== (options.outputPath === undefined)) {
     throw new Error("Reviewer command and output path must be provided together.");
@@ -57,10 +61,16 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if (typeof build.publicCiphertextPath !== "string" || typeof build.oracleRoot !== "string") {
     throw new Error("Puzzle build is missing evaluation paths.");
   }
+  const sandbox = await createDockerCommandSandbox({
+    root,
+    expectedImageId: (attempt.sandbox as { imageId: string }).imageId,
+  });
   return evaluateFrozenAttempt({
     frozenWorkspacePath: join(attempt.frozenRoot, "workspaces", workspace),
+    frozenGitPath: join(attempt.frozenRoot, "shared.git"),
     evaluationRoot: join(attemptRoot, "evaluation"),
     ciphertextPath: join(attempt.buildRoot, build.publicCiphertextPath),
+    sandbox,
     selection,
     score: async ({ outputPath }) =>
       runPythonJson(root, "palimpsest.puzzle.score", [

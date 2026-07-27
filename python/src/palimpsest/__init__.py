@@ -1,1 +1,1 @@
-"""Trusted Python research-plane code for Palimpsest."""
+"""Deterministic puzzle mechanics for Palimpsest."""

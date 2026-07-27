@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
-import { realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
-
 import { ActivityBus, type ActivityEvent } from "./activity.js";
 import type { AgentId } from "./config.js";
+import {
+  type CommandSandbox,
+  resolveWorkspaceRegularFile,
+  type SandboxCommandResult,
+} from "./sandbox.js";
 
 export interface ToolDefinition {
   name: "run_command" | "check_reconstruction" | "wait_for_activity";
@@ -48,112 +49,6 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   },
 ];
 
-export interface LocalCommandResult {
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-  timedOut: boolean;
-}
-
-function localEnvironment(extra: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = {
-    LANG: "C.UTF-8",
-    LC_ALL: "C.UTF-8",
-  };
-  for (const key of ["PATH", "TMPDIR"] as const) {
-    if (process.env[key] !== undefined) environment[key] = process.env[key];
-  }
-  return { ...environment, ...extra };
-}
-
-function killProcess(child: ReturnType<typeof spawn>): void {
-  if (child.pid !== undefined && process.platform !== "win32") {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-      return;
-    } catch {
-      // The child may already have exited between the timeout and this signal.
-    }
-  }
-  child.kill("SIGKILL");
-}
-
-export function executeLocalCommand(options: {
-  command: string;
-  cwd: string;
-  timeoutMs: number;
-  signal?: AbortSignal;
-  env?: NodeJS.ProcessEnv;
-  maxOutputBytes?: number;
-}): Promise<LocalCommandResult> {
-  if (
-    options.command.length === 0 ||
-    options.command.length > 32_768 ||
-    options.command.includes("\0")
-  ) {
-    throw new Error("Command must contain between 1 and 32768 non-NUL characters.");
-  }
-  if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0) {
-    throw new Error("Command timeout must be a positive safe integer.");
-  }
-  const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024;
-  return new Promise((resolveResult, reject) => {
-    const child = spawn("/bin/sh", ["-lc", options.command], {
-      cwd: options.cwd,
-      detached: process.platform !== "win32",
-      env: localEnvironment(options.env),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let outputBytes = 0;
-    let timedOut = false;
-    let outputExceeded = false;
-    let settled = false;
-
-    const collect = (target: Buffer[], chunk: Buffer) => {
-      outputBytes += chunk.byteLength;
-      if (outputBytes > maxOutputBytes) {
-        outputExceeded = true;
-        killProcess(child);
-        return;
-      }
-      target.push(chunk);
-    };
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      killProcess(child);
-    }, options.timeoutMs);
-    const abort = () => killProcess(child);
-    options.signal?.addEventListener("abort", abort, { once: true });
-
-    child.once("error", (error) => {
-      clearTimeout(timeout);
-      options.signal?.removeEventListener("abort", abort);
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    });
-    child.once("close", (code) => {
-      clearTimeout(timeout);
-      options.signal?.removeEventListener("abort", abort);
-      if (settled) return;
-      settled = true;
-      const suffix = outputExceeded ? "\nCommand output exceeded the host safety limit." : "";
-      resolveResult({
-        exitCode: code,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: `${Buffer.concat(stderr).toString("utf8")}${suffix}`,
-        timedOut,
-      });
-    });
-  });
-}
-
 export interface CheckerMetrics {
   matchedWords: number;
   totalWords: number;
@@ -183,23 +78,10 @@ function requireObject(input: unknown): Record<string, unknown> {
 }
 
 async function resolveCandidate(workspacePath: string, candidatePath: unknown): Promise<string> {
-  if (
-    typeof candidatePath !== "string" ||
-    candidatePath.length === 0 ||
-    isAbsolute(candidatePath)
-  ) {
+  if (typeof candidatePath !== "string") {
     throw new Error("candidatePath must be a non-empty path relative to the workspace.");
   }
-  const workspace = await realpath(workspacePath);
-  const candidate = resolve(workspace, candidatePath);
-  const difference = relative(workspace, candidate);
-  if (
-    difference === ".." ||
-    difference.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
-    throw new Error("candidatePath must remain inside the workspace.");
-  }
-  return candidate;
+  return resolveWorkspaceRegularFile(workspacePath, candidatePath, "candidatePath");
 }
 
 function activitySummary(event: ActivityEvent): string {
@@ -211,6 +93,10 @@ function activitySummary(event: ActivityEvent): string {
 export function createAgentTools(options: {
   agentId: AgentId;
   workspacePath: string;
+  evidencePath: string;
+  referenceCorpusPath: string;
+  sharedGitPath: string;
+  sandbox: CommandSandbox;
   activity: ActivityBus;
   checker: CheckerHook;
   getReleasedStages: () => readonly number[];
@@ -228,12 +114,17 @@ export function createAgentTools(options: {
         if (!Number.isSafeInteger(requestedTimeout) || (requestedTimeout as number) <= 0) {
           throw new Error("run_command timeoutMs must be a positive safe integer.");
         }
-        return executeLocalCommand({
+        const request = {
+          profile: "agent" as const,
           command: input.command,
-          cwd: options.workspacePath,
           timeoutMs: requestedTimeout as number,
+          workspacePath: options.workspacePath,
+          evidencePath: options.evidencePath,
+          referenceCorpusPath: options.referenceCorpusPath,
+          sharedGitPath: options.sharedGitPath,
           ...(signal === undefined ? {} : { signal }),
-        });
+        };
+        return options.sandbox.execute(request) satisfies Promise<SandboxCommandResult>;
       }
       if (name === "check_reconstruction") {
         const candidatePath = await resolveCandidate(options.workspacePath, input.candidatePath);

@@ -8,7 +8,7 @@ The delivery order follows usable behavior: build the puzzle, let agents work fr
 
 ## Current Status
 
-Feature 006 defines the active behavior-neutral runner. The current implementation work establishes three persistent concurrent sessions, private six-stage evidence streams, one hidden shared partial re-key, ordinary shared Git, aggregate checking, token and wall-time cutoffs, reviewer-selected final execution, and raw observational traces.
+Feature 006 records the behavior-neutral runner design. Feature 008 implements its current operational boundary: a standard Docker command sandbox, one cross-process trace, reachable-history observation, and removal of the superseded Gate-era tree. It does not change the puzzle or rewrite feature 006.
 
 The project is complete when the documented build-run-evaluate path works end to end and the runner neither prescribes nor repairs agent collaboration.
 
@@ -50,6 +50,7 @@ Deliver `puzzle:run`.
 - Start exactly three independent persistent model sessions.
 - Tell every agent that two peers are working concurrently with different evidence and that Git is the shared team channel.
 - Provide equivalent local tools, reference data, ordinary Git, aggregate checking, and activity waiting.
+- Run model-authored commands in a fixed Docker sandbox with `/workspace`, `/evidence`, `/reference`, `/git/shared.git`, and `/tmp` as the only declared surfaces.
 - Release six private stages on one monotonic schedule independent of model behavior.
 - Wake waiting sessions on private-stage or peer-visible Git activity without synchronizing the team.
 - Allow unlimited response, tool, checker, and Git cycles within cumulative per-agent token budgets and one global wall-time cutoff.
@@ -63,26 +64,34 @@ Deliver `puzzle:evaluate` and the private checker.
 
 - Return only matched-word count, total-word count, coverage, accuracy, or a plain error for currently visible private evidence.
 - Let a reviewer inspect frozen work and record the selected command and output path before execution.
-- Run the selected solver against the complete ciphertext without oracle or public-network access.
+- Run the selected solver in its own sandbox with the frozen workspace, complete ciphertext, frozen Git, and temporary storage, but no oracle, peer evidence, host files, credentials, or public network.
 - Report `scored`, `not-runnable`, `no-output`, or `execution-error`.
-- Preserve raw model/tool activity, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, and scores.
-- Report only obvious exact or normalized raw overlap after the run, without blocking, warning, rescoring, or invalidating.
+- Preserve normalized model-turn summaries, full tool arguments/results, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, scores, sandbox image identity, and effective operational limits.
+- Resume one validated, redacted trace across run, overlap, and evaluation processes with contiguous sequence numbers and nondecreasing elapsed times.
+- Report only obvious exact or normalized raw overlap from unique text blobs reachable through current refs, including committed-then-deleted content; count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
 
 This step is done when successful, partial, missing, ambiguous, broken, raw-sharing, repeated-checking, and no-Git fixtures all remain inspectable outcomes.
 
 ### 5. Simplify the Active Surface
 
-Make the three canonical commands the project entrypoints:
+Make the sandbox preparation and three canonical puzzle commands the project entrypoints:
 
 ```bash
-pnpm puzzle:build
-pnpm puzzle:run
-pnpm puzzle:evaluate -- --attempt <attempt-path>
+pnpm puzzle:sandbox:build
+pnpm puzzle:build -- --output artifacts/build-17 --seed 17
+pnpm puzzle:run -- \
+  --build artifacts/build-17 \
+  --output artifacts/attempt-17 \
+  --adapter openai \
+  --model "<model>" \
+  --token-budget 200000 \
+  --wall-time-ms 3600000
+pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 ```
 
-Keep code that directly supports generation, staged delivery, sessions, Git, checking, observation, evaluation, and scoring. Remove active command paths and runtime dependencies whose purpose is Git byte accounting, publication slots, structured hypotheses, private deliverables, exact artifact replay, gate authorization, adversarial compression, hostile-solver promotion, or red-team release.
+Keep code that directly supports generation, staged delivery, sessions, Git, checking, observation, evaluation, scoring, and the standard command sandbox. Remove active command paths and runtime dependencies whose purpose is Git byte accounting, publication slots, structured hypotheses, private deliverables, exact artifact replay, gate authorization, adversarial compression, hostile-solver promotion, or red-team release.
 
-The repository may retain research results and numbered feature records as evidence of completed work. Current product docs, runtime guidance, package scripts, and code paths must describe only the active puzzle.
+Remove tracked historical run artifacts and specifications 001 through 005 from the active tree. Preserve specification 006 unchanged as the completed behavior-neutral design record, keep generated attempts untracked, and use Git history as the archive for all removed implementation, specifications, and artifacts. Current product docs, runtime guidance, package scripts, and code paths describe only the active puzzle.
 
 ### 6. Verify the Puzzle Path
 
@@ -91,6 +100,9 @@ Run proportional verification:
 - format and link checks for current documentation;
 - Python unit and property tests for build, partial re-key, checker, overlap observer, and scorer;
 - TypeScript tests for prompt neutrality, session independence, stage timing, wake behavior, Git, cutoffs, freeze, and evaluation;
+- Docker-backed tests for role-specific mounts, environment isolation, public-network denial, path containment, resource termination, and orphan-free cleanup;
+- trace tests for validated resumption, shared redaction, contiguous sequence, and nondecreasing elapsed time;
+- Git-history tests for committed-then-deleted text, unique blob processing, repeated tree references, and skipped non-text objects;
 - fixture cases for diverse model behaviors and all evaluation statuses;
 - one fresh `puzzle:offline` build-run-evaluate smoke test without an external model call;
 - root formatting, linting, type checking, tests, and `git diff --check`.
@@ -103,12 +115,15 @@ Palimpsest is delivered when:
 
 - one command builds a deterministic three-stream, six-stage puzzle with one hidden shared partial re-key;
 - one command runs exactly three persistent concurrent sessions with the explicit team/Git prompt and no prescribed workflow;
+- model-authored and reviewer-selected commands run only inside their fixed Docker profiles, and sandbox identity and limits remain operational metadata rather than validity criteria;
 - each agent can use local tools, ordinary shared Git, aggregate private checking, and activity waiting;
 - only voluntary completion, per-agent cumulative token exhaustion, and the global wall-time cutoff end model work;
 - the runner freezes whatever work exists without requiring commits, checkpoints, manifests, or private submissions;
 - a reviewer can record and execute the best inferred solver path against the complete ciphertext;
-- deterministic scoring and raw observation preserve model outcomes separately from infrastructure failures;
-- obvious raw overlap is observational only;
+- deterministic scoring and normalized observation preserve model outcomes separately from infrastructure failures;
+- one validated trace preserves strict chronology across live and post-run processes;
+- obvious raw overlap covers every reachable text blob once, reports repeated tree references and skipped non-text objects, and remains observational only;
+- obsolete Gate-era code, dependencies, tracked artifacts, and specifications 001 through 005 are absent from the active tree while specification 006 remains unchanged and Git history remains the archive;
 - the active commands and docs contain no Git metering, publication slots, behavioral gates, solver schema, exact replay, or red-team release requirement; and
 - a fresh offline fixture and the repository verification suite pass.
 

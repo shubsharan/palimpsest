@@ -1,11 +1,19 @@
 import { spawn } from "node:child_process";
-import { access, appendFile, readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
+
+import { JsonlObservationLog } from "../../packages/puzzle-runner/src/observations.js";
 
 export interface ProcessResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+export interface BufferProcessResult {
+  exitCode: number;
+  stdout: Buffer;
+  stderr: Buffer;
 }
 
 export function parseFlags(argv: readonly string[]): Map<string, string> {
@@ -63,30 +71,43 @@ export function numberFlag(
 export function runProcess(
   command: string,
   args: readonly string[],
-  options: { cwd: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv },
+  options: { cwd: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv; input?: string | Buffer },
 ): Promise<ProcessResult> {
+  return runProcessBuffer(command, args, options).then((result) => ({
+    exitCode: result.exitCode,
+    stdout: result.stdout.toString("utf8"),
+    stderr: result.stderr.toString("utf8"),
+  }));
+}
+
+export function runProcessBuffer(
+  command: string,
+  args: readonly string[],
+  options: { cwd: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv; input?: string | Buffer },
+): Promise<BufferProcessResult> {
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdin.end(options.input);
     child.once("error", reject);
     child.once("close", (code, signal) => {
       const result = {
         exitCode: code ?? 1,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
+        stdout: Buffer.concat(stdout),
+        stderr: Buffer.concat(stderr),
       };
       if (signal !== null || result.exitCode !== 0) {
         reject(
           new Error(
-            `${command} ${args.join(" ")} failed${signal === null ? ` with exit ${result.exitCode}` : ` from ${signal}`}: ${result.stderr.trim()}`,
+            `${command} ${args.join(" ")} failed${signal === null ? ` with exit ${result.exitCode}` : ` from ${signal}`}: ${result.stderr.toString("utf8").trim()}`,
           ),
         );
         return;
@@ -154,12 +175,6 @@ export async function appendTraceEvent(
   kind: string,
   data: unknown,
 ): Promise<void> {
-  const source = await readFile(tracePath, "utf8");
-  const lines = source.split("\n").filter((line) => line.length > 0);
-  const last = lines.at(-1);
-  const sequence =
-    last === undefined
-      ? 1
-      : ((JSON.parse(last) as { sequence?: number }).sequence ?? lines.length) + 1;
-  await appendFile(tracePath, `${JSON.stringify({ sequence, atMs: 0, kind, data })}\n`, "utf8");
+  const log = await JsonlObservationLog.open(tracePath);
+  await log.append(kind, data);
 }

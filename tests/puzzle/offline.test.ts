@@ -18,6 +18,7 @@ describe("offline behavior-neutral runner", () => {
     );
     expect(result.evaluation.status).toBe("scored");
     await access(join(output, "attempt", "trace.jsonl"));
+    await access(join(output, "attempt", "trace.meta.json"));
     await access(join(output, "attempt", "overlap.json"));
     await access(join(output, "attempt", "frozen", "shared.git"));
     const trace = await readFile(join(output, "attempt", "trace.jsonl"), "utf8");
@@ -46,6 +47,16 @@ describe("offline behavior-neutral runner", () => {
     expect(trace).toContain('"kind":"tool.started"');
     expect(trace).toContain('"kind":"reviewer.selection"');
     expect(trace).toContain('"kind":"evaluation.scored"');
+    expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index + 1));
+    expect(
+      events.every((event, index) => index === 0 || event.atMs >= events[index - 1]!.atMs),
+    ).toBe(true);
+    const overlapSequence = events.find((event) => event.kind === "overlap.observed")?.sequence;
+    const selectionSequence = events.find((event) => event.kind === "reviewer.selection")?.sequence;
+    const scoreSequence = events.find((event) => event.kind === "evaluation.scored")?.sequence;
+    expect(overlapSequence).toBeDefined();
+    expect(selectionSequence).toBeGreaterThan(overlapSequence!);
+    expect(scoreSequence).toBeGreaterThan(selectionSequence!);
     const initialRule = events.find((event) => JSON.stringify(event).includes("mapping=v1"));
     const revisedRule = events.find((event) => JSON.stringify(event).includes("mapping=v2"));
     const transitionEvidenceSequence = Math.max(

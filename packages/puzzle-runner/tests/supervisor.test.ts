@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 
 import { AGENT_IDS, type AttemptConfig } from "../src/config.js";
 import { FixtureAgentAdapter, type AgentAdapter } from "../src/adapters.js";
+import { SandboxInfrastructureError } from "../src/sandbox.js";
 import { runAttempt } from "../src/supervisor.js";
+import { FakeCommandSandbox } from "./helpers.js";
 
 async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptConfig> {
   const makeStages = async (agentId: (typeof AGENT_IDS)[number]) => {
@@ -65,6 +67,7 @@ describe("session supervisor", () => {
     const result = await runAttempt({
       config,
       adapter,
+      sandbox: new FakeCommandSandbox(),
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
     });
 
@@ -83,7 +86,7 @@ describe("session supervisor", () => {
   it("publishes each agent's first private stage before opening its model session", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-initial-stage-"));
     const config = await fixtureConfig(root);
-    const seen = new Map<string, string[]>();
+    const seen = new Map<string, string>();
     const adapter: AgentAdapter = {
       openSession(context) {
         return {
@@ -93,8 +96,7 @@ describe("session supervisor", () => {
               .split("\n")
               .find((line) => line.startsWith("Private evidence: "));
             if (!evidenceLine) throw new Error("Prompt omitted the private evidence path.");
-            const evidencePath = evidenceLine.slice("Private evidence: ".length);
-            seen.set(context.agentId, await readdir(evidencePath));
+            seen.set(context.agentId, evidenceLine.slice("Private evidence: ".length));
             return {
               toolCalls: [],
               finalResponse: "ready",
@@ -107,11 +109,15 @@ describe("session supervisor", () => {
     const result = await runAttempt({
       config,
       adapter,
+      sandbox: new FakeCommandSandbox(),
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
     });
     expect([...seen.keys()].sort()).toEqual([...AGENT_IDS]);
     for (const agentId of AGENT_IDS) {
-      expect(seen.get(agentId)).toContain("stage-01-stage-1.txt");
+      expect(seen.get(agentId)).toBe("/evidence");
+      expect(await readdir(join(config.artifactRoot, "private-evidence", agentId))).toContain(
+        "stage-01-stage-1.txt",
+      );
     }
     expect(result.sessions.every((session) => session.state === "finished")).toBe(true);
   });
@@ -123,8 +129,36 @@ describe("session supervisor", () => {
     const result = await runAttempt({
       config,
       adapter,
+      sandbox: new FakeCommandSandbox(),
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
     });
     expect(result.sessions.every((session) => session.state === "time-exhausted")).toBe(true);
+  });
+
+  it("classifies command sandbox failures as session infrastructure errors", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-failure-"));
+    const config = await fixtureConfig(root);
+    const adapter = new FixtureAgentAdapter({
+      "agent-1": [
+        {
+          toolCalls: [{ id: "command", name: "run_command", arguments: { command: "true" } }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ],
+    });
+    const sandbox = new FakeCommandSandbox(async () => {
+      throw new SandboxInfrastructureError("Docker daemon unavailable.");
+    });
+    const result = await runAttempt({
+      config,
+      adapter,
+      sandbox,
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+    });
+
+    expect(result.sessions.find((session) => session.agentId === "agent-1")).toMatchObject({
+      state: "infrastructure-error",
+      terminationReason: "Docker daemon unavailable.",
+    });
   });
 });

@@ -1,8 +1,7 @@
 {
   "ignorePatterns": [
-    ".artifacts-tmp/**",
     ".venv/**",
-    "artifacts/milestone-1/attempts/**",
+    "artifacts/**",
     "coverage/**",
     "dist/**",
     "node_modules/**",

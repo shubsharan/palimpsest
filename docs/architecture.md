@@ -46,9 +46,12 @@ flowchart LR
     CHECK --> TRACE
 
     TRACE --> REVIEW["Reviewer selection"]
-    FULL --> EVAL["Final execution and scoring"]
-    REVIEW --> EVAL
-    ORACLE --> EVAL
+    FULL --> EXEC["Sandboxed reviewer execution"]
+    REVIEW --> EXEC
+    EXEC --> SCORE["Trusted host scoring"]
+    ORACLE --> SCORE
+    EXEC --> TRACE
+    SCORE --> TRACE
 ```
 
 Python owns deterministic text preparation, cipher generation, partial re-keying, aggregate checking, overlap observation, and final scoring. TypeScript/Node owns session supervision, model adapters, stage delivery, local tool exposure, Git setup, token and wall-time cutoffs, trace capture, reviewer-selected execution, and the operator commands.
@@ -57,7 +60,7 @@ The runtimes exchange plain recorded files and narrow subprocess results. A new 
 
 ## Puzzle Build
 
-`puzzle:build` prepares one attempt from recorded source inputs, seeds, and configuration.
+`puzzle:build` prepares one attempt from repository-held source fixtures and explicit CLI parameters.
 
 The builder:
 
@@ -73,7 +76,7 @@ The builder:
 
 Selected mappings differ after the transition, unselected mappings remain unchanged, and earlier stage files are never rewritten. Stage names and public configuration do not reveal the transition.
 
-The active profile uses six global stages at two-minute intervals and a changed-token-mass target of approximately 20 percent. Stage cadence, transition geometry, token budget, model, and wall-time cutoff remain recorded configuration rather than hard-coded architectural constants.
+The active profile uses six global stages at two-minute intervals and a changed-token-mass target of approximately 20 percent. Stage cadence, transition geometry, token budget, model, and wall-time cutoff remain explicit operator inputs rather than hard-coded architectural constants. The build and attempt records retain the subset needed by their current contracts; they do not repeat the CLI seed, changed-token-mass target, adapter, or model as standalone fields.
 
 ## Agent Environment
 
@@ -92,6 +95,20 @@ Each agent receives:
 Prepared plaintext, cipher keys, unreleased stages, peer-private evidence, checker internals, provider credentials, and host-control surfaces stay outside agent workspaces.
 
 Private evidence is separate from the Git checkout to reduce accidental commits. This is not a content firewall: an agent may deliberately copy or encode private material into Git, and the runner records rather than rejects that choice.
+
+### Command Sandbox
+
+Model-authored shell commands run in short-lived Linux containers rather than directly on the host. The runner supplies one fixed, role-specific view:
+
+- `/workspace` is the calling agent's persistent worktree and is read-write;
+- `/evidence` contains only that agent's released private stages and is read-only;
+- `/reference` is the target-excluded reference corpus and is read-only;
+- `/git/shared.git` is the ordinary shared bare repository and is read-write; and
+- `/tmp` is disposable command-local storage.
+
+Containers receive an allowlisted non-secret environment, no public network, a read-only root, no added capabilities, no new privileges, and fixed host-safety limits. The runner executes an inspected image ID whose source label matches the checked-in sandbox definition. The image identity and effective limits are retained as operational attempt metadata; they do not make a run valid, change a score, or support an adversarial-containment claim.
+
+The sandbox limits what host resources a command can see without prescribing what the agent does inside its declared surfaces. One absolute command deadline covers container creation and attached execution; interrupted creation uses bounded name-based cleanup retries to catch late daemon materialization. Ordinary Git behavior, raw sharing, failed commands, timeouts, and resource termination remain observable model outcomes. Failure to inspect, launch, or clean up the sandbox is an infrastructure failure.
 
 ## Prompt Contract
 
@@ -114,8 +131,9 @@ The prompt does not announce the partial re-key, recommend a decoding technique,
 - `working`;
 - `waiting`;
 - `finished`;
-- `token-exhausted`; or
-- `time-exhausted`.
+- `token-exhausted`;
+- `time-exhausted`; or
+- `infrastructure-error`.
 
 A model response may continue through tool calls, request activity waiting, or end with a final response. There is no configured limit on response count, tool calls, checker calls, Git operations, branches, commits, or collaboration cycles.
 
@@ -156,16 +174,16 @@ The checker never returns correct plaintext words, expected tokens, mismatch pos
 
 ## Freeze and Evaluation
 
-The attempt freezes when all sessions have terminated or the wall-time cutoff occurs. Freeze captures the shared repository, each workspace, the stage state, session termination reasons, and the raw observation stream. It does not require clean worktrees, a final commit, a particular branch, or a private submission.
+The attempt freezes when all sessions have terminated or the wall-time cutoff occurs. Freeze captures the shared repository, each workspace, the stage state, session termination reasons, and the normalized observation stream. It does not require clean worktrees, a final commit, a particular branch, or a private submission.
 
 `puzzle:evaluate` asks a reviewer to inspect the frozen team work and record:
 
-- the selected repository or workspace state;
+- one selected frozen agent workspace;
 - an execution command;
 - the expected output path; and
 - optional review notes.
 
-The selected command runs with the complete ciphertext and declared local runtime inputs, without the prepared plaintext, cipher keys, checker API, provider credentials, or public network. This boundary protects the oracle and host; it is not an adversarial solver-validation program.
+The selected command runs in a separate short-lived container. It receives a writable copy of the selected frozen workspace at `/workspace`, the complete ciphertext read-only at `/input/ciphertext.txt`, frozen Git read-only at `/git/shared.git`, and disposable `/tmp`. It does not receive prepared plaintext, cipher keys, checker access, provider credentials, peer evidence, undeclared host files, or public network access. This standard boundary protects the oracle and host; it is not an adversarial solver-validation program.
 
 Evaluation produces:
 
@@ -174,16 +192,16 @@ Evaluation produces:
 - `no-output` when execution completes without reconstruction output; or
 - `execution-error` when the selected command fails or times out.
 
-When output exists, the scorer compares normalized word tokens positionally against the prepared plaintext. Missing, extra, and unresolved tokens count as incorrect. The report preserves any score that can be computed and may include changed/stable or content/function-word slices.
+When output exists, a trusted host-side scorer compares normalized word tokens positionally against the prepared plaintext. The untrusted evaluation container never receives the oracle. Missing, extra, and unresolved tokens count as incorrect. The report contains matched words, total words, coverage, and accuracy.
 
 ## Observation
 
 The attempt trace records:
 
-- recorded configuration and seeds that are safe for the operator record;
+- the attempt ID plus token, wall-time, stage-interval, agent-count, and stage-count configuration;
 - stage release events;
 - session state and cumulative token use;
-- raw model responses and tool activity;
+- normalized model-turn summaries, final response text, and full tool arguments and results;
 - checker requests and aggregate results;
 - observed Git head changes and repository history;
 - termination and freeze;
@@ -191,9 +209,11 @@ The attempt trace records:
 - evaluation execution and score; and
 - narrow raw-overlap findings.
 
+`trace.meta.json` records one immutable wall-clock origin before the first event. Live, overlap, and evaluation producers all write through the same resumable observation log and recursive redaction path. Reopening validates the complete existing log before appending; sequence numbers increase by exactly one and elapsed times never decrease, including when later processes append post-run work. Malformed, nonsequential, or time-regressing traces fail explicitly rather than being repaired.
+
 This chronology lets a reviewer compare the hidden transition's evidence arrival with continued use of an older rule, peer communication, and later code or note changes. It does not require a canonical belief artifact and does not claim access to private chain of thought.
 
-The overlap observer searches only for obvious exact or normalized long spans shared between committed blobs and private evidence. It runs after the attempt and never blocks Git, changes a score, invalidates a run, or expands into adversarial encoding detection.
+The overlap observer searches only for obvious exact or normalized long spans shared between committed blobs and private evidence. It scans every unique text blob reachable from current Git refs, including content committed and later deleted, and processes each blob identity once. A separate traversal counts repeated blob references across reachable commit trees; binary and invalid UTF-8 blobs are skipped and counted. Reflog-only and unreachable objects are outside the observation. The observer runs after the attempt and never blocks Git, changes a score, invalidates a run, or expands into adversarial encoding detection.
 
 ## Failure Semantics
 
@@ -201,19 +221,26 @@ The overlap observer searches only for obvious exact or normalized long spans sh
 | --- | --- |
 | Wrong reconstruction, no output, broken code, early finish, stale belief, no Git use, merge conflict, raw sharing, source recognition, checker exploitation, or unconventional workflow | Model outcome |
 | Individual token exhaustion or global wall-time cutoff | Configured termination |
-| Model provider unavailable, declared stage not delivered, shared Git unavailable, checker unavailable, cutoff not enforced, freeze failure, or scorer unable to evaluate valid output | Infrastructure failure |
+| Model provider unavailable, declared stage not delivered, shared Git unavailable, checker unavailable, sandbox inspection, launch, or cleanup failure, malformed trace, cutoff not enforced, freeze failure, or scorer unable to evaluate valid output | Infrastructure failure |
 | Reviewer cannot infer how to run the repository | `not-runnable` evaluation outcome |
 
 Infrastructure failures are reported separately. They do not cause the runner to repair or reinterpret model work.
 
 ## Operator Interface
 
-The canonical workflow is:
+The canonical live workflow uses explicit build and attempt roots plus recorded run limits:
 
 ```bash
-pnpm puzzle:build
-pnpm puzzle:run
-pnpm puzzle:evaluate -- --attempt <attempt-path>
+pnpm puzzle:sandbox:build
+pnpm puzzle:build -- --output artifacts/build-17 --seed 17
+pnpm puzzle:run -- \
+  --build artifacts/build-17 \
+  --output artifacts/attempt-17 \
+  --adapter openai \
+  --model "<model>" \
+  --token-budget 200000 \
+  --wall-time-ms 3600000
+pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 ```
 
 `pnpm puzzle:offline` composes the same build, run, freeze, and evaluate path with deterministic fixture agents and no external model call.
@@ -223,8 +250,10 @@ pnpm puzzle:evaluate -- --attempt <attempt-path>
 Verification is proportional to the active claims:
 
 - Python unit and property tests cover six-stage geometry, shared partial re-key invariants, immutable earlier evidence, checker non-disclosure, unequal-length scoring, and overlap observation.
-- TypeScript tests cover prompt neutrality, exactly three independent sessions, voluntary completion, waiting and wake behavior, ordinary unmetered Git, token and wall-time cutoffs, freeze, reviewer selection, and evaluation statuses.
-- Fixture scenarios cover no Git, continuous collaboration, raw relay, duplicate work, conflict, repeated checking, missed revision, later revision, broken code, no output, and successful scoring.
+- TypeScript tests cover prompt neutrality, exactly three independent sessions, voluntary completion, waiting and wake behavior, ordinary unmetered Git, token and wall-time cutoffs, sandbox mounts and path containment, resumable trace chronology, reachable Git history, freeze, reviewer selection, and evaluation statuses.
+- Docker-backed fixtures prove declared workspace and Git access while host, peer, oracle, credential, and public-network probes fail, and prove that no command container survives success, nonzero exit, timeout, cancellation, or output overflow.
+- Path-containment tests prove absolute, parent-relative, missing, non-regular, and symbolic-link escape outputs fail explicitly.
+- Evaluator tests cover reviewer selection ordering, `scored`, `not-runnable`, `no-output`, and `execution-error`; session and Git tests cover voluntary completion, waiting, cutoffs, ordinary branches, and peer-visible ref changes.
 - One fresh offline build-run-evaluate smoke test proves the active path without an external model call.
 
 Palimpsest does not require channel-capacity proofs, fixed publication replay, hostile-solver red teams, exact model replay, or a particular empirical agent outcome before the puzzle may be run.

@@ -4,13 +4,6 @@
     "perf": "warn",
     "suspicious": "deny"
   },
-  "ignorePatterns": [
-    ".artifacts-tmp/**",
-    ".venv/**",
-    "artifacts/milestone-1/attempts/**",
-    "coverage/**",
-    "dist/**",
-    "node_modules/**"
-  ],
+  "ignorePatterns": [".venv/**", "artifacts/**", "coverage/**", "dist/**", "node_modules/**"],
   "plugins": ["typescript"]
 }

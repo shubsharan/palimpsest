@@ -24,14 +24,24 @@ describe("ordinary shared Git", () => {
     await writeFile(join(first.path, "solver.ts"), "export const attempt = 1;\n", "utf8");
     await runGit(["add", "solver.ts"], first.path);
     await runGit(["commit", "-m", "try a rule"], first.path);
-    await runGit(["push", "origin", "HEAD:refs/heads/ideas/first-rule"], first.path);
+    await runGit(["push", environment.barePath, "HEAD:refs/heads/ideas/first-rule"], first.path);
 
-    await runGit(["fetch", "origin"], second.path);
+    await runGit(
+      [
+        "fetch",
+        environment.barePath,
+        "refs/heads/ideas/first-rule:refs/remotes/origin/ideas/first-rule",
+      ],
+      second.path,
+    );
     expect(await listRemoteRefs(environment.barePath)).toHaveProperty(
       "refs/heads/ideas/first-rule",
     );
     expect(await readFile(join(first.path, "solver.ts"), "utf8")).toContain("attempt");
     expect((await runGit(["status", "--porcelain"], unused.path)).stdout).toBe("");
+    expect((await runGit(["remote", "get-url", "origin"], unused.path)).stdout.trim()).toBe(
+      "/git/shared.git",
+    );
   });
 
   it("freezes the bare repository and all three workspaces", async () => {
@@ -59,7 +69,7 @@ describe("ordinary shared Git", () => {
     await writeFile(join(first.path, "rule.txt"), "revision\n", "utf8");
     await runGit(["add", "rule.txt"], first.path);
     await runGit(["commit", "-m", "revise rule"], first.path);
-    await runGit(["push", "origin", "HEAD:refs/heads/rule/revision"], first.path);
+    await runGit(["push", environment.barePath, "HEAD:refs/heads/rule/revision"], first.path);
     await monitor.checkNow();
     await expect(waiting).resolves.toMatchObject({
       kind: "git-changed",

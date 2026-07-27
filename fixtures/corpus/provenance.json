@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "author": "George Eliot",
+      "byteLength": 1865684,
+      "catalogUrl": "https://www.gutenberg.org/ebooks/145",
+      "contentType": "text/plain; charset=utf-8",
+      "downloadUrl": "https://www.gutenberg.org/cache/epub/145/pg145.txt",
+      "ebookNumber": 145,
+      "license": "Project Gutenberg License; catalog record states public domain in the USA",
+      "retrievedAt": "2026-07-26",
+      "sha256": "dc2e0107e6ae07e8e33da934b2ec4e8e600826a2e0cd48df265119cd02e5fb50",
+      "sourceId": "middlemarch",
+      "title": "Middlemarch"
+    },
+    {
+      "author": "Herman Melville",
+      "byteLength": 1276263,
+      "catalogUrl": "https://www.gutenberg.org/ebooks/2701",
+      "contentType": "text/plain; charset=utf-8",
+      "downloadUrl": "https://www.gutenberg.org/cache/epub/2701/pg2701.txt",
+      "ebookNumber": 2701,
+      "license": "Project Gutenberg License; catalog record states public domain in the USA",
+      "retrievedAt": "2026-07-26",
+      "sha256": "9a6844ac0703853720010787c7b6c70b0020f1ab1862dcd74452fa46474d1215",
+      "sourceId": "moby-dick",
+      "title": "Moby-Dick; or, The Whale"
+    },
+    {
+      "author": "Charlotte Bronte",
+      "byteLength": 1084803,
+      "catalogUrl": "https://www.gutenberg.org/ebooks/1260",
+      "contentType": "text/plain; charset=utf-8",
+      "downloadUrl": "https://www.gutenberg.org/cache/epub/1260/pg1260.txt",
+      "ebookNumber": 1260,
+      "license": "Project Gutenberg License; catalog record states public domain in the USA",
+      "retrievedAt": "2026-07-26",
+      "sha256": "13414dee2951c3ee731d76d2ffd822016b2479c892162760c5d0eb2aa5fa7631",
+      "sourceId": "jane-eyre",
+      "title": "Jane Eyre: An Autobiography"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { ActivityBus } from "./activity.js";
 import { AGENT_IDS, type AgentId } from "./config.js";
+import { SANDBOX_PATHS } from "./sandbox.js";
 
 export interface GitCommandResult {
   stdout: string;
@@ -78,6 +79,7 @@ export async function createGitEnvironment(root: string): Promise<GitEnvironment
       await runGit(["clone", barePath, path]);
       await runGit(["config", "user.name", `Palimpsest ${agentId}`], path);
       await runGit(["config", "user.email", `${agentId}@palimpsest.invalid`], path);
+      await runGit(["remote", "set-url", "origin", SANDBOX_PATHS.sharedGit], path);
       return { agentId, path };
     }),
   );

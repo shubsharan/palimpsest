@@ -37,7 +37,7 @@ export async function runOfflinePuzzle(
     adapter: "fixture",
     fixtureScenario: "collaborative-revision",
     tokenBudget: 100,
-    wallTimeMs: 2_000,
+    wallTimeMs: 10_000,
   });
   const evaluation = await evaluatePuzzle({
     root,
