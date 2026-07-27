@@ -16,13 +16,14 @@
 
 **Decision**: Build three private streams and deterministically divide each into six useful stage segments. Apply the same hidden mapping transition between stages three and four in every stream.
 
-**Rationale**: The earlier chapter-based geometry placed a global transition inside only one agent's shard. Six temporal segments per stream guarantee all three agents see useful evidence before and after the same transition while preserving private inputs.
+**Rationale**: The earlier chapter-based geometry placed a global transition inside only one agent's shard. Six temporal segments per stream guarantee all three agents see useful evidence before and after the same transition while preserving private inputs. Pre-transition evidence must support a plausible working rule and post-transition evidence must make stale application meaningfully wrong; otherwise the run cannot reveal whether agents detect invalidated beliefs, review them with peers, and update them.
 
 **Alternatives considered**:
 
 - Giving each agent a copy of every chapter was rejected because the evidence would no longer be meaningfully distributed.
 - Agent-specific transition times were rejected because they confound belief revision with differing schedules.
 - Rewriting earlier files was rejected because it destroys the evidence needed to review prior beliefs.
+- Announcing the re-key or requesting a revised mapping was rejected because it supplies the detection and review step the puzzle is meant to observe.
 
 ## Decision 3: Use ordinary local Git with a bare shared remote
 

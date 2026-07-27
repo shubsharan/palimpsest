@@ -4,7 +4,7 @@
 
 ## Summary
 
-Replace the active evidence-gated harness with a small three-agent runner that stages deterministic private cipher segments, supplies local tools and ordinary shared Git, and lets each persistent model session choose how to work until it finishes or reaches a token or wall-time cutoff. Keep puzzle construction, aggregate private checking, lifecycle supervision, raw observation, and final reviewer-selected scoring deterministic. Treat every collaboration strategy and workaround as an observed result rather than a validity condition.
+Replace the active evidence-gated harness with a small three-agent runner that stages deterministic private cipher segments, supplies local tools and ordinary shared Git, and lets each persistent model session choose how to work until it finishes or reaches a token or wall-time cutoff. A hidden shared partial re-key makes part of a previously useful rule stop working so the experiment can observe whether agents detect the contradiction, collaborate to review the rule, and update it rather than forcing it to fit. Keep puzzle construction, aggregate private checking, lifecycle supervision, raw observation, and final reviewer-selected scoring deterministic. Treat every collaboration strategy and workaround as an observed result rather than a validity condition.
 
 ## Technical Context
 
@@ -91,7 +91,7 @@ tests/puzzle/
 
 ### Build
 
-`puzzle:build` prepares one attempt from recorded seeds and source inputs. Each agent receives six immutable stage files in a host-private source directory. The first three stages use the base substitution and the last three use a single deterministic partial re-key shared across all three streams. Each stream contains useful token mass on both sides of the transition. A public complete ciphertext is prepared separately for final evaluation; plaintext, both keys, and checker truth remain in the host-only oracle directory.
+`puzzle:build` prepares one attempt from recorded seeds and source inputs. Each agent receives six immutable stage files in a host-private source directory. The first three stages use the base substitution and the last three use a single deterministic partial re-key shared across all three streams. Each stream contains enough useful pre-transition evidence for a rule to form and enough contradictory post-transition evidence for continued use of the stale rule to matter. The prompt and tool results do not announce the transition. A public complete ciphertext is prepared separately for final evaluation; plaintext, both keys, and checker truth remain in the host-only oracle directory.
 
 ### Run
 
@@ -109,7 +109,7 @@ At wall-time or after all sessions terminate, the supervisor stops active work a
 
 ### Observe
 
-An append-only attempt trace records configuration, stage releases, session state, token use, model/tool events, checker aggregates, Git head changes, termination, freezing, reviewer selection, execution, and score. A post-run observer reports only obvious exact or normalized long overlap between committed content and private raw text. Findings never block Git, warn agents, alter scores, or invalidate attempts.
+An append-only attempt trace records configuration, stage releases, session state, token use, model/tool events, checker aggregates, Git head changes, termination, freezing, reviewer selection, execution, and score. This chronology lets a reviewer compare contradictory evidence arrival with continued rule use, peer communication, and later code or finding changes without requiring agents to publish a canonical hypothesis. A post-run observer reports only obvious exact or normalized long overlap between committed content and private raw text. Findings never block Git, warn agents, alter scores, or invalidate attempts.
 
 ## Migration
 
@@ -121,7 +121,7 @@ An append-only attempt trace records configuration, stage releases, session stat
 ## Verification Strategy
 
 - Python unit and property tests prove six-stage geometry, shared transition invariants, checker non-disclosure, unequal-length scoring, and overlap observation.
-- TypeScript unit tests prove prompt neutrality, ordinary Git behavior, independent lifecycle transitions, token/wall cutoffs, wake semantics, reviewer statuses, and observation retention.
+- TypeScript unit tests prove prompt neutrality, non-disclosure of the re-key, ordinary Git behavior, independent lifecycle transitions, token/wall cutoffs, wake semantics, reviewer statuses, and a chronology that exposes stale-rule persistence and voluntary revision.
 - A fresh `puzzle:offline` test builds, runs, freezes, evaluates, and explains one attempt without network or external model access.
 - Repository verification runs formatting, linting, type checking, TypeScript tests, Python tests, cross-runtime checks retained by shared code, `git diff --check`, and the documented quickstart.
 

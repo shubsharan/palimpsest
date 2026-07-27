@@ -23,9 +23,9 @@ An operator starts one Palimpsest attempt with three model agents. Every agent k
 
 ### User Story 2 - Encounter evidence that challenges prior beliefs (Priority: P2)
 
-During the same open-ended attempt, each agent receives additional private text on a schedule independent of model behavior. At one shared transition stage, later text in every private shard partially changes the substitution mapping, leaving most prior mappings valid while making a controlled subset wrong. Agents decide whether to notice, review, preserve, revise, or communicate their beliefs.
+During the same open-ended attempt, each agent receives additional private text on a schedule independent of model behavior. At one shared transition stage, later text in every private shard partially changes the substitution mapping, leaving most prior mappings valid while making a controlled subset wrong. This creates a concrete test of whether agents detect that a previously useful rule is no longer fully valid, work together to review it, and update how they apply it rather than forcing contradictory evidence to fit for too long. Agents still decide whether, when, and how to notice, review, preserve, revise, or communicate their beliefs.
 
-**Why this priority**: Partial re-keying tests review of prior beliefs only when contradictory evidence arrives after useful work can form and the runner does not demand a checkpoint response.
+**Why this priority**: Partial re-keying tests review of prior beliefs only when contradictory evidence arrives after useful work can form. The runner must make that revision behavior observable without announcing the change, demanding a checkpoint response, or defining how quickly or collaboratively agents should adapt.
 
 **Independent Test**: Deliver a fixed staged fixture containing one hidden partial re-key to three independent sessions and verify that the new evidence appears on schedule, earlier evidence remains unchanged, waiting sessions can observe activity, and no stage requires a model response or structured hypothesis.
 
@@ -34,6 +34,7 @@ During the same open-ended attempt, each agent receives additional private text 
 1. **Given** pre-change evidence, **When** the scheduled post-change stage arrives, **Then** the selected mappings change, unselected mappings remain stable, and all earlier files remain available byte-for-byte.
 2. **Given** agents in different lifecycle states, **When** a stage arrives, **Then** working agents continue, waiting agents may resume, and voluntarily finished or exhausted agents remain stopped.
 3. **Given** a model that misses or ignores the change, **When** the attempt ends, **Then** the resulting stale code or reconstruction remains a scored model outcome.
+4. **Given** agents that infer and share a rule before the transition, **When** later evidence contradicts part of it, **Then** the retained timeline makes it possible to review whether they preserved, questioned, revised, or continued forcing that rule without labeling any response as required.
 
 ---
 
@@ -72,7 +73,7 @@ Agents may repeatedly evaluate candidate reconstructions against only their curr
 
 **Environmental Constraints**: Private evidence is staged outside the Git checkout on a fixed wall-clock schedule. Prepared plaintext, cipher keys, peer-private files, and checker internals remain unavailable. Each agent has a cumulative model-token budget, and the attempt has one wall-time cutoff. Provider credentials and host controls remain outside agent workspaces.
 
-**Observable Outcomes**: The attempt retains model and tool transcripts, session states, staged-input observations, checker calls and aggregate results, Git history, frozen workspaces, reviewer execution choices, final reconstruction scores, and a deliberately narrow post-run measure of obvious raw overlap.
+**Observable Outcomes**: The attempt retains model and tool transcripts, session states, staged-input observations, checker calls and aggregate results, Git history, frozen workspaces, reviewer execution choices, final reconstruction scores, and a deliberately narrow post-run measure of obvious raw overlap. The stage and Git timeline lets a reviewer compare when contradictory evidence arrived with subsequent rule use, revision, and peer coordination without requiring a canonical belief artifact.
 
 **Infrastructure Failures**: Failure to start or contact a model session, deliver declared private evidence, provide ordinary Git, enforce the configured token or wall-time cutoff, execute the checker, or score a reviewer-selected output is reported separately from model behavior. Infrastructure does not repair model work or manufacture a score.
 
@@ -128,6 +129,7 @@ Agents may repeatedly evaluate candidate reconstructions against only their curr
 - **SC-008**: Raw-sharing, no-Git, independent-work, centralized-work, repeated-checking, and broken-solver fixtures all retain their traces and remain reviewable outcomes rather than invalid attempts.
 - **SC-009**: Successful, partial, missing, and failed reviewer executions produce the correct declared evaluation status and preserve every score that can be computed.
 - **SC-010**: One fresh offline build-run-evaluate fixture completes without an external model call and leaves enough evidence to explain agent lifecycle, staged inputs, checker use, Git state, termination reason, reviewer selection, and score.
+- **SC-011**: A fixture that commits a pre-transition rule, continues applying it after contradictory evidence, and later revises it leaves a timeline from which a reviewer can distinguish the evidence arrival, persistence interval, peer communication, and revision without a required hypothesis or mapping submission.
 
 ## Assumptions
 
