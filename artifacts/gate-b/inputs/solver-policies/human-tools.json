@@ -1,0 +1,1 @@
+{"allowedTools":["local-files","python","shell","frozen-distilroberta"],"checkpointSeconds":[600,1800,3600],"checkpointTurns":[1,2,3],"condition":"human-tools","maximumActiveWorkSeconds":3600,"network":"disabled","schemaVersion":1}
