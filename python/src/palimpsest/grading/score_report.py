@@ -152,7 +152,7 @@ def score_metrics(
     return {metric_id: _bounded(values[metric_id]) for metric_id in METRIC_IDS}
 
 
-def score_attempt(run_id: str, attempt: Path, bundle: Path) -> dict[str, object]:
+def build_score_report(run_id: str, attempt: Path, bundle: Path) -> dict[str, object]:
     agent_ids = ("agent-1", "agent-2", "agent-3")
     candidates = []
     mappings = []
@@ -194,13 +194,17 @@ def score_attempt(run_id: str, attempt: Path, bundle: Path) -> dict[str, object]
         ledgers=json.loads((attempt / "git/ledgers.json").read_text(encoding="utf-8")),
         agent_ids=agent_ids,
     )
-    report = {
+    return {
         "schemaVersion": 1,
         "contractId": "score-report",
         "runId": run_id,
         "policyId": POLICY_ID,
         "metrics": metrics,
     }
+
+
+def score_attempt(run_id: str, attempt: Path, bundle: Path) -> dict[str, object]:
+    report = build_score_report(run_id, attempt, bundle)
     (attempt / "grading" / "score-report.json").write_bytes(canonical_json_bytes(report))
     return report
 
