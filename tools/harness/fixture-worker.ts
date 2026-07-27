@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     throw new Error(`Fixture worker refuses adapter ${request.adapterId}.`);
   }
   let ordinal = 0;
-  const emit = (type: string, payload: Record<string, unknown>) => {
+  const emit = (type: AgentBridgeEvent["type"], payload: Record<string, unknown>) => {
     const event: AgentBridgeEvent = {
       schemaVersion: 1,
       runId: request.runId,
