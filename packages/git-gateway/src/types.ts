@@ -6,6 +6,7 @@ export interface GatewayAttemptIdentity {
 export interface AuthenticatedAgent {
   agentId: string;
   refNamespace: `refs/heads/agents/${string}`;
+  authenticatedAgent?: number;
 }
 
 export interface PublicationSnapshotRef {
@@ -41,4 +42,41 @@ export interface PublishedSnapshot {
   refMapDigest: string;
   visibilityJournalDigest: string;
   eventSequence: number;
+}
+
+export type ReservationStatus = "RESERVED" | "FINALIZED" | "ABORTED";
+
+export interface LedgerReservation {
+  transactionId: string;
+  frameDigest: string;
+  chargeBytes: number;
+  budgetBefore: number;
+  budgetAfter: number;
+  accepted: boolean;
+  status: ReservationStatus;
+}
+
+export interface SnapshotView {
+  refs: RefMap;
+  allowedOids: readonly string[];
+  repository?: string;
+}
+
+export interface CanonicalFetchTuple {
+  snapshotId: string;
+  wants: readonly string[];
+  haves: readonly string[];
+  capabilityProfile: readonly string[];
+  digest: string;
+}
+
+export interface RefTransactionStore {
+  snapshot(): Promise<RefMap>;
+  commit(refName: string, expectedOldOid: string | null, newOid: string): Promise<boolean>;
+}
+
+export interface AdmissionResult {
+  entry: LedgerEntry;
+  refCommitted: boolean;
+  reservationStatus: ReservationStatus;
 }

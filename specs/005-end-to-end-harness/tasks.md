@@ -75,10 +75,10 @@
 - [x] T029 [P] [US2] Add hash-chain, idempotency, gap, reorder, duplicate-effect, crash-boundary, and recovery tests in `packages/run-control/tests/events.test.ts`
 - [x] T030 [P] [US2] Add absolute reveal/publication clock, tolerance, and agent-independence tests in `packages/run-control/tests/clock.test.ts`
 - [x] T031 [P] [US2] Add fixture subprocess NDJSON, timeout, resource, undeclared-file, provider-prohibition, and adapter-authorization tests in `packages/run-control/tests/model-bridge.test.ts`
-- [ ] T032 [P] [US2] Add authenticated namespace, ref, object, path, capability, quarantine, and fast-forward policy tests in `packages/git-gateway/tests/policy.test.ts`
-- [ ] T033 [P] [US2] Add exact accounting frame, reservation, idempotency, one-byte-over-budget, duplicate-object, and sender-attribution tests in `packages/git-gateway/tests/admission.test.ts`
+- [x] T032 [P] [US2] Add authenticated namespace, ref, object, path, capability, quarantine, and fast-forward policy tests in `packages/git-gateway/tests/policy.test.ts`
+- [x] T033 [P] [US2] Add exact accounting frame, reservation, idempotency, one-byte-over-budget, duplicate-object, and sender-attribution tests in `packages/git-gateway/tests/admission.test.ts`
 - [x] T034 [P] [US2] Add competing push, independent branch, disconnect-after-admission, and crash-consistency tests in `packages/git-gateway/tests/concurrency.test.ts`
-- [ ] T035 [P] [US2] Add immutable publication snapshot, canonical fetch tuple, no-intermediate-ref, and freeze-race tests in `packages/git-gateway/tests/publication.test.ts`
+- [x] T035 [P] [US2] Add immutable publication snapshot, canonical fetch tuple, no-intermediate-ref, and freeze-race tests in `packages/git-gateway/tests/publication.test.ts`
 - [x] T036 [P] [US2] Add private shard, future reveal, peer output, oracle, credential, and host-control isolation tests in `tests/harness/isolation.test.ts`
 - [x] T037 [P] [US2] Add three-worker native clone/fetch/pull/commit/merge/push workflow tests in `tests/harness/native-git.test.ts`
 
@@ -90,12 +90,12 @@
 - [x] T041 [US2] Implement fixture subprocess launch, NDJSON validation, quota measurement, timeout, and terminal sealing in `packages/run-control/src/model-bridge.ts`
 - [x] T042 [P] [US2] Implement agent-private release mount projection in `packages/run-control/src/reveal.ts`
 - [x] T043 [P] [US2] Implement private deliverable sealing and visibility enforcement in `packages/run-control/src/submissions.ts`
-- [ ] T044 [US2] Implement ref/object/path/capability policy and quarantine validation in `packages/git-gateway/src/policy.ts`
-- [ ] T045 [US2] Implement serialized transactional admission using `GitAccountingFrameV1` in `packages/git-gateway/src/admission.ts`
+- [x] T044 [US2] Implement ref/object/path/capability policy and quarantine validation in `packages/git-gateway/src/policy.ts`
+- [x] T045 [US2] Implement serialized transactional admission using `GitAccountingFrameV1` in `packages/git-gateway/src/admission.ts`
 - [x] T046 [US2] Implement cumulative per-agent reservations and ledgers in `packages/git-gateway/src/ledger.ts`
 - [x] T047 [US2] Implement immutable fixed-slot snapshots and visibility journaling in `packages/git-gateway/src/publication.ts`
-- [ ] T048 [US2] Implement snapshot-gated canonical fetch serving in `packages/git-gateway/src/fetch.ts`
-- [ ] T049 [US2] Implement push closure, drain reconciliation, Git bundle creation, and freeze in `packages/git-gateway/src/freeze.ts`
+- [x] T048 [US2] Implement snapshot-gated canonical fetch serving in `packages/git-gateway/src/fetch.ts`
+- [x] T049 [US2] Implement push closure, drain reconciliation, Git bundle creation, and freeze in `packages/git-gateway/src/freeze.ts`
 - [x] T050 [US2] Implement authenticated local smart-HTTP Git transport in `tools/harness/git-server.ts`
 - [x] T051 [US2] Implement deterministic native-Git fixture worker behavior in `tools/harness/fixture-worker.ts`
 - [ ] T052 [US2] Implement the common-barrier coordinator across reveal, workers, Git Gateway, quotas, freeze, and submissions in `packages/run-control/src/coordinator.ts`
