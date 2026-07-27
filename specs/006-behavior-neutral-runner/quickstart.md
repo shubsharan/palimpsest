@@ -30,9 +30,11 @@ artifacts/puzzle/offline-quickstart/
 ├── build/
 ├── attempt/
 │   ├── trace.jsonl
-│   ├── shared.git/
-│   └── frozen/
-└── evaluation/
+│   ├── overlap.json
+│   ├── frozen/
+│   │   ├── shared.git/
+│   │   └── workspaces/
+│   └── evaluation/
 ```
 
 The final JSON result must report three terminal session states and an evaluation status. The trace must explain stage releases, lifecycle transitions, checker calls, Git changes, termination reasons, reviewer selection, execution, overlap observations, and score.
@@ -64,6 +66,7 @@ After the attempt freezes, inspect the repository and record the command you wan
 ```bash
 pnpm puzzle:evaluate -- \
   --attempt artifacts/puzzle/attempts/example/frozen \
+  --workspace agent-1 \
   --command '<reviewer-selected command>' \
   --output '<reviewer-selected output path>'
 ```

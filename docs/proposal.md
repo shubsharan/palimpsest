@@ -10,7 +10,7 @@ The project is a puzzle and an observational research artifact. It is not an ent
 
 Every word type in a prepared text is replaced by another word type under a hidden bijection. Punctuation, capitalization patterns, digits, paragraph structure, and chapter boundaries remain visible. The result resembles English at the token level while its vocabulary has been systematically reassigned.
 
-The prepared ciphertext is divided into three private, contiguous, chapter-aligned streams. Each agent receives one stream in six immutable stages on a shared wall-clock schedule. Earlier stages remain available exactly as released.
+The prepared ciphertext is divided into three private contiguous streams. Each agent receives one stream in six immutable stages on a shared wall-clock schedule. Earlier stages remain available exactly as released.
 
 The first three stages use one substitution key. At the shared transition into the later stages, a controlled subset of mappings changes across all three streams while the remaining mappings stay valid. The transition is hidden from the agents. It is not announced in the prompt, stage names, checker, or repository.
 

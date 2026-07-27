@@ -67,12 +67,13 @@ Record and execute a reviewer's selection against the complete ciphertext.
 ```text
 pnpm puzzle:evaluate -- \
   --attempt <frozen-attempt-directory> \
+  [--workspace <agent-1|agent-2|agent-3>] \
   [--command <shell-command>] \
   [--output <relative-output-path>] \
   [--notes <text>]
 ```
 
-Omitting both `--command` and `--output` records `not-runnable`. Supplying only one is invalid operator input. The selection is written before execution.
+Omitting both `--command` and `--output` records `not-runnable`. Supplying only one is invalid operator input. The optional workspace selects which frozen agent worktree to inspect and execute; it defaults to `agent-1`. The selection is written before execution.
 
 Result:
 

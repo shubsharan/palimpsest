@@ -96,6 +96,19 @@ async function publishStage(
 export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
   const config = validateAttemptConfig(options.config);
   await mkdir(config.artifactRoot, { recursive: false });
+  const git = await createGitEnvironment(join(config.artifactRoot, "git"));
+  const evidencePaths = Object.fromEntries(
+    await Promise.all(
+      AGENT_IDS.map(async (agentId) => {
+        const path = join(config.artifactRoot, "private-evidence", agentId);
+        await mkdir(path, { recursive: true });
+        return [agentId, path] as const;
+      }),
+    ),
+  ) as Record<AgentId, string>;
+
+  // The experimental wall clock begins when agent-visible inputs are ready, not
+  // while the host is preparing Git clones and private directories.
   const startedAt = performance.now();
   const tracePath = join(config.artifactRoot, "trace.jsonl");
   const observationLog = new JsonlObservationLog(tracePath, () => performance.now() - startedAt);
@@ -108,7 +121,6 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     stageCount: 6,
   });
 
-  const git = await createGitEnvironment(join(config.artifactRoot, "git"));
   const activity = new ActivityBus(() => performance.now() - startedAt);
   const monitor = new GitActivityMonitor({
     barePath: git.barePath,
@@ -120,15 +132,6 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   });
   await monitor.start();
 
-  const evidencePaths = Object.fromEntries(
-    await Promise.all(
-      AGENT_IDS.map(async (agentId) => {
-        const path = join(config.artifactRoot, "private-evidence", agentId);
-        await mkdir(path, { recursive: true });
-        return [agentId, path] as const;
-      }),
-    ),
-  ) as Record<AgentId, string>;
   const releasedStages = Object.fromEntries(
     AGENT_IDS.map((agentId) => [agentId, new Set<number>()]),
   ) as Record<AgentId, Set<number>>;

@@ -6,17 +6,17 @@ The architecture is intentionally small. It preserves the mechanics that define 
 
 ## Architectural Drivers
 
-| Driver                               | Consequence                                                                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Agent-created behavior               | The runner states the joint objective and available tools without recommending an algorithm, assigning roles, imposing rounds, or requiring artifacts. |
-| Concurrent persistent work           | Three independent sessions remain active across as many response and tool cycles as their token budgets and the run clock permit.                      |
-| Different private evidence           | Each agent receives one immutable six-stage stream outside the Git checkout.                                                                           |
-| Review of a prior rule               | The first three stages use the base key; the last three share one hidden partial re-key that invalidates only a controlled subset of mappings.         |
-| Explicit but voluntary collaboration | Every agent is told that peers are active and that ordinary shared Git is the team channel. Git use is optional and unmetered.                         |
-| Useful self-checking                 | An oracle-backed checker reports only aggregate quality for the calling agent's currently visible evidence.                                            |
-| Outcome-first evaluation             | A reviewer chooses how to run the frozen team repository instead of requiring a solver manifest or canonical layout.                                   |
-| Honest observation                   | Raw sharing, source recognition, unconventional workflows, missed revision, and failed collaboration remain model outcomes.                            |
-| Limited claims                       | Deterministic puzzle mechanics and scores do not make agent behavior reproducible or isolate general capabilities.                                     |
+| Driver | Consequence |
+| --- | --- |
+| Agent-created behavior | The runner states the joint objective and available tools without recommending an algorithm, assigning roles, imposing rounds, or requiring artifacts. |
+| Concurrent persistent work | Three independent sessions remain active across as many response and tool cycles as their token budgets and the run clock permit. |
+| Different private evidence | Each agent receives one immutable six-stage stream outside the Git checkout. |
+| Review of a prior rule | The first three stages use the base key; the last three share one hidden partial re-key that invalidates only a controlled subset of mappings. |
+| Explicit but voluntary collaboration | Every agent is told that peers are active and that ordinary shared Git is the team channel. Git use is optional and unmetered. |
+| Useful self-checking | An oracle-backed checker reports only aggregate quality for the calling agent's currently visible evidence. |
+| Outcome-first evaluation | A reviewer chooses how to run the frozen team repository instead of requiring a solver manifest or canonical layout. |
+| Honest observation | Raw sharing, source recognition, unconventional workflows, missed revision, and failed collaboration remain model outcomes. |
+| Limited claims | Deterministic puzzle mechanics and scores do not make agent behavior reproducible or isolate general capabilities. |
 
 ## System Context
 
@@ -64,7 +64,7 @@ The builder:
 1. prepares and tokenizes the source text;
 2. constructs a seeded word-type substitution;
 3. selects a controlled mapping subset for one partial re-key;
-4. creates three contiguous, chapter-aligned private streams;
+4. creates three contiguous private streams;
 5. divides every stream into six immutable stages;
 6. applies the base key to stages one through three and the shared partial re-key to stages four through six;
 7. verifies that every agent receives useful evidence on both sides of the transition;
@@ -161,7 +161,7 @@ The attempt freezes when all sessions have terminated or the wall-time cutoff oc
 `puzzle:evaluate` asks a reviewer to inspect the frozen team work and record:
 
 - the selected repository or workspace state;
-- an execution command expressed as an argument vector;
+- an execution command;
 - the expected output path; and
 - optional review notes.
 
@@ -197,12 +197,12 @@ The overlap observer searches only for obvious exact or normalized long spans sh
 
 ## Failure Semantics
 
-| Condition                                                                                                                                                                               | Classification                    |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Wrong reconstruction, no output, broken code, early finish, stale belief, no Git use, merge conflict, raw sharing, source recognition, checker exploitation, or unconventional workflow | Model outcome                     |
-| Individual token exhaustion or global wall-time cutoff                                                                                                                                  | Configured termination            |
-| Model provider unavailable, declared stage not delivered, shared Git unavailable, checker unavailable, cutoff not enforced, freeze failure, or scorer unable to evaluate valid output   | Infrastructure failure            |
-| Reviewer cannot infer how to run the repository                                                                                                                                         | `not-runnable` evaluation outcome |
+| Condition | Classification |
+| --- | --- |
+| Wrong reconstruction, no output, broken code, early finish, stale belief, no Git use, merge conflict, raw sharing, source recognition, checker exploitation, or unconventional workflow | Model outcome |
+| Individual token exhaustion or global wall-time cutoff | Configured termination |
+| Model provider unavailable, declared stage not delivered, shared Git unavailable, checker unavailable, cutoff not enforced, freeze failure, or scorer unable to evaluate valid output | Infrastructure failure |
+| Reviewer cannot infer how to run the repository | `not-runnable` evaluation outcome |
 
 Infrastructure failures are reported separately. They do not cause the runner to repair or reinterpret model work.
 

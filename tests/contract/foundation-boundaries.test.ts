@@ -192,8 +192,15 @@ describe("Repository boundaries", () => {
         "verify",
       ]),
     );
-    expect(Object.keys(packageManifest.scripts).some((name) => name.startsWith("harness:"))).toBe(
-      false,
-    );
+    expect(
+      Object.keys(packageManifest.scripts).some(
+        (name) =>
+          name.startsWith("harness:") ||
+          name.startsWith("gate-") ||
+          name.startsWith("evidence:") ||
+          name.includes("predeclare") ||
+          name.includes("replay"),
+      ),
+    ).toBe(false);
   });
 });

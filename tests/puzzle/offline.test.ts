@@ -21,10 +21,37 @@ describe("offline behavior-neutral runner", () => {
     await access(join(output, "attempt", "overlap.json"));
     await access(join(output, "attempt", "frozen", "shared.git"));
     const trace = await readFile(join(output, "attempt", "trace.jsonl"), "utf8");
-    expect(trace.match(/"kind":"stage\.released"/g)).toHaveLength(18);
+    const events = trace
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            sequence: number;
+            atMs: number;
+            kind: string;
+            data: { ordinal?: number };
+          },
+      );
+    const releases = events.filter((event) => event.kind === "stage.released");
+    expect(releases).toHaveLength(18);
+    expect(new Set(releases.map((event) => event.data.ordinal))).toEqual(
+      new Set([1, 2, 3, 4, 5, 6]),
+    );
+    expect(
+      releases.every(
+        (event) => event.data.ordinal !== undefined && event.atMs >= (event.data.ordinal - 1) * 20,
+      ),
+    ).toBe(true);
     expect(trace).toContain('"kind":"tool.started"');
     expect(trace).toContain('"kind":"reviewer.selection"');
     expect(trace).toContain('"kind":"evaluation.scored"');
-    expect(trace.indexOf("mapping=v1")).toBeLessThan(trace.indexOf("mapping=v2"));
+    const initialRule = events.find((event) => JSON.stringify(event).includes("mapping=v1"));
+    const revisedRule = events.find((event) => JSON.stringify(event).includes("mapping=v2"));
+    const transitionEvidenceSequence = Math.max(
+      ...releases.filter((event) => event.data.ordinal === 4).map((event) => event.sequence),
+    );
+    expect(initialRule?.sequence).toBeLessThan(transitionEvidenceSequence);
+    expect(revisedRule?.sequence).toBeGreaterThan(transitionEvidenceSequence);
   }, 30_000);
 });

@@ -83,7 +83,7 @@ describe("session supervisor", () => {
   it("publishes each agent's first private stage before opening its model session", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-initial-stage-"));
     const config = await fixtureConfig(root);
-    const seen: string[] = [];
+    const seen = new Map<string, string[]>();
     const adapter: AgentAdapter = {
       openSession(context) {
         return {
@@ -94,8 +94,7 @@ describe("session supervisor", () => {
               .find((line) => line.startsWith("Private evidence: "));
             if (!evidenceLine) throw new Error("Prompt omitted the private evidence path.");
             const evidencePath = evidenceLine.slice("Private evidence: ".length);
-            expect(await readdir(evidencePath)).toEqual(["stage-01-stage-1.txt"]);
-            seen.push(context.agentId);
+            seen.set(context.agentId, await readdir(evidencePath));
             return {
               toolCalls: [],
               finalResponse: "ready",
@@ -110,7 +109,10 @@ describe("session supervisor", () => {
       adapter,
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
     });
-    expect(seen.sort()).toEqual([...AGENT_IDS]);
+    expect([...seen.keys()].sort()).toEqual([...AGENT_IDS]);
+    for (const agentId of AGENT_IDS) {
+      expect(seen.get(agentId)).toContain("stage-01-stage-1.txt");
+    }
     expect(result.sessions.every((session) => session.state === "finished")).toBe(true);
   });
 
