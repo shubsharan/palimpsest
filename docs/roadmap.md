@@ -10,7 +10,7 @@ The target outcome is a validated, calibrated, red-teamed, single-host research 
 
 ## Current status
 
-The proposal, architecture, Milestone 1 foundation, Gate A channel separation, and the bounded Gate B product decision are complete. The pinned TypeScript/Python workspace, cross-runtime contracts, artifact-promotion boundary, evidence protocol, exact Git accounting frame, and adversarial capacity sweep pass their frozen verification on the supported Darwin ARM64 development profile. Gate A freezes `GitAccountingFrameV1` and a 19-38 KiB cumulative interval for the retained 27,000-token, 8,000-type geometry. Gate B records a qualified product-feasibility pass based on the unrecognized-literary Amber observation. The reusable offline Gate C instance, reveal, scoring, and replay slice is implemented, but its live solver attempt is explicitly deferred. The current milestone is the production instance and end-to-end harness path; no further OpenAI calls occur until deterministic build-to-report integration passes.
+The proposal, architecture, Milestone 1 foundation, Gate A channel separation, bounded Gate B product decision, and Milestones 4-6 offline harness are complete. The pinned TypeScript/Python workspace, cross-runtime contracts, artifact-promotion boundary, evidence protocol, exact Git accounting frame, production instance pipeline, isolated collaboration runtime, grader, and replay path pass their frozen verification on the supported Darwin ARM64 development profile. Gate A freezes `GitAccountingFrameV1` and a 19-38 KiB cumulative interval for the retained 27,000-token, 8,000-type geometry. Gate B records a qualified product-feasibility pass based on the unrecognized-literary Amber observation. The exact [Milestone 6 report](../artifacts/harness/milestone-6-report.json) records two completed ten-stage offline attempts: the first is intentionally `rework` until retry isolation exists, and the second passes after proving the first remains immutable and independently replayable. Both use real Git, two digest-bound publication snapshots, canonical fetch evidence, isolated per-agent networks, pinned containers, and zero external model requests. Gate C is ready for a new declaration-bound live validation run; no Gate C or Gate D empirical result is claimed.
 
 | ID | Milestone | Status | Depends on | Responsible workstream | Primary output | Exit decision |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -18,10 +18,10 @@ The proposal, architecture, Milestone 1 foundation, Gate A channel separation, a
 | 1 | Foundation and evidence protocol | Complete | 0 | Cross-runtime foundation | Reproducible TypeScript/Python workspace and evidence format | Proceed to feasibility work |
 | 2 | Channel separation (Gate A) | Complete | 1 | Git accounting and compression | Gate A evidence report | Freeze the production accounting frame |
 | 3 | Decipherment headroom (Gate B) | Qualified pass | 1 | Generation and baselines | Bounded feasibility decision | Begin complete offline harness construction |
-| 4 | Production instance pipeline | In progress | 1–3 | Python research plane | Replayable, hash-bound instance bundles | Integrate with the collaboration runtime |
-| 5 | Asynchronous collaboration harness | Not started | 2, 4 | TypeScript control plane | Isolated, metered, freeze-capable run system | Integrate with grader and replay |
-| 6 | Grader, replay, and end-to-end integration | Not started | 4, 5 | Grading and replay | Deterministic build-to-report path | Authorize live model validation |
-| 7 | Revision dynamics (Gate C) | Deferred | 6 and API capacity | Integrated puzzle validation | Gate C evidence report | Pass, rework the owning mechanic, or stop empirical progression |
+| 4 | Production instance pipeline | Complete | 1–3 | Python research plane | Replayable, hash-bound instance bundles | Integrate with the collaboration runtime |
+| 5 | Asynchronous collaboration harness | Complete | 2, 4 | TypeScript control plane | Isolated, metered, freeze-capable run system | Integrate with grader and replay |
+| 6 | Grader, replay, and end-to-end integration | Complete | 4, 5 | Grading and replay | Deterministic build-to-report path | Authorize live model validation |
+| 7 | Revision dynamics (Gate C) | Ready for predeclaration | 6 and API capacity | Integrated puzzle validation | Gate C evidence report | Pass, rework the owning mechanic, or stop empirical progression |
 | 8 | Communication value (Gate D) | Not started | 6, 7 | Integrated collaboration validation | Matched Gate D evidence bundles and report | Authorize or reject matched calibration |
 | 9 | Matched calibration | Not started | 7, 8 passed | Experimental operations | Frozen calibrated run profile and comparison report | Begin release red team |
 | 10 | Red team and validated release | Not started | 9 | Security, research, and release | Reproducible `PublicReportBundle` | Release or return to owning milestone |
@@ -111,6 +111,8 @@ Does the puzzle retain progressive, interpretable headroom above strong mechanic
 
 ## Milestone 4: Production instance pipeline
 
+Milestone 4 is complete. The retained three-corpus build produces deterministic public, reference, agent-private, trusted, and sealed projections that cross the Python/TypeScript boundary without conversion-specific domain logic.
+
 ### Deliverables
 
 - Complete corpus adapters for the retained source tiers, metadata filtering, boilerplate stripping, chapter parsing, MinHash/LSH and structural deduplication, and a manifest-bound agent reference corpus.
@@ -126,6 +128,8 @@ Live model execution is prohibited in this milestone. Synthetic solver checkpoin
 
 ## Milestone 5: Asynchronous collaboration harness
 
+Milestone 5 is complete. The offline collaboration runtime reaches `SUBMITTED` through one common launch epoch, absolute reveal and publication schedules, authenticated hidden quarantine refs, serialized transactional Git admission, peer-visible revision through two immutable publication snapshots, canonical fetches, freeze, and sealed private submissions.
+
 ### Deliverables
 
 - Implement the operator CLI, run coordinator, reveal daemon, compute quota monitor, host model bridge, isolated agent containers, Git Gateway, event append service, and private submission store.
@@ -140,6 +144,8 @@ Pass the TypeScript state-machine, timing, quota, crash-consistency, Git account
 The host model bridge uses a deterministic fake adapter during this milestone. It must exercise the same launch, compute-accounting, file, Git, deadline, and submission boundaries as the later live adapter without making external model calls.
 
 ## Milestone 6: Grader, replay, and end-to-end integration
+
+Milestone 6 is complete. The exact [Milestone 6 report](../artifacts/harness/milestone-6-report.json) binds declaration `a15aa5e6f79e15114f34248fb37168db2f524451a8b23b5ef0e56ff4f885104d` to two completed runs. `offline-ms2xn5ku-b78636e2-a` is the expected `rework` baseline because it has no predecessor attempt. `offline-ms2xn5ku-b78636e2-b` passes all eleven completion predicates after proving that baseline remains byte-identical and independently replayable, with zero external model requests.
 
 ### Deliverables
 
@@ -162,7 +168,7 @@ The command must use a production-shaped three-agent fixture, native Git reposit
 
 ## Milestone 7: Revision dynamics (Gate C)
 
-The reusable two-regime instance, monotonic reveal runner, streamed solver adapter, deterministic scoring, decision rule, and explicit-attempt replay are implemented. The live attempt is deferred until Milestone 6 completes. The historical `insufficient_quota` admission record remains an execution diagnostic, not a Gate C result.
+The reusable two-regime instance, monotonic reveal runner, streamed solver adapter, deterministic scoring, decision rule, and explicit-attempt replay are implemented. Gate C is ready for a new predeclaration and declaration-bound live attempt. The historical `insufficient_quota` admission record remains an execution diagnostic, not a Gate C result.
 
 ### Question
 
@@ -280,7 +286,7 @@ Architecture verification proves implementation invariants. Gate reports provide
 
 - A milestone is complete only when its deliverables, required evidence, and exit decision are recorded in versioned artifacts.
 - Gate thresholds and calibrated parameters are declared before the run whose result they judge. Post-hoc threshold changes require a new report and rerun.
-- No new live model call is permitted before Milestone 6 records a passing offline-harness completion report.
+- Every live model call requires a new declaration-bound Gate C or Gate D attempt; Gate D progression remains blocked until Gate C passes.
 - A failed Gate C or D blocks downstream empirical work and returns the project to the owning puzzle or harness milestone. After the repair, Milestone 6 and every invalidated empirical result are rerun.
 - Agent errors remain scoreable outcomes. Infrastructure integrity or validity failures invalidate the affected run and its matched pair according to the architecture.
 - The reference deployment remains on one dedicated host with one authoritative run clock and one serialized Git admission sequence.

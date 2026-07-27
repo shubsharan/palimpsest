@@ -141,14 +141,14 @@
 
 **Purpose**: Prove the production trust boundaries and close the Milestone 6 authorization honestly.
 
-- [x] T070 [P] Add digest-pinned fixture-agent and clean-solver images in `containers/fixture-agent/` and `containers/clean-solver/`
+- [x] T070 [P] Add digest-pinned fixture-agent, Git Gateway, and clean-solver images in `containers/fixture-agent/`, `containers/git-gateway/`, and `containers/clean-solver/`
 - [x] T071 [P] Add container image content, mount, user, capability, credential, oracle, source, package, and network-isolation tests in `tests/harness/container-isolation.test.ts`
 - [x] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
 - [x] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
 - [x] T074 Validate every command and claim in `specs/005-end-to-end-harness/quickstart.md`
 - [x] T075 Run two fresh `pnpm harness:offline` attempts and prove the first remains byte-identical and independently replayable
 - [x] T076 Run `pnpm verify`, `pnpm verify:clean-snapshot`, and `git diff --check`
-- [ ] T077 Complete the exact Milestone 6 report and update implementation status in `docs/roadmap.md`
+- [x] T077 Complete the exact Milestone 6 report and update implementation status in `docs/roadmap.md`
 
 ---
 
