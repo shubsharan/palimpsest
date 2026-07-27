@@ -27,7 +27,7 @@
 - [x] T010 [P] Add Python schema-family parity tests in `python/tests/harness/test_contracts.py`
 - [x] T011 Add declaration-digest/run-ID immutable attempt helpers and exact terminal output manifests in `tools/harness/artifacts.ts`
 - [x] T012 [P] Add attempt isolation, terminal immutability, pointer independence, and exact-output tests in `tests/harness/artifacts.test.ts`
-- [ ] T013 Define lifecycle, event, clock, host-bridge, Git Gateway, submission, grader, and replay interfaces in `packages/run-control/src/types.ts` and `packages/git-gateway/src/types.ts`
+- [x] T013 Define lifecycle, event, clock, host-bridge, Git Gateway, submission, grader, and replay interfaces in `packages/run-control/src/types.ts` and `packages/git-gateway/src/types.ts`
 - [x] T014 Add foundational package exports and build configuration in `packages/run-control/package.json`, `packages/run-control/tsconfig.json`, `packages/git-gateway/package.json`, and `packages/git-gateway/tsconfig.json`
 
 **Checkpoint**: Both runtimes agree on all harness records, and no mutable or partial output can become evidence.
@@ -98,7 +98,7 @@
 - [x] T049 [US2] Implement push closure, drain reconciliation, Git bundle creation, and freeze in `packages/git-gateway/src/freeze.ts`
 - [x] T050 [US2] Implement authenticated local smart-HTTP Git transport in `tools/harness/git-server.ts`
 - [x] T051 [US2] Implement deterministic native-Git fixture worker behavior in `tools/harness/fixture-worker.ts`
-- [ ] T052 [US2] Implement the common-barrier coordinator across reveal, workers, Git Gateway, quotas, freeze, and submissions in `packages/run-control/src/coordinator.ts`
+- [x] T052 [US2] Implement the common-barrier coordinator across reveal, workers, Git Gateway, quotas, freeze, and submissions in `packages/run-control/src/coordinator.ts`
 - [x] T053 [US2] Implement explicit-attempt offline run orchestration and live event streaming in `tools/harness/run.ts`
 
 **Checkpoint**: A sealed offline run reaches `SUBMITTED` with real Git evidence, exact ledgers, one freeze identity, and three private deliverables.
@@ -141,14 +141,14 @@
 
 **Purpose**: Prove the production trust boundaries and close the Milestone 6 authorization honestly.
 
-- [x] T070 [P] Add digest-pinned fixture-agent and clean-solver images in `containers/fixture-agent/` and `containers/clean-solver/`
+- [x] T070 [P] Add digest-pinned fixture-agent, Git Gateway, and clean-solver images in `containers/fixture-agent/`, `containers/git-gateway/`, and `containers/clean-solver/`
 - [x] T071 [P] Add container image content, mount, user, capability, credential, oracle, source, package, and network-isolation tests in `tests/harness/container-isolation.test.ts`
 - [x] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
 - [x] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
 - [x] T074 Validate every command and claim in `specs/005-end-to-end-harness/quickstart.md`
 - [x] T075 Run two fresh `pnpm harness:offline` attempts and prove the first remains byte-identical and independently replayable
 - [x] T076 Run `pnpm verify`, `pnpm verify:clean-snapshot`, and `git diff --check`
-- [ ] T077 Complete the exact Milestone 6 report and update implementation status in `docs/roadmap.md`
+- [x] T077 Complete the exact Milestone 6 report and update implementation status in `docs/roadmap.md`
 
 ---
 

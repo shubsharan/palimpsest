@@ -1,5 +1,15 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
+import {
+  createAttempt,
+  sealFailedAttempt,
+  verifyTerminalAttempt,
+} from "../../tools/harness/artifacts.js";
+import { HARNESS_ROOT } from "../../tools/harness/config.js";
 import { runComposedOfflineHarness } from "../../tools/harness/offline.js";
 
 const declarationDigest = "a".repeat(64);
@@ -130,5 +140,63 @@ describe("composed offline harness", () => {
         },
       }),
     ).rejects.toThrow("external model request");
+  });
+
+  test("seals an attempt when an offline stage fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-offline-failure-"));
+    const identity = { declarationDigest, runId: "attempt-failed" };
+    const harnessRoot = join(root, HARNESS_ROOT);
+
+    await expect(
+      runComposedOfflineHarness(root, {
+        runIds: ["attempt-failed", "unused-retry"],
+        stages: {
+          async verifyInputs() {},
+          async buildBundle() {},
+          async writePredeclaration() {},
+          async runAttempt() {
+            await createAttempt({
+              root: harnessRoot,
+              identity,
+              startedAt: "2026-07-26T00:00:00.000Z",
+            });
+            return identity;
+          },
+          async grade() {
+            throw new Error("deterministic grade failure");
+          },
+          async replay() {
+            throw new Error("replay must not run");
+          },
+          async complete() {
+            throw new Error("complete must not run");
+          },
+          async sealFailure(failedIdentity, _root, phase, error) {
+            return sealFailedAttempt({
+              root: harnessRoot,
+              identity: failedIdentity,
+              phase,
+              error,
+            });
+          },
+        },
+      }),
+    ).rejects.toThrow("deterministic grade failure");
+
+    await expect(verifyTerminalAttempt({ root: harnessRoot, identity })).resolves.toMatchObject({
+      classification: "failed",
+    });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(harnessRoot, "attempts", declarationDigest, identity.runId, "failure.json"),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({ phase: "grade", message: "deterministic grade failure" });
+    expect(JSON.parse(await readFile(join(harnessRoot, "current.json"), "utf8"))).toMatchObject({
+      runId: identity.runId,
+      status: "failed",
+    });
   });
 });

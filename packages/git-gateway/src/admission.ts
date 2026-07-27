@@ -104,6 +104,7 @@ export class SerializedAdmissionGateway {
     readonly refs: RefTransactionStore,
     readonly ledgers: ReadonlyMap<string, CumulativeLedger>,
     readonly validateQuarantine: (frame: GitAccountingFrameV1) => Promise<void>,
+    readonly prepareCommit: (frame: GitAccountingFrameV1) => Promise<void> = async () => {},
   ) {}
 
   admit(options: {
@@ -134,6 +135,13 @@ export class SerializedAdmissionGateway {
       options.transactionId,
       sha256Hex(frameBytes),
       gitAccountingCharge(options.frame),
+      {
+        refName: options.frame.refName,
+        oldOid: options.frame.oldOid.every((byte) => byte === 0)
+          ? null
+          : options.frame.oldOid.toString("hex"),
+        newOid: options.frame.newOid.toString("hex"),
+      },
     );
     if (!reservation.accepted) {
       return {
@@ -146,6 +154,12 @@ export class SerializedAdmissionGateway {
       ? null
       : options.frame.oldOid.toString("hex");
     const newOid = options.frame.newOid.toString("hex");
+    try {
+      await this.prepareCommit(options.frame);
+    } catch (error) {
+      ledger.abort(options.transactionId);
+      throw error;
+    }
     let committed: boolean;
     try {
       committed = await this.refs.commit(options.frame.refName, expectedOldOid, newOid);
@@ -175,5 +189,23 @@ export class SerializedAdmissionGateway {
       refCommitted: true,
       reservationStatus: "FINALIZED",
     };
+  }
+
+  async recoverPending(): Promise<LedgerEntry[]> {
+    const currentRefs = await this.refs.snapshot();
+    const recovered: LedgerEntry[] = [];
+    for (const ledger of this.ledgers.values()) {
+      for (const reservation of ledger.pendingReservations) {
+        if (!reservation.refName) {
+          throw new Error(
+            `Cannot recover Git reservation without a ref transition: ${reservation.transactionId}`,
+          );
+        }
+        recovered.push(
+          ledger.recover(reservation.transactionId, currentRefs[reservation.refName] ?? null),
+        );
+      }
+    }
+    return recovered;
   }
 }

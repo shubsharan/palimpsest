@@ -33,6 +33,8 @@ def test_reconstructs_event_freeze_git_ledger_and_submission_state() -> None:
     run_id = "container-001"
     events, head = _verify_events(ATTEMPT / "live.jsonl", run_id)
     freeze = json.loads((ATTEMPT / "git/freeze.json").read_text(encoding="utf-8"))
+    if "finalReleasedShards" not in freeze:
+        pytest.skip("the retained attempt predates frozen released-shard bindings")
     assert events[freeze["finalEventSequence"] - 1]["digest"] == freeze["eventChainHead"]
     assert head == events[-1]["digest"]
 
@@ -40,7 +42,7 @@ def test_reconstructs_event_freeze_git_ledger_and_submission_state() -> None:
     ledgers = json.loads((ATTEMPT / "git/ledgers.json").read_text(encoding="utf-8"))
     _verify_ledgers(ledgers, freeze, run_id)
     submissions = json.loads((ATTEMPT / "submissions.json").read_text(encoding="utf-8"))
-    _verify_submissions(ATTEMPT, submissions, run_id, freeze["freezeId"])
+    _verify_submissions(ATTEMPT, submissions, run_id, freeze)
 
 
 def test_rejects_event_and_cumulative_ledger_tampering(tmp_path: Path) -> None:

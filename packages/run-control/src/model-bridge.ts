@@ -235,6 +235,11 @@ export async function runBridgeProcess(options: {
         if (signal) {
           throw new Error(`Fixture adapter terminated by ${signal}.`);
         }
+        if (code !== 0) {
+          throw new Error(
+            `Fixture adapter exited ${String(code)}: ${Buffer.concat(stderr).toString("utf8")}`,
+          );
+        }
         const source = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(stdout));
         if (!source.endsWith("\n")) {
           throw new Error("Fixture adapter emitted a partial final NDJSON event.");
@@ -257,11 +262,6 @@ export async function runBridgeProcess(options: {
         const terminals = events.filter((event) => event.type === "worker.completed");
         if (terminals.length !== 1 || events.at(-1)?.type !== "worker.completed") {
           throw new Error("Fixture adapter must emit exactly one terminal worker.completed event.");
-        }
-        if (code !== 0) {
-          throw new Error(
-            `Fixture adapter exited ${String(code)}: ${Buffer.concat(stderr).toString("utf8")}`,
-          );
         }
         const declaredFiles = collectDeclaredFiles(events);
         const reportedResourceUsage = collectResourceUsage(events, limits);

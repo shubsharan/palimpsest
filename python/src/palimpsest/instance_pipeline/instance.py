@@ -35,7 +35,7 @@ def build_production_instance(root: Path = Path(".")) -> ProductionInstance:
             "schemaVersion": 1,
             "contractId": "difficulty-config",
             "profileId": "three-shard-partial-rekey-v1",
-            "communicationBudgetBytes": 65_536,
+            "communicationBudgetBytes": 38_912,
             "switchCount": 1,
         },
         scoring={

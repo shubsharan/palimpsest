@@ -5,9 +5,11 @@ export const FIXTURE_ADAPTER_ID = "fixture-agent-v1";
 export const HARNESS_PRODUCER_VERSION = "0.1.0";
 export const HARNESS_SCHEMA_VERSION = 1;
 export const AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const;
+export const RETAINED_COMMUNICATION_BUDGET_BYTES = 38_912;
 export const CONTAINER_BASE_IMAGE =
   "node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb";
 export const FIXTURE_IMAGE_TAG = "palimpsest-fixture-agent:0.1.0";
+export const GIT_GATEWAY_IMAGE_TAG = "palimpsest-git-gateway:0.1.0";
 export const CLEAN_SOLVER_IMAGE_TAG = "palimpsest-clean-solver:0.1.0";
 
 export interface HarnessAttemptIdentity {

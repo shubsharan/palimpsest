@@ -7,10 +7,12 @@ RUN apt-get update \
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base.json ./
 COPY packages/contracts ./packages/contracts
-COPY packages/run-control ./packages/run-control
-COPY tools/harness/config.ts tools/harness/fixture-worker.ts ./tools/harness/
+COPY packages/git-accounting ./packages/git-accounting
+COPY packages/git-gateway ./packages/git-gateway
+COPY tools/harness/config.ts tools/harness/git-server.ts tools/harness/git-server-container.ts tools/harness/publication-slots.ts ./tools/harness/
 RUN npm install --global pnpm@10.14.0 \
-    && pnpm install --frozen-lockfile
+    && pnpm install --frozen-lockfile \
+    && mkdir -p /git/repository.git
 
 USER 1000:1000
-ENTRYPOINT ["node", "--import", "tsx", "/app/tools/harness/fixture-worker.ts"]
+ENTRYPOINT ["node", "--import", "tsx", "/app/tools/harness/git-server-container.ts"]

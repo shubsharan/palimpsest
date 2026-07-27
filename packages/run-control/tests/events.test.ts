@@ -85,5 +85,8 @@ describe("run event chain", () => {
     expect(() => EventChain.verify([first!, { ...second!, monotonicElapsedNs: "0" }])).toThrow(
       /monotonic time/,
     );
+    await expect(
+      chain.append({ ...input, effectId: "effect-3", monotonicElapsedNs: "0" }),
+    ).rejects.toThrow(/cannot regress/);
   });
 });

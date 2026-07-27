@@ -156,6 +156,8 @@
         "runId",
         "snapshotId",
         "ordinal",
+        "predecessorSnapshotId",
+        "snapshotDigest",
         "refMapDigest",
         "visibilityJournalDigest",
         "eventSequence"
@@ -167,7 +169,11 @@
         "contractId": { "const": "published-snapshot" },
         "runId": { "$ref": "#/$defs/id" },
         "snapshotId": { "$ref": "#/$defs/id" },
-        "ordinal": { "type": "integer", "minimum": 0 },
+        "ordinal": { "type": "integer", "minimum": 1 },
+        "predecessorSnapshotId": {
+          "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }]
+        },
+        "snapshotDigest": { "$ref": "#/$defs/digest" },
         "refMapDigest": { "$ref": "#/$defs/digest" },
         "visibilityJournalDigest": { "$ref": "#/$defs/digest" },
         "eventSequence": {
@@ -224,7 +230,8 @@
         "visibilityJournalDigest",
         "ledgerDigest",
         "finalEventSequence",
-        "eventChainHead"
+        "eventChainHead",
+        "finalReleasedShards"
       ],
       "properties": {
         "schemaVersion": {
@@ -240,7 +247,21 @@
         "finalEventSequence": {
           "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/nonNegativeSafeInteger"
         },
-        "eventChainHead": { "$ref": "#/$defs/digest" }
+        "eventChainHead": { "$ref": "#/$defs/digest" },
+        "finalReleasedShards": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["agentId", "manifest"],
+            "properties": {
+              "agentId": { "$ref": "#/$defs/id" },
+              "manifest": { "$ref": "#/$defs/artifact" }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },

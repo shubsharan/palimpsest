@@ -54,6 +54,13 @@ export class EventChain {
       }
       return this.#events.find((event) => event.effectId === input.effectId)!;
     }
+    if (!/^(0|[1-9][0-9]*)$/.test(input.monotonicElapsedNs)) {
+      throw new Error("Run event monotonic time must be an unsigned decimal integer.");
+    }
+    const previousElapsedNs = BigInt(this.#events.at(-1)?.monotonicElapsedNs ?? "0");
+    if (BigInt(input.monotonicElapsedNs) < previousElapsedNs) {
+      throw new Error("Run event monotonic time cannot regress.");
+    }
     const body = {
       schemaVersion: 1 as const,
       contractId: "run-event" as const,

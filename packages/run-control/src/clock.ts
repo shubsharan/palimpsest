@@ -82,6 +82,13 @@ export function validateHarnessSchedule(schedule: HarnessSchedule): void {
   if (finalReveal > schedule.pushCloseOffsetMs - schedule.stabilizationIntervalMs) {
     throw new Error("Final reveal does not leave the required stabilization interval.");
   }
+  const finalPublication = schedule.publicationOffsetsMs.at(-1) ?? 0;
+  if (
+    finalPublication <= schedule.pushCloseOffsetMs ||
+    finalPublication >= schedule.freezeOffsetMs
+  ) {
+    throw new Error("Final publication must occur after push close and before freeze.");
+  }
 }
 
 function boundaryKey(boundary: ScheduleBoundary): string {

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { CumulativeLedger, SnapshotStore, createFreeze } from "@palimpsest/git-gateway";
+import {
+  CumulativeLedger,
+  SnapshotStore,
+  createFreeze,
+  publishSnapshot,
+} from "@palimpsest/git-gateway";
 import { EventChain, sealPrivateSubmission } from "@palimpsest/run-control";
 import { describe, expect, test } from "vitest";
 
@@ -56,18 +61,16 @@ describe("harness failure injection", () => {
     expect(() => ledger.reserve("tx-1", "3".repeat(64), 5)).toThrow("Conflicting duplicate");
 
     const snapshots = new SnapshotStore();
-    const snapshot = {
-      schemaVersion: 1 as const,
-      contractId: "published-snapshot" as const,
+    const snapshot = publishSnapshot({
       runId: "run-1",
-      snapshotId: "publication-001",
       ordinal: 1,
-      refMapDigest: "4".repeat(64),
+      refs: { "refs/heads/main": "4".repeat(64) },
+      predecessorSnapshotId: null,
       visibilityJournalDigest: "5".repeat(64),
       eventSequence: 1,
-    };
+    });
     snapshots.add(snapshot);
-    expect(() => snapshots.add({ ...snapshot, ordinal: 2 })).toThrow("already exists");
+    expect(() => snapshots.add({ ...snapshot })).toThrow("already exists");
     expect(snapshots.get(snapshot.snapshotId)).toEqual(snapshot);
   });
 
@@ -84,6 +87,14 @@ describe("harness failure injection", () => {
         ledgers: [],
         finalEventSequence: 1,
         eventChainHead: "2".repeat(64),
+        finalReleasedShards: ["agent-1", "agent-2", "agent-3"].map((agentId) => ({
+          agentId,
+          manifest: {
+            artifactType: "released-shard-manifest",
+            byteLength: 1,
+            sha256: "3".repeat(64),
+          },
+        })),
       }),
     ).rejects.toThrow();
     await expect(access(bundlePath)).rejects.toThrow();

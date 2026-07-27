@@ -12,6 +12,8 @@ export interface AuthenticatedAgent {
 export interface PublicationSnapshotRef {
   snapshotId: string;
   ordinal: number;
+  predecessorSnapshotId: string | null;
+  snapshotDigest: string;
   refMapDigest: string;
   visibilityJournalDigest: string;
 }
@@ -39,6 +41,8 @@ export interface PublishedSnapshot {
   runId: string;
   snapshotId: string;
   ordinal: number;
+  predecessorSnapshotId: string | null;
+  snapshotDigest: string;
   refMapDigest: string;
   visibilityJournalDigest: string;
   eventSequence: number;
@@ -54,6 +58,9 @@ export interface LedgerReservation {
   budgetAfter: number;
   accepted: boolean;
   status: ReservationStatus;
+  refName?: string;
+  oldOid?: string | null;
+  newOid?: string;
 }
 
 export interface SnapshotView {
@@ -80,3 +87,22 @@ export interface AdmissionResult {
   refCommitted: boolean;
   reservationStatus: ReservationStatus;
 }
+
+export interface GitGatewayService {
+  admit(options: {
+    agent: AuthenticatedAgent;
+    frame: GitAccountingFrameV1;
+    transactionId: string;
+  }): Promise<AdmissionResult>;
+}
+
+export interface SnapshotFetchService {
+  capture(snapshotId: string): { snapshot: PublishedSnapshot; view: SnapshotView };
+  normalize(options: {
+    snapshotId: string;
+    wants: readonly string[];
+    haves: readonly string[];
+    capabilities: readonly string[];
+  }): CanonicalFetchTuple;
+}
+import type { GitAccountingFrameV1 } from "@palimpsest/git-accounting";
