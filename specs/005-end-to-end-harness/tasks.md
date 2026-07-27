@@ -126,7 +126,7 @@
 - [x] T061 [P] [US3] Implement hostile archive inspection and filtered staging in `python/src/palimpsest/solver/bundle.py`
 - [x] T062 [US3] Implement network-disabled clean executable invocation and exact output collection in `python/src/palimpsest/solver/executor.py`
 - [x] T063 [P] [US3] Complete versioned score formulas and report assembly in `python/src/palimpsest/grading/score_report.py`
-- [ ] T064 [US3] Implement trusted run-state and score replay in `python/src/palimpsest/replay/harness.py`
+- [x] T064 [US3] Implement trusted run-state and score replay in `python/src/palimpsest/replay/harness.py`
 - [ ] T065 [US3] Implement redacted public report projection in `python/src/palimpsest/replay/public_report.py`
 - [ ] T066 [US3] Implement explicit-attempt grading orchestration in `tools/harness/grade.ts`
 - [ ] T067 [US3] Implement explicit-attempt replay orchestration in `tools/harness/replay.ts`
