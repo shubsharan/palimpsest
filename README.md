@@ -12,7 +12,7 @@ The runner observes the resulting work. It does not assign roles, impose rounds,
 - [Feature 009 quickstart](specs/009-refactor-puzzle-architecture/quickstart.md): current setup, verification, and offline acceptance flow.
 - [Operator CLI contract](specs/009-refactor-puzzle-architecture/contracts/operator-cli.md): required flags, defaults, and result compatibility.
 
-Specification 006 remains the completed behavior-neutral design record. Feature 009 keeps that behavior while reducing the active implementation to one root TypeScript application and one Python distribution.
+Feature 009 is the single active specification. Superseded designs and generated experimental evidence remain recoverable from Git history rather than occupying the working tree.
 
 ## Setup
 

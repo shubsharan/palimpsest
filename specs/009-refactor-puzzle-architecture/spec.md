@@ -83,7 +83,6 @@ A maintainer can verify the compact architecture from a clean or previously used
 - A command times out, is cancelled, exceeds output limits, exits nonzero, or fails during container cleanup.
 - Git contains no refs, multiple refs, deleted historical content, duplicate blobs, non-text blobs, or unusual paths during overlap observation.
 - Ignored cache directories, bytecode caches, or empty generated directories exist in the checkout.
-- The untracked `.artifacts-tmp/gate-b-contract-cases.json` exists while tracked source and configuration move around it.
 
 ## Puzzle & Observation Boundaries _(mandatory)_
 
@@ -125,9 +124,9 @@ A maintainer can verify the compact architecture from a clean or previously used
 - **FR-020**: Existing coverage for sessions, reveal timing, Git activity, trace reopening, evaluation outcomes, path containment, sandbox termination, image identity, and output limits MUST remain active after relocation.
 - **FR-021**: Focused regression coverage MUST include stored-record decoders, invalid fixture scenarios, post-freeze overlap failure, clock-controlled reveals, and attempt-summary durability.
 - **FR-022**: Current architecture, roadmap, README, formatting inputs, runtime configuration, lock data, and repository guidance MUST describe only the new active layout and MUST remain mutually consistent.
-- **FR-023**: Completed specifications 006 and 008 MUST remain as unchanged historical records, and the proposal's puzzle meaning MUST remain unchanged.
+- **FR-023**: Superseded specifications and generated experimental evidence MUST be removed from the working tree after their behavior is captured by the active specification and tests, while the proposal's puzzle meaning MUST remain unchanged.
 - **FR-024**: Generated-only legacy package directories and bytecode caches MAY be removed only after confirming that no tracked or active source depends on them.
-- **FR-025**: The untracked `.artifacts-tmp/gate-b-contract-cases.json` MUST remain unmodified and unarchived by this feature.
+- **FR-025**: Legacy Gate, harness, replay, temporary evidence, and obsolete package directories MUST be absent from the final working tree and covered by current ignore rules where they are valid generated outputs.
 - **FR-026**: Before active behavior is relocated, the system MUST capture fixed-seed build identities, puzzle geometry, reconstruction scores, checker aggregates, contractual trace relationships, and minimum operator results as scientific and command-contract golden cases.
 - **FR-027**: The existing development-time version verification capability MUST remain available after the active runtime moves.
 
@@ -161,10 +160,10 @@ A maintainer can verify the compact architecture from a clean or previously used
 
 - This is a greenfield internal refactor: obsolete private import paths, wrapper interfaces, exact JSON result key sets, and stored records from earlier implementations receive no compatibility layer.
 - Existing record shapes may remain where they are already the simplest adequate representation, but no code, fixture, or test exists solely to preserve them.
-- The completed behavior-neutral runner and hardening specifications remain historical records; this feature reorganizes their delivered behavior rather than superseding their semantics.
+- Git history remains the archive for superseded runner and hardening specifications; this feature carries their still-authoritative behavior into one active specification.
 - `docs/proposal.md` remains semantically unchanged because the experiment, agent experience, and claim boundary do not change.
 - The five retained commands are sandbox preparation, puzzle build, live run, evaluation, and deterministic offline fixture.
 - The implemented offline scenario is `collaborative-revision`; no other fixture scenario is currently part of the supported operator contract.
 - Generated-only legacy package directories and runtime bytecode caches may be removed after their contents are revalidated as non-source and untracked.
-- The untracked `.artifacts-tmp/gate-b-contract-cases.json` is user-owned evidence outside this feature's edit scope.
+- Generated historical evidence is disposable once the active golden, focused tests, and fresh acceptance flow cover the retained behavior.
 - Implementation planning will choose concrete file names and dependency edges while preserving the ownership outcomes, scientific behavior, command workflow, and current-version validation requirements stated here.

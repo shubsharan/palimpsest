@@ -54,6 +54,14 @@ const DELETED_REFERENCE_PATTERNS = [
   /\bparseAttemptConfig\b/g,
 ] as const;
 
+const REMOVED_LEGACY_ROOTS = [
+  ".artifacts-tmp",
+  ".cursor",
+  "packages",
+  "specs/006-behavior-neutral-runner",
+  "specs/008-runner-hardening-cleanup",
+] as const;
+
 async function activeRepositoryPaths(): Promise<string[]> {
   const candidates = execFileSync(
     "git",
@@ -186,19 +194,27 @@ describe("active repository boundary", () => {
     expect(await deletedReferences(await activeRepositoryPaths())).toEqual([]);
   });
 
+  test("has no retired specification, evidence, package, or tool-state roots", async () => {
+    await Promise.all(
+      REMOVED_LEGACY_ROOTS.map(async (path) => {
+        await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
+      }),
+    );
+  });
+
   test("is unchanged by ignored caches and empty legacy directories", async () => {
     const baseline = await activeRepositoryPaths();
-    const cacheRoot = "artifacts/verification-cache/__pycache__";
-    const emptyLegacyRoot = "packages/puzzle-runner/verification-empty";
+    const cacheRoot = "src/__pycache__";
+    const emptyGeneratedRoot = "src/verification-empty";
     try {
       await mkdir(cacheRoot, { recursive: true });
       await writeFile(`${cacheRoot}/probe.pyc`, "ignored cache\n", "utf8");
-      await mkdir(emptyLegacyRoot, { recursive: true });
+      await mkdir(emptyGeneratedRoot);
       expect(await activeRepositoryPaths()).toEqual(baseline);
     } finally {
       await Promise.all([
-        rm("artifacts/verification-cache", { recursive: true, force: true }),
-        rm(emptyLegacyRoot, { recursive: true, force: true }),
+        rm(cacheRoot, { recursive: true, force: true }),
+        rm(emptyGeneratedRoot, { recursive: true, force: true }),
       ]);
     }
   });

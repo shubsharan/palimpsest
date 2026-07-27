@@ -1,29 +1,40 @@
+# Operating system and editor state
 .DS_Store
 Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Local configuration and scratch output
 .env
 .env.*
 !.env.example
 *.log
 *.tmp
-*.swp
-.idea/
-.vscode/
+.tmp/
+.artifacts-tmp/
 
+# JavaScript and TypeScript
 node_modules/
 dist/
 build/
 coverage/
 *.tsbuildinfo
 
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
 .venv/
 venv/
-python/.venv/
 *.egg-info/
 
+# Generated puzzle runs
 artifacts/
 runs/

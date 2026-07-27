@@ -8,7 +8,7 @@ The delivery order follows usable behavior: build the puzzle, let agents work fr
 
 ## Current Status
 
-Feature 006 records the behavior-neutral runner design. Feature 009 is the active implementation cut: it preserves that behavior and the hardened Docker/trace boundary while reducing the repository to one root TypeScript application and one Python distribution. It does not change the puzzle or rewrite feature 006.
+Feature 009 is the active implementation: a behavior-neutral runner with a hardened Docker/trace boundary, one root TypeScript application, and one Python distribution. Superseded designs and generated evidence remain available through Git history rather than the working tree.
 
 The project is complete when the documented build-run-evaluate path works end to end and the runner neither prescribes nor repairs agent collaboration.
 
@@ -95,7 +95,7 @@ Route every operator command through the dispatcher in `src/cli.ts`; keep lifecy
 
 Publish the frozen attempt summary atomically before optional overlap observation. If observation fails, retain an evaluatable `attempt.json`, trace, frozen Git, and workspaces, append only a best-effort trace diagnostic, and return the original infrastructure failure without a success object or failure sidecar.
 
-Remove tracked historical run artifacts and specifications 001 through 005 from the active tree. Preserve specifications 006 and 008 unchanged as completed design and hardening records, keep generated attempts untracked, and use Git history as the archive for removed implementation, specifications, and artifacts. Current product docs, runtime guidance, package scripts, and code paths describe only the active puzzle.
+Remove superseded specifications, tracked historical run artifacts, ignored Gate/harness/replay output, and obsolete package roots from the working tree. Keep generated attempts untracked and use Git history as the archive for removed implementation, specifications, and artifacts. Current product docs, runtime guidance, package scripts, and code paths describe only the active puzzle.
 
 ### 6. Verify the Puzzle Path
 
@@ -129,7 +129,7 @@ Palimpsest is delivered when:
 - deterministic scoring and normalized observation preserve model outcomes separately from infrastructure failures;
 - one validated trace preserves strict chronology across live and post-run processes;
 - obvious raw overlap covers every reachable text blob once, reports repeated tree references and skipped non-text objects, and remains observational only;
-- obsolete Gate-era code, dependencies, tracked artifacts, workspace/facade layout, and specifications 001 through 005 are absent from the active tree while specifications 006 and 008 remain unchanged and Git history remains the archive;
+- obsolete Gate-era code, dependencies, generated evidence, workspace/facade layout, and superseded specifications are absent from the working tree while Git history remains the archive;
 - the active commands and docs contain no Git metering, publication slots, behavioral gates, solver schema, exact replay, or red-team release requirement; and
 - a fresh offline fixture and the repository verification suite pass.
 

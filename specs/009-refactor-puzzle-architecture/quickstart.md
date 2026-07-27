@@ -111,7 +111,7 @@ Confirm active source contains:
 - `tools/verify-versions.ts` as the only retained development utility in `tools/`;
 - no `packages/puzzle-runner`, package barrel, TypeScript alias, `pnpm-workspace.yaml`, `tools/puzzle`, or `python/src`.
 
-Search active code and configuration, excluding historical specifications 006 and 008, for deleted paths and names. The audit must find no active `@palimpsest/puzzle-runner`, `AgentAdapter`, `Supervisor`, `parseAttemptConfig`, `tools/puzzle`, or `python/src/palimpsest` reference.
+Search active code and configuration for deleted paths and names. The audit must find no active `@palimpsest/puzzle-runner`, `AgentAdapter`, `Supervisor`, `parseAttemptConfig`, `tools/puzzle`, or `python/src/palimpsest` reference.
 
 ## Confirm the Greenfield Boundary
 
@@ -122,9 +122,9 @@ Search active code and configuration, excluding historical specifications 006 an
 - `attempt.json` is published with a same-directory temporary write and atomic rename inside the exclusively created attempt root; concurrent writers are unsupported.
 - Overlap failure reports through nonzero exit and standard error, preserves an evaluatable attempt, and creates no failure sidecar.
 
-## Preserve Historical and User-Owned Material
+## Confirm the Clean Working Tree
 
-- Specifications 006 and 008 remain byte-for-byte unchanged.
 - `docs/proposal.md` remains semantically unchanged.
-- `.artifacts-tmp/gate-b-contract-cases.json` retains its pre-refactor byte hash and remains unmodified and unarchived.
-- Cache deletion is reported separately and occurs only after tracked-path verification proves the directories contain no active source.
+- Superseded specifications, `.artifacts-tmp`, Gate/harness/replay outputs, obsolete package roots, and redundant tool state are absent.
+- Generated attempts, temporary output, Python caches, virtual environments, and test caches are ignored explicitly.
+- Git history remains the archive for deleted specifications and evidence.

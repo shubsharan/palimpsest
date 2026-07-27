@@ -157,6 +157,16 @@
 
 ---
 
+## Phase 8: Post-Implementation Repository Cleanup
+
+**Purpose**: Leave only the active specification, runtime, tests, fixtures, documentation, and tool integrations in the working tree.
+
+- [x] T047 Remove superseded specifications 006 and 008, `.artifacts-tmp`, ignored Gate/harness/replay output, obsolete package roots, generated caches, and unused Cursor state after confirming none are active runtime inputs
+- [x] T048 Recreate `python/.venv` from the frozen current lock so obsolete legacy dependencies are absent
+- [x] T049 Refresh `.gitignore`, align Feature 009 and current documentation with the clean-tree policy, run full verification, and audit the final tree for legacy folders and references
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -168,6 +178,7 @@
 - **User Story 3 (Phase 5)** depends on User Story 1; it may proceed in parallel with User Story 2 after the root cut because its durable writer and lifecycle changes have separate acceptance tests.
 - **User Story 4 (Phase 6)** depends on User Story 1 and consumes the final User Story 2/3 layout and behavior for full verification.
 - **Polish (Phase 7)** depends on all four stories.
+- **Post-implementation cleanup (Phase 8)** depends on completed acceptance and removes material that the active implementation no longer consumes.
 
 ### Critical Task Dependencies
 
@@ -250,7 +261,7 @@ Task T036: Add the fresh current-version decoder chain in tests/puzzle/offline.t
 - Do not add compatibility aliases, historical artifact fixtures, schema generators, replay support, dual command paths, migration readers, failure sidecars, or concurrent-writer coordination.
 - Reuse current artifact shapes only when they remain the shortest adequate active design.
 - Preserve command names, flags, defaults, minimum results, deterministic puzzle mechanics, sandbox behavior, trace partial order, agent-visible tools, and voluntary Git.
-- Keep specifications 006/008 and `docs/proposal.md` historical; do not rewrite them to describe Feature 009.
+- Keep `docs/proposal.md` semantically unchanged; Git history is the archive for removed superseded specifications and evidence.
 
 ## Notes
 

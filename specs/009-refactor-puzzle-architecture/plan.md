@@ -200,7 +200,7 @@ Move `python/src/palimpsest` to `python/palimpsest`; update Hatch package discov
 
 Before moving code, preserve the existing seed-17 build identity and capture normalized seed-0 puzzle geometry, checker aggregate, score, contractual trace partial order, and minimum command results in `tests/golden/behavior.json`. File counts, tree digests, exact manifest fields, dynamic paths, timestamps, Git object IDs, image IDs, Docker duration, extra command fields, and unconstrained Git or agent-event interleaving are not frozen.
 
-The repository-boundary test derives the active path set from Git's cached plus nonignored untracked paths minus deleted paths. It restricts assertions to active repository scopes, so ignored caches, empty directories, and the preserved `.artifacts-tmp/` evidence cannot affect the result during an unstaged implementation.
+The repository-boundary test derives the active path set from Git's cached plus nonignored untracked paths minus deleted paths. It restricts assertions to active repository scopes, so ignored caches and empty directories cannot affect the result during an unstaged implementation.
 
 Unit tests move beside their owners. Black-box tests retain CLI contracts, offline completion, real Docker containment, and the new post-freeze overlap-failure/evaluation path. The final acceptance run rebuilds the sandbox image, runs `pnpm verify`, checks whitespace, audits deleted imports/layout, and executes a fresh offline fixture.
 
@@ -211,8 +211,8 @@ Unit tests move beside their owners. Black-box tests retain CLI contracts, offli
 3. Extract model/provider/fixture/reveal/artifact/overlap and sandbox/process boundaries; add the focused clock, current-version decoder, scenario, and durability tests.
 4. Move the Python distribution and tests together with package discovery, pytest/Ruff inputs, TypeScript subprocess module names, and generated lock metadata; refresh the editable environment and validate the unchanged scientific golden build.
 5. Persist the attempt summary before overlap, retain the best-effort failure trace, and prove subsequent evaluation plus primary-error preservation.
-6. Update architecture, roadmap, README, `AGENTS.md`, `CLAUDE.md`, and current command guidance while removing obsolete layout/configuration references in the same final migration slice; keep `docs/proposal.md` semantically unchanged and specs 006/008 byte-for-byte unchanged.
-7. Delete only revalidated generated caches/empty legacy directories, leave `.artifacts-tmp/gate-b-contract-cases.json` untouched, and execute the complete fresh acceptance sequence.
+6. Update architecture, roadmap, README, `AGENTS.md`, `CLAUDE.md`, and current command guidance while removing obsolete layout/configuration references in the same final migration slice; keep `docs/proposal.md` semantically unchanged.
+7. After the active golden and verification suite pass, remove superseded specifications, generated Gate/harness/replay evidence, stale package roots, redundant tool state, and caches; rebuild generated environments from their current locks and execute the complete fresh acceptance sequence.
 
 ## Complexity Tracking
 
