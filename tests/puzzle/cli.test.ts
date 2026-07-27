@@ -5,8 +5,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildPuzzle } from "../../tools/puzzle/build.js";
+import { parseFlags } from "../../tools/puzzle/common.js";
 
 describe("puzzle build CLI", () => {
+  it("accepts pnpm's conventional standalone option separator", () => {
+    expect(parseFlags(["--", "--output", "attempt"])).toEqual(new Map([["--output", "attempt"]]));
+  });
+
   it("reproduces three private six-stage streams while separating public and oracle files", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-build-cli-"));
     const first = join(root, "first");

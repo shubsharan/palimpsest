@@ -21,9 +21,10 @@ describe("offline behavior-neutral runner", () => {
     await access(join(output, "attempt", "overlap.json"));
     await access(join(output, "attempt", "frozen", "shared.git"));
     const trace = await readFile(join(output, "attempt", "trace.jsonl"), "utf8");
-    expect(trace).toContain('"kind":"stage.released"');
+    expect(trace.match(/"kind":"stage\.released"/g)).toHaveLength(18);
     expect(trace).toContain('"kind":"tool.started"');
     expect(trace).toContain('"kind":"reviewer.selection"');
     expect(trace).toContain('"kind":"evaluation.scored"');
+    expect(trace.indexOf("mapping=v1")).toBeLessThan(trace.indexOf("mapping=v2"));
   }, 30_000);
 });

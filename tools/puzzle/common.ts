@@ -10,7 +10,8 @@ export interface ProcessResult {
 
 export function parseFlags(argv: readonly string[]): Map<string, string> {
   const flags = new Map<string, string>();
-  for (let index = 0; index < argv.length; index += 1) {
+  const start = argv[0] === "--" ? 1 : 0;
+  for (let index = start; index < argv.length; index += 1) {
     const name = argv[index];
     if (name === undefined || !name.startsWith("--")) {
       throw new Error(`Expected an option name, received ${name ?? "end of input"}.`);

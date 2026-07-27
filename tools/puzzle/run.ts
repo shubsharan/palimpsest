@@ -106,18 +106,60 @@ function fixtureAdapter(_scenario = "collaborative-revision"): FixtureAgentAdapt
     ],
     "agent-2": [
       {
-        toolCalls: [{ id: "wait", name: "wait_for_activity", arguments: { afterSequence: 0 } }],
+        toolCalls: [
+          {
+            id: "rule-v1",
+            name: "run_command",
+            arguments: {
+              command:
+                "printf 'mapping=v1\\n' > rule.txt && git add rule.txt && git commit -m 'record initial rule' && git push origin HEAD:refs/heads/agent-2",
+            },
+          },
+        ],
         usage: { inputTokens: 2, outputTokens: 1 },
       },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        toolCalls: [
+          {
+            id: `wait-before-revision-${index + 1}`,
+            name: "wait_for_activity" as const,
+            arguments: { afterSequence: 0 },
+          },
+        ],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      })),
+      {
+        toolCalls: [
+          {
+            id: "rule-v2",
+            name: "run_command",
+            arguments: {
+              command:
+                "printf 'mapping=v2\\n' > rule.txt && git add rule.txt && git commit -m 'revise rule after new evidence' && git push origin HEAD:refs/heads/agent-2",
+            },
+          },
+        ],
+        usage: { inputTokens: 2, outputTokens: 1 },
+      },
+      ...Array.from({ length: 2 }, (_, index) => ({
+        toolCalls: [
+          {
+            id: `wait-after-revision-${index + 1}`,
+            name: "wait_for_activity" as const,
+            arguments: { afterSequence: 0 },
+          },
+        ],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      })),
       {
         toolCalls: [
           { id: "fetch", name: "run_command", arguments: { command: "git fetch origin" } },
         ],
-        usage: { inputTokens: 2, outputTokens: 1 },
+        usage: { inputTokens: 1, outputTokens: 1 },
       },
       {
         toolCalls: [],
-        finalResponse: "Reviewed peer activity.",
+        finalResponse: "Reviewed peer activity and revised a prior rule.",
         usage: { inputTokens: 1, outputTokens: 1 },
       },
     ],
