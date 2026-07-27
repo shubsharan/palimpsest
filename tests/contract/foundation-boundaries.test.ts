@@ -1,12 +1,15 @@
+import { execFile } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
+import { promisify } from "node:util";
 
 import { describe, expect, test } from "vitest";
 
-import { canonicalJsonBytes } from "@palimpsest/contracts";
+import { canonicalJsonBytes, validateValue } from "@palimpsest/contracts";
 
 import { buildRuntimeVerdicts } from "../../tools/evidence/compare-runtimes.js";
 
 const forbiddenPaths = ["agent", "apps", "infra", "packages/control-domain", "packages/git-meter"];
+const execFileAsync = promisify(execFile);
 
 describe("Repository boundaries", () => {
   async function schemaFiles(directory = "packages/contracts/schemas"): Promise<string[]> {
@@ -159,5 +162,54 @@ describe("Repository boundaries", () => {
       expect(content).not.toContain("switchAfterChapter");
       expect(content).not.toContain("changedEntries");
     }
+  });
+
+  test("wires every offline harness surface into repository verification", async () => {
+    const required = [
+      "packages/run-control/src/coordinator.ts",
+      "packages/git-gateway/src/freeze.ts",
+      "python/src/palimpsest/instance_pipeline/bundle.py",
+      "python/src/palimpsest/solver/executor.py",
+      "python/src/palimpsest/grading/score_report.py",
+      "python/src/palimpsest/replay/harness.py",
+      "python/src/palimpsest/replay/public_report.py",
+      "tools/harness/build.ts",
+      "tools/harness/run.ts",
+      "tools/harness/grade.ts",
+      "tools/harness/replay.ts",
+      "tools/harness/report.ts",
+      "tools/harness/offline.ts",
+      "tests/harness/end-to-end.test.ts",
+      "tests/harness/failure-injection.test.ts",
+    ];
+    await Promise.all(required.map((path) => access(path)));
+
+    const packageManifest = JSON.parse(await readFile("package.json", "utf8"));
+    expect(Object.keys(packageManifest.scripts)).toEqual(
+      expect.arrayContaining([
+        "harness:inputs",
+        "harness:build",
+        "harness:predeclare",
+        "harness:predeclare:check",
+        "harness:run:offline",
+        "harness:grade",
+        "harness:replay",
+        "harness:complete",
+        "harness:offline",
+        "verify",
+        "verify:clean-snapshot",
+      ]),
+    );
+    const predeclaration = JSON.parse(
+      await readFile("artifacts/harness/predeclaration.json", "utf8"),
+    );
+    expect(validateValue("offline-harness-report", predeclaration)).toMatchObject({
+      accepted: true,
+    });
+
+    const { stdout } = await execFileAsync("git", ["ls-files", "artifacts/harness"]);
+    const tracked = stdout.split("\n").filter(Boolean);
+    expect(tracked.some((path) => path.includes("/attempts/"))).toBe(false);
+    expect(tracked.some((path) => path.endsWith("/current.json"))).toBe(false);
   });
 });

@@ -4,6 +4,15 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { sha256Hex } from "@palimpsest/contracts";
+
+import {
+  CLEAN_SOLVER_IMAGE_TAG,
+  CONTAINER_BASE_IMAGE,
+  FIXTURE_IMAGE_TAG,
+  HARNESS_PRODUCER_VERSION,
+} from "../harness/config.js";
+
 const execFileAsync = promisify(execFile);
 
 export const EXPECTED_TOOL_VERSIONS = {
@@ -62,15 +71,28 @@ function parseToolVersions(source: string): ToolVersionMap {
 }
 
 export async function verifyDeclaredPins(): Promise<void> {
-  const [toolVersions, nodeVersion, pythonVersion, packageSource, pyproject] = await Promise.all([
+  const [
+    toolVersions,
+    nodeVersion,
+    pythonVersion,
+    packageSource,
+    pyproject,
+    imageLockSource,
+    fixtureDockerfile,
+    solverDockerfile,
+  ] = await Promise.all([
     readFile(".tool-versions", "utf8"),
     readFile(".node-version", "utf8"),
     readFile(".python-version", "utf8"),
     readFile("package.json", "utf8"),
     readFile("python/pyproject.toml", "utf8"),
+    readFile("containers/images.lock.json", "utf8"),
+    readFile("containers/fixture-agent/Dockerfile"),
+    readFile("containers/clean-solver/Dockerfile"),
   ]);
   verifyVersionMap(parseToolVersions(toolVersions));
   const packageManifest = JSON.parse(packageSource);
+  const imageLock = JSON.parse(imageLockSource);
   if (
     nodeVersion.trim() !== EXPECTED_TOOL_VERSIONS.node ||
     pythonVersion.trim() !== EXPECTED_TOOL_VERSIONS.python ||
@@ -78,7 +100,13 @@ export async function verifyDeclaredPins(): Promise<void> {
     packageManifest.engines?.node !== EXPECTED_TOOL_VERSIONS.node ||
     packageManifest.engines?.pnpm !== EXPECTED_TOOL_VERSIONS.pnpm ||
     !pyproject.includes(`requires-python = "==${EXPECTED_TOOL_VERSIONS.python}"`) ||
-    !toolVersions.split("\n").includes(`docker ${EXPECTED_DOCKER_VERSION}`)
+    !toolVersions.split("\n").includes(`docker ${EXPECTED_DOCKER_VERSION}`) ||
+    HARNESS_PRODUCER_VERSION !== "0.1.0" ||
+    imageLock.baseImage !== CONTAINER_BASE_IMAGE ||
+    imageLock.fixtureAgent?.tag !== FIXTURE_IMAGE_TAG ||
+    imageLock.cleanSolver?.tag !== CLEAN_SOLVER_IMAGE_TAG ||
+    imageLock.fixtureAgent?.dockerfileSha256 !== sha256Hex(fixtureDockerfile) ||
+    imageLock.cleanSolver?.dockerfileSha256 !== sha256Hex(solverDockerfile)
   ) {
     throw new Error("One or more repository tool declarations differ from .tool-versions.");
   }

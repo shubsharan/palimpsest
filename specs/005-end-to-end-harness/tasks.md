@@ -10,7 +10,7 @@
 
 - [x] T001 Create `packages/run-control/`, `packages/git-gateway/`, `python/src/palimpsest/instance_pipeline/`, `python/src/palimpsest/solver/`, `python/src/palimpsest/replay/`, `tools/harness/`, `tests/harness/`, and `python/tests/harness/`
 - [x] T002 Add `harness:inputs`, `harness:build`, `harness:predeclare`, `harness:predeclare:check`, `harness:run:offline`, `harness:grade`, `harness:replay`, `harness:complete`, and `harness:offline` scripts to `package.json`
-- [ ] T003 [P] Pin Git, Docker, fixture-image, solver-image, and harness producer versions in `.tool-versions`, `tools/evidence/verify-versions.ts`, and `tools/harness/config.ts`
+- [x] T003 [P] Pin Git, Docker, fixture-image, solver-image, and harness producer versions in `.tool-versions`, `tools/evidence/verify-versions.ts`, and `tools/harness/config.ts`
 - [x] T004 [P] Define offline model-provider prohibition and adapter authorization configuration in `packages/run-control/src/model-bridge.ts` and `tools/harness/config.ts`
 - [x] T005 Define immutable harness paths, declaration inputs, attempt identity, and atomic operator pointer policy in `tools/harness/config.ts` and `python/src/palimpsest/instance_pipeline/config.py`
 
@@ -142,9 +142,9 @@
 **Purpose**: Prove the production trust boundaries and close the Milestone 6 authorization honestly.
 
 - [x] T070 [P] Add digest-pinned fixture-agent and clean-solver images in `containers/fixture-agent/` and `containers/clean-solver/`
-- [ ] T071 [P] Add container image content, mount, user, capability, credential, oracle, source, package, and network-isolation tests in `tests/harness/container-isolation.test.ts`
-- [ ] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
-- [ ] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
+- [x] T071 [P] Add container image content, mount, user, capability, credential, oracle, source, package, and network-isolation tests in `tests/harness/container-isolation.test.ts`
+- [x] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
+- [x] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
 - [ ] T074 Validate every command and claim in `specs/005-end-to-end-harness/quickstart.md`
 - [x] T075 Run two fresh `pnpm harness:offline` attempts and prove the first remains byte-identical and independently replayable
 - [x] T076 Run `pnpm verify`, `pnpm verify:clean-snapshot`, and `git diff --check`
