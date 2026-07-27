@@ -114,7 +114,7 @@
 ### Verification for User Story 3
 
 - [ ] T054 [P] [US3] Add archive traversal, links, devices, sparse entries, duplicates, collisions, undeclared files, and entry/byte bomb tests in `python/tests/harness/test_solver_bundle.py`
-- [ ] T055 [P] [US3] Add valid non-Python clean-solver execution, timeout, network, mount, and exact-output tests in `python/tests/harness/test_solver_execution.py`
+- [x] T055 [P] [US3] Add valid non-Python clean-solver execution, timeout, network, mount, and exact-output tests in `python/tests/harness/test_solver_execution.py`
 - [ ] T056 [P] [US3] Add reconstruction, entity, dictionary, changed/stable, switch, latency, collaboration, and confidence formula tests in `python/tests/harness/test_scoring.py`
 - [ ] T057 [P] [US3] Add ref, object, snapshot, visibility, ledger, event, freeze, solver, score, and report replay tests in `python/tests/harness/test_replay.py`
 - [ ] T058 [P] [US3] Add public report redaction and narrow-claim tests in `python/tests/harness/test_public_report.py`
@@ -124,7 +124,7 @@
 ### Implementation for User Story 3
 
 - [ ] T061 [P] [US3] Implement hostile archive inspection and filtered staging in `python/src/palimpsest/solver/bundle.py`
-- [ ] T062 [US3] Implement network-disabled clean executable invocation and exact output collection in `python/src/palimpsest/solver/executor.py`
+- [x] T062 [US3] Implement network-disabled clean executable invocation and exact output collection in `python/src/palimpsest/solver/executor.py`
 - [ ] T063 [P] [US3] Complete versioned score formulas and report assembly in `python/src/palimpsest/grading/score_report.py`
 - [ ] T064 [US3] Implement trusted run-state and score replay in `python/src/palimpsest/replay/harness.py`
 - [ ] T065 [US3] Implement redacted public report projection in `python/src/palimpsest/replay/public_report.py`
@@ -141,7 +141,7 @@
 
 **Purpose**: Prove the production trust boundaries and close the Milestone 6 authorization honestly.
 
-- [ ] T070 [P] Add digest-pinned fixture-agent and clean-solver images in `containers/fixture-agent/` and `containers/clean-solver/`
+- [x] T070 [P] Add digest-pinned fixture-agent and clean-solver images in `containers/fixture-agent/` and `containers/clean-solver/`
 - [ ] T071 [P] Add container image content, mount, user, capability, credential, oracle, source, package, and network-isolation tests in `tests/harness/container-isolation.test.ts`
 - [ ] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
 - [ ] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
