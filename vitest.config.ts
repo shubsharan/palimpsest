@@ -10,6 +10,7 @@ export default defineConfig({
       "@palimpsest/contracts": `${root}packages/contracts/src/index.ts`,
       "@palimpsest/git-accounting": `${root}packages/git-accounting/src/index.ts`,
       "@palimpsest/git-gateway": `${root}packages/git-gateway/src/index.ts`,
+      "@palimpsest/puzzle-runner": `${root}packages/puzzle-runner/src/index.ts`,
       "@palimpsest/run-control": `${root}packages/run-control/src/index.ts`,
     },
   },

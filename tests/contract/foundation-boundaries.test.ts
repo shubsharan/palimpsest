@@ -1,15 +1,12 @@
-import { execFile } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
-import { promisify } from "node:util";
 
 import { describe, expect, test } from "vitest";
 
-import { canonicalJsonBytes, validateValue } from "@palimpsest/contracts";
+import { canonicalJsonBytes } from "@palimpsest/contracts";
 
 import { buildRuntimeVerdicts } from "../../tools/evidence/compare-runtimes.js";
 
 const forbiddenPaths = ["agent", "apps", "infra", "packages/control-domain", "packages/git-meter"];
-const execFileAsync = promisify(execFile);
 
 describe("Repository boundaries", () => {
   async function schemaFiles(directory = "packages/contracts/schemas"): Promise<string[]> {
@@ -65,7 +62,13 @@ describe("Repository boundaries", () => {
       .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
       .map((entry) => entry.name)
       .sort();
-    expect(packageRoots).toEqual(["contracts", "git-accounting", "git-gateway", "run-control"]);
+    expect(packageRoots).toEqual([
+      "contracts",
+      "git-accounting",
+      "git-gateway",
+      "puzzle-runner",
+      "run-control",
+    ]);
 
     for (const path of forbiddenPaths) {
       await expect(access(path)).rejects.toThrow();
@@ -164,52 +167,40 @@ describe("Repository boundaries", () => {
     }
   });
 
-  test("wires every offline harness surface into repository verification", async () => {
+  test("wires the behavior-neutral puzzle surface into repository verification", async () => {
     const required = [
-      "packages/run-control/src/coordinator.ts",
-      "packages/git-gateway/src/freeze.ts",
-      "python/src/palimpsest/instance_pipeline/bundle.py",
-      "python/src/palimpsest/solver/executor.py",
-      "python/src/palimpsest/grading/score_report.py",
-      "python/src/palimpsest/replay/harness.py",
-      "python/src/palimpsest/replay/public_report.py",
-      "tools/harness/build.ts",
-      "tools/harness/run.ts",
-      "tools/harness/grade.ts",
-      "tools/harness/replay.ts",
-      "tools/harness/report.ts",
-      "tools/harness/offline.ts",
-      "tests/harness/end-to-end.test.ts",
-      "tests/harness/failure-injection.test.ts",
+      "packages/puzzle-runner/src/supervisor.ts",
+      "packages/puzzle-runner/src/evaluator.ts",
+      "python/src/palimpsest/puzzle/build.py",
+      "python/src/palimpsest/puzzle/checker.py",
+      "python/src/palimpsest/puzzle/score.py",
+      "tools/puzzle/build.ts",
+      "tools/puzzle/run.ts",
+      "tools/puzzle/evaluate.ts",
+      "tools/puzzle/offline.ts",
+      "tests/puzzle/offline.test.ts",
     ];
     await Promise.all(required.map((path) => access(path)));
 
     const packageManifest = JSON.parse(await readFile("package.json", "utf8"));
     expect(Object.keys(packageManifest.scripts)).toEqual(
       expect.arrayContaining([
-        "harness:inputs",
-        "harness:build",
-        "harness:predeclare",
-        "harness:predeclare:check",
-        "harness:run:offline",
-        "harness:grade",
-        "harness:replay",
-        "harness:complete",
-        "harness:offline",
+        "puzzle:build",
+        "puzzle:run",
+        "puzzle:evaluate",
+        "puzzle:offline",
         "verify",
-        "verify:clean-snapshot",
       ]),
     );
-    const predeclaration = JSON.parse(
-      await readFile("artifacts/harness/predeclaration.json", "utf8"),
-    );
-    expect(validateValue("offline-harness-report", predeclaration)).toMatchObject({
-      accepted: true,
-    });
-
-    const { stdout } = await execFileAsync("git", ["ls-files", "artifacts/harness"]);
-    const tracked = stdout.split("\n").filter(Boolean);
-    expect(tracked.some((path) => path.includes("/attempts/"))).toBe(false);
-    expect(tracked.some((path) => path.endsWith("/current.json"))).toBe(false);
+    expect(
+      Object.keys(packageManifest.scripts).some(
+        (name) =>
+          name.startsWith("harness:") ||
+          name.startsWith("gate-") ||
+          name.startsWith("evidence:") ||
+          name.includes("predeclare") ||
+          name.includes("replay"),
+      ),
+    ).toBe(false);
   });
 });

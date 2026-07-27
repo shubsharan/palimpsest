@@ -1,16 +1,6 @@
 {
   "schemaVersion": 1,
   "baseImage": "node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb",
-  "fixtureAgent": {
-    "tag": "palimpsest-fixture-agent:0.1.0",
-    "imageId": "sha256:f5fc081f1f54a785cfad5d7475d5d215a9052f72b272c74d2dae7c3a2bf36b36",
-    "dockerfileSha256": "46619aedc220340095ce0fcbd6fa9eef1f907fac9343624ac1fe22124209253a"
-  },
-  "gitGateway": {
-    "tag": "palimpsest-git-gateway:0.1.0",
-    "imageId": "sha256:d28ec028003481c80ee972b8f28a60cef8dcf35df34c66750fba40a7b3b6222e",
-    "dockerfileSha256": "5fdad6b6235e8ef1ace8d11a4d41e5c6723338b8b54cc83fa575b89142d1b1c7"
-  },
   "cleanSolver": {
     "tag": "palimpsest-clean-solver:0.1.0",
     "imageId": "sha256:ccfb446c652b8ab31efc2ad1d62f495e6f031ea4e028ef49ce060230380186c1",

@@ -1,8 +1,3 @@
-import {
-  FIXTURE_ADAPTER_ID,
-  assertAdapterAuthorized,
-  type OfflineHarnessAuthorization,
-} from "../../../tools/harness/config.js";
 import { spawn } from "node:child_process";
 
 import { canonicalJsonBytes } from "@palimpsest/contracts";
@@ -14,6 +9,36 @@ import {
   type BridgeMeasuredUsage,
   type BridgeResourceUsage,
 } from "./types.js";
+
+const FIXTURE_ADAPTER_ID = "fixture-agent-v1";
+
+interface OfflineHarnessAuthorization {
+  schemaVersion: 1;
+  contractId: "offline-harness-report";
+  declarationDigest: string;
+  runId: string;
+  reportDigest: string;
+  result: "pass";
+  liveModelValidationAuthorized: true;
+  allowedAdapterIds: string[];
+}
+
+function assertAdapterAuthorized(
+  adapterId: string,
+  authorization?: OfflineHarnessAuthorization,
+): void {
+  if (adapterId === FIXTURE_ADAPTER_ID) return;
+  if (authorization === undefined) {
+    throw new Error(`Adapter ${adapterId} requires a passing offline harness completion report.`);
+  }
+  if (
+    authorization.result !== "pass" ||
+    authorization.liveModelValidationAuthorized !== true ||
+    !authorization.allowedAdapterIds.includes(adapterId)
+  ) {
+    throw new Error(`Adapter ${adapterId} is not authorized by the historical harness report.`);
+  }
+}
 
 export interface AdapterSelection {
   adapterId: string;
