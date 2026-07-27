@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "contractId": "canonical-archive",
+  "entries": [
+    {
+      "path": "/secret.txt",
+      "kind": "file",
+      "contentBase64": ""
+    }
+  ]
+}

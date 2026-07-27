@@ -1,0 +1,97 @@
+[
+  {
+    "schemaVersion": 1,
+    "contractId": "gate-b-baseline-attempt",
+    "attemptId": "fixture-baseline-attempt",
+    "instanceId": "instance-amber",
+    "rung": 1,
+    "methodId": "fixture-method",
+    "inputs": [
+      {
+        "artifactType": "cipher-view",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 1
+      }
+    ],
+    "status": "success",
+    "wallSeconds": 1,
+    "outputs": [
+      {
+        "artifactType": "baseline-reconstruction",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "byteLength": 1
+      }
+    ],
+    "diagnostics": {
+      "artifactType": "baseline-diagnostics",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byteLength": 1
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "contractId": "gate-b-identification-attempt",
+    "attemptId": "fixture-identification-attempt",
+    "instanceId": "instance-amber",
+    "track": "cipher-view-canary",
+    "inputs": [
+      {
+        "artifactType": "cipher-view",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 1
+      }
+    ],
+    "status": "no-identification",
+    "candidates": {
+      "artifactType": "identification-candidates",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byteLength": 1
+    },
+    "exactAlignedSource": false,
+    "copiedReconstruction": false
+  },
+  {
+    "schemaVersion": 1,
+    "contractId": "gate-b-entity-audit",
+    "auditId": "fixture-entity-audit",
+    "instanceId": "instance-amber",
+    "sample": {
+      "artifactType": "entity-audit-sample",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "byteLength": 1
+    },
+    "repeatedMentionConsistency": 1,
+    "missedEntityRate": 0,
+    "commonNounOverCaptureRate": 0,
+    "generatedNameCollisions": 0
+  },
+  {
+    "schemaVersion": 1,
+    "contractId": "gate-b-score-table",
+    "scoringVersion": "1.0.0",
+    "rows": [
+      {
+        "rowId": "fixture-score-row",
+        "instanceId": "instance-amber",
+        "condition": "fixture-condition",
+        "slices": {
+          "tokenAccuracy": 0.5,
+          "unresolvedTokenMass": 0.5,
+          "macroTypeAccuracy": 0.5,
+          "weightedTokenAccuracy": 0.5,
+          "frequency": {},
+          "classes": {
+            "function": 0.5,
+            "content": 0.5,
+            "entity": 0.5
+          },
+          "ambiguity": {
+            "low": 0.5,
+            "medium": 0.5,
+            "high": 0.5
+          }
+        }
+      }
+    ]
+  }
+]

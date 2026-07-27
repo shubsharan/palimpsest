@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@palimpsest/contracts": ["./packages/contracts/src/index.ts"],
+      "@palimpsest/git-accounting": ["./packages/git-accounting/src/index.ts"],
+      "@palimpsest/git-gateway": ["./packages/git-gateway/src/index.ts"],
+      "@palimpsest/run-control": ["./packages/run-control/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*.ts", "tools/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+}

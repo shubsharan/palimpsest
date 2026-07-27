@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "contractId": "instance-build-request",
+  "requestId": "offline-harness-001",
+  "source": {
+    "artifactType": "source-text",
+    "byteLength": 100,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "seedCommitment": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "agentCount": 3,
+  "oracleKey": "forbidden"
+}

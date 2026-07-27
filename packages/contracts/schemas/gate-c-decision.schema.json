@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://palimpsest.invalid/contracts/gate-c-decision/1",
+  "title": "Gate C Decision",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "contractId",
+    "attemptId",
+    "classification",
+    "failedPredicates",
+    "owningDial",
+    "gateDAuthorization",
+    "fullHarnessAuthorized"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/schemaVersion"
+    },
+    "contractId": { "const": "gate-c-decision" },
+    "attemptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "classification": { "enum": ["pass", "rework", "stop", "invalid"] },
+    "failedPredicates": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    },
+    "owningDial": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+    "gateDAuthorization": { "enum": ["minimal-only", "none"] },
+    "fullHarnessAuthorized": { "const": false }
+  },
+  "additionalProperties": false
+}

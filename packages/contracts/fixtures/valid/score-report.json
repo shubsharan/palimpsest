@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "contractId": "score-report",
+  "runId": "offline-run-001",
+  "policyId": "scoring-v1",
+  "metrics": {
+    "reconstructionAccuracy": 0.5,
+    "changedAccuracy": 0.25
+  }
+}

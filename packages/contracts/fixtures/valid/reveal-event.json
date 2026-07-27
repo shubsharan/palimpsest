@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "contractId": "reveal-event",
+  "attemptId": "gate-c/aaaaaaaa/run-1",
+  "ordinal": 1,
+  "chapterIndex": 1,
+  "plannedOffsetMs": 0,
+  "observedOffsetMs": 1,
+  "chapterArtifact": {
+    "artifactType": "cipher-chapter",
+    "byteLength": 1,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

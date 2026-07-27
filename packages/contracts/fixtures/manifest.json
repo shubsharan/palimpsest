@@ -1,0 +1,655 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "fixtureId": "canonical-basic",
+      "contractId": "canonical-json",
+      "inputPath": "valid/canonical-basic.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": "eyJjb250cmFjdElkIjoiY2Fub25pY2FsLWpzb24iLCJzY2hlbWFWZXJzaW9uIjoxLCJ2YWx1ZSI6eyJhIjoiY2Fmw6kiLCJhcnJheSI6WzMsMSwyXSwibGFyZ2VJbnRlZ2VyIjoiOTAwNzE5OTI1NDc0MDk5MiIsInNlZWQiOiJmZmZmZmZmZmZmZmZmZmZmIiwieiI6MH19",
+        "sha256": "950cffe1cedf208a708628fdeefbfc37982b0604a7c2d15d0efddaa4e5b52348"
+      }
+    },
+    {
+      "fixtureId": "canonical-numeric-boundary",
+      "contractId": "canonical-json",
+      "inputPath": "valid/canonical-numeric-boundary.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": "eyJjb250cmFjdElkIjoiY2Fub25pY2FsLWpzb24iLCJzY2hlbWFWZXJzaW9uIjoxLCJ2YWx1ZSI6eyJmcmFjdGlvbiI6MC4xMjUsIm1heGltdW0iOjkwMDcxOTkyNTQ3NDA5OTEsIm1pbmltdW0iOi05MDA3MTk5MjU0NzQwOTkxLCJzbWFsbCI6MWUtN319",
+        "sha256": "1463482295459ebda59fce77a1b47f6898069655e95cb8f13b5be99054b88173"
+      }
+    },
+    {
+      "fixtureId": "archive-empty",
+      "contractId": "canonical-archive",
+      "inputPath": "valid/archive-empty.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "archivePath": "golden/archive-empty.tar",
+        "byteLength": 1024,
+        "sha256": "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      }
+    },
+    {
+      "fixtureId": "archive-files",
+      "contractId": "canonical-archive",
+      "inputPath": "valid/archive-files.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "archivePath": "golden/archive-files.tar",
+        "byteLength": 3584,
+        "sha256": "4198b212d6e902fcac6fc57580785534b8499d4bf89d6f9696f487334609b26d"
+      }
+    },
+    {
+      "fixtureId": "artifact-response-manifest",
+      "contractId": "artifact-response-manifest",
+      "inputPath": "valid/artifact-response-manifest.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-predeclared",
+      "contractId": "gate-report",
+      "inputPath": "valid/gate-predeclared.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-completed",
+      "contractId": "gate-report",
+      "inputPath": "valid/gate-completed.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "git-genesis",
+      "contractId": "git-genesis",
+      "inputPath": "valid/git-genesis.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "logical-git-transaction",
+      "contractId": "logical-git-transaction",
+      "inputPath": "valid/logical-git-transaction.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "channel-fixture",
+      "contractId": "channel-fixture",
+      "inputPath": "valid/channel-fixture.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "useful-state-checkpoint",
+      "contractId": "useful-state-checkpoint",
+      "inputPath": "valid/useful-state-checkpoint.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "relay-attempt-result",
+      "contractId": "relay-attempt-result",
+      "inputPath": "valid/relay-attempt-result.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "timing-capacity-result",
+      "contractId": "timing-capacity-result",
+      "inputPath": "valid/timing-capacity-result.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "budget-sweep-result",
+      "contractId": "budget-sweep-result",
+      "inputPath": "valid/budget-sweep-result.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "duplicate-key",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/duplicate-key.json",
+      "expected": {
+        "accepted": false,
+        "reason": "duplicate_key",
+        "pointer": "/value/a",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "lone-surrogate",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/lone-surrogate.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unicode",
+        "pointer": "/value",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "lone-surrogate-key",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/lone-surrogate-key.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unicode",
+        "pointer": "/value",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "negative-zero",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/negative-zero.json",
+      "expected": {
+        "accepted": false,
+        "reason": "number",
+        "pointer": "/value",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "unsafe-integer",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/unsafe-integer.json",
+      "expected": {
+        "accepted": false,
+        "reason": "number",
+        "pointer": "/value",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "non-finite-number",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/non-finite-number.json",
+      "expected": {
+        "accepted": false,
+        "reason": "number",
+        "pointer": "/value",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "unknown-schema-version",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/unknown-schema-version.json",
+      "expected": {
+        "accepted": false,
+        "reason": "schema_version",
+        "pointer": "/schemaVersion",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "git-genesis-unknown-version",
+      "contractId": "git-genesis",
+      "inputPath": "invalid/git-genesis-unknown-version.json",
+      "expected": {
+        "accepted": false,
+        "reason": "schema_version",
+        "pointer": "/schemaVersion",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "useful-state-unknown-field",
+      "contractId": "useful-state-checkpoint",
+      "inputPath": "invalid/useful-state-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unknown_field",
+        "pointer": "/hiddenPayload",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "unknown-envelope-field",
+      "contractId": "canonical-json",
+      "inputPath": "invalid/unknown-envelope-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unknown_field",
+        "pointer": "/surprise",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "archive-absolute-path",
+      "contractId": "canonical-archive",
+      "inputPath": "invalid/archive-absolute-path.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unsafe_path",
+        "pointer": "/entries/0/path",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "archive-parent-path",
+      "contractId": "canonical-archive",
+      "inputPath": "invalid/archive-parent-path.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unsafe_path",
+        "pointer": "/entries/0/path",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "archive-case-collision",
+      "contractId": "canonical-archive",
+      "inputPath": "invalid/archive-case-collision.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unsafe_path",
+        "pointer": "/entries/1/path",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "archive-directory-file-collision",
+      "contractId": "canonical-archive",
+      "inputPath": "invalid/archive-directory-file-collision.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unsafe_path",
+        "pointer": "/entries/1/path",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "archive-file-ancestor",
+      "contractId": "canonical-archive",
+      "inputPath": "invalid/archive-file-ancestor.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unsafe_path",
+        "pointer": "/entries/1/path",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "artifact-bad-digest",
+      "contractId": "artifact-response-manifest",
+      "inputPath": "invalid/artifact-bad-digest.json",
+      "expected": {
+        "accepted": false,
+        "reason": "format",
+        "pointer": "/outputs/0/sha256",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-missing-thresholds",
+      "contractId": "gate-report",
+      "inputPath": "invalid/gate-missing-thresholds.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/thresholds",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-completed-missing-artifacts",
+      "contractId": "gate-report",
+      "inputPath": "invalid/gate-completed-missing-artifacts.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/rawArtifacts",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-tampered-threshold",
+      "contractId": "gate-report",
+      "inputPath": "invalid/gate-tampered-threshold.json",
+      "expected": {
+        "accepted": false,
+        "reason": "digest",
+        "pointer": "/predeclarationDigest",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-tampered-input",
+      "contractId": "gate-report",
+      "inputPath": "invalid/gate-tampered-input.json",
+      "expected": {
+        "accepted": false,
+        "reason": "digest",
+        "pointer": "/predeclarationDigest",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "revision-instance",
+      "contractId": "revision-instance",
+      "inputPath": "valid/revision-instance.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "reveal-plan",
+      "contractId": "reveal-plan",
+      "inputPath": "valid/reveal-plan.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "reveal-event",
+      "contractId": "reveal-event",
+      "inputPath": "valid/reveal-event.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "solver-checkpoint",
+      "contractId": "solver-checkpoint",
+      "inputPath": "valid/solver-checkpoint.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "revision-trajectory",
+      "contractId": "revision-trajectory",
+      "inputPath": "valid/revision-trajectory.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-c-decision",
+      "contractId": "gate-c-decision",
+      "inputPath": "valid/gate-c-decision.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "revision-instance-missing-required",
+      "contractId": "revision-instance",
+      "inputPath": "invalid/revision-instance-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/changedEntries",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "reveal-plan-missing-required",
+      "contractId": "reveal-plan",
+      "inputPath": "invalid/reveal-plan-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/clock",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "reveal-event-missing-required",
+      "contractId": "reveal-event",
+      "inputPath": "invalid/reveal-event-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/attemptId",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "solver-checkpoint-missing-required",
+      "contractId": "solver-checkpoint",
+      "inputPath": "invalid/solver-checkpoint-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/attemptId",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "revision-trajectory-missing-required",
+      "contractId": "revision-trajectory",
+      "inputPath": "invalid/revision-trajectory-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/adaptationLatencyMs",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "gate-c-decision-missing-required",
+      "contractId": "gate-c-decision",
+      "inputPath": "invalid/gate-c-decision-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "required",
+        "pointer": "/attemptId",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "instance-build-request",
+      "contractId": "instance-build-request",
+      "inputPath": "valid/instance-build-request.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "run-manifest",
+      "contractId": "run-manifest",
+      "inputPath": "valid/run-manifest.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "score-report",
+      "contractId": "score-report",
+      "inputPath": "valid/score-report.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "offline-harness-report",
+      "contractId": "offline-harness-report",
+      "inputPath": "valid/offline-harness-report.json",
+      "expected": {
+        "accepted": true,
+        "reason": null,
+        "pointer": null,
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "instance-build-request-unknown-field",
+      "contractId": "instance-build-request",
+      "inputPath": "invalid/instance-build-request-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unknown_field",
+        "pointer": "/oracleKey",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "run-manifest-unknown-field",
+      "contractId": "run-manifest",
+      "inputPath": "invalid/run-manifest-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unknown_field",
+        "pointer": "/providerApiKey",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "score-report-unknown-field",
+      "contractId": "score-report",
+      "inputPath": "invalid/score-report-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unknown_field",
+        "pointer": "/oracleText",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    },
+    {
+      "fixtureId": "offline-harness-report-unknown-field",
+      "contractId": "offline-harness-report",
+      "inputPath": "invalid/offline-harness-report-unknown-field.json",
+      "expected": {
+        "accepted": false,
+        "reason": "unknown_field",
+        "pointer": "/providerCredential",
+        "canonicalUtf8Base64": null,
+        "sha256": null
+      }
+    }
+  ]
+}

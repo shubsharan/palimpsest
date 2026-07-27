@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "contractId": "canonical-json",
+  "value": {
+    "minimum": -9007199254740991,
+    "maximum": 9007199254740991,
+    "fraction": 0.125,
+    "small": 1e-7
+  }
+}

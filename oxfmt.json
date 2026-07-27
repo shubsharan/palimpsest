@@ -1,0 +1,14 @@
+{
+  "ignorePatterns": [
+    ".artifacts-tmp/**",
+    ".venv/**",
+    "artifacts/milestone-1/attempts/**",
+    "coverage/**",
+    "dist/**",
+    "node_modules/**",
+    "pnpm-lock.yaml",
+    "python/uv.lock"
+  ],
+  "printWidth": 100,
+  "proseWrap": "never"
+}

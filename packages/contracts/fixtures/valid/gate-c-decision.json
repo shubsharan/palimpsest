@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "contractId": "gate-c-decision",
+  "attemptId": "gate-c/aaaaaaaa/run-1",
+  "classification": "pass",
+  "failedPredicates": [],
+  "owningDial": null,
+  "gateDAuthorization": "minimal-only",
+  "fullHarnessAuthorized": false
+}

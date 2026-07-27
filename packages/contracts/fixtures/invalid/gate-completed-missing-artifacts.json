@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "state": "completed",
+  "gateId": "milestone-1-foundation",
+  "question": "Is the cross-runtime foundation reproducible enough to support Gates A-D?",
+  "frozenInputs": [
+    {
+      "artifactType": "fixture-corpus",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "byteLength": 1024
+    }
+  ],
+  "thresholds": [
+    {
+      "name": "fixture agreement",
+      "metric": "contract.fixture_disagreements",
+      "operator": "eq",
+      "value": "0",
+      "unit": "count"
+    }
+  ],
+  "criteria": {
+    "pass": "All binary Milestone 1 criteria hold.",
+    "rework": "Any contract or promotion disagreement is fixed and rerun.",
+    "stop": "Not applicable because Milestone 1 has no empirical premise."
+  },
+  "predeclarationDigest": "f01881f981384c841aab05338f5b316afacc2ee1be0fdd762dd9c8e9461d5582",
+  "environment": {
+    "node": "26.5.0",
+    "pnpm": "10.14.0",
+    "python": "3.12.4",
+    "uv": "0.11.14",
+    "git": "2.48.1",
+    "platform": "darwin-arm64",
+    "revision": "563c9e479d3a3337d26370821d2c3db667919cc3"
+  },
+  "producerVersions": [
+    {
+      "name": "milestone-reporter",
+      "version": "1.0.0"
+    }
+  ],
+  "analysis": {
+    "summary": "No artifacts were supplied.",
+    "metrics": []
+  },
+  "result": "pass",
+  "followUp": "This report must be rejected."
+}

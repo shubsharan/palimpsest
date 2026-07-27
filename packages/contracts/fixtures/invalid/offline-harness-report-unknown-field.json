@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "contractId": "offline-harness-report",
+  "state": "completed",
+  "declarationDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runId": "offline-run-001",
+  "result": "pass",
+  "completedStages": [
+    "build",
+    "launch",
+    "reveal",
+    "collaborate",
+    "freeze",
+    "submit",
+    "clean-execute",
+    "score",
+    "replay",
+    "redact"
+  ],
+  "externalModelRequestCount": 0,
+  "liveModelValidationAuthorized": true,
+  "empiricalModelEvidence": false,
+  "providerCredential": "forbidden"
+}

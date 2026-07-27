@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "contractId": "canonical-archive",
+  "entries": [
+    {
+      "path": "results",
+      "kind": "directory"
+    },
+    {
+      "path": "results",
+      "kind": "file",
+      "contentBase64": ""
+    }
+  ]
+}
