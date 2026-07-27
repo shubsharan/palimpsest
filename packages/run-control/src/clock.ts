@@ -113,8 +113,12 @@ export class AbsoluteSchedule {
   constructor(
     readonly clock: MonotonicClock,
     readonly schedule: HarnessSchedule,
+    readonly epochMs = 0,
   ) {
     validateHarnessSchedule(schedule);
+    if (!Number.isFinite(epochMs) || epochMs < 0) {
+      throw new Error("Schedule epoch must be a non-negative finite monotonic time.");
+    }
   }
 
   get observations(): readonly ScheduleObservation[] {
@@ -128,14 +132,15 @@ export class AbsoluteSchedule {
     }
     this.#claimed.add(key);
     const scheduledOffsetMs = boundaryOffset(this.schedule, boundary);
+    const scheduledTimeMs = this.epochMs + scheduledOffsetMs;
     const before = this.clock.nowMs();
-    if (before > scheduledOffsetMs + this.schedule.toleranceMs) {
+    if (before > scheduledTimeMs + this.schedule.toleranceMs) {
       throw new Error(`Schedule boundary ${key} exceeded its declared tolerance.`);
     }
-    if (before < scheduledOffsetMs) {
-      await this.clock.waitUntil(scheduledOffsetMs);
+    if (before < scheduledTimeMs) {
+      await this.clock.waitUntil(scheduledTimeMs);
     }
-    const actualOffsetMs = this.clock.nowMs();
+    const actualOffsetMs = this.clock.nowMs() - this.epochMs;
     const driftMs = actualOffsetMs - scheduledOffsetMs;
     if (Math.abs(driftMs) > this.schedule.toleranceMs) {
       throw new Error(`Schedule boundary ${key} exceeded its declared tolerance.`);

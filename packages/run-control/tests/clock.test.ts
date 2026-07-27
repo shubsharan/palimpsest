@@ -42,6 +42,15 @@ describe("deterministic monotonic clock", () => {
     const first = concurrent.waitFor({ kind: "reveal", ordinal: 1 });
     await expect(concurrent.waitFor({ kind: "reveal", ordinal: 1 })).rejects.toThrow(/already/);
     await expect(first).resolves.toMatchObject({ actualOffsetMs: 10 });
+
+    const epochClock = new DeterministicClock();
+    epochClock.advanceTo(42);
+    const fromLaunch = new AbsoluteSchedule(epochClock, schedule, 42);
+    await expect(fromLaunch.waitFor({ kind: "reveal", ordinal: 1 })).resolves.toMatchObject({
+      actualOffsetMs: 10,
+      scheduledOffsetMs: 10,
+    });
+    expect(epochClock.nowMs()).toBe(52);
   });
 
   test("rejects invalid ordering, inadequate stabilization, and excessive drift", async () => {
