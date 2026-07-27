@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "contractId": "reveal-plan",
+  "instanceId": "revision-fixture",
+  "clock": "monotonic",
+  "intervalMs": 120000,
+  "slots": [
+    {
+      "ordinal": 1,
+      "plannedOffsetMs": 0,
+      "chapterIndex": 1,
+      "tokenCount": 4000,
+      "cumulativeTokenCount": 4000,
+      "cipherChapterArtifact": {
+        "artifactType": "cipher-chapter",
+        "byteLength": 1,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "cumulativeChangedContradictionMass": 0
+    }
+  ],
+  "contradictionThreshold": {
+    "changedOccurrenceFraction": 0.25,
+    "firstRevealOrdinal": 1
+  }
+}

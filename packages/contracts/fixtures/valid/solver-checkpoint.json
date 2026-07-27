@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "contractId": "solver-checkpoint",
+  "attemptId": "gate-c/aaaaaaaa/run-1",
+  "ordinal": 1,
+  "revealOrdinal": 1,
+  "observedMonotonicMs": 10,
+  "responseId": "resp_1",
+  "previousResponseId": null,
+  "containerId": "cntr_1",
+  "mappings": [
+    {
+      "cipherType": "alpha",
+      "plainType": "beta",
+      "confidence": 0.8,
+      "status": "active",
+      "supportingRevealOrdinals": [1],
+      "rationale": "Frequency and local syntax."
+    }
+  ],
+  "switchHypotheses": [],
+  "reconstructionRefs": [],
+  "usage": {
+    "inputTokens": 10,
+    "outputTokens": 5,
+    "toolCalls": 1
+  }
+}

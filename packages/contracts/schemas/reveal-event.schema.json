@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://palimpsest.invalid/contracts/reveal-event/1",
+  "title": "Gate C Reveal Event",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "contractId",
+    "attemptId",
+    "ordinal",
+    "chapterIndex",
+    "plannedOffsetMs",
+    "observedOffsetMs",
+    "chapterArtifact"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/schemaVersion"
+    },
+    "contractId": { "const": "reveal-event" },
+    "attemptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "ordinal": { "type": "integer", "minimum": 1 },
+    "chapterIndex": { "type": "integer", "minimum": 0 },
+    "plannedOffsetMs": { "type": "integer", "minimum": 0 },
+    "observedOffsetMs": { "type": "integer", "minimum": 0 },
+    "chapterArtifact": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/artifactReference"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://palimpsest.invalid/contracts/timing-capacity-result/1",
+  "title": "Gate A Timing Capacity Result",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "contractId",
+    "runSeconds",
+    "slotSeconds",
+    "slotCount",
+    "presenceBits",
+    "residualBits",
+    "totalBits",
+    "capacityBytes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/schemaVersion"
+    },
+    "contractId": {
+      "type": "string",
+      "const": "timing-capacity-result"
+    },
+    "runSeconds": {
+      "type": "integer",
+      "const": 3600
+    },
+    "slotSeconds": {
+      "type": "integer",
+      "const": 30
+    },
+    "slotCount": {
+      "type": "integer",
+      "const": 120
+    },
+    "presenceBits": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/decimalInteger"
+    },
+    "residualBits": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/decimalInteger"
+    },
+    "totalBits": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/decimalInteger"
+    },
+    "capacityBytes": {
+      "$ref": "https://palimpsest.invalid/contracts/contract-envelope/1#/$defs/decimalInteger"
+    }
+  },
+  "additionalProperties": false
+}

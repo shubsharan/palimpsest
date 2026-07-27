@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "contractId": "revision-trajectory",
+  "attemptId": "gate-c/aaaaaaaa/run-1",
+  "checkpointScores": [
+    {
+      "checkpointOrdinal": 1,
+      "revealOrdinal": 1,
+      "observedMonotonicMs": 10,
+      "changedAccuracy": 0.5,
+      "stableAccuracy": 0.5
+    }
+  ],
+  "preSwitchGainPp": 10,
+  "localizedDropPp": 10,
+  "changedRecoveryPp": 10,
+  "stableRetentionPp": -5,
+  "falseRetractionRate": 0.1,
+  "prematureAlarmCount": 0,
+  "detectionLatencyMs": 100,
+  "adaptationLatencyMs": 100,
+  "integrityFailures": []
+}

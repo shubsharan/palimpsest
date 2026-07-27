@@ -1,0 +1,42 @@
+[project]
+name = "palimpsest-research"
+version = "0.1.0"
+description = "Trusted Python research-plane foundation for Palimpsest."
+requires-python = "==3.12.4"
+dependencies = [
+  "en-core-web-sm",
+  "jsonschema==4.26.0",
+  "numpy==2.5.1",
+  "openai==2.48.0",
+  "rfc8785==0.1.4",
+  "scikit-learn==1.9.0",
+  "scipy==1.18.0",
+  "spacy==3.8.14",
+  "torch==2.13.0",
+  "transformers==5.14.1",
+]
+
+[dependency-groups]
+dev = ["hypothesis==6.161.5", "pytest==9.1.1", "ruff==0.16.0"]
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/palimpsest"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers"]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

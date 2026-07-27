@@ -77,11 +77,13 @@
 
 ## Evidence & Trust Boundaries *(mandatory)*
 
-**Owning Gate/Milestone**: [Name the roadmap gate or milestone and the question or exit decision this feature serves]
+**Owning Milestone**: [Name the roadmap milestone and the exit decision this feature serves]
 
-**Minimum Scope**: [Explain why this is the least implementation needed to produce the required evidence or deliverable]
+**End-to-End Contribution**: [Identify which generation, launch, reveal, collaboration, freeze, submission, execution, scoring, replay, or reporting surfaces this feature completes]
 
-**Predeclared Evidence**: [List frozen inputs, thresholds, environment, required artifacts, verification categories, and pass/rework/stop criteria]
+**Model Execution Policy**: [State whether only deterministic fixtures and fake model adapters are allowed, or cite the completed-harness evidence that permits live model execution]
+
+**Completion Evidence**: [List frozen inputs, environment, required artifacts, verification categories, and exit criteria]
 
 **Trust & Visibility Impact**: [State which trusted/untrusted components, secrets, mounts, network paths, agent-visible data, and public artifacts change]
 

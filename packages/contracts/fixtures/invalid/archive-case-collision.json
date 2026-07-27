@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "contractId": "canonical-archive",
+  "entries": [
+    {
+      "path": "Note.txt",
+      "kind": "file",
+      "contentBase64": ""
+    },
+    {
+      "path": "note.txt",
+      "kind": "file",
+      "contentBase64": ""
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "contractId": "revision-instance",
+  "instanceId": "revision-fixture",
+  "profileId": "partial-rekey-literary-v1",
+  "sourceId": "fixture-source",
+  "tokenCount": 20000,
+  "switchAfterChapter": 2,
+  "switchWordOffset": 10000,
+  "preSwitchTokenCount": 10000,
+  "postSwitchTokenCount": 10000,
+  "preparedText": {
+    "artifactType": "prepared-plaintext",
+    "byteLength": 1,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "cipherText": {
+    "artifactType": "cipher-view",
+    "byteLength": 1,
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "stationaryKey": {
+    "artifactType": "stationary-key",
+    "byteLength": 1,
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "revisedKey": {
+    "artifactType": "revised-key",
+    "byteLength": 1,
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "changedEntries": {
+    "artifactType": "changed-entry-set",
+    "byteLength": 1,
+    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "matchedControls": {
+    "artifactType": "matched-stable-controls",
+    "byteLength": 1,
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+}

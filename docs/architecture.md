@@ -8,7 +8,7 @@ Agents collaborate through ordinary authenticated Git. The collaboration boundar
 
 The security claim is deliberately narrow: logical Git-state channels are metered; timing, transport, and storage-representation channels are separately bounded and red-teamed.
 
-Channel separation, decipherment headroom, revision dynamics, and communication value are feasibility gates for the full harness.
+Channel separation and decipherment headroom justify construction. Revision dynamics and communication value are empirical validations of the completed end-to-end harness.
 
 ## Contents
 
@@ -53,7 +53,7 @@ The architecture does not:
 - resolve dictionary hypotheses or Git conflicts on behalf of agents;
 - require submitted solvers to use Python;
 - provide a multi-region service or public evaluation platform; or
-- build the full harness unless the feasibility gates pass.
+- make revision-dynamics, communication-value, calibration, or release claims before the complete offline harness passes.
 
 ### 1.2 Fixed decisions, calibrated parameters, and empirical gates
 
@@ -292,10 +292,8 @@ The Python Instance Builder performs:
 9. Generate partial rotations at eligible chapter boundaries.
 10. Cipher the text while preserving punctuation, capitalization patterns, digits, paragraphs, and chapter structure.
 11. Produce three approximately equal, contiguous, chapter-aligned shards.
-12. Choose full-run placement with at least one switch near a shard boundary and
-    one switch inside a shard.
-13. Produce immutable public, reference-corpus, private-shard, reveal, and oracle
-    artifacts.
+12. Choose full-run placement with at least one switch near a shard boundary and one switch inside a shard.
+13. Produce immutable public, reference-corpus, private-shard, reveal, and oracle artifacts.
 
 For every switch, adjacent segments satisfy the configured minimum length (nominally at least 10,000 tokens), and changed types must occur at least `k` times in both segments, be stratified across frequency bands, target the configured token mass, and have matched unchanged controls. Rotation composes the prior key with a derangement over selected images, preserving bijection. A changed entry must differ from both its plaintext identity and its previous ciphertext mapping.
 
@@ -475,18 +473,9 @@ At a slot boundary, the Gateway:
 8. Computes each candidate's accounting frame against the **slot-start** ever-visible set. If two agents independently expose the same new object in one slot, each pays for that object; infrastructure order does not transfer budget credit between agents.
 9. Checks `remaining = limit - committed - reserved`, then writes a durable `RESERVED` push reservation with the old/new ref, frame digest, and charge.
 10. Allows the native single-ref transaction only while a matching Gateway lease and reservation token are live. A `reference-transaction` hook reports `committed` or `aborted` back to the wrapper.
-11. On native success, marks the reservation `FINALIZED` and commits the ledger
-    debit and accepted event. On native failure, marks it `ABORTED` and charges
-    nothing.
-12. After all candidates resolve, unions their accepted objects into the next
-    visibility journal, then persists `SLOT_PUBLISHING` with the accepted
-    sequence set, accounting-frame digests, next ref map, and next
-    ledger/journal digests before building a new immutable public object
-    directory.
-13. Atomically swaps the current-snapshot pointer, marks the slot
-    `SLOT_PUBLISHED`, releases the publication lease, reopens Git
-    advertisements, and returns fixed-format native results to connected
-    clients.
+11. On native success, marks the reservation `FINALIZED` and commits the ledger debit and accepted event. On native failure, marks it `ABORTED` and charges nothing.
+12. After all candidates resolve, unions their accepted objects into the next visibility journal, then persists `SLOT_PUBLISHING` with the accepted sequence set, accounting-frame digests, next ref map, and next ledger/journal digests before building a new immutable public object directory.
+13. Atomically swaps the current-snapshot pointer, marks the slot `SLOT_PUBLISHED`, releases the publication lease, reopens Git advertisements, and returns fixed-format native results to connected clients.
 
 No fetch or new receive advertisement can observe an intermediate slot state. Connections pinned to an older immutable snapshot may finish while publication builds the next one; they cannot observe its staging directories. The Gateway serializes only admission and publication by server arrival order; this is repository consistency, not a scheduled agent turn or predetermined commit order. Competing same-ref pushes still race, while valid independent-ref updates can coexist in the same published snapshot. The Gateway never rebases, merges, or last-writes a stale push.
 
@@ -784,20 +773,22 @@ The supported sandbox network policy exposes only the authenticated Git transpor
 
 ## 12. Delivery sequence
 
-### Feasibility gates
+### Construction evidence and post-integration gates
 
-Build only what is required to answer the four hard questions:
+Build in two evidence phases:
 
 - the exact `GitAccountingFrameV1` encoder and adversarial Git/shard compressor harness;
 - compact decipherment baselines and a frontier-agent/human comparison;
-- a single-agent clock-driven partial-rekey fixture; and
-- a minimal asynchronous, Git-native communication/no-communication pair.
+- the complete offline instance-to-report harness exercised with deterministic fixtures and fake model adapters; and
+- only then, a single-agent clock-driven partial-rekey run and a matched asynchronous communication/no-communication pair using real models.
 
 Gate A must use real commits, trees, refs, compressed blobs, shared-object side information, publication-slot capacity, and production frame overhead. Abstract message or file sizes are not sufficient. Its strongest attacker receives all declared common side information, including the exact agent reference corpus, `GitGenesis`, schemas, scaffold, client behavior, and custom codebooks.
 
-Gate B runs every compact baseline rung plus a frontier agent and a human-plus-tools solver. It also audits entity-regeneration quality, runs both the cipher-view identification canary and the weaker raw-passage generation canary, exercises direct target-identification and retrieval attacks, and tests at least one non-Gutenberg source. The report measures missed entities, over-capture, and cross-mention inconsistency and records the thresholded decision to retain or demote the default Gutenberg tier.
+Gate A satisfies this boundary for accounting version 1 on the pinned Darwin ARM64 profile. Its digest-bound evidence covers 630 exact relay attempts across nine shard geometries, fourteen codec/codebook families, and five real-Git materializations; seven native Git representation profiles produce identical accounting frames. For the retained 27,000-token, 8,000-type geometry, faithful evolving belief costs 18,503 cumulative frame bytes, exact full-shard relay costs at least 39,534 bytes, and the separately bounded publication-presence channel contributes 15 bytes. The frozen passing interval is 19,456-38,912 bytes. `pnpm gate-a:replay` independently resolves every frame and recomputes all 20 passing points. This evidence freezes the accounting frame and budget interval used by the offline Git Gateway.
 
-Gate C uses the production monotonic reveal clock rather than model turns or token milestones. Gate D uses asynchronous agents, native Git workflows, production publication slots, and the same counterfactual accounting in its communication-disabled arm.
+Gate B establishes the bounded product-feasibility premise used to build the integrated puzzle profile. The accepted Amber observation showed coherent semantic mapping progress beyond the tested mechanical attempt without source recognition. The repository records this as a qualified decision rather than a completed gate report because its original judged outputs are unavailable for immutable replay. Non-literary generalization, human comparison, multi-instance replication, complete identification coverage, and publication-grade reporting remain deferred research obligations.
+
+The offline harness must first complete build, launch, reveal, native Git collaboration, freeze, private submission, clean execution, scoring, replay, and redacted reporting without a live model. Gate C then uses that harness's production monotonic reveal clock rather than model turns or token milestones. Gate D uses the same asynchronous runtime, native Git workflows, production publication slots, and counterfactual accounting in its communication-disabled arm.
 
 ### Corpus and instance builder
 
@@ -897,8 +888,8 @@ Architecture verification checks implementation invariants. The empirical gates 
 
 | Design requirement | Architectural owner | Evidence |
 | --- | --- | --- |
-| Channel separation | Git Gateway and Baseline Runner | Production accounting frames, visibility journal, compressor sweep, Gate A report. |
-| Decipherment headroom | Python Baseline Runner | Ladder outputs, agent/human results, difficulty breakdown, Gate B report. |
+| Channel separation | Git Gateway and Baseline Runner | `artifacts/gate-a/gate-report.json`, exact production accounting frames, visibility journal, 630-attempt compressor sweep, and independent `pnpm gate-a:replay`. |
+| Decipherment headroom | Python Baseline Runner | `artifacts/gate-b/qualified-feasibility-decision.json`; broader replication remains deferred. |
 | Revision dynamics | Instance Builder, Reveal Daemon, Grader | Reveal events and changed/stable trajectories, Gate C report. |
 | Communication value | Run Coordinator and Grader | Matched asynchronous comm/no-comm bundles, Gate D report. |
 | Progressive reveal | Instance Builder and Reveal Daemon | Versioned schedule, actual release events, mount-isolation tests. |
@@ -923,4 +914,4 @@ The design intentionally accepts:
 
 The reference deployment stays on one dedicated host to avoid clock skew and distributed ref/ledger transactions. Process, service-account, mount, and container separation enforce least privilege. Any scale-out design must retain one authoritative run clock and one serialized Git admission sequence; it must not weaken artifact, accounting, or replay semantics.
 
-If Gate A finds no usable budget interval, the response is to change the information geometry - longer texts first, then vocabulary and shard geometry - not to obscure or weaken the accounting model. Full-harness construction depends on all feasibility gates passing.
+If Gate A finds no usable budget interval, the response is to change the information geometry - longer texts first, then vocabulary and shard geometry - not to obscure or weaken the accounting model. Once Gate A and the bounded Gate B premise support construction, the complete offline harness precedes all new live model evaluation. Gate C or D failure returns the project to the owning puzzle or harness milestone and invalidates affected calibration and release claims.

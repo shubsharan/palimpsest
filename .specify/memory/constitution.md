@@ -1,38 +1,35 @@
 <!--
 Sync Impact Report
-- Version change: template (unratified) -> 1.0.0
+- Version change: 1.0.0 -> 2.0.0
 - Modified principles:
-  - Template Principle 1 -> I. Evidence Before Scale (NON-NEGOTIABLE)
-  - Template Principle 2 -> II. Trust Boundaries Are Product Behavior
-  - Template Principle 3 -> III. Versioned Contracts and Immutable Provenance
-  - Template Principle 4 -> IV. Deterministic Verification, Honest Claims
-  - Template Principle 5 -> V. Native, Bounded, Asynchronous Collaboration
-- Added sections:
-  - Research and Security Constraints
-  - Development Workflow and Quality Gates
+  - I. Evidence Before Scale -> I. End-to-End Before Model Evaluation (NON-NEGOTIABLE)
+- Added sections: none
 - Removed sections: none
 - Templates:
   - ✅ updated: .specify/templates/plan-template.md
   - ✅ updated: .specify/templates/spec-template.md
   - ✅ updated: .specify/templates/tasks-template.md
-  - ✅ updated: .specify/templates/checklist-template.md
+  - ✅ reviewed, no change: .specify/templates/checklist-template.md
   - ✅ reviewed, no change: .specify/templates/constitution-template.md
   - ✅ reviewed, none present: .specify/templates/commands/*.md
 - Runtime guidance:
-  - ✅ reviewed, no change: AGENTS.md
-  - ✅ reviewed, no change: CLAUDE.md
-  - ✅ aligned: docs/proposal.md, docs/architecture.md, docs/roadmap.md
+  - ✅ updated: AGENTS.md
+  - ✅ updated: CLAUDE.md
+  - ✅ aligned: docs/proposal.md
+  - ✅ aligned: docs/architecture.md
+  - ✅ aligned: docs/roadmap.md
+  - ✅ aligned: specs/004-revision-dynamics/
 - Follow-up TODOs: none
 -->
 # Palimpsest Constitution
 
 ## Core Principles
 
-### I. Evidence Before Scale (NON-NEGOTIABLE)
+### I. End-to-End Before Model Evaluation (NON-NEGOTIABLE)
 
-Every feature MUST identify its owning roadmap milestone or empirical gate and the question it answers. Work before Gates A-D pass MUST be the minimum needed to produce the owning gate's declared evidence. Thresholds, inputs, environments, and pass, rework, or stop decisions MUST be recorded before the judged run. A failed gate blocks dependent work; a design change MUST rerun the owning gate and every downstream result it invalidates. The project MUST change the information geometry or stop when evidence rejects a premise; it MUST NOT weaken accounting, thresholds, or controls to manufacture a pass.
+Every feature MUST identify its owning roadmap milestone and the part of the complete puzzle lifecycle it makes executable. Live model evaluation for revision dynamics, communication value, or matched calibration MUST NOT begin until the offline end-to-end harness completes generation, launch, reveal, native Git collaboration, freeze, private submission, clean execution, scoring, replay, and redacted reporting with deterministic fixtures and fake model adapters. Gate A and the qualified Gate B decision inform construction; Gates C and D evaluate the completed harness and gate calibration and release claims rather than harness implementation. Thresholds, inputs, environments, and pass, rework, or stop decisions MUST still be frozen before every judged model run. A failed empirical gate MUST invalidate the affected calibration or release claim and return the project to the owning puzzle or harness milestone; thresholds and controls MUST NOT be weakened to manufacture a pass.
 
-Rationale: Palimpsest is a research artifact whose expensive harness is justified only if channel separation, decipherment headroom, revision dynamics, and communication value survive direct tests.
+Rationale: Palimpsest must first exist as one inspectable system before model behavior is interpreted. Testing isolated fragments early spends model budget on a puzzle different from the integrated artifact and obscures whether failures come from the mechanic or incomplete infrastructure.
 
 ### II. Trust Boundaries Are Product Behavior
 
@@ -70,10 +67,10 @@ Rationale: The puzzle studies agent-created coordination under a measurable chan
 ## Development Workflow and Quality Gates
 
 1. Reconcile a feature with `docs/proposal.md`, `docs/architecture.md`, and `docs/roadmap.md`; record contradictions rather than silently choosing one.
-2. The specification MUST name the owning gate or milestone, hypothesis or outcome, predeclared evidence, trust/visibility effects, failure classification, and invalidated downstream evidence.
+2. The specification MUST name the owning milestone, end-to-end contribution, model-execution policy, completion evidence, trust/visibility effects, failure classification, and invalidated downstream evidence.
 3. The plan MUST pass the Constitution Check before research and again after design. Any deviation requires a documented rationale, the simpler or safer alternative rejected, an owner, and the evidence needed to remove it.
 4. Contracts, schemas, golden fixtures, and failing verification tests MUST precede implementation of the behavior they govern. Tasks MUST include every applicable verification and evidence artifact; tests are not optional for behavior, contract, trust-boundary, accounting, scoring, or replay changes.
-5. A milestone or gate is complete only when its deliverables, required evidence, environment and producer versions, exit decision, and follow-up are committed as versioned artifacts.
+5. A milestone or gate is complete only when its deliverables, required evidence, environment and producer versions, exit decision, and follow-up are recorded as versioned artifacts. The offline end-to-end milestone additionally requires a deterministic build-to-report replay before any new live model evaluation.
 6. `pnpm verify` MUST pass from a clean checkout with pinned dependencies before implementation or evidence is declared complete. Release additionally requires the roadmap's full verification suite, valid empirical gates, and no unresolved material red-team finding without an explicit accepted-risk record.
 
 ## Governance
@@ -84,4 +81,4 @@ Amendments require an explicit rationale, affected principles and artifacts, com
 
 Every feature plan and pull request MUST record constitution compliance. Gate and release reviews MUST recheck compliance against produced evidence, not intended design. A temporary exception requires an owner, scope, expiry or removal condition, affected evidence, and explicit maintainer approval; an exception cannot waive gate truthfulness, trust isolation, artifact integrity, or honest reporting.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-24
+**Version**: 2.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-26

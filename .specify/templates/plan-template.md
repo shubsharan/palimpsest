@@ -26,7 +26,9 @@
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
 **Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
-**Owning Gate/Milestone**: [roadmap gate or milestone and its exit decision]
+**Owning Milestone**: [roadmap milestone and its exit decision]
+**End-to-End Contribution**: [generation, launch, reveal, collaboration, freeze, submission, clean execution, scoring, replay, or reporting surfaces completed]
+**Model Execution Policy**: [offline fixtures only, or the completed-harness evidence that authorizes live model evaluation]
 **Trust Boundaries**: [trusted/untrusted components, visibility, secrets, network and mount effects]
 **Contracts/Artifacts**: [schemas, versions, canonical bytes, manifests and immutable inputs]
 **Replay Claim**: [what is deterministic, what remains stochastic, and the pinned environment]
@@ -35,7 +37,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- **Evidence before scale**: Scope is the minimum required by the owning gate or milestone; thresholds, inputs, evidence, and pass/rework/stop decision are predeclared.
+- **End-to-end before model evaluation**: The feature advances a complete offline build-to-report path; live models remain disabled until that path passes with deterministic fixtures.
 - **Trust boundaries**: The design preserves architecture ownership, least privilege, sealed data, failure classification, and agent/solver isolation.
 - **Contracts and provenance**: Cross-runtime schemas, golden fixtures, canonicalization, versions, immutable inputs, and artifact promotion rules are explicit.
 - **Verification and claims**: Applicable test categories, replay limits, evidence artifacts, and reporting language are named.

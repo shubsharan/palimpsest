@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "contractId": "useful-state-checkpoint",
+  "checkpointId": "belief-v1",
+  "version": 1,
+  "previousCheckpointSha256": null,
+  "mappingHypotheses": [
+    {
+      "cipherToken": "c0001",
+      "plainToken": "the",
+      "confidence": "0.95",
+      "provenance": "shard-a:paragraph-1"
+    }
+  ],
+  "contradictions": [],
+  "switchHypotheses": [],
+  "reconstructionDiffs": []
+}

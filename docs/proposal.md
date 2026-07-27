@@ -158,19 +158,19 @@ A public evaluation would require a family of controlled nonstationary decipherm
 
 ## Delivery Sequence
 
-The empirical feasibility gates precede full harness construction.
+Channel separation and decipherment headroom precede full harness construction. Revision dynamics and communication value are evaluated with real models only after the complete offline harness works end to end.
 
 **Feasibility gates.** Several 10–30k-token texts exercise four hard checks.
 
 *A. Channel separation.* Pure information engineering, no agents. Compute the best achievable compression of a complete or sparse recovered dictionary and of a shard — under token-ID coding, coding conditioned on shared vocabulary and reference corpus, and custom codebooks — cumulatively over the whole run. Verify a usable budget interval exists between useful belief state and complete shard relay. If not, widen the information geometry (text length first, per Heaps' law) before anything else is built.
 
-*B. Decipherment headroom.* Stationary single key, one agent. Run the compact ladder, then one frontier agent with tools and one human-plus-tools solver. Verify no saturation by mechanical methods, progressive improvement, and difficulty concentrated where designed. Run identification attacks including the cipher-view canary; test proper-noun regeneration quality and at least one non-Gutenberg source.
+*B. Decipherment headroom.* Stationary single key, one capable solver. For the product go/no-go decision, verify that semantic mapping can progress beyond the tested mechanical attempt on an unrecognized-literary instance without source recognition. Broader non-literary generalization, human comparison, multi-instance replication, complete identification coverage, and publication-grade replay are optional follow-on research rather than prerequisites for testing revision dynamics.
 
-*C. Revision dynamics.* One partial re-key, real clock-driven progressive reveal, single agent. Verify the intended signal exists: early mappings become accurate, changed mappings deteriorate after the switch, unchanged mappings persist, and a competent solver can selectively recover rather than restart.
+*C. Revision dynamics.* After the integrated harness passes offline, run one partial re-key with real clock-driven progressive reveal and a single agent. Verify the intended signal exists: early mappings become accurate, changed mappings deteriorate after the switch, unchanged mappings persist, and a competent solver can selectively recover rather than restart.
 
-*D. Communication value.* The smallest paired comparison uses three asynchronous agents with and without teammate visibility, identical instances and compute, native Git workflows, publication slots, and counterfactual accounting. Verify communication changes outcomes or produces a materially richer solving trace.
+*D. Communication value.* After the same harness passes offline, run the smallest paired comparison using three asynchronous agents with and without teammate visibility, identical instances and compute, native Git workflows, publication slots, and counterfactual accounting. Verify communication changes outcomes or produces a materially richer solving trace.
 
-Full-harness construction depends on all four checks passing.
+Full-harness construction proceeds after A and the bounded B product decision. The complete generation, collaboration, submission, grading, replay, and reporting path must pass with deterministic fixtures and fake model adapters before any new C, D, or matched-calibration model call. C and D gate calibration and release claims; if either fails, the owning mechanic or harness component is reworked and the affected integrated verification is rerun.
 
 **Corpus and generator.** Gutenberg mirror and metadata filter; boilerplate stripping; normalization and tokenization; MinHash/LSH dedup plus structural-fingerprint dedup against every candidate; NER-based proper-noun regeneration; seeded derangement with optional POS-preserving mode; switch selection over types active in adjacent segments with matched controls; shard boundaries placed for the cross-shard ambiguity case; versioned public, shard, reference, reveal, and oracle manifests.
 

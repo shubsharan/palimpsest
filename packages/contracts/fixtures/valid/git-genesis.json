@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "contractId": "git-genesis",
+  "accountingVersion": 1,
+  "objectFormat": "sha256",
+  "publishedRefs": [
+    {
+      "refName": "refs/heads/main",
+      "oid": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ],
+  "everVisibleOids": ["1111111111111111111111111111111111111111111111111111111111111111"],
+  "canonicalSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
