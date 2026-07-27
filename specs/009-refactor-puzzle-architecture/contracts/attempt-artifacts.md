@@ -1,6 +1,6 @@
-# Attempt Artifact Compatibility Contract
+# Active Attempt Artifact Contract
 
-All existing stored field names, versions, meanings, and path semantics remain unchanged. This feature changes only validation ownership and the order in which the attempt summary and optional overlap artifact are written.
+These are the active records produced and consumed by the refactored runner. The current build-run-evaluate flow validates them strictly. Records from earlier implementations receive no migration or compatibility reader; existing shapes remain only where they are already the shortest adequate current representation.
 
 ## `puzzle-build.json`
 
@@ -96,11 +96,13 @@ The sandbox block remains operational context only.
 
 1. Sessions end, trace data flushes, and Git/workspaces freeze.
 2. The complete summary is encoded.
-3. A temporary file in the attempt directory is written completely and atomically renamed to `attempt.json` with exclusive destination semantics.
+3. A temporary file in the exclusively owned attempt directory is written completely and atomically renamed to `attempt.json`.
 4. Only after the summary exists may overlap input collection begin.
 5. Overlap failure never removes, rewrites, or invalidates the summary, trace, frozen Git, or frozen workspaces.
 
 `attempt.json` intentionally contains no overlap status or path. Evaluation remains valid whenever the summary exists, regardless of whether overlap succeeded.
+
+The run command creates the attempt root exclusively before work begins. Concurrent writers to the same attempt root are unsupported, so summary publication does not add hard-link, lock, or multi-writer coordination machinery.
 
 ## `overlap.json`
 
@@ -126,8 +128,11 @@ If observation fails:
 
 - no fabricated success-shaped `overlap.json` is written;
 - a partial overlap-input directory may remain as diagnostic material;
-- the run command exits nonzero;
+- the run command exits nonzero, reports the original error through standard error, and emits no success JSON;
+- `overlap.failed` is appended when the trace remains writable, but diagnostic failure never replaces the original observation error;
 - `attempt.json` and frozen inputs remain evaluatable.
+
+No overlap-failure sidecar is created. Command output is the authoritative failure report.
 
 ## Evaluation Artifacts
 
@@ -166,4 +171,5 @@ The optional `selection`, `execution`, `outputPath`, `score`, and `error` fields
 
 - Invalid JSON, non-object roots, unsupported versions, missing fields, wrong types, invalid enum values, unsafe paths, impossible stage geometry, malformed sandbox identity, or negative counters fail explicitly.
 - Decoders do not fill missing fields, coerce values, or return partial success objects.
-- Valid existing artifacts decode without migration or compatibility wrappers.
+- Records produced by the active refactored flow decode without partial defaults.
+- Records produced by earlier implementations are unsupported and receive no migration or compatibility wrapper.

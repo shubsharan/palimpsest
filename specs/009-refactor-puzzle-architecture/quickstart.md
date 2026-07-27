@@ -21,7 +21,7 @@ The Python sync must refresh the editable package path after the move from `pyth
 pnpm puzzle:sandbox:build
 ```
 
-Confirm the command emits one JSON object with `imageTag`, `imageId`, `sourceDigest`, and `profileVersion`. Rebuild before Docker-backed verification so the checked-in source label and inspected image match.
+Confirm the command emits one JSON object containing `imageTag`, `imageId`, `sourceDigest`, and `profileVersion`. Additional fields are allowed. Rebuild before Docker-backed verification so the checked-in source label and inspected image match.
 
 ## Verify the Repository
 
@@ -69,7 +69,7 @@ Inspect:
 Expected:
 
 - build, three-agent run, overlap, evaluation, and scoring complete without an external model call;
-- the normalized values match [contracts/behavior-baseline.md](contracts/behavior-baseline.md);
+- the scientific values, minimum command results, and required trace relationships match [contracts/behavior-baseline.md](contracts/behavior-baseline.md);
 - trace sequence is contiguous and elapsed time is nondecreasing;
 - `attempt.frozen` precedes `overlap.observed`, reviewer selection, and evaluation;
 - evaluation status is `scored`.
@@ -100,7 +100,7 @@ The focused durability test injects overlap failure after freeze and proves:
 - no success-shaped `overlap.json` is fabricated;
 - `puzzle:evaluate` can evaluate the saved attempt without rerunning agents.
 
-Malformed build, attempt, overlap, and evaluation fixtures must fail through their named decoders without casts, missing-field defaults, or partial success.
+Malformed current-version build, attempt, overlap, and evaluation fixtures must fail through their named decoders without casts, missing-field defaults, or partial success.
 
 ## Audit the Compact Layout
 
@@ -112,6 +112,15 @@ Confirm active source contains:
 - no `packages/puzzle-runner`, package barrel, TypeScript alias, `pnpm-workspace.yaml`, `tools/puzzle`, or `python/src`.
 
 Search active code and configuration, excluding historical specifications 006 and 008, for deleted paths and names. The audit must find no active `@palimpsest/puzzle-runner`, `AgentAdapter`, `Supervisor`, `parseAttemptConfig`, `tools/puzzle`, or `python/src/palimpsest` reference.
+
+## Confirm the Greenfield Boundary
+
+- The five commands retain their names, flags, defaults, required relationships, one-object success boundary, and documented minimum result fields.
+- Additional JSON result fields are allowed and are not compared as exact key sets.
+- Only records produced by the refactored runner are required to decode through the active commands.
+- No compatibility alias, stored-record migration, historical artifact fixture matrix, replay path, or temporary dual command path exists.
+- `attempt.json` is published with a same-directory temporary write and atomic rename inside the exclusively created attempt root; concurrent writers are unsupported.
+- Overlap failure reports through nonzero exit and standard error, preserves an evaluatable attempt, and creates no failure sidecar.
 
 ## Preserve Historical and User-Owned Material
 

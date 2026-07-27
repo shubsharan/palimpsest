@@ -29,5 +29,5 @@
 
 ## Notes
 
-- Validation passed on iteration 1 after wording cleanup; no clarification markers or unresolved quality issues remain.
-- Named commands and stored-record filenames are retained as operator compatibility contracts, not implementation prescriptions.
+- Revalidated after the greenfield contract update; no clarification markers or unresolved quality issues remain.
+- Named commands and their minimum useful results are retained as operator workflow contracts. Exact JSON key sets and records from earlier implementations are explicitly outside the greenfield compatibility boundary.

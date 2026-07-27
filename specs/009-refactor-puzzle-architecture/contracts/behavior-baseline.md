@@ -1,6 +1,6 @@
-# Behavior Compatibility Baseline
+# Scientific Behavior Baseline
 
-The implementation captures these values before moving source. Dynamic host and concurrency data is normalized as described below.
+The implementation captures these scientific values and minimum operator results before moving source. Dynamic host, representation, and concurrency data is excluded as described below.
 
 ## Verification Baseline
 
@@ -20,13 +20,11 @@ Inputs:
 Expected:
 
 - build ID: `build-3288b873a2da8ee75f4289f86ccf82c699292d975e263a3a07039cca62e20301`
-- file count: `48`
-- tree SHA-256: `07500012e6875f444affd0605be0ba818ecd8b35a3560ef12852bdbede8de627`
 - agent count: `3`
 - stage count: `6`
 - transition stage: `4`
 
-Every emitted byte, path, stage order, changed-symbol order, and build-manifest field remains identical.
+The build identity, puzzle bytes, stage order, changed-symbol order, and declared puzzle geometry remain identical. File count, tree digest, and exact manifest field set are representation details rather than greenfield golden requirements.
 
 ## Fixed Offline Fixture
 
@@ -51,9 +49,9 @@ Expected stable values:
 
 If a Git version changes only nondeterministic object metadata, the overlap contract is evaluated through semantic counts and the dedicated committed-then-deleted fixture rather than blindly accepting drift.
 
-## CLI Shapes
+## Minimum CLI Results
 
-Golden assertions compare exact top-level key sets documented in [operator-cli.md](operator-cli.md), flag defaults, required relationships, absolute-path behavior, one-object stdout, and nonzero failure behavior.
+Golden assertions preserve the command names, flag defaults, required relationships, absolute-path behavior, one-object stdout, nonzero standard-error failure behavior, and minimum result fields documented in [operator-cli.md](operator-cli.md). Additional success fields do not fail the contract.
 
 Dynamic absolute path values are normalized to logical build/attempt roots before comparison.
 
@@ -85,4 +83,6 @@ Do not snapshot:
 - interleaving among concurrent agent events when no contract orders them
 - provider/model behavior
 
-These values are operational or stochastic and are not part of the deterministic compatibility claim.
+These values are operational, representational, or stochastic and are not part of the deterministic scientific claim.
+
+Records from earlier implementations and exact CLI key sets are deliberately not golden values.

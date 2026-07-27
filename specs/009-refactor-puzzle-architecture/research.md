@@ -55,7 +55,7 @@
 
 ## Decision 5: Persist Before Optional Observation
 
-**Decision**: Atomically and exclusively write the unchanged `attempt.json` immediately after trace flush and freeze, then begin overlap observation. On observation failure, append `overlap.failed` when possible and rethrow without fabricating `overlap.json` or a success result.
+**Decision**: Completely write a temporary summary in the exclusively created attempt root, atomically rename it to `attempt.json` immediately after trace flush and freeze, then begin overlap observation. On observation failure, report the original error through the command boundary, append `overlap.failed` when possible, and rethrow without fabricating `overlap.json`, a success result, or a new failure sidecar. Concurrent attempt writers are unsupported.
 
 **Rationale**: Freeze completes the model run; overlap is optional post-run observation. Evaluation depends on the summary, not on overlap, so persistence must precede the optional step.
 
@@ -63,7 +63,8 @@
 
 - Keep the current order: rejected because completed work becomes hard to inspect and impossible to evaluate through the supported command.
 - Swallow overlap failure and return success: rejected because it hides an infrastructure failure.
-- Add an attempt-status migration/schema field: rejected because the existing fields are sufficient and artifact compatibility is required.
+- Add an attempt-status or failure-sidecar schema: rejected because the command error, preserved summary, and best-effort trace diagnostic meet the current operational need without another lifecycle record.
+- Add hard-link or concurrent-writer publication machinery: rejected because one command exclusively owns a newly created attempt root.
 
 ## Decision 6: Four Sandbox Owners and One Process Primitive
 
@@ -81,7 +82,7 @@
 
 **Decision**: Centralize TypeScript decoders for build, attempt, overlap, and evaluation records and place Python build-manifest decoding with the manifest owner. Reject malformed versions, types, enums, counters, paths, or stage geometry explicitly.
 
-**Rationale**: Current object checks and casts validate only fragments of stored records. Focused decoders make compatibility testable and failures precise without changing valid bytes.
+**Rationale**: Current object checks and casts validate only fragments of stored records. Focused decoders make the active build-run-evaluate path explicit and failures precise without adding schema generation or migration infrastructure.
 
 **Alternatives considered**:
 
@@ -112,15 +113,16 @@
 - Leave private helpers in `build.py`: rejected because construction remains coupled and hard to reason about.
 - Create a general domain-model hierarchy: rejected because four pure functions are sufficient.
 
-## Decision 10: Golden Compatibility, Not Full Replay
+## Decision 10: Scientific Golden Behavior, Not Full Replay
 
-**Decision**: Capture stable build IDs/tree bytes, checker/scoring aggregates, CLI key sets, session totals, artifact schemas, and trace partial order. Normalize paths, timestamps, image IDs, Git object IDs, Docker duration, and unconstrained event interleaving.
+**Decision**: Capture stable build IDs, puzzle geometry, checker/scoring aggregates, session totals, minimum CLI results, and contractual trace partial order. Do not freeze file counts, tree digests, extra CLI fields, stored schemas, paths, timestamps, image IDs, Git object IDs, Docker duration, or unconstrained event interleaving.
 
-**Rationale**: Golden behavior must protect deterministic mechanics and public contracts without falsely treating concurrent model/Docker/Git timing as reproducible.
+**Rationale**: Golden behavior must protect deterministic mechanics and the stable operator workflow without creating backward artifact compatibility or falsely treating concurrent model/Docker/Git timing as reproducible.
 
 **Alternatives considered**:
 
 - Snapshot complete trace bytes: rejected because elapsed time and concurrent ordering legitimately vary.
+- Retain historical artifact fixtures: rejected because Feature 009 is a greenfield cut and the fresh active flow validates its own records.
 - Rely only on the existing unit suite: rejected because moves can preserve isolated behavior while changing command/result composition.
 - Add a replay system: rejected by the constitution and current experimental need.
 
@@ -146,6 +148,17 @@
 
 - Keep temporary dual paths: rejected as a compatibility layer and a source of ambiguous ownership.
 - Hand-edit generated locks: rejected because the package managers own importer metadata.
+
+## Decision 13: Greenfield Compatibility Boundary
+
+**Decision**: Preserve deterministic puzzle behavior, agent-visible tools and constraints, the five command names, their flags/defaults/relationships, and minimum useful command results. Do not preserve exact JSON key sets, private imports, deleted layouts, or records produced by earlier implementations. Reuse an existing record shape only when it remains the shortest adequate current design.
+
+**Rationale**: Operators retain the same workflow and scientific experiment, while the refactor remains free to remove obsolete representation and compatibility work that has no current experimental value.
+
+**Alternatives considered**:
+
+- Preserve full CLI and artifact shapes: rejected because it turns a greenfield internal refactor into a migration project.
+- Redesign every record proactively: rejected because greenfield permission is for removing complexity, not manufacturing unnecessary churn.
 
 ## Resolved Clarifications
 

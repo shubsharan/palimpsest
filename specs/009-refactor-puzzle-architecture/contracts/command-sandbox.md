@@ -1,6 +1,6 @@
-# Command Sandbox Compatibility Contract
+# Active Command Sandbox Contract
 
-The refactor moves these contracts to `src/sandbox/contracts.ts` without changing their shapes. No compatibility facade is provided for the old private import path.
+The refactor moves these active contracts to `src/sandbox/contracts.ts` while preserving the agent-visible and host-safety behavior they define. No compatibility facade is provided for the old private import path.
 
 ## Type Shapes
 

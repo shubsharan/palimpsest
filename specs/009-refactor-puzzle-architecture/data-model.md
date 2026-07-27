@@ -1,6 +1,6 @@
 # Data Model: Puzzle Architecture Refactor
 
-The refactor changes ownership and validation, not stored schemas. Existing schema versions, field names, path semantics, and JSON formatting remain compatible.
+These records define the active refactored runner. The fresh build-run-evaluate flow strictly validates every record it produces. Existing shapes may remain where they are already the shortest adequate design, but schema versions, field names, path semantics, and JSON formatting from earlier implementations are not compatibility obligations.
 
 ## Puzzle Build
 
@@ -46,7 +46,7 @@ Represents one completed and frozen model attempt. It is the durable input to la
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `attemptId` | string | Nonempty and unchanged from the run result |
+| `attemptId` | string | Nonempty and returned by the run command |
 | `buildRoot` | absolute path | Existing build containing the decoded Puzzle Build |
 | `tracePath` | absolute path | Existing `trace.jsonl` |
 | `traceMetadataPath` | absolute path | Existing `trace.meta.json` |
@@ -67,11 +67,12 @@ Represents one completed and frozen model attempt. It is the durable input to la
 
 ### Persistence Rules
 
-- The writer creates `attempt.json` once, from a complete encoded value, immediately after freeze.
-- Persistence is atomic and exclusive; an existing summary is never overwritten.
+- The run creates and exclusively owns an absent attempt root before work begins.
+- The writer creates a complete temporary summary in that directory immediately after freeze and atomically renames it to `attempt.json`.
 - Failure to persist stops before overlap observation.
 - Successful persistence is never rolled back because overlap later fails.
 - Evaluation requires this summary but does not require `overlap.json`.
+- Concurrent writers to one attempt root are unsupported.
 
 ## Observation Trace
 
@@ -84,13 +85,13 @@ Represents one completed and frozen model attempt. It is the durable input to la
 
 ### Trace Event
 
-| Field      | Type                | Rules                                                     |
-| ---------- | ------------------- | --------------------------------------------------------- |
-| `sequence` | integer             | Starts at `1`, increments by exactly one                  |
-| `atMs`     | number              | Finite, nonnegative, and nondecreasing                    |
-| `kind`     | string              | Nonempty existing event kind or targeted `overlap.failed` |
-| `agentId`  | optional agent enum | Only for agent-specific events                            |
-| `data`     | JSON value          | Recursively redacted through the shared trace path        |
+| Field | Type | Rules |
+| --- | --- | --- |
+| `sequence` | integer | Starts at `1`, increments by exactly one |
+| `atMs` | number | Finite, nonnegative, and nondecreasing |
+| `kind` | string | Nonempty active event kind; may include best-effort `overlap.failed` |
+| `agentId` | optional agent enum | Only for agent-specific events |
+| `data` | JSON value | Recursively redacted through the shared trace path |
 
 The metadata file is created before the JSONL file and never rewritten. Reopening validates every existing line before append.
 
@@ -196,7 +197,9 @@ Omission selects `collaborative-revision`. Every other supplied value fails befo
 | Sessions Ended | Git/workspaces freeze | Frozen | Frozen repository/workspaces and trace |
 | Frozen | Attempt writer succeeds | Summarized | `attempt.json` |
 | Summarized | Overlap succeeds | Observed | `overlap.json` and `overlap.observed` |
-| Summarized | Overlap fails | Observation Failed | Existing summary/frozen inputs; optional `overlap.failed`; no fabricated overlap artifact |
+| Summarized | Overlap fails | Observation Failed | Existing summary/frozen inputs; optional trace diagnostic; no fabricated overlap artifact or failure sidecar |
 | Summarized, Observed, or Observation Failed | Reviewer evaluates | Evaluated | `selection.json` and `result.json` |
 
 An attempt cannot enter overlap observation before `Summarized`. Evaluation may begin from any state at or after `Summarized`.
+
+The command's nonzero exit and standard-error message are authoritative for an observation failure. The trace diagnostic is best-effort and its failure never replaces the original observation error.

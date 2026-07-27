@@ -1,21 +1,21 @@
 # Feature Specification: Puzzle Architecture Refactor
 
-**Feature Branch**: `009-refactor-puzzle-architecture` **Created**: 2026-07-27 **Status**: Ready for Planning **Input**: Refactor the active puzzle architecture into two clear runtime ownership boundaries and focused responsibilities while preserving puzzle behavior, operator interfaces, artifact compatibility, deterministic mechanics, sandbox policy, and voluntary Git semantics.
+**Feature Branch**: `009-refactor-puzzle-architecture` **Created**: 2026-07-27 **Status**: Ready for Planning **Input**: Refactor the active puzzle architecture into two clear runtime ownership boundaries and focused responsibilities while preserving puzzle behavior, the five-command operator workflow, deterministic mechanics, sandbox policy, and voluntary Git semantics. Treat private imports, stored records, and exact JSON result shapes as greenfield implementation details.
 
 ## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Operate the Same Puzzle After the Refactor (Priority: P1)
 
-An experiment operator can use the same five puzzle commands, options, defaults, validation rules, outputs, and failure behavior after the internal architecture changes. Fixed scientific inputs produce the same puzzle, reveal schedule, checker aggregates, reconstruction scores, and observable attempt records.
+An experiment operator can use the same five puzzle commands, options, defaults, validation rules, and failure boundary after the internal architecture changes. Each command returns the minimum identity, path, status, score, or error data needed to continue the workflow. Fixed scientific inputs produce the same puzzle, reveal schedule, checker aggregates, reconstruction scores, and contractually ordered attempt observations.
 
 **Why this priority**: This feature exists to improve maintainability and durability without changing the experiment an operator runs or the behavior agents experience.
 
-**Independent Test**: Capture the current fixed-seed outputs and command contracts, run the same build, three-agent offline attempt, overlap observation, evaluation, and scoring flow after the refactor, and compare every declared behavior and artifact field.
+**Independent Test**: Capture the current fixed-seed scientific outputs and minimum command results, run the same build, three-agent offline attempt, overlap observation, evaluation, and scoring flow after the refactor, and compare every declared deterministic outcome and command guarantee.
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid invocation of any existing puzzle command, **When** an operator runs it after the refactor, **Then** the command accepts the same flags, defaults, and required flag relationships and emits the same JSON result shape.
-2. **Given** the same fixed scientific inputs, **When** an operator builds and scores the puzzle before and after the refactor, **Then** build identity, puzzle geometry, checker aggregates, reconstruction score, and trace ordering are unchanged.
+1. **Given** a valid invocation of any existing puzzle command, **When** an operator runs it after the refactor, **Then** the command accepts the same flags, defaults, and required flag relationships and emits one JSON result containing its declared minimum fields.
+2. **Given** the same fixed scientific inputs, **When** an operator builds and scores the puzzle before and after the refactor, **Then** build identity, puzzle geometry, checker aggregates, reconstruction score, and contractual trace relationships are unchanged.
 3. **Given** an invalid invocation or unavailable required infrastructure, **When** a command fails, **Then** it reports the same error classification through standard error and exits nonzero without emitting a success-shaped result.
 4. **Given** an agent or reviewer command, **When** it runs inside the declared sandbox, **Then** identity, mounts, resource limits, network policy, output limits, and termination behavior remain unchanged.
 
@@ -50,7 +50,7 @@ An operator can inspect and evaluate a completed run even when optional post-run
 **Acceptance Scenarios**:
 
 1. **Given** all sessions have ended and work has frozen, **When** post-run observation starts, **Then** the attempt summary already exists and can be decoded successfully.
-2. **Given** overlap observation fails after freeze, **When** an operator inspects the attempt directory, **Then** the attempt summary, trace, frozen repository, and frozen workspaces remain intact and the observation failure is explicit.
+2. **Given** overlap observation fails after freeze, **When** the run command returns, **Then** it exits nonzero, reports the observation failure through standard error, emits no success result or fabricated overlap artifact, and leaves the attempt summary, trace, frozen repository, and frozen workspaces intact.
 3. **Given** a frozen attempt whose overlap observation failed, **When** an operator evaluates it, **Then** evaluation proceeds from the durable attempt summary without requiring a rerun.
 4. **Given** malformed attempt, build, overlap, or evaluation data, **When** a command reads it, **Then** decoding fails with a specific infrastructure error rather than accepting partial or silently defaulted data.
 
@@ -67,7 +67,7 @@ A maintainer can verify the compact architecture from a clean or previously used
 **Acceptance Scenarios**:
 
 1. **Given** ignored cache or empty generated directories in the checkout, **When** repository-boundary verification runs, **Then** it evaluates tracked paths and produces the same result as a clean checkout.
-2. **Given** the refactored responsibilities, **When** focused tests run, **Then** manifest decoding, fixture scenario validation, reveal scheduling, overlap failure, attempt durability, path containment, sandbox termination, image identity, and output limits are all exercised.
+2. **Given** the refactored responsibilities, **When** focused tests run, **Then** current-version record decoding, fixture scenario validation, reveal scheduling, overlap failure, attempt durability, path containment, sandbox termination, image identity, and output limits are all exercised.
 3. **Given** the implemented `collaborative-revision` fixture scenario, **When** it is selected, **Then** the offline attempt follows that scenario; when any unknown name is selected, the command fails explicitly.
 4. **Given** the full offline acceptance flow, **When** it completes, **Then** build, three-agent run, overlap observation, evaluation, and scoring all succeed without an external model call.
 
@@ -93,19 +93,19 @@ A maintainer can verify the compact architecture from a clean or previously used
 
 **Environmental Constraints**: Evidence visibility, monotonic reveal timing, token and wall-time cutoffs, sandbox identity, mount paths, network denial, secret isolation, host-safety limits, output limits, and reviewer execution boundaries remain unchanged.
 
-**Observable Outcomes**: The same model responses, tool activity, session lifecycle, stage releases, checker aggregates, Git behavior, frozen work, raw overlap, reviewer selection, execution result, reconstruction score, unusual behavior, and resource termination remain retained. `trace.meta.json`, `trace.jsonl`, `attempt.json`, `overlap.json`, and evaluation result formats remain compatible.
+**Observable Outcomes**: The same model responses, tool activity, session lifecycle, stage releases, checker aggregates, Git behavior, frozen work, raw overlap, reviewer selection, execution result, reconstruction score, unusual behavior, and resource termination remain retained. The refactored runner strictly validates the records it produces and can complete the fresh build-run-evaluate flow from those records; records from earlier implementations are not supported inputs.
 
 **Infrastructure Failures**: Invalid configuration, unknown fixture scenarios, malformed stored records, path-containment violations, unavailable or mismatched sandbox images, launch or cleanup failures, trace corruption, and overlap-observer failures are explicit infrastructure failures. An overlap-observer failure after freeze does not erase the attempt summary or prevent evaluation from using the frozen attempt.
 
-**Out-of-Scope Claims**: This feature does not change the proposal, puzzle difficulty, agent prompt, collaboration semantics, artifact meaning, or scoring policy. It does not add compatibility for deleted private import paths, prescribe a model workflow, make model behavior reproducible, prove collaboration or belief revision, detect all covert sharing, or expand the existing standard sandbox into an adversarial security claim.
+**Out-of-Scope Claims**: This feature does not change the proposal, puzzle difficulty, agent prompt, collaboration semantics, observable record meaning, or scoring policy. It does not preserve old stored records, exact pre-refactor JSON result shapes, or deleted private import paths; prescribe a model workflow; make model behavior reproducible; prove collaboration or belief revision; detect all covert sharing; or expand the existing standard sandbox into an adversarial security claim.
 
 ## Requirements _(mandatory)_
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST preserve the `puzzle:sandbox:build`, `puzzle:build`, `puzzle:run`, `puzzle:evaluate`, and `puzzle:offline` operator command names, accepted flags, defaults, required flag relationships, JSON standard-output fields, and nonzero failure behavior.
-- **FR-002**: The system MUST preserve fixed-seed build identities, puzzle geometry, reconstruction scores, checker aggregates, reveal ordering, and trace event ordering.
-- **FR-003**: The system MUST preserve `trace.meta.json`, `trace.jsonl`, `attempt.json`, `overlap.json`, and evaluation result field names, meanings, required data, and compatibility.
+- **FR-001**: The system MUST preserve the `puzzle:sandbox:build`, `puzzle:build`, `puzzle:run`, `puzzle:evaluate`, and `puzzle:offline` operator command names, accepted flags, defaults, required flag relationships, one-object JSON success boundary, and nonzero standard-error failure boundary. Each command MUST return the minimum fields declared by the active operator contract and MAY return additional fields.
+- **FR-002**: The system MUST preserve fixed-seed build identities, puzzle geometry, reconstruction scores, checker aggregates, reveal ordering, contiguous trace sequence numbers, nondecreasing elapsed time, per-agent release order, sessions-ended before freeze, freeze before overlap, and reviewer selection before evaluation.
+- **FR-003**: Every build, trace, attempt, overlap, and evaluation record produced by the refactored runner MUST be strictly validated and consumable by the active commands that own the fresh build-run-evaluate flow. Records produced by earlier implementations need not decode.
 - **FR-004**: The system MUST preserve sandbox request, result, and identity contracts together with mount paths, image validation, network policy, resource limits, output limits, termination behavior, and error classifications.
 - **FR-005**: The system MUST preserve voluntary and unmetered Git use; no new required branch, commit, file, role, turn, checkpoint, or coordination sequence may be introduced.
 - **FR-006**: The active repository MUST expose exactly two runtime ownership boundaries: one root operator application and one independently packaged deterministic puzzle distribution.
@@ -118,7 +118,7 @@ A maintainer can verify the compact architecture from a clean or previously used
 - **FR-013**: The deterministic puzzle distribution MUST separate puzzle construction from evaluation and MUST give manifest, scoring, and overlap data explicit ownership.
 - **FR-014**: Shard and transition geometry MUST be independently testable without file access, process execution, or mutation of stored artifacts.
 - **FR-015**: After an attempt freezes, the system MUST persist a complete `attempt.json` before starting optional overlap observation.
-- **FR-016**: A post-freeze overlap-observation failure MUST leave the frozen attempt inspectable and evaluatable and MUST be recorded as an explicit infrastructure failure.
+- **FR-016**: A post-freeze overlap-observation failure MUST leave the frozen attempt inspectable and evaluatable, exit nonzero, report the original infrastructure failure through standard error, emit no success result, and leave no fabricated `overlap.json`. The runner SHOULD append `overlap.failed` when the trace remains writable, but diagnostic failure MUST NOT replace the original observation error.
 - **FR-017**: Every stored build, attempt, overlap, and evaluation record MUST be decoded and validated at its command boundary; malformed records MUST fail explicitly without partial defaults.
 - **FR-018**: The offline fixture MUST explicitly accept `collaborative-revision` and MUST reject every unknown fixture scenario.
 - **FR-019**: Repository-boundary verification MUST derive its result from tracked paths rather than unfiltered directory entries.
@@ -128,7 +128,7 @@ A maintainer can verify the compact architecture from a clean or previously used
 - **FR-023**: Completed specifications 006 and 008 MUST remain as unchanged historical records, and the proposal's puzzle meaning MUST remain unchanged.
 - **FR-024**: Generated-only legacy package directories and bytecode caches MAY be removed only after confirming that no tracked or active source depends on them.
 - **FR-025**: The untracked `.artifacts-tmp/gate-b-contract-cases.json` MUST remain unmodified and unarchived by this feature.
-- **FR-026**: Before active behavior is relocated, the system MUST capture fixed-seed build identities, reconstruction scores, checker aggregates, trace ordering, and operator result shapes as golden compatibility cases.
+- **FR-026**: Before active behavior is relocated, the system MUST capture fixed-seed build identities, puzzle geometry, reconstruction scores, checker aggregates, contractual trace relationships, and minimum operator results as scientific and command-contract golden cases.
 - **FR-027**: The existing development-time version verification capability MUST remain available after the active runtime moves.
 
 ### Key Entities
@@ -145,9 +145,9 @@ A maintainer can verify the compact architecture from a clean or previously used
 
 ### Measurable Outcomes
 
-- **SC-001**: For the captured fixed-seed golden cases, 100% of build identities, reconstruction scores, checker aggregates, trace orderings, and command result fields match the pre-refactor baseline.
-- **SC-002**: Contract tests for all five operator commands show zero changes to accepted flags, defaults, required flag relationships, standard-output fields, or failure exit behavior.
-- **SC-003**: Compatibility checks decode 100% of retained baseline trace, attempt, overlap, and evaluation fixtures without migration or wrapper logic.
+- **SC-001**: For the captured fixed-seed golden cases, 100% of build identities, puzzle geometry, reconstruction scores, checker aggregates, and contractual trace relationships match the pre-refactor scientific baseline.
+- **SC-002**: Contract tests for all five operator commands show zero changes to accepted flags, defaults, required flag relationships, one-object success output, minimum required fields, or nonzero standard-error failure behavior; additional success fields do not fail the contract.
+- **SC-003**: A fresh refactored build, attempt, overlap result, and evaluation result all decode through the active current-version readers and complete the supported workflow without an artifact migration or compatibility wrapper.
 - **SC-004**: In every injected post-freeze overlap-failure case, `attempt.json` is readable, all frozen inputs remain intact, and evaluation can complete without rerunning the model attempt.
 - **SC-005**: The full retained verification suite passes with ignored cache directories both present and absent, including all 44 current operator/runtime cases and all 37 deterministic puzzle cases or their behaviorally equivalent reorganized cases.
 - **SC-006**: Repository inspection finds exactly one active root operator application, one deterministic puzzle distribution, and zero active references to the deleted package workspace, alias, barrel, or nested distribution layout.
@@ -159,11 +159,12 @@ A maintainer can verify the compact architecture from a clean or previously used
 
 ## Assumptions
 
-- This is a greenfield internal refactor: obsolete private import paths and wrapper interfaces receive no compatibility layer.
+- This is a greenfield internal refactor: obsolete private import paths, wrapper interfaces, exact JSON result key sets, and stored records from earlier implementations receive no compatibility layer.
+- Existing record shapes may remain where they are already the simplest adequate representation, but no code, fixture, or test exists solely to preserve them.
 - The completed behavior-neutral runner and hardening specifications remain historical records; this feature reorganizes their delivered behavior rather than superseding their semantics.
 - `docs/proposal.md` remains semantically unchanged because the experiment, agent experience, and claim boundary do not change.
 - The five retained commands are sandbox preparation, puzzle build, live run, evaluation, and deterministic offline fixture.
 - The implemented offline scenario is `collaborative-revision`; no other fixture scenario is currently part of the supported operator contract.
 - Generated-only legacy package directories and runtime bytecode caches may be removed after their contents are revalidated as non-source and untracked.
 - The untracked `.artifacts-tmp/gate-b-contract-cases.json` is user-owned evidence outside this feature's edit scope.
-- Implementation planning will choose concrete file names and dependency edges while preserving the ownership outcomes and compatibility requirements stated here.
+- Implementation planning will choose concrete file names and dependency edges while preserving the ownership outcomes, scientific behavior, command workflow, and current-version validation requirements stated here.

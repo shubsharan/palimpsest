@@ -1,6 +1,6 @@
-# Operator CLI Compatibility Contract
+# Active Operator CLI Contract
 
-The refactor preserves all five `pnpm puzzle:*` script names and routes them through one private dispatcher. The dispatcher change is not operator-visible.
+The refactor preserves all five `pnpm puzzle:*` script names, flags, defaults, and required relationships and routes them through one private dispatcher. Each success result must contain the minimum fields below and may contain additional fields. Exact top-level key equality is not a compatibility requirement.
 
 ## Shared Rules
 
@@ -10,12 +10,13 @@ The refactor preserves all five `pnpm puzzle:*` script names and routes them thr
 - Success emits exactly one JSON object followed by one newline on standard output.
 - Failure emits no success-shaped JSON, reports through standard error, and exits nonzero.
 - Existing absolute result paths remain absolute.
+- Records and exact JSON shapes produced by earlier implementations are unsupported.
 
 ## `pnpm puzzle:sandbox:build`
 
 No flags are required.
 
-Success fields:
+Required success fields:
 
 - `imageTag`
 - `imageId`
@@ -37,13 +38,12 @@ Optional defaults:
 - `--transition-stage 4`
 - `--changed-token-mass 0.2`
 
-Success fields:
+Required success fields:
 
 - `buildId`
 - `buildPath`
-- `agentCount`
-- `stageCount`
-- `transitionStage`
+
+`buildPath` is absolute.
 
 The output destination must be absent or empty. Nonempty output fails without modifying its existing content.
 
@@ -63,17 +63,12 @@ Conditional and optional:
 - `--fixture-scenario <name>` defaults to `collaborative-revision` for `fixture`.
 - `collaborative-revision` is the only accepted fixture scenario; every unknown supplied name fails before sandbox or attempt side effects.
 
-Success fields:
+Required success fields:
 
 - `attemptId`
-- `sessions`
-- `frozen`
-- `tracePath`
-- `traceMetadataPath`
-- `sandbox`
 - `attemptRoot`
-- `buildRoot`
-- `overlap`
+
+`attemptRoot` is absolute.
 
 If optional post-freeze overlap observation fails, the command remains nonzero and emits no success result, but the completed `attempt.json`, trace, and frozen work remain available for `puzzle:evaluate`.
 
@@ -98,7 +93,7 @@ Result statuses:
 - `no-output`
 - `execution-error`
 
-Optional `selection`, `execution`, `outputPath`, `score`, and `error` fields remain governed by the existing status semantics.
+Every result contains `status`. A `scored` result contains `score`; an `execution-error` result contains `error`. `selection`, `execution`, `outputPath`, and other diagnostic fields may be returned but are not required result fields.
 
 ## `pnpm puzzle:offline`
 
@@ -120,10 +115,10 @@ The fixed scenario remains:
 - output `reconstruction.txt`
 - existing reviewer notes
 
-Success fields:
+Required success fields:
 
 - `build`
 - `run`
 - `evaluation`
 
-The command performs build, three-agent run, overlap observation, evaluation, and scoring without an external model call.
+The nested values satisfy the minimum build, run, and evaluation contracts above. The command performs build, three-agent run, overlap observation, evaluation, and scoring without an external model call.
