@@ -1,84 +1,86 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 -> 2.0.0
+- Version change: 2.0.0 -> 3.0.0
 - Modified principles:
-  - I. Evidence Before Scale -> I. End-to-End Before Model Evaluation (NON-NEGOTIABLE)
+  - I. End-to-End Before Model Evaluation -> I. Puzzle Behavior Before Process
+  - II. Trust Boundaries Are Product Behavior -> II. Environmental Constraints, Not Workflow
+  - III. Versioned Contracts and Immutable Provenance -> III. Minimal Reproducible Mechanics
+  - IV. Deterministic Verification, Honest Claims -> IV. Observe Outcomes Honestly
+  - V. Native, Bounded, Asynchronous Collaboration -> V. Voluntary Native Collaboration
 - Added sections: none
-- Removed sections: none
+- Removed sections: gate authorization, mandatory immutable provenance, Git channel metering, publication slots, replay completion, and red-team release obligations
 - Templates:
-  - ✅ updated: .specify/templates/plan-template.md
-  - ✅ updated: .specify/templates/spec-template.md
-  - ✅ updated: .specify/templates/tasks-template.md
-  - ✅ reviewed, no change: .specify/templates/checklist-template.md
-  - ✅ reviewed, no change: .specify/templates/constitution-template.md
-  - ✅ reviewed, none present: .specify/templates/commands/*.md
+  - updated: .specify/templates/plan-template.md
+  - updated: .specify/templates/spec-template.md
+  - updated: .specify/templates/tasks-template.md
+  - reviewed, no change: .specify/templates/checklist-template.md
+  - reviewed, no change: .specify/templates/constitution-template.md
 - Runtime guidance:
-  - ✅ updated: AGENTS.md
-  - ✅ updated: CLAUDE.md
-  - ✅ aligned: docs/proposal.md
-  - ✅ aligned: docs/architecture.md
-  - ✅ aligned: docs/roadmap.md
-  - ✅ aligned: specs/004-revision-dynamics/
-- Follow-up TODOs: none
+  - pending feature plan: AGENTS.md
+  - pending feature plan: CLAUDE.md
+  - pending feature implementation: docs/proposal.md
+  - pending feature implementation: docs/architecture.md
+  - pending feature implementation: docs/roadmap.md
+- Follow-up TODOs: clear pending entries before feature completion
 -->
 # Palimpsest Constitution
 
 ## Core Principles
 
-### I. End-to-End Before Model Evaluation (NON-NEGOTIABLE)
+### I. Puzzle Behavior Before Process
 
-Every feature MUST identify its owning roadmap milestone and the part of the complete puzzle lifecycle it makes executable. Live model evaluation for revision dynamics, communication value, or matched calibration MUST NOT begin until the offline end-to-end harness completes generation, launch, reveal, native Git collaboration, freeze, private submission, clean execution, scoring, replay, and redacted reporting with deterministic fixtures and fake model adapters. Gate A and the qualified Gate B decision inform construction; Gates C and D evaluate the completed harness and gate calibration and release claims rather than harness implementation. Thresholds, inputs, environments, and pass, rework, or stop decisions MUST still be frozen before every judged model run. A failed empirical gate MUST invalidate the affected calibration or release claim and return the project to the owning puzzle or harness milestone; thresholds and controls MUST NOT be weakened to manufacture a pass.
+Palimpsest MUST remain a puzzle for observing frontier-model behavior. Agent-facing instructions MUST state the shared objective, available evidence, available tools, peer presence, resource cutoffs, and requested output without recommending a decoding algorithm, assigning roles, imposing turns, or requiring intermediate reasoning artifacts. Infrastructure MUST NOT repair, merge, reinterpret, or conceal model work.
 
-Rationale: Palimpsest must first exist as one inspectable system before model behavior is interpreted. Testing isolated fragments early spends model budget on a puzzle different from the integrated artifact and obscures whether failures come from the mechanic or incomplete infrastructure.
+Rationale: The object of study is how capable models approach the puzzle, including how they collaborate, fail, improvise, or exploit the environment. A runner that dictates the process changes that object.
 
-### II. Trust Boundaries Are Product Behavior
+### II. Environmental Constraints, Not Workflow
 
-Trusted generation, control, Git admission, staging, and grading responsibilities MUST remain separated according to `docs/architecture.md`. Agent and clean-solver environments MUST NOT contain oracle data, unreleased or peer-private shards, trusted generation or grading packages, credentials, unsupported network access, or host control surfaces. Privileged components MUST receive only the access required by their declared responsibility. Infrastructure MUST never repair, merge, reinterpret, or conceal an agent mistake. Failures MUST be classified as agent outcomes, retryable trusted failures, or infrastructure integrity/validity failures and handled by the architecture's declared state transition.
+The runner MAY constrain what evidence is visible, when new evidence appears, which communication and checking tools exist, and how much wall time or model-token usage is available. Those constraints MUST be independent of model behavior and identical for peers in the same condition. The runner MUST NOT require a particular number of model turns, Git operations, checkpoints, hypotheses, mappings, file names, branches, or coordination sequence.
 
-Rationale: Isolation and failure semantics determine whether a run is valid, not merely whether the implementation is secure in the conventional sense.
+Rationale: Stable environmental conditions make observations interpretable without converting an open-ended puzzle into a scripted benchmark workflow.
 
-### III. Versioned Contracts and Immutable Provenance
+### III. Minimal Reproducible Mechanics
 
-JSON Schema MUST be the TypeScript/Python contract authority. Every cross-runtime contract MUST carry a schema version and have canonical bytes, golden fixtures, and matching acceptance and rejection behavior in both languages. Promoted artifacts MUST bind their immutable inputs, producer and environment versions, exact output set, byte lengths, and SHA-256 digests. Partial, undeclared, malformed, timed-out, or hash-mismatched output MUST NOT become a success-shaped artifact. Contract changes require a new version or an explicit migration; replay MUST NOT silently apply new semantics to an older artifact.
+Puzzle generation, staged reveal, partial re-keying, checker results, and final scoring MUST be deterministic for fixed scientific inputs. Public interfaces and stored records MUST be only as structured as required to run, inspect, and score an attempt. New schemas, manifests, hashes, replay systems, isolation layers, or services MUST solve a current experimental need rather than anticipate a hypothetical release or adversary.
 
-Rationale: A seed or source revision alone cannot reproduce model-, tokenizer-, runtime-, and native-library-sensitive artifacts.
+Rationale: Reproducible puzzle mechanics matter; exhaustive infrastructure provenance does not improve the model behavior being observed.
 
-### IV. Deterministic Verification, Honest Claims
+### IV. Observe Outcomes Honestly
 
-Every behavior or contract change MUST include the applicable unit, property, cross-language, Git/concurrency, end-to-end, isolation, security, and replay tests defined by the architecture and roadmap. Scoring and artifact replay MUST be deterministic for sealed inputs and pinned supported environments. Reports MUST distinguish implemented facts, empirical results, calibrated choices, accepted residual risks, and out-of-scope claims. Replay MUST NOT be described as reproducing agent reasoning, model stochasticity, operating-system scheduling, or exact process interleaving.
+Incorrect solutions, early stopping, no collaboration, duplicated work, raw-text sharing, unconventional encoding, repeated checker use, source recognition, and attempts to bend the process MUST be retained as model outcomes rather than converted into invalid runs. Reports MUST separate reconstruction scores, observed behavior, infrastructure failures, and reviewer interpretation. Claims MUST NOT exceed what the puzzle output and trace directly support.
 
-Rationale: Deterministic grading does not make agent behavior or treatment effects deterministic, and overstated reproducibility would invalidate the artifact's scientific interpretation.
+Rationale: Workarounds and coordination failures are evidence about model behavior. Suppressing them creates a cleaner artifact at the cost of a less truthful experiment.
 
-### V. Native, Bounded, Asynchronous Collaboration
+### V. Voluntary Native Collaboration
 
-Agents MUST collaborate through ordinary authenticated Git workflows exposed by the Git Gateway. Peer-visible logical state MUST be charged cumulatively per authenticated agent under the frozen accounting frame; hidden Git features, unsafe objects, unmetered peer channels, and cross-agent namespaces MUST be rejected. Publication MUST use immutable fixed-slot snapshots and preserve fast-forward, race, and conflict semantics without server-authored merges or rebases. The scheduler MUST NOT impose turns, roles, a predetermined agent order, or coordination logic. Communication-disabled comparisons MUST preserve native Git and compute overhead while applying the exact counterfactual accounting rule.
+Agents MUST be told that they are members of one concurrent team, that peers hold different private evidence, and that an ordinary shared Git repository is their communication channel. Git use MUST remain voluntary and unmetered by the experimental runner. Agents MAY work independently, exchange code or notes, relay raw evidence, centralize work, or ignore peers; the runner MUST NOT reject those choices. Private puzzle inputs MUST live outside the Git checkout, and instructions SHOULD ask agents to share code and compact findings rather than raw ciphertext or reconstructed prose.
 
-Rationale: The puzzle studies agent-created coordination under a measurable channel, so replacing Git behavior or asynchronous contention changes the object of study.
+Rationale: Collaboration should be useful and explicitly invited, while its form and success remain model-created behavior rather than scheduler-created behavior.
 
 ## Research and Security Constraints
 
-- The proposal is authoritative for puzzle intent, feasibility questions, scoring interpretation, and research claims. The architecture is authoritative for system boundaries, contracts, failure semantics, and verification. The roadmap schedules delivery without redefining either.
-- Python owns corpus preparation, instance generation, baselines, scoring, and replay analysis. TypeScript/Node owns live orchestration, reveal timing, quotas, Git admission, freeze, and the operator surface. Cross-runtime interaction MUST use the versioned subprocess and artifact boundary; in-process FFI and duplicated domain logic are prohibited in the reference architecture.
-- Node, Python, package managers, Git, images, model weights, corpus snapshots, schemas, and calibrated policies MUST be pinned for evidence-producing runs. The pnpm and uv dependency graphs and lockfiles MUST remain independent.
-- The reference deployment MUST retain one authoritative monotonic run clock, one serialized Git admission sequence, least-privilege service identities, isolated mounts, and network-disabled untrusted solver execution.
-- Secrets and source-recognition oracles MUST remain sealed. Public artifacts MUST be redacted and MUST NOT expose master seeds, oracle mappings, prepared plaintext or source hashes, future shard metadata, exact private telemetry, or credentials.
-- External factual or novelty claims MUST cite verifiable primary sources. Palimpsest MUST be described as a compound puzzle and research artifact, not as a construct-validated benchmark or a certified measure of reasoning, collaboration, or belief revision.
+- The proposal is authoritative for puzzle intent and research claims. The architecture is authoritative for the minimal runner and visibility boundaries. The roadmap schedules delivery without redefining either.
+- Python owns corpus preparation, cipher generation, partial re-keying, and scoring. TypeScript/Node owns model sessions, staged delivery, tool exposure, Git setup, resource cutoffs, trace capture, and the operator surface. Prefer plain files and subprocesses over new cross-runtime infrastructure.
+- Trusted generation and grading MUST keep prepared plaintext and cipher keys unavailable to model workspaces. The aggregate checker MAY use the oracle but MUST return only aggregate matched-word count, total-word count, coverage, accuracy, and execution errors for currently visible private evidence.
+- Private staged shards MUST remain outside the shared Git checkout. Post-run raw-overlap measurement MAY identify obvious exact or normalized long spans, but it MUST NOT block Git operations, alter scores, invalidate runs, or expand into adversarial encoding detection.
+- Standard sandbox and secret-handling protections MAY protect the host and provider credentials. They MUST NOT be represented as a red-teamed security claim or used to invalidate otherwise observable model behavior.
+- External factual or novelty claims MUST cite verifiable primary sources. Palimpsest MUST be described as a compound puzzle and research artifact, not as a construct-validated benchmark or certified measure of reasoning, collaboration, or belief revision.
 
 ## Development Workflow and Quality Gates
 
-1. Reconcile a feature with `docs/proposal.md`, `docs/architecture.md`, and `docs/roadmap.md`; record contradictions rather than silently choosing one.
-2. The specification MUST name the owning milestone, end-to-end contribution, model-execution policy, completion evidence, trust/visibility effects, failure classification, and invalidated downstream evidence.
-3. The plan MUST pass the Constitution Check before research and again after design. Any deviation requires a documented rationale, the simpler or safer alternative rejected, an owner, and the evidence needed to remove it.
-4. Contracts, schemas, golden fixtures, and failing verification tests MUST precede implementation of the behavior they govern. Tasks MUST include every applicable verification and evidence artifact; tests are not optional for behavior, contract, trust-boundary, accounting, scoring, or replay changes.
-5. A milestone or gate is complete only when its deliverables, required evidence, environment and producer versions, exit decision, and follow-up are recorded as versioned artifacts. The offline end-to-end milestone additionally requires a deterministic build-to-report replay before any new live model evaluation.
-6. `pnpm verify` MUST pass from a clean checkout with pinned dependencies before implementation or evidence is declared complete. Release additionally requires the roadmap's full verification suite, valid empirical gates, and no unresolved material red-team finding without an explicit accepted-risk record.
+1. Reconcile each feature with `docs/proposal.md`, `docs/architecture.md`, and `docs/roadmap.md`; expose contradictions before implementation.
+2. Follow the Spec Kit sequence constitution, specify, clarify, plan, tasks, analyze, and implement for material feature work.
+3. Each specification MUST state the puzzle behavior being enabled, agent-visible instructions and tools, environmental constraints, observable outcomes, infrastructure failures, and claims that remain out of scope.
+4. Each plan MUST pass the Constitution Check before research and after design. Any new process requirement or safeguard requires a concrete current experimental need and an explanation of why a simpler observation is insufficient.
+5. Tests MUST cover deterministic mechanics, agent independence, optional collaboration, resource cutoffs, checker disclosure, scoring, and the absence of prescribed workflow. Verification MUST be proportional to the claim; red-team and replay suites are not default completion requirements.
+6. `pnpm verify` MUST pass before implementation is declared complete. A fresh build-run-evaluate fixture MUST demonstrate the active puzzle path without an external model call.
 
 ## Governance
 
-This constitution governs all Palimpsest specifications, plans, tasks, reviews, and release decisions. When an artifact conflicts with this constitution, the constitution prevails; within their declared domains, the proposal, architecture, and roadmap remain authoritative as described above.
+This constitution governs all Palimpsest specifications, plans, tasks, reviews, and research claims. When another artifact conflicts with it, the constitution prevails; proposal, architecture, and roadmap authority remains scoped as described above.
 
-Amendments require an explicit rationale, affected principles and artifacts, compatibility or migration impact, and maintainer approval. The amendment MUST update dependent Spec Kit templates and runtime guidance in the same change. Versions follow semantic versioning: MAJOR for incompatible principle or governance removals or redefinitions, MINOR for a new principle/section or materially expanded obligation, and PATCH for non-semantic clarification.
+Amendments require explicit rationale, affected principles and artifacts, compatibility impact, and maintainer approval. The amendment MUST update dependent Spec Kit templates and runtime guidance in the same feature. Versions follow semantic versioning: MAJOR for incompatible principle or governance removals or redefinitions, MINOR for a new principle or materially expanded obligation, and PATCH for non-semantic clarification.
 
-Every feature plan and pull request MUST record constitution compliance. Gate and release reviews MUST recheck compliance against produced evidence, not intended design. A temporary exception requires an owner, scope, expiry or removal condition, affected evidence, and explicit maintainer approval; an exception cannot waive gate truthfulness, trust isolation, artifact integrity, or honest reporting.
+Feature plans and pull requests MUST record constitution compliance. Reviewers MUST check the actual agent prompt, tool surface, runner behavior, and produced trace rather than relying on intended neutrality. Exceptions require an owner, scope, and removal condition; no exception may justify overstating empirical evidence.
 
-**Version**: 2.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-26
+**Version**: 3.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-27

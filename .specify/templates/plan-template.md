@@ -26,22 +26,21 @@
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
 **Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
-**Owning Milestone**: [roadmap milestone and its exit decision]
-**End-to-End Contribution**: [generation, launch, reveal, collaboration, freeze, submission, clean execution, scoring, replay, or reporting surfaces completed]
-**Model Execution Policy**: [offline fixtures only, or the completed-harness evidence that authorizes live model evaluation]
-**Trust Boundaries**: [trusted/untrusted components, visibility, secrets, network and mount effects]
-**Contracts/Artifacts**: [schemas, versions, canonical bytes, manifests and immutable inputs]
-**Replay Claim**: [what is deterministic, what remains stochastic, and the pinned environment]
+**Puzzle Contribution**: [agent-visible puzzle behavior this feature enables]
+**Agent Instructions & Tools**: [objective, peer context, tools, and any requested but unenforced behavior]
+**Environmental Constraints**: [evidence visibility and schedule, wall-time/token cutoffs, network and secret boundaries]
+**Observable Outcomes**: [scores, traces, Git/checker behavior, and reviewer observations retained]
+**Determinism Claim**: [which puzzle mechanics and scores reproduce, and which model behavior remains stochastic]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- **End-to-end before model evaluation**: The feature advances a complete offline build-to-report path; live models remain disabled until that path passes with deterministic fixtures.
-- **Trust boundaries**: The design preserves architecture ownership, least privilege, sealed data, failure classification, and agent/solver isolation.
-- **Contracts and provenance**: Cross-runtime schemas, golden fixtures, canonicalization, versions, immutable inputs, and artifact promotion rules are explicit.
-- **Verification and claims**: Applicable test categories, replay limits, evidence artifacts, and reporting language are named.
-- **Native bounded collaboration**: Git behavior, authentication, accounting, publication slots, asynchronous execution, and matched-arm equivalence remain intact, or the feature documents why they are unaffected.
+- **Puzzle behavior before process**: Instructions state the team objective and tools without recommending algorithms, assigning roles, or requiring intermediate artifacts.
+- **Environmental constraints, not workflow**: Visibility, staged evidence, and resource cutoffs are independent of model behavior; no turns, checkpoints, or Git sequence are imposed.
+- **Minimal reproducible mechanics**: Only generation, reveal, checking, scoring, and records needed by the current experiment are structured and deterministic.
+- **Observe outcomes honestly**: Model mistakes, workarounds, checker use, and collaboration choices remain scored observations; infrastructure failures are reported separately.
+- **Voluntary native collaboration**: Agents know peers exist and Git is the shared channel, while Git use and collaboration form remain voluntary and unmetered.
 
 ## Project Structure
 
@@ -108,7 +107,7 @@ directories captured above]
 
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
+| Violation | Current Experimental Need | Simpler Observation Rejected Because |
+|-----------|---------------------------|--------------------------------------|
 | [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
 | [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

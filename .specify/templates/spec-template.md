@@ -75,21 +75,19 @@
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
 
-## Evidence & Trust Boundaries *(mandatory)*
+## Puzzle & Observation Boundaries *(mandatory)*
 
-**Owning Milestone**: [Name the roadmap milestone and the exit decision this feature serves]
+**Puzzle Behavior**: [State the agent-visible puzzle behavior this feature enables]
 
-**End-to-End Contribution**: [Identify which generation, launch, reveal, collaboration, freeze, submission, execution, scoring, replay, or reporting surfaces this feature completes]
+**Agent Instructions & Tools**: [State the shared objective, peer context, available tools, and requested but unenforced behavior]
 
-**Model Execution Policy**: [State whether only deterministic fixtures and fake model adapters are allowed, or cite the completed-harness evidence that permits live model execution]
+**Environmental Constraints**: [State evidence visibility and schedule, wall-time/token cutoffs, network access, secrets, and host-safety boundaries]
 
-**Completion Evidence**: [List frozen inputs, environment, required artifacts, verification categories, and exit criteria]
+**Observable Outcomes**: [State which scores, traces, Git/checker behavior, workarounds, and reviewer observations are retained]
 
-**Trust & Visibility Impact**: [State which trusted/untrusted components, secrets, mounts, network paths, agent-visible data, and public artifacts change]
+**Infrastructure Failures**: [State which failures prevent execution or scoring without reclassifying model behavior]
 
-**Failure Classification**: [Classify expected failures as agent outcomes, retryable trusted failures, or infrastructure integrity/validity failures]
-
-**Invalidation Path**: [Identify upstream gates to rerun and downstream evidence invalidated by a failed result or design change]
+**Out-of-Scope Claims**: [State which reasoning, collaboration, security, reproducibility, or benchmark claims are not supported]
 
 ## Requirements *(mandatory)*
 
@@ -105,7 +103,7 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
-- **FR-006**: System MUST [identify the versioned contract, canonical artifact, provenance, and failure semantics for each changed boundary]
+- **FR-006**: System MUST [identify the minimum observable record and explicit infrastructure failure behavior for each changed boundary]
 
 *Example of marking unclear requirements:*
 
@@ -130,7 +128,7 @@
 - **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
-- **SC-005**: [Evidence outcome, e.g., "Frozen inputs reproduce the same promoted artifact bytes and hashes in the pinned supported environment"]
+- **SC-005**: [Observation outcome, e.g., "Every completed fixture retains enough trace data to explain its score and resource termination"]
 
 ## Assumptions
 

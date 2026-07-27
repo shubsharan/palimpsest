@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Verification**: Verification tasks are MANDATORY. Include every applicable unit, property, cross-language, Git/concurrency, end-to-end, isolation, security, and replay check required by the feature specification, architecture, and roadmap. Documentation-only work still requires relevant format, link, and consistency validation.
+**Verification**: Verification tasks are MANDATORY and proportional to the feature's claims. Include deterministic puzzle mechanics, independent agent lifecycle, optional Git collaboration, checker disclosure, resource cutoffs, scoring, trace capture, and explicit assertions that the runner does not require a prescribed workflow. Documentation-only work still requires relevant format, link, and consistency validation.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -34,7 +34,7 @@ description: "Task list template for feature implementation"
   - Feature requirements from plan.md
   - Entities from data-model.md
   - Endpoints from contracts/
-  - Evidence, trust boundaries, and failure classifications from spec.md
+  - Puzzle, observation boundaries, and infrastructure failures from spec.md
   - Constitution checks and required verification from plan.md
 
   Tasks MUST be organized by user story so each story can be:
@@ -53,8 +53,8 @@ description: "Task list template for feature implementation"
 - [ ] T001 Create project structure per implementation plan
 - [ ] T002 Initialize [language] project with [framework] dependencies
 - [ ] T003 [P] Configure linting and formatting tools
-- [ ] T004 [P] Pin supported runtimes, tools, and independent lockfiles
-- [ ] T005 Define the owning milestone, end-to-end completion artifacts, and immutable evidence inputs
+- [ ] T004 [P] Confirm supported runtimes, tools, and existing lockfiles
+- [ ] T005 Define the agent prompt, tool surface, environmental constraints, and observable run record
 
 ---
 
@@ -66,11 +66,11 @@ description: "Task list template for feature implementation"
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T006 Define versioned schemas, canonical bytes, and artifact manifests
-- [ ] T007 [P] Add cross-language golden acceptance and rejection fixtures
-- [ ] T008 [P] Establish trust, visibility, mount, and network boundaries
-- [ ] T009 Implement explicit failure classification and artifact promotion rules
-- [ ] T010 Configure deterministic verification, fake model adapters, and evidence capture
+- [ ] T006 Define the minimum run, session, stage, checker, and evaluation records
+- [ ] T007 [P] Add deterministic puzzle and score fixtures
+- [ ] T008 [P] Establish agent-visible inputs, aggregate checker disclosure, and host-safety boundaries
+- [ ] T009 Implement explicit model-outcome and infrastructure-failure reporting
+- [ ] T010 Configure fake model sessions and raw observation capture
 - [ ] T011 Setup environment configuration management
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
@@ -97,7 +97,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T016 [US1] Implement [Service] in src/services/[service].py (depends on T014, T015)
 - [ ] T017 [US1] Implement [endpoint/feature] in src/[location]/[file].py
 - [ ] T018 [US1] Add validation and explicit failure handling
-- [ ] T019 [US1] Emit the declared versioned evidence artifacts
+- [ ] T019 [US1] Retain the declared minimal observation record
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -158,9 +158,9 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Complete required unit/property and contract verification
-- [ ] TXXX [P] Complete required integration, isolation, security, and replay verification
-- [ ] TXXX Reproduce declared evidence from frozen inputs
-- [ ] TXXX Record the gate or milestone exit decision and downstream invalidation
+- [ ] TXXX [P] Complete required asynchronous lifecycle, checker, Git, cutoff, and scoring verification
+- [ ] TXXX Reproduce deterministic puzzle and fixture scores from fixed inputs
+- [ ] TXXX Confirm model workarounds remain observable outcomes rather than validity failures
 - [ ] TXXX Run quickstart.md validation
 - [ ] TXXX Run root pnpm verify from a clean checkout
 
