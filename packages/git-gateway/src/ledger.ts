@@ -1,4 +1,32 @@
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
+
+import { canonicalJsonBytes } from "@palimpsest/contracts";
+
 import type { LedgerEntry, LedgerReservation } from "./types.js";
+
+interface LedgerState {
+  schemaVersion: 1;
+  runId: string;
+  agentId: string;
+  budgetBytes: number;
+  entries: LedgerEntry[];
+  reservations: LedgerReservation[];
+}
+
+export interface RefTransition {
+  refName: string;
+  oldOid: string | null;
+  newOid: string;
+}
 
 export class CumulativeLedger {
   readonly #entries: LedgerEntry[] = [];
@@ -9,7 +37,30 @@ export class CumulativeLedger {
     readonly runId: string,
     readonly agentId: string,
     readonly budgetBytes: number,
-  ) {}
+    readonly statePath?: string,
+  ) {
+    if (!statePath) return;
+    if (existsSync(statePath)) {
+      const state = JSON.parse(readFileSync(statePath, "utf8")) as LedgerState;
+      if (
+        state.schemaVersion !== 1 ||
+        state.runId !== runId ||
+        state.agentId !== agentId ||
+        state.budgetBytes !== budgetBytes
+      ) {
+        throw new Error(`Durable Git ledger identity mismatch: ${statePath}`);
+      }
+      for (const entry of state.entries) {
+        this.#entries.push(Object.freeze(entry));
+        this.#effects.set(entry.transactionId, this.#entries.at(-1)!);
+      }
+      for (const reservation of state.reservations) {
+        this.#reservations.set(reservation.transactionId, reservation);
+      }
+      return;
+    }
+    this.#persist();
+  }
 
   get entries(): readonly LedgerEntry[] {
     return this.#entries;
@@ -31,7 +82,12 @@ export class CumulativeLedger {
       .map((reservation) => ({ ...reservation }));
   }
 
-  prepare(transactionId: string, frameDigest: string, chargeBytes: number): LedgerReservation {
+  prepare(
+    transactionId: string,
+    frameDigest: string,
+    chargeBytes: number,
+    refTransition?: RefTransition,
+  ): LedgerReservation {
     const prior = this.#effects.get(transactionId);
     if (prior) {
       if (prior.frameDigest !== frameDigest || prior.chargeBytes !== chargeBytes) {
@@ -45,12 +101,21 @@ export class CumulativeLedger {
         budgetAfter: prior.budgetAfter,
         accepted: prior.result === "accepted",
         status: prior.result === "accepted" ? "FINALIZED" : "ABORTED",
+        ...refTransition,
       };
     }
     const pending = this.#reservations.get(transactionId);
     if (pending) {
       if (pending.frameDigest !== frameDigest || pending.chargeBytes !== chargeBytes) {
         throw new Error(`Conflicting duplicate Git transaction: ${transactionId}`);
+      }
+      if (
+        refTransition &&
+        (pending.refName !== refTransition.refName ||
+          pending.oldOid !== refTransition.oldOid ||
+          pending.newOid !== refTransition.newOid)
+      ) {
+        throw new Error(`Conflicting duplicate Git ref transition: ${transactionId}`);
       }
       return { ...pending };
     }
@@ -67,8 +132,10 @@ export class CumulativeLedger {
       budgetAfter: accepted ? before - chargeBytes : before,
       accepted,
       status: "RESERVED",
+      ...refTransition,
     };
     this.#reservations.set(transactionId, reservation);
+    this.#persist();
     return { ...reservation };
   }
 
@@ -95,6 +162,7 @@ export class CumulativeLedger {
     this.#effects.set(transactionId, entry);
     this.#entries.push(entry);
     this.#reservations.delete(transactionId);
+    this.#persist();
     return entry;
   }
 
@@ -112,5 +180,43 @@ export class CumulativeLedger {
   reserve(transactionId: string, frameDigest: string, chargeBytes: number): LedgerEntry {
     this.prepare(transactionId, frameDigest, chargeBytes);
     return this.finalize(transactionId);
+  }
+
+  recover(transactionId: string, currentOid: string | null): LedgerEntry {
+    const reservation = this.#reservations.get(transactionId);
+    if (!reservation) throw new Error(`Unknown Git reservation: ${transactionId}`);
+    if (!reservation.refName || reservation.oldOid === undefined || !reservation.newOid) {
+      throw new Error(`Git reservation lacks a recoverable ref transition: ${transactionId}`);
+    }
+    if (currentOid === reservation.newOid) return this.finalize(transactionId);
+    if (currentOid === reservation.oldOid) return this.abort(transactionId);
+    throw new Error(`Git reservation ref outcome is indeterminate: ${transactionId}`);
+  }
+
+  #persist(): void {
+    if (!this.statePath) return;
+    const state: LedgerState = {
+      schemaVersion: 1,
+      runId: this.runId,
+      agentId: this.agentId,
+      budgetBytes: this.budgetBytes,
+      entries: [...this.#entries],
+      reservations: [...this.#reservations.values()],
+    };
+    const temporary = `${this.statePath}.tmp-${process.pid}`;
+    const handle = openSync(temporary, "w", 0o600);
+    try {
+      writeFileSync(handle, canonicalJsonBytes(state));
+      fsyncSync(handle);
+    } finally {
+      closeSync(handle);
+    }
+    renameSync(temporary, this.statePath);
+    const directory = openSync(dirname(this.statePath), "r");
+    try {
+      fsyncSync(directory);
+    } finally {
+      closeSync(directory);
+    }
   }
 }

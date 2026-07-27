@@ -4,7 +4,7 @@ import { AbsoluteSchedule, DeterministicClock, validateHarnessSchedule } from ".
 
 const schedule = {
   revealOffsetsMs: [10, 30],
-  publicationOffsetsMs: [20, 40],
+  publicationOffsetsMs: [20, 55],
   pushCloseOffsetMs: 50,
   freezeOffsetMs: 60,
   finalizationOffsetMs: 80,
@@ -66,6 +66,18 @@ describe("deterministic monotonic clock", () => {
         pushCloseOffsetMs: 45,
       }),
     ).toThrow(/stabilization/);
+    expect(() =>
+      validateHarnessSchedule({
+        ...schedule,
+        publicationOffsetsMs: [20, 50],
+      }),
+    ).toThrow(/after push close/);
+    expect(() =>
+      validateHarnessSchedule({
+        ...schedule,
+        publicationOffsetsMs: [20, 60],
+      }),
+    ).toThrow(/before freeze/);
 
     const clock = new DeterministicClock();
     clock.advanceTo(13);

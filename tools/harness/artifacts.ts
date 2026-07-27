@@ -7,6 +7,7 @@ import { canonicalJsonBytes, sha256Hex } from "@palimpsest/contracts";
 import { attemptPath, type HarnessAttemptIdentity } from "./config.js";
 
 export type AttemptClassification = "completed" | "failed" | "invalid";
+export type AttemptFailurePhase = "run" | "grade" | "replay" | "complete";
 
 interface AttemptReceipt {
   schemaVersion: 1;
@@ -31,6 +32,15 @@ export interface TerminalAttempt {
   startedAt: string;
   classification: AttemptClassification;
   outputs: OutputEntry[];
+}
+
+interface AttemptFailure {
+  schemaVersion: 1;
+  declarationDigest: string;
+  runId: string;
+  phase: AttemptFailurePhase;
+  errorName: string;
+  message: string;
 }
 
 function attemptId(identity: HarnessAttemptIdentity): string {
@@ -160,6 +170,78 @@ export async function sealAttempt(options: {
   await atomicJson(terminalPath, terminal);
   await writeCurrent(root, identity, path, classification);
   return terminal;
+}
+
+function failureRecord(
+  identity: HarnessAttemptIdentity,
+  phase: AttemptFailurePhase,
+  error: unknown,
+): AttemptFailure {
+  return {
+    schemaVersion: 1,
+    declarationDigest: identity.declarationDigest,
+    runId: identity.runId,
+    phase,
+    errorName: error instanceof Error ? error.name : "NonErrorFailure",
+    message: error instanceof Error ? error.message : String(error),
+  };
+}
+
+export async function sealFailedAttempt(options: {
+  root: string;
+  identity: HarnessAttemptIdentity;
+  phase: AttemptFailurePhase;
+  error: unknown;
+}): Promise<TerminalAttempt> {
+  const { root, identity, phase, error } = options;
+  const path = attemptPath(root, identity);
+  const terminalPath = join(path, "terminal.json");
+  if (await pathExists(terminalPath)) {
+    const terminal = await verifyTerminalAttempt({ root, identity });
+    await writeCurrent(root, identity, path, terminal.classification);
+    return terminal;
+  }
+  const failurePath = join(path, "failure.json");
+  const failure = failureRecord(identity, phase, error);
+  if (await pathExists(failurePath)) {
+    const prior = JSON.parse(await readFile(failurePath, "utf8")) as unknown;
+    if (!canonicalJsonBytes(prior).equals(canonicalJsonBytes(failure))) {
+      throw new Error("Attempt failure evidence conflicts with the existing failure record.");
+    }
+  } else {
+    await atomicJson(failurePath, failure);
+  }
+  return sealAttempt({ root, identity, classification: "failed" });
+}
+
+export async function sealCurrentAttemptFailure(options: {
+  root: string;
+  runId: string;
+  phase: AttemptFailurePhase;
+  error: unknown;
+}): Promise<TerminalAttempt | null> {
+  const { root, runId, phase, error } = options;
+  const currentPath = join(root, "current.json");
+  if (!(await pathExists(currentPath))) return null;
+  const current = JSON.parse(await readFile(currentPath, "utf8")) as Record<string, unknown>;
+  if (
+    current.runId !== runId ||
+    current.status !== "running" ||
+    typeof current.declarationDigest !== "string" ||
+    typeof current.attemptPath !== "string"
+  ) {
+    return null;
+  }
+  const identity = { declarationDigest: current.declarationDigest, runId };
+  if (current.attemptPath !== attemptPath(root, identity)) {
+    throw new Error("Current attempt pointer does not match its declaration-bound path.");
+  }
+  return sealFailedAttempt({
+    root,
+    identity,
+    phase,
+    error,
+  });
 }
 
 export async function verifyTerminalAttempt(options: {

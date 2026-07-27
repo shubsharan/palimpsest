@@ -97,6 +97,14 @@ export async function createFreeze(options: {
   ledgers: readonly LedgerEntry[];
   finalEventSequence: number;
   eventChainHead: string;
+  finalReleasedShards: readonly {
+    agentId: string;
+    manifest: {
+      artifactType: string;
+      byteLength: number;
+      sha256: string;
+    };
+  }[];
   admissionWindow?: PushAdmissionWindow;
   drainTimeoutMs?: number;
 }): Promise<Record<string, unknown>> {
@@ -106,6 +114,25 @@ export async function createFreeze(options: {
   }
   if (options.ledgers.some((ledger) => ledger.result === "accepted" && ledger.budgetAfter < 0)) {
     throw new Error("Cannot freeze an overdrawn Git ledger.");
+  }
+  const finalReleasedShards = options.finalReleasedShards
+    .map((binding) => structuredClone(binding))
+    .sort((left, right) => left.agentId.localeCompare(right.agentId));
+  if (
+    finalReleasedShards.length !== 3 ||
+    new Set(finalReleasedShards.map((binding) => binding.agentId)).size !== 3
+  ) {
+    throw new Error("Freeze requires exactly three unique final released-shard bindings.");
+  }
+  for (const binding of finalReleasedShards) {
+    if (
+      binding.manifest.artifactType !== "released-shard-manifest" ||
+      !Number.isSafeInteger(binding.manifest.byteLength) ||
+      binding.manifest.byteLength < 0 ||
+      !/^[0-9a-f]{64}$/.test(binding.manifest.sha256)
+    ) {
+      throw new Error(`Invalid final released-shard binding for ${binding.agentId}.`);
+    }
   }
   const actualRefs = await repositoryRefs(options.repository);
   if (!canonicalJsonBytes(actualRefs).equals(canonicalJsonBytes(options.refs))) {
@@ -155,5 +182,6 @@ export async function createFreeze(options: {
     ledgerDigest: sha256Hex(canonicalJsonBytes(options.ledgers)),
     finalEventSequence: options.finalEventSequence,
     eventChainHead: options.eventChainHead,
+    finalReleasedShards,
   };
 }

@@ -16,6 +16,7 @@ def test_production_instance_is_deterministic_and_has_three_contiguous_shards() 
         range(10, 16)
     )
     assert all(len(shard.chapter_indexes) == 2 for shard in first.shards)
+    assert first.difficulty["communicationBudgetBytes"] == 38_912
     assert first.difficulty["switchCount"] == 1
 
 

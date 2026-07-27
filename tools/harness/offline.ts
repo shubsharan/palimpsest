@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { canonicalJsonBytes } from "@palimpsest/contracts";
 
+import { sealFailedAttempt, type AttemptFailurePhase } from "./artifacts.js";
 import { buildHarnessBundle } from "./build.js";
-import type { HarnessAttemptIdentity } from "./config.js";
+import { HARNESS_ROOT, type HarnessAttemptIdentity } from "./config.js";
 import { gradeAttempt } from "./grade.js";
 import { verifyHarnessInputs } from "./inputs.js";
 import { replayAttempt } from "./replay.js";
@@ -26,6 +27,12 @@ interface OfflineStages {
     root: string,
     options?: CompleteOptions,
   ): Promise<Record<string, unknown>>;
+  sealFailure?(
+    identity: HarnessAttemptIdentity,
+    root: string,
+    phase: AttemptFailurePhase,
+    error: unknown,
+  ): Promise<unknown>;
 }
 
 export interface ComposedOfflineOptions {
@@ -41,6 +48,14 @@ const defaultStages: OfflineStages = {
   grade: gradeAttempt,
   replay: replayAttempt,
   complete: completeAttempt,
+  sealFailure(identity, root, phase, error) {
+    return sealFailedAttempt({
+      root: resolve(root, HARNESS_ROOT),
+      identity,
+      phase,
+      error,
+    });
+  },
 };
 
 function freshRunIds(): readonly [string, string] {
@@ -55,13 +70,21 @@ async function executeAttempt(
   priorIdentity?: HarnessAttemptIdentity,
 ): Promise<{ identity: HarnessAttemptIdentity; report: Record<string, unknown> }> {
   const identity = await stages.runAttempt({ root, runId });
-  await stages.grade(identity, root);
-  await stages.replay(identity, root);
-  const report = await stages.complete(identity, root, priorIdentity ? { priorIdentity } : {});
-  if (report.externalModelRequestCount !== 0) {
-    throw new Error("Offline harness attempted an external model request.");
+  let phase: AttemptFailurePhase = "grade";
+  try {
+    await stages.grade(identity, root);
+    phase = "replay";
+    await stages.replay(identity, root);
+    phase = "complete";
+    const report = await stages.complete(identity, root, priorIdentity ? { priorIdentity } : {});
+    if (report.externalModelRequestCount !== 0) {
+      throw new Error("Offline harness attempted an external model request.");
+    }
+    return { identity, report };
+  } catch (error) {
+    await stages.sealFailure?.(identity, root, phase, error);
+    throw error;
   }
-  return { identity, report };
 }
 
 export async function runComposedOfflineHarness(

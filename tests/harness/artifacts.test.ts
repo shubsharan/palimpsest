@@ -6,6 +6,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   createAttempt,
+  sealCurrentAttemptFailure,
+  sealFailedAttempt,
   sealAttempt,
   verifyTerminalAttempt,
 } from "../../tools/harness/artifacts.js";
@@ -63,5 +65,63 @@ describe("offline harness attempts", () => {
       runId: "run-001",
     });
     expect(await readFile(join(firstPath, "terminal.json"))).toEqual(before);
+  });
+
+  test("records deterministic failure evidence and repairs a stale running pointer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-harness-failure-"));
+    const identity = { declarationDigest, runId: "run-failed" };
+    const path = await createAttempt({
+      root,
+      identity,
+      startedAt: "2026-07-26T00:00:00.000Z",
+    });
+    await writeFile(join(path, "partial.txt"), "partial output\n");
+
+    const terminal = await sealFailedAttempt({
+      root,
+      identity,
+      phase: "grade",
+      error: new Error("grading failed"),
+    });
+    expect(terminal.classification).toBe("failed");
+    expect(JSON.parse(await readFile(join(path, "failure.json"), "utf8"))).toEqual({
+      schemaVersion: 1,
+      declarationDigest,
+      runId: "run-failed",
+      phase: "grade",
+      errorName: "Error",
+      message: "grading failed",
+    });
+    const terminalBytes = await readFile(join(path, "terminal.json"));
+
+    await writeFile(
+      join(root, "current.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        attemptId: `harness/${declarationDigest}/run-failed`,
+        declarationDigest,
+        runId: "run-failed",
+        attemptPath: path,
+        status: "running",
+        evidence: false,
+      }),
+    );
+    await expect(
+      sealCurrentAttemptFailure({
+        root,
+        runId: "run-failed",
+        phase: "grade",
+        error: new Error("grading failed"),
+      }),
+    ).resolves.toMatchObject({ classification: "failed" });
+    expect(await readFile(join(path, "terminal.json"))).toEqual(terminalBytes);
+    expect(JSON.parse(await readFile(join(root, "current.json"), "utf8"))).toMatchObject({
+      runId: "run-failed",
+      status: "failed",
+      evidence: false,
+    });
+    await expect(verifyTerminalAttempt({ root, identity })).resolves.toMatchObject({
+      classification: "failed",
+    });
   });
 });

@@ -126,6 +126,40 @@ describe("Git Gateway policy", () => {
     ).rejects.toThrow(/does not match/);
 
     const acceptedTip = frame.newOid.toString("hex");
+    const collaborationVisible = new VisibilityJournal(visible)
+      .withAcceptedObjects([frame.objects])
+      .values();
+    await writeFile(join(repository, "revision.md"), "slot two revision\n");
+    await git(repository, ["add", "revision.md"]);
+    await git(repository, ["commit", "--quiet", "-m", "slot two revision"]);
+    const revisedOid = await git(repository, ["rev-parse", "HEAD"]);
+    const revision = await buildLogicalTransaction({
+      authenticatedAgent: 1,
+      newOid: revisedOid,
+      oldOid: acceptedTip,
+      operation: refOperations.update,
+      publicationSlot: 2,
+      refName: "refs/heads/agents/agent-1/work",
+      repository,
+      slotStartJournal: new VisibilityJournal(collaborationVisible),
+    });
+    await expect(
+      validateQuarantinedFrame({
+        agent,
+        frame: revision,
+        quarantineRepository: repository,
+        slotStartVisibleOids: collaborationVisible,
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      validateQuarantinedFrame({
+        agent,
+        frame: revision,
+        quarantineRepository: repository,
+        slotStartVisibleOids: visible,
+      }),
+    ).rejects.toThrow(/does not match/);
+
     await git(repository, ["switch", "--quiet", baseBranch]);
     await writeFile(join(repository, "divergent.md"), "divergent\n");
     await git(repository, ["add", "divergent.md"]);
