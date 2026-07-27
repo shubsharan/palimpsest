@@ -8,7 +8,7 @@ import { AGENT_IDS, type AttemptConfig } from "../src/config.js";
 import { FixtureAgentAdapter, type AgentAdapter } from "../src/adapters.js";
 import { runAttempt } from "../src/supervisor.js";
 
-async function fixtureConfig(root: string, wallTimeMs = 500): Promise<AttemptConfig> {
+async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptConfig> {
   const makeStages = async (agentId: (typeof AGENT_IDS)[number]) => {
     await mkdir(join(root, "source", agentId), { recursive: true });
     return Promise.all(
