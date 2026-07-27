@@ -176,7 +176,7 @@
 - [x] T053 Update current Feature 009 artifact documentation for overlap provenance and strict evaluation/manifest semantics, remove stale exact test totals, and expand active-layout/reference verification in `specs/009-refactor-puzzle-architecture/`, `README.md`, `docs/architecture.md`, `docs/roadmap.md`, `AGENTS.md`, `CLAUDE.md`, and `tests/integration/verification.test.ts`
 - [x] T054 Add `.github/workflows/verify.yml` with exact tool pins, full-history checkout, dependency bootstrap, sandbox build, `pnpm verify`, and base-relative whitespace validation for pull requests and merge queues
 - [x] T055 Run focused TypeScript and Python regressions, formatting, linting, type checking, a fresh sandbox build, full `pnpm verify`, base-relative and working-tree whitespace checks, and a fresh offline build-run-overlap-evaluate-score flow
-- [ ] T056 Commit and push the remediation, obtain a green `verify` check on PR #15, require the strict `verify` status on `main`, update the PR description with qualitative verification evidence, and complete a final P1/P2 review
+- [x] T056 Commit and push the remediation, obtain a green `verify` check on PR #15, require the strict `verify` status on `main`, update the PR description with qualitative verification evidence, and complete a final P1/P2 review
 
 ---
 
