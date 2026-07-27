@@ -114,7 +114,7 @@
 - [x] T038 Build the sandbox and run a fresh `puzzle:offline` fixture following `specs/008-runner-hardening-cleanup/quickstart.md`
 - [x] T039 Audit every FR/SC against source, test, and runtime evidence and mark all completed tasks in `specs/008-runner-hardening-cleanup/tasks.md`
 - [x] T042 Re-audit current project documentation against the implemented CLI, artifacts, observation fields, evaluation boundary, and verification suite; add a root operator README and repair stale claims
-- [ ] T040 Prepare one cleanup pull request mapping the eight audited bot findings to code fixes or deletion, then inspect and address every new review comment before merge
+- [x] T040 Prepare one cleanup pull request mapping the eight audited bot findings to code fixes or deletion, then inspect and address every new review comment before merge
 - [ ] T041 After merge, delete only confirmed merged non-006 feature/spec branches and leave every 006-named branch plus `recovery/2026-07-26-combined` untouched
 
 ---
