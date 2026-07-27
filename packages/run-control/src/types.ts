@@ -93,6 +93,11 @@ export interface RunEventAppendService {
   }): Promise<RunEvent>;
 }
 
+export interface MonotonicClockService {
+  nowMs(): number;
+  waitUntil(targetMs: number): Promise<void>;
+}
+
 export interface HarnessSchedule {
   revealOffsetsMs: readonly number[];
   publicationOffsetsMs: readonly number[];
@@ -137,6 +142,14 @@ export interface BridgeLimits {
   maxDiskBytes: number;
 }
 
+export interface HostModelBridgeService {
+  run(request: AgentInvocationRequest): Promise<{
+    events: readonly AgentBridgeEvent[];
+    measuredUsage: BridgeMeasuredUsage;
+    reportedResourceUsage: BridgeResourceUsage;
+  }>;
+}
+
 export interface PrivateSubmission {
   agentId: string;
   freezeId: string;
@@ -149,4 +162,22 @@ export interface CommonBarrierService {
   readonly observedStates: readonly HarnessState[];
   arriveAtLaunch(agentId: string): Promise<number>;
   advance(next: HarnessState): HarnessState;
+}
+
+export interface SubmissionService {
+  seal(options: {
+    root: string;
+    agentId: string;
+    runId: string;
+    freezeId: string;
+    releasedShardDigest: string;
+  }): Promise<PrivateSubmission>;
+}
+
+export interface GraderService {
+  grade(identity: { declarationDigest: string; runId: string }, root: string): Promise<unknown>;
+}
+
+export interface ReplayService {
+  replay(identity: { declarationDigest: string; runId: string }, root: string): Promise<unknown>;
 }

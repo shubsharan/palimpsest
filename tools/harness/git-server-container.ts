@@ -6,6 +6,7 @@ if (!repository) {
 }
 const server = await startGitServer({
   repository,
+  stagingRefMode: true,
   host: "0.0.0.0",
   port: 8080,
   secrets: {

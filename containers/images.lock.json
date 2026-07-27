@@ -3,7 +3,7 @@
   "baseImage": "node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb",
   "fixtureAgent": {
     "tag": "palimpsest-fixture-agent:0.1.0",
-    "imageId": "sha256:944731ce393f59cb06a829ce8c7b348588bea4f7277c413e38a8d5e190930988",
+    "imageId": "sha256:c272acce75c9a1ec7119b28a21826e0382a807f493c85f0566c7005b05b64d56",
     "dockerfileSha256": "3d6a894e8521c026b9e877d2cd86495271ec6b22c8fe6883ee3d3cd55f3c3e5a"
   },
   "cleanSolver": {

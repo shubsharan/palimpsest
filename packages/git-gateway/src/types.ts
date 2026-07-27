@@ -80,3 +80,22 @@ export interface AdmissionResult {
   refCommitted: boolean;
   reservationStatus: ReservationStatus;
 }
+
+export interface GitGatewayService {
+  admit(options: {
+    agent: AuthenticatedAgent;
+    frame: GitAccountingFrameV1;
+    transactionId: string;
+  }): Promise<AdmissionResult>;
+}
+
+export interface SnapshotFetchService {
+  capture(snapshotId: string): { snapshot: PublishedSnapshot; view: SnapshotView };
+  normalize(options: {
+    snapshotId: string;
+    wants: readonly string[];
+    haves: readonly string[];
+    capabilities: readonly string[];
+  }): CanonicalFetchTuple;
+}
+import type { GitAccountingFrameV1 } from "@palimpsest/git-accounting";

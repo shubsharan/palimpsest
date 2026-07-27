@@ -11,19 +11,25 @@ import {
 } from "@palimpsest/git-accounting";
 import {
   CumulativeLedger,
-  admitFrame,
+  GitRefTransactionStore,
+  SerializedAdmissionGateway,
   createFreeze,
   publishSnapshot,
+  validateQuarantinedFrame,
   type LedgerEntry,
   type RefMap,
 } from "@palimpsest/git-gateway";
 import {
+  AbsoluteSchedule,
   CommonBarrierCoordinator,
   EventChain,
+  SystemMonotonicClock,
   releaseAgentShard,
   runBridgeProcess,
   sealPrivateSubmission,
   type AgentInvocationRequest,
+  type HarnessSchedule,
+  type MonotonicClock,
 } from "@palimpsest/run-control";
 import { canonicalJsonBytes, sha256Hex } from "@palimpsest/contracts";
 
@@ -38,6 +44,15 @@ import {
 import { checkPredeclaration } from "./report.js";
 
 const execFileAsync = promisify(execFile);
+const OFFLINE_SCHEDULE = {
+  revealOffsetsMs: [0, 100],
+  publicationOffsetsMs: [5_200],
+  pushCloseOffsetMs: 5_000,
+  freezeOffsetMs: 5_500,
+  finalizationOffsetMs: 6_000,
+  toleranceMs: 2_000,
+  stabilizationIntervalMs: 1_000,
+} as const satisfies HarnessSchedule;
 
 async function git(repository: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", ["-C", repository, ...args], {
@@ -83,6 +98,7 @@ async function initializeRepository(attempt: string, bundleRoot: string): Promis
 async function appendState(
   coordinator: CommonBarrierCoordinator,
   events: EventChain,
+  clock: MonotonicClock,
   next: Parameters<CommonBarrierCoordinator["advance"]>[0],
 ): Promise<void> {
   coordinator.advance(next);
@@ -90,9 +106,13 @@ async function appendState(
     producer: "run-control",
     effectId: `lifecycle-${next.toLowerCase()}`,
     eventType: "lifecycle.transition",
-    monotonicElapsedNs: String(events.events.length * 1_000_000),
+    monotonicElapsedNs: monotonicElapsedNs(clock),
     payload: { state: next },
   });
+}
+
+function monotonicElapsedNs(clock: MonotonicClock): string {
+  return String(Math.floor(clock.nowMs() * 1_000_000));
 }
 
 function runIdFromArgs(): string {
@@ -120,7 +140,8 @@ export async function runOfflineHarness(options: {
   });
   process.stdout.write(`Offline attempt: ${attempt}\n`);
   const events = new EventChain(options.runId, join(attempt, "live.jsonl"));
-  const coordinator = new CommonBarrierCoordinator();
+  const clock = new SystemMonotonicClock();
+  const coordinator = new CommonBarrierCoordinator(AGENT_IDS, clock);
   const bundleRoot = resolve(root, HARNESS_ROOT, "declared");
 
   const bundleManifestBytes = await readFile(join(bundleRoot, "bundle-manifest.json"));
@@ -140,14 +161,13 @@ export async function runOfflineHarness(options: {
     communicationBudgetBytes: 65_536,
   };
   await writeFile(join(attempt, "run-manifest.json"), canonicalJsonBytes(runManifest));
-  await appendState(coordinator, events, "STARTING");
+  await appendState(coordinator, events, clock, "STARTING");
   const repository = await initializeRepository(attempt, bundleRoot);
   await git(repository, ["config", "http.receivepack", "true"]);
   const containerRuntime = await startContainerRuntime({ identity, repository });
-  await appendState(coordinator, events, "RUNNING");
 
-  const invocations = await Promise.all(
-    AGENT_IDS.map(async (agentId, index) => {
+  const agentDomains = await Promise.all(
+    AGENT_IDS.map(async (agentId) => {
       const agentRoot = join(attempt, "agents", agentId);
       const inputRoot = join(agentRoot, "input");
       const outputRoot = join(agentRoot, "private-output");
@@ -159,7 +179,21 @@ export async function runOfflineHarness(options: {
       await cp(join(bundleRoot, "reference"), join(inputRoot, "reference"), {
         recursive: true,
       });
-      await releaseAgentShard({
+      return { agentId, agentRoot, inputRoot, outputRoot, workspaceRoot };
+    }),
+  );
+  await Promise.all(agentDomains.map(({ agentId }) => coordinator.arriveAtLaunch(agentId)));
+  await appendState(coordinator, events, clock, "RUNNING");
+  const launchEpochMs = coordinator.launchEpochMs;
+  if (launchEpochMs === null) {
+    throw new Error("Common launch barrier did not establish a monotonic epoch.");
+  }
+  const schedule = new AbsoluteSchedule(clock, OFFLINE_SCHEDULE, launchEpochMs);
+  const firstReveal = await schedule.waitFor({ kind: "reveal", ordinal: 1 });
+
+  await Promise.all(
+    agentDomains.map(async ({ agentId, inputRoot }) => {
+      const releasedInputManifestPath = await releaseAgentShard({
         bundleRoot,
         agentId,
         destination: inputRoot,
@@ -169,22 +203,16 @@ export async function runOfflineHarness(options: {
         producer: "reveal-control",
         effectId: `reveal-${agentId}-1`,
         eventType: "reveal.release",
-        monotonicElapsedNs: String((index + 1) * 2_000_000),
-        payload: { agentId, ordinal: 1 },
+        monotonicElapsedNs: monotonicElapsedNs(clock),
+        payload: { agentId, ordinal: 1, ...firstReveal },
       });
-      const releasedInputManifestPath = await releaseAgentShard({
-        bundleRoot,
-        agentId,
-        destination: inputRoot,
-        ordinal: 2,
-      });
-      await events.append({
-        producer: "reveal-control",
-        effectId: `reveal-${agentId}-2`,
-        eventType: "reveal.release",
-        monotonicElapsedNs: String((index + 1) * 3_000_000),
-        payload: { agentId, ordinal: 2 },
-      });
+      return releasedInputManifestPath;
+    }),
+  );
+
+  const invocations = await Promise.all(
+    agentDomains.map(async ({ agentId, agentRoot, inputRoot, outputRoot, workspaceRoot }) => {
+      const releasedInputManifestPath = join(inputRoot, "released", "release-manifest.json");
       const invocation: AgentInvocationRequest = {
         schemaVersion: 1,
         runId: options.runId,
@@ -196,7 +224,7 @@ export async function runOfflineHarness(options: {
         releasedInputManifestPath,
         publishedSnapshotId: "publication-000",
         gitEndpoint: containerRuntime.endpoint(agentId),
-        gitRefNamespace: `refs/heads/agents/${agentId}`,
+        gitRefNamespace: `refs/heads/quarantine/${agentId}`,
         workspacePath: workspaceRoot,
         privateOutputPath: outputRoot,
       };
@@ -224,7 +252,7 @@ export async function runOfflineHarness(options: {
 
   let workerResults;
   try {
-    workerResults = await Promise.all(
+    const workerPromise = Promise.all(
       invocations.map(
         async ({ agentId, invocation, containerRequestPath, inputRoot, outputRoot }) => {
           const result = await runBridgeProcess({
@@ -272,53 +300,110 @@ export async function runOfflineHarness(options: {
         },
       ),
     );
+    const secondReveal = await schedule.waitFor({ kind: "reveal", ordinal: 2 });
+    await Promise.all(
+      agentDomains.map(async ({ agentId, inputRoot }) => {
+        await releaseAgentShard({
+          bundleRoot,
+          agentId,
+          destination: inputRoot,
+          ordinal: 2,
+        });
+        await events.append({
+          producer: "reveal-control",
+          effectId: `reveal-${agentId}-2`,
+          eventType: "reveal.release",
+          monotonicElapsedNs: monotonicElapsedNs(clock),
+          payload: { agentId, ordinal: 2, ...secondReveal },
+        });
+      }),
+    );
+    workerResults = await workerPromise;
+    for (const { agentId, result } of workerResults) {
+      await events.append({
+        producer: "model-bridge",
+        effectId: `worker-${agentId}-completed`,
+        eventType: "worker.completed",
+        monotonicElapsedNs: monotonicElapsedNs(clock),
+        payload: { agentId, eventCount: result.events.length, exitCode: result.exitCode },
+      });
+    }
+    await schedule.waitFor({ kind: "push-close" });
+    await appendState(coordinator, events, clock, "PUSH_CLOSED");
   } finally {
     await containerRuntime.close();
   }
-  for (const { agentId, result } of workerResults) {
-    await events.append({
-      producer: "model-bridge",
-      effectId: `worker-${agentId}-completed`,
-      eventType: "worker.completed",
-      monotonicElapsedNs: String(events.events.length * 1_000_000),
-      payload: { agentId, eventCount: result.events.length, exitCode: result.exitCode },
-    });
-  }
 
-  await appendState(coordinator, events, "PUSH_CLOSED");
-  await appendState(coordinator, events, "DRAINING");
+  await appendState(coordinator, events, clock, "DRAINING");
   const mainOids = (await git(repository, ["rev-list", "--objects", "--no-object-names", "main"]))
     .split("\n")
     .filter(Boolean);
-  let journal = new VisibilityJournal(mainOids);
+  const slotStartJournal = new VisibilityJournal(mainOids);
+  const ledgerStores = new Map(
+    AGENT_IDS.map((agentId) => [agentId, new CumulativeLedger(options.runId, agentId, 65_536)]),
+  );
+  const candidates = await Promise.all(
+    AGENT_IDS.map(async (agentId, index) => {
+      const stagingRef = `refs/heads/quarantine/${agentId}/work`;
+      const refName = `refs/heads/agents/${agentId}/work`;
+      const tip = await git(repository, ["rev-parse", stagingRef]);
+      const frame = await buildLogicalTransaction({
+        authenticatedAgent: index + 1,
+        newOid: tip,
+        operation: refOperations.create,
+        publicationSlot: 1,
+        refName,
+        repository,
+        slotStartJournal,
+      });
+      return { agentId, index, stagingRef, frame };
+    }),
+  );
+  const gateway = new SerializedAdmissionGateway(
+    new GitRefTransactionStore(repository),
+    ledgerStores,
+    async (frame) => {
+      const frameAgentId = AGENT_IDS[frame.authenticatedAgent - 1];
+      if (!frameAgentId) {
+        throw new Error(`Unknown authenticated agent number: ${frame.authenticatedAgent}.`);
+      }
+      await validateQuarantinedFrame({
+        agent: {
+          agentId: frameAgentId,
+          refNamespace: `refs/heads/agents/${frameAgentId}`,
+          authenticatedAgent: frame.authenticatedAgent,
+        },
+        frame,
+        quarantineRepository: repository,
+        slotStartVisibleOids: mainOids,
+      });
+    },
+  );
   const ledgers: LedgerEntry[] = [];
-  for (const [index, agentId] of AGENT_IDS.entries()) {
-    const refName = `refs/heads/agents/${agentId}/work`;
-    const tip = await git(repository, ["rev-parse", refName]);
-    const frame = await buildLogicalTransaction({
-      authenticatedAgent: index + 1,
-      newOid: tip,
-      operation: refOperations.create,
-      publicationSlot: 1,
-      refName,
-      repository,
-      slotStartJournal: journal,
+  for (const candidate of candidates) {
+    const result = await gateway.admit({
+      agent: {
+        agentId: candidate.agentId,
+        refNamespace: `refs/heads/agents/${candidate.agentId}`,
+        authenticatedAgent: candidate.index + 1,
+      },
+      frame: candidate.frame,
+      transactionId: `${candidate.agentId}-push-001`,
     });
-    const ledger = new CumulativeLedger(options.runId, agentId, 65_536);
-    const entry = admitFrame({
-      agent: { agentId, refNamespace: `refs/heads/agents/${agentId}` },
-      frame,
-      ledger,
-      transactionId: `${agentId}-push-001`,
-    });
-    if (entry.result !== "accepted") {
-      throw new Error(`Fixture push exceeded communication budget: ${agentId}`);
+    if (!result.refCommitted || result.entry.result !== "accepted") {
+      throw new Error(`Fixture push was not admitted transactionally: ${candidate.agentId}`);
     }
-    ledgers.push(entry);
-    journal = journal.withAcceptedObjects([frame.objects]);
+    ledgers.push(result.entry);
   }
+  for (const candidate of candidates) {
+    await git(repository, ["update-ref", "-d", candidate.stagingRef]);
+  }
+  const journal = slotStartJournal.withAcceptedObjects(
+    candidates.map((candidate) => candidate.frame.objects),
+  );
   await writeFile(join(attempt, "git", "ledgers.json"), canonicalJsonBytes(ledgers));
   const refs = await refMap(repository);
+  const publicationObservation = await schedule.waitFor({ kind: "publication", ordinal: 1 });
   const snapshot = publishSnapshot({
     runId: options.runId,
     ordinal: 1,
@@ -331,10 +416,17 @@ export async function runOfflineHarness(options: {
     producer: "git-gateway",
     effectId: "publication-001",
     eventType: "git.publication",
-    monotonicElapsedNs: String(events.events.length * 1_000_000),
-    payload: { snapshotId: snapshot.snapshotId, refMapDigest: snapshot.refMapDigest },
+    monotonicElapsedNs: monotonicElapsedNs(clock),
+    payload: {
+      snapshotId: snapshot.snapshotId,
+      refMapDigest: snapshot.refMapDigest,
+      ...publicationObservation,
+    },
   });
 
+  await schedule.waitFor({ kind: "freeze" });
+  const eventChainHead = events.head;
+  if (!eventChainHead) throw new Error("Cannot freeze an empty event chain.");
   const freeze = await createFreeze({
     repository,
     bundlePath: join(attempt, "git", "frozen.bundle"),
@@ -343,11 +435,12 @@ export async function runOfflineHarness(options: {
     visibilityJournalDigest: journal.digest(),
     ledgers,
     finalEventSequence: events.events.length,
-    eventChainHead: events.head!,
+    eventChainHead,
   });
   await writeFile(join(attempt, "git", "freeze.json"), canonicalJsonBytes(freeze));
-  await appendState(coordinator, events, "FROZEN");
-  await appendState(coordinator, events, "FINALIZING");
+  await appendState(coordinator, events, clock, "FROZEN");
+  await schedule.waitFor({ kind: "finalization" });
+  await appendState(coordinator, events, clock, "FINALIZING");
   const releasedShardDigest = sha256Hex(bundleManifestBytes);
   const submissions = [];
   for (const invocation of invocations) {
@@ -362,7 +455,7 @@ export async function runOfflineHarness(options: {
     );
   }
   await writeFile(join(attempt, "submissions.json"), canonicalJsonBytes(submissions));
-  await appendState(coordinator, events, "SUBMITTED");
+  await appendState(coordinator, events, clock, "SUBMITTED");
   await writeFile(
     join(attempt, "run-result.json"),
     canonicalJsonBytes({
@@ -372,6 +465,9 @@ export async function runOfflineHarness(options: {
       lifecycleStates: coordinator.observedStates,
       eventChainHead: events.head,
       freezeId: freeze.freezeId,
+      launchEpochMs,
+      schedulePolicy: OFFLINE_SCHEDULE,
+      scheduleObservations: schedule.observations,
       externalModelRequestCount: 0,
       fixtureBehaviorIsEmpiricalModelEvidence: false,
       containerEvidence: {
@@ -380,6 +476,8 @@ export async function runOfflineHarness(options: {
         fixtureNetworkMode: "internal",
         cleanSolverNetworkMode: "none",
         authenticatedSmartHttpGateway: true,
+        hiddenPerAgentQuarantineRefs: true,
+        transactionalGitAdmission: true,
       },
     }),
   );

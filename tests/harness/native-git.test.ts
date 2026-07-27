@@ -89,6 +89,48 @@ describe("three-worker native Git transport", () => {
       const unauthorized = new URL(server.endpoint("agent-1"));
       unauthorized.password = "wrong";
       await expect(git(["ls-remote", unauthorized.toString()])).rejects.toThrow();
+
+      const staging = await startGitServer({
+        repository,
+        stagingRefMode: true,
+        secrets: {
+          "agent-1": "staging-1",
+          "agent-2": "staging-2",
+          "agent-3": "staging-3",
+        },
+      });
+      try {
+        await git([
+          "-C",
+          agentOne,
+          "push",
+          "--quiet",
+          staging.endpoint("agent-1"),
+          "HEAD:refs/heads/quarantine/agent-1/work",
+        ]);
+        await expect(
+          git([
+            "-C",
+            agentOne,
+            "push",
+            "--quiet",
+            staging.endpoint("agent-1"),
+            "HEAD:refs/heads/quarantine/agent-2/work",
+          ]),
+        ).rejects.toThrow();
+        expect(
+          await git([
+            "ls-remote",
+            staging.endpoint("agent-2"),
+            "refs/heads/quarantine/agent-1/work",
+          ]),
+        ).toBe("");
+        expect(await git(["rev-parse", "refs/heads/quarantine/agent-1/work"], repository)).toMatch(
+          /^[0-9a-f]{64}$/,
+        );
+      } finally {
+        await staging.close();
+      }
     } finally {
       await server.close();
     }

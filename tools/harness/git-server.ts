@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import { AGENT_IDS } from "./config.js";
 
@@ -24,13 +27,49 @@ function respondUnauthorized(response: ServerResponse): void {
   response.end("authentication required\n");
 }
 
+const execFileAsync = promisify(execFile);
+
+async function configureStagingReceive(repository: string): Promise<void> {
+  const hooks = join(repository, "hooks");
+  const preReceive = join(hooks, "pre-receive");
+  await mkdir(hooks, { recursive: true });
+  await writeFile(
+    preReceive,
+    [
+      "#!/bin/sh",
+      "set -eu",
+      'prefix="refs/heads/quarantine/${REMOTE_USER}/"',
+      "while read -r old_oid new_oid ref_name",
+      "do",
+      '  case "$ref_name" in',
+      '    "$prefix"*) ;;',
+      '    *) printf "unauthorized ref namespace\\n" >&2; exit 1 ;;',
+      "  esac",
+      '  test "$new_oid" != "0000000000000000000000000000000000000000000000000000000000000000" || exit 1',
+      "done",
+      "",
+    ].join("\n"),
+  );
+  await chmod(preReceive, 0o755);
+  await execFileAsync("git", [
+    "-C",
+    repository,
+    "config",
+    "uploadpack.hideRefs",
+    "refs/heads/quarantine",
+  ]);
+  await execFileAsync("git", ["-C", repository, "config", "receive.denyDeletes", "true"]);
+}
+
 export async function startGitServer(options: {
   repository: string;
   secrets: Record<(typeof AGENT_IDS)[number], string>;
   host?: string;
   port?: number;
+  stagingRefMode?: boolean;
 }): Promise<GitServer> {
   const repository = resolve(options.repository);
+  if (options.stagingRefMode) await configureStagingReceive(repository);
   const repositoryName = `/${repository.split("/").at(-1)!}`;
   const backend = resolve(
     (await import("node:child_process"))

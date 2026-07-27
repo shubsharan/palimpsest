@@ -105,11 +105,12 @@ export async function replayAttempt(
   }
   const events = await EventChain.resume(identity.runId, resolve(attempt, "live.jsonl"));
   const replayed = events.events.find((event) => event.effectId === "lifecycle-replayed");
+  const nextElapsedNs = () => String(BigInt(events.events.at(-1)?.monotonicElapsedNs ?? "0") + 1n);
   await events.append({
     producer: "replay",
     effectId: "lifecycle-replayed",
     eventType: "lifecycle.transition",
-    monotonicElapsedNs: replayed?.monotonicElapsedNs ?? String(events.events.length * 1_000_000),
+    monotonicElapsedNs: replayed?.monotonicElapsedNs ?? nextElapsedNs(),
     payload: { state: "REPLAYED" },
   });
   const scored = events.events.find((event) => event.effectId === "lifecycle-scored");
@@ -117,7 +118,7 @@ export async function replayAttempt(
     producer: "grading",
     effectId: "lifecycle-scored",
     eventType: "lifecycle.transition",
-    monotonicElapsedNs: scored?.monotonicElapsedNs ?? String(events.events.length * 1_000_000),
+    monotonicElapsedNs: scored?.monotonicElapsedNs ?? nextElapsedNs(),
     payload: { state: "SCORED" },
   });
   await execFileAsync(

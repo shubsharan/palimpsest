@@ -14,6 +14,44 @@ function declarationDigest(value: Record<string, unknown>): string {
   return sha256Hex(canonicalJsonBytes(value));
 }
 
+function validScheduleEvidence(run: Record<string, unknown>): boolean {
+  const policy = run.schedulePolicy as Record<string, unknown> | undefined;
+  const observations = run.scheduleObservations;
+  if (
+    !policy ||
+    !Array.isArray(observations) ||
+    !Number.isSafeInteger(policy.toleranceMs) ||
+    typeof policy.toleranceMs !== "number"
+  ) {
+    return false;
+  }
+  const expected = new Set([
+    "reveal:1",
+    "reveal:2",
+    "publication:1",
+    "push-close",
+    "freeze",
+    "finalization",
+  ]);
+  for (const value of observations) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const observation = value as Record<string, unknown>;
+    const boundary = observation.boundary as Record<string, unknown> | undefined;
+    if (!boundary || typeof boundary.kind !== "string") return false;
+    const key =
+      typeof boundary.ordinal === "number" ? `${boundary.kind}:${boundary.ordinal}` : boundary.kind;
+    if (
+      !expected.delete(key) ||
+      typeof observation.driftMs !== "number" ||
+      !Number.isFinite(observation.driftMs) ||
+      Math.abs(observation.driftMs) > policy.toleranceMs
+    ) {
+      return false;
+    }
+  }
+  return expected.size === 0;
+}
+
 export async function buildPredeclaration(root = "."): Promise<Record<string, unknown>> {
   const bundle = await preflightBundle(resolve(root, HARNESS_ROOT, "declared"));
   const inputs = JSON.parse(
@@ -115,6 +153,19 @@ export async function completeAttempt(
     await readFile(resolve(root, "containers/images.lock.json"), "utf8"),
   );
   const container = run.containerEvidence;
+  const ledgers = JSON.parse(
+    await readFile(resolve(attempt, "git/ledgers.json"), "utf8"),
+  ) as Record<string, unknown>[];
+  const expectedLifecycle = [
+    "PREPARED",
+    "STARTING",
+    "RUNNING",
+    "PUSH_CLOSED",
+    "DRAINING",
+    "FROZEN",
+    "FINALIZING",
+    "SUBMITTED",
+  ];
   let priorTerminalBytes: Buffer | undefined;
   let priorTerminalDigest: string | undefined;
   if (options.priorIdentity) {
@@ -145,6 +196,17 @@ export async function completeAttempt(
       container?.fixtureImageId === imageLock.fixtureAgent?.imageId &&
       container?.solverImageId === imageLock.cleanSolver?.imageId,
     authenticatedSmartHttpGateway: container?.authenticatedSmartHttpGateway === true,
+    commonLaunchBarrier:
+      typeof run.launchEpochMs === "number" &&
+      Number.isFinite(run.launchEpochMs) &&
+      run.launchEpochMs >= 0 &&
+      canonicalJsonBytes(run.lifecycleStates).equals(canonicalJsonBytes(expectedLifecycle)),
+    monotonicAbsoluteSchedule: validScheduleEvidence(run),
+    transactionalGitAdmission:
+      container?.hiddenPerAgentQuarantineRefs === true &&
+      container?.transactionalGitAdmission === true &&
+      ledgers.length === 3 &&
+      ledgers.every((ledger) => ledger.result === "accepted"),
     repeatedAttemptIsolation: priorTerminalBytes !== undefined,
   };
   const passing =
