@@ -1,9 +1,6 @@
 # Feature Specification: Behavior-Neutral Multi-Agent Puzzle Runner
 
-**Feature Branch**: `006-behavior-neutral-runner`
-**Created**: 2026-07-27
-**Status**: Ready for planning
-**Input**: Replace the evidence-gated harness with a simple three-agent Palimpsest runner that gives models private staged evidence, local tools, aggregate checking, and ordinary shared Git, then observes how they work until time or token limits end the run.
+**Feature Branch**: `006-behavior-neutral-runner` **Created**: 2026-07-27 **Status**: Ready for planning **Input**: Replace the evidence-gated harness with a simple three-agent Palimpsest runner that gives models private staged evidence, local tools, aggregate checking, and ordinary shared Git, then observes how they work until time or token limits end the run.
 
 ## User Scenarios & Testing
 

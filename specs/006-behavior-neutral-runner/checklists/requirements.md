@@ -1,8 +1,6 @@
 # Specification Quality Checklist: Behavior-Neutral Multi-Agent Puzzle Runner
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-07-27
-**Feature**: [spec.md](../spec.md)
+**Purpose**: Validate specification completeness and quality before proceeding to planning **Created**: 2026-07-27 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
 
