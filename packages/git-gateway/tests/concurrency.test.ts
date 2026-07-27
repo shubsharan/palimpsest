@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
 
+import {
+  ACCOUNTING_VERSION,
+  GIT_SHA256_OBJECT_FORMAT,
+  refOperations,
+} from "@palimpsest/git-accounting";
+
+import { InMemoryRefTransactionStore, SerializedAdmissionGateway } from "../src/admission.js";
 import { CumulativeLedger } from "../src/ledger.js";
 import { SnapshotStore, publishSnapshot } from "../src/publication.js";
 
@@ -41,5 +48,44 @@ describe("Git Gateway concurrency boundaries", () => {
     store.add(snapshot);
     refs["refs/heads/agents/agent-1/work"] = "4".repeat(64);
     expect(store.get(snapshot.snapshotId)).toEqual(snapshot);
+  });
+
+  test("admits independent refs serially without imposing an agent order", async () => {
+    const refs = new InMemoryRefTransactionStore();
+    const ledgers = new Map(
+      ["agent-1", "agent-2"].map((agentId) => [
+        agentId,
+        new CumulativeLedger("run-1", agentId, 1_000),
+      ]),
+    );
+    const gateway = new SerializedAdmissionGateway(refs, ledgers, async () => {});
+    const results = await Promise.all(
+      ["agent-1", "agent-2"].map((agentId, index) =>
+        gateway.admit({
+          agent: {
+            agentId,
+            refNamespace: `refs/heads/agents/${agentId}` as const,
+            authenticatedAgent: index + 1,
+          },
+          transactionId: `tx-${index + 1}`,
+          frame: {
+            accountingVersion: ACCOUNTING_VERSION,
+            authenticatedAgent: index + 1,
+            objectFormat: GIT_SHA256_OBJECT_FORMAT,
+            publicationSlot: 1,
+            operation: refOperations.create,
+            refName: `refs/heads/agents/${agentId}/work`,
+            oldOid: Buffer.alloc(32),
+            newOid: Buffer.from(String(index + 1).repeat(64), "hex"),
+            objects: [],
+          },
+        }),
+      ),
+    );
+    expect(results.every((result) => result.refCommitted)).toBe(true);
+    expect(Object.keys(await refs.snapshot()).sort()).toEqual([
+      "refs/heads/agents/agent-1/work",
+      "refs/heads/agents/agent-2/work",
+    ]);
   });
 });
