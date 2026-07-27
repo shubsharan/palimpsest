@@ -1,4 +1,4 @@
 <!-- SPECKIT START -->
 
-For additional context about technologies to be used, project structure, shell commands, and other important information, read the current plan: `specs/008-runner-hardening-cleanup/plan.md`
+For additional context about technologies to be used, project structure, shell commands, and other important information, read the current plan: `specs/009-refactor-puzzle-architecture/plan.md`
 <!-- SPECKIT END -->
