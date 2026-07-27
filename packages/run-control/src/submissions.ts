@@ -1,4 +1,4 @@
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
 import { canonicalJsonBytes, sha256Hex } from "@palimpsest/contracts";
@@ -9,11 +9,16 @@ async function outputPaths(root: string, current = root): Promise<string[]> {
   const paths: string[] = [];
   for (const name of (await readdir(current)).sort()) {
     const path = join(current, name);
-    const metadata = await stat(path);
+    const metadata = await lstat(path);
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`Private submission output must not be a symbolic link: ${path}`);
+    }
     if (metadata.isDirectory()) {
       paths.push(...(await outputPaths(root, path)));
     } else if (metadata.isFile() && name !== "manifest.json") {
       paths.push(relative(root, path).split(sep).join("/"));
+    } else if (!metadata.isFile()) {
+      throw new Error(`Private submission output must be a regular file: ${path}`);
     }
   }
   return paths.sort();
