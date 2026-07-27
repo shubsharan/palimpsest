@@ -77,29 +77,29 @@
 - [ ] T031 [P] [US2] Add fixture subprocess NDJSON, timeout, resource, undeclared-file, provider-prohibition, and adapter-authorization tests in `packages/run-control/tests/model-bridge.test.ts`
 - [ ] T032 [P] [US2] Add authenticated namespace, ref, object, path, capability, quarantine, and fast-forward policy tests in `packages/git-gateway/tests/policy.test.ts`
 - [ ] T033 [P] [US2] Add exact accounting frame, reservation, idempotency, one-byte-over-budget, duplicate-object, and sender-attribution tests in `packages/git-gateway/tests/admission.test.ts`
-- [ ] T034 [P] [US2] Add competing push, independent branch, disconnect-after-admission, and crash-consistency tests in `packages/git-gateway/tests/concurrency.test.ts`
+- [x] T034 [P] [US2] Add competing push, independent branch, disconnect-after-admission, and crash-consistency tests in `packages/git-gateway/tests/concurrency.test.ts`
 - [ ] T035 [P] [US2] Add immutable publication snapshot, canonical fetch tuple, no-intermediate-ref, and freeze-race tests in `packages/git-gateway/tests/publication.test.ts`
-- [ ] T036 [P] [US2] Add private shard, future reveal, peer output, oracle, credential, and host-control isolation tests in `tests/harness/isolation.test.ts`
-- [ ] T037 [P] [US2] Add three-worker native clone/fetch/pull/commit/merge/push workflow tests in `tests/harness/native-git.test.ts`
+- [x] T036 [P] [US2] Add private shard, future reveal, peer output, oracle, credential, and host-control isolation tests in `tests/harness/isolation.test.ts`
+- [x] T037 [P] [US2] Add three-worker native clone/fetch/pull/commit/merge/push workflow tests in `tests/harness/native-git.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T038 [P] [US2] Implement the frozen lifecycle state machine in `packages/run-control/src/lifecycle.ts`
+- [x] T038 [P] [US2] Implement the frozen lifecycle state machine in `packages/run-control/src/lifecycle.ts`
 - [ ] T039 [P] [US2] Implement the durable hash-chained event append service in `packages/run-control/src/events.ts`
 - [ ] T040 [P] [US2] Implement system and deterministic monotonic clocks and schedules in `packages/run-control/src/clock.ts`
 - [ ] T041 [US2] Implement fixture subprocess launch, NDJSON validation, quota measurement, timeout, and terminal sealing in `packages/run-control/src/model-bridge.ts`
-- [ ] T042 [P] [US2] Implement agent-private release mount projection in `packages/run-control/src/reveal.ts`
-- [ ] T043 [P] [US2] Implement private deliverable sealing and visibility enforcement in `packages/run-control/src/submissions.ts`
+- [x] T042 [P] [US2] Implement agent-private release mount projection in `packages/run-control/src/reveal.ts`
+- [x] T043 [P] [US2] Implement private deliverable sealing and visibility enforcement in `packages/run-control/src/submissions.ts`
 - [ ] T044 [US2] Implement ref/object/path/capability policy and quarantine validation in `packages/git-gateway/src/policy.ts`
 - [ ] T045 [US2] Implement serialized transactional admission using `GitAccountingFrameV1` in `packages/git-gateway/src/admission.ts`
-- [ ] T046 [US2] Implement cumulative per-agent reservations and ledgers in `packages/git-gateway/src/ledger.ts`
-- [ ] T047 [US2] Implement immutable fixed-slot snapshots and visibility journaling in `packages/git-gateway/src/publication.ts`
+- [x] T046 [US2] Implement cumulative per-agent reservations and ledgers in `packages/git-gateway/src/ledger.ts`
+- [x] T047 [US2] Implement immutable fixed-slot snapshots and visibility journaling in `packages/git-gateway/src/publication.ts`
 - [ ] T048 [US2] Implement snapshot-gated canonical fetch serving in `packages/git-gateway/src/fetch.ts`
 - [ ] T049 [US2] Implement push closure, drain reconciliation, Git bundle creation, and freeze in `packages/git-gateway/src/freeze.ts`
-- [ ] T050 [US2] Implement authenticated local smart-HTTP Git transport in `tools/harness/git-server.ts`
-- [ ] T051 [US2] Implement deterministic native-Git fixture worker behavior in `tools/harness/fixture-worker.ts`
+- [x] T050 [US2] Implement authenticated local smart-HTTP Git transport in `tools/harness/git-server.ts`
+- [x] T051 [US2] Implement deterministic native-Git fixture worker behavior in `tools/harness/fixture-worker.ts`
 - [ ] T052 [US2] Implement the common-barrier coordinator across reveal, workers, Git Gateway, quotas, freeze, and submissions in `packages/run-control/src/coordinator.ts`
-- [ ] T053 [US2] Implement explicit-attempt offline run orchestration and live event streaming in `tools/harness/run.ts`
+- [x] T053 [US2] Implement explicit-attempt offline run orchestration and live event streaming in `tools/harness/run.ts`
 
 **Checkpoint**: A sealed offline run reaches `SUBMITTED` with real Git evidence, exact ledgers, one freeze identity, and three private deliverables.
 
@@ -145,7 +145,7 @@
 - [x] T071 [P] Add container image content, mount, user, capability, credential, oracle, source, package, and network-isolation tests in `tests/harness/container-isolation.test.ts`
 - [x] T072 Add intent/effect/completion failure injection across build, event, Git admission, publication, freeze, submission, solver, grading, replay, and promotion in `tests/harness/failure-injection.test.ts`
 - [x] T073 Add complete harness files and generated artifacts to formatting, linting, typecheck, contract comparison, and public-boundary verification in `package.json` and `tests/contract/foundation-boundaries.test.ts`
-- [ ] T074 Validate every command and claim in `specs/005-end-to-end-harness/quickstart.md`
+- [x] T074 Validate every command and claim in `specs/005-end-to-end-harness/quickstart.md`
 - [x] T075 Run two fresh `pnpm harness:offline` attempts and prove the first remains byte-identical and independently replayable
 - [x] T076 Run `pnpm verify`, `pnpm verify:clean-snapshot`, and `git diff --check`
 - [ ] T077 Complete the exact Milestone 6 report and update implementation status in `docs/roadmap.md`
