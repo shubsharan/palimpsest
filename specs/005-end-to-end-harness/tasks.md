@@ -115,7 +115,7 @@
 
 - [x] T054 [P] [US3] Add archive traversal, links, devices, sparse entries, duplicates, collisions, undeclared files, and entry/byte bomb tests in `python/tests/harness/test_solver_bundle.py`
 - [x] T055 [P] [US3] Add valid non-Python clean-solver execution, timeout, network, mount, and exact-output tests in `python/tests/harness/test_solver_execution.py`
-- [ ] T056 [P] [US3] Add reconstruction, entity, dictionary, changed/stable, switch, latency, collaboration, and confidence formula tests in `python/tests/harness/test_scoring.py`
+- [x] T056 [P] [US3] Add reconstruction, entity, dictionary, changed/stable, switch, latency, collaboration, and confidence formula tests in `python/tests/harness/test_scoring.py`
 - [ ] T057 [P] [US3] Add ref, object, snapshot, visibility, ledger, event, freeze, solver, score, and report replay tests in `python/tests/harness/test_replay.py`
 - [ ] T058 [P] [US3] Add public report redaction and narrow-claim tests in `python/tests/harness/test_public_report.py`
 - [ ] T059 [P] [US3] Add exact-attempt TypeScript/Python replay parity and tamper tests in `tests/harness/replay.test.ts`
@@ -125,7 +125,7 @@
 
 - [x] T061 [P] [US3] Implement hostile archive inspection and filtered staging in `python/src/palimpsest/solver/bundle.py`
 - [x] T062 [US3] Implement network-disabled clean executable invocation and exact output collection in `python/src/palimpsest/solver/executor.py`
-- [ ] T063 [P] [US3] Complete versioned score formulas and report assembly in `python/src/palimpsest/grading/score_report.py`
+- [x] T063 [P] [US3] Complete versioned score formulas and report assembly in `python/src/palimpsest/grading/score_report.py`
 - [ ] T064 [US3] Implement trusted run-state and score replay in `python/src/palimpsest/replay/harness.py`
 - [ ] T065 [US3] Implement redacted public report projection in `python/src/palimpsest/replay/public_report.py`
 - [ ] T066 [US3] Implement explicit-attempt grading orchestration in `tools/harness/grade.ts`

@@ -116,12 +116,14 @@ def build_bundle(root: Path, destination: Path) -> dict[str, Any]:
         revised = canonical_json_bytes(instance.source.revised_key)
         changed = canonical_json_bytes(instance.source.changed_entries)
         controls = canonical_json_bytes(instance.source.matched_controls)
+        entity_types = canonical_json_bytes(list(instance.source.entity_types))
         sealed_artifacts = [
             ("sealed/prepared.txt", prepared, "prepared-plaintext"),
             ("sealed/stationary-key.json", stationary, "stationary-key"),
             ("sealed/revised-key.json", revised, "revised-key"),
             ("sealed/changed-entries.json", changed, "changed-entry-set"),
             ("sealed/matched-controls.json", controls, "matched-control-set"),
+            ("sealed/entity-types.json", entity_types, "entity-type-set"),
         ]
         oracle_refs = []
         for path, content, artifact_type in sealed_artifacts:
