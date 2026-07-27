@@ -1,4 +1,4 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 
 import { canonicalJsonBytes, sha256Hex } from "@palimpsest/contracts";
 
@@ -15,6 +15,8 @@ export interface EventInput {
 export class EventChain {
   readonly #events: RunEvent[] = [];
   readonly #effects = new Map<string, Buffer>();
+  #pending: Promise<void> = Promise.resolve();
+  #durabilityFailure: Error | null = null;
 
   constructor(
     readonly runId: string,
@@ -30,6 +32,20 @@ export class EventChain {
   }
 
   async append(input: EventInput): Promise<RunEvent> {
+    const operation = this.#pending.then(() => this.#appendSerial(input));
+    this.#pending = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  async #appendSerial(input: EventInput): Promise<RunEvent> {
+    if (this.#durabilityFailure) {
+      throw new Error("Run event chain is unavailable after a durability failure.", {
+        cause: this.#durabilityFailure,
+      });
+    }
     const effectBytes = canonicalJsonBytes(input);
     const prior = this.#effects.get(input.effectId);
     if (prior) {
@@ -50,24 +66,44 @@ export class EventChain {
       ...body,
       digest: sha256Hex(canonicalJsonBytes(body)),
     };
+    if (this.path) {
+      const handle = await open(this.path, "a", 0o600);
+      try {
+        await handle.appendFile(Buffer.concat([canonicalJsonBytes(event), Buffer.from("\n")]));
+        await handle.sync();
+      } catch (error) {
+        this.#durabilityFailure =
+          error instanceof Error ? error : new Error("Unknown event durability failure.");
+        throw error;
+      } finally {
+        await handle.close();
+      }
+    }
     this.#effects.set(input.effectId, effectBytes);
     this.#events.push(event);
-    if (this.path) {
-      await appendFile(this.path, Buffer.concat([canonicalJsonBytes(event), Buffer.from("\n")]));
-    }
     return event;
   }
 
   static verify(events: readonly RunEvent[]): void {
     let previousDigest: string | null = null;
+    let previousElapsedNs = -1n;
     const effects = new Set<string>();
     for (const [index, event] of events.entries()) {
-      if (
-        event.sequence !== index + 1 ||
-        event.previousDigest !== previousDigest ||
-        effects.has(event.effectId)
-      ) {
-        throw new Error("Run event sequence, predecessor, or effect identity is invalid.");
+      if (event.sequence !== index + 1) {
+        throw new Error(`Run event sequence gap or reordering at position ${index + 1}.`);
+      }
+      if (event.previousDigest !== previousDigest) {
+        throw new Error(`Run event predecessor mismatch at sequence ${event.sequence}.`);
+      }
+      if (effects.has(event.effectId)) {
+        throw new Error(`Run event effect identity is duplicated: ${event.effectId}.`);
+      }
+      if (!/^(0|[1-9][0-9]*)$/.test(event.monotonicElapsedNs)) {
+        throw new Error(`Run event monotonic time is invalid at sequence ${event.sequence}.`);
+      }
+      const elapsedNs = BigInt(event.monotonicElapsedNs);
+      if (elapsedNs < previousElapsedNs) {
+        throw new Error(`Run event monotonic time regressed at sequence ${event.sequence}.`);
       }
       const { digest, ...body } = event;
       if (sha256Hex(canonicalJsonBytes(body)) !== digest) {
@@ -75,15 +111,27 @@ export class EventChain {
       }
       effects.add(event.effectId);
       previousDigest = digest;
+      previousElapsedNs = elapsedNs;
     }
   }
 
   static async read(path: string): Promise<RunEvent[]> {
-    const source = await readFile(path, "utf8");
-    const events = source
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as RunEvent);
+    const source = await readFile(path);
+    if (source.byteLength === 0) return [];
+    if (source.at(-1) !== 0x0a) {
+      throw new Error("Run event log has a torn final event.");
+    }
+    const lines = source.toString("utf8").slice(0, -1).split("\n");
+    if (lines.some((line) => line.length === 0)) {
+      throw new Error("Run event log contains an empty record.");
+    }
+    const events = lines.map((line, index) => {
+      try {
+        return JSON.parse(line) as RunEvent;
+      } catch (error) {
+        throw new Error(`Run event ${index + 1} is not valid JSON.`, { cause: error });
+      }
+    });
     EventChain.verify(events);
     return events;
   }
