@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title desc">
+<title id="title">Gate A cumulative frame frontiers</title>
+<desc id="desc">Minimum exact relay charge by frozen geometry and maximum useful-state charge.</desc>
+<rect width="100%" height="100%" fill="#f5f0e6"/>
+<path d="M72 72V408H888" fill="none" stroke="#23231f" stroke-width="2"/>
+<line x1="72" y1="306.08" x2="888" y2="306.08" stroke="#b4412f" stroke-width="3" stroke-dasharray="10 8"/>
+<polyline points="72.00,280.31 174.00,269.61 276.00,264.35 378.00,206.63 480.00,190.24 582.00,181.58 684.00,108.43 786.00,84.19 888.00,72.00" fill="none" stroke="#1f6673" stroke-width="4"/>
+<circle cx="72.00" cy="280.31" r="5" fill="#1f6673"/>
+<circle cx="174.00" cy="269.61" r="5" fill="#1f6673"/>
+<circle cx="276.00" cy="264.35" r="5" fill="#1f6673"/>
+<circle cx="378.00" cy="206.63" r="5" fill="#1f6673"/>
+<circle cx="480.00" cy="190.24" r="5" fill="#1f6673"/>
+<circle cx="582.00" cy="181.58" r="5" fill="#1f6673"/>
+<circle cx="684.00" cy="108.43" r="5" fill="#1f6673"/>
+<circle cx="786.00" cy="84.19" r="5" fill="#1f6673"/>
+<circle cx="888.00" cy="72.00" r="5" fill="#1f6673"/>
+<text x="72" y="296.08" font-family="Georgia,serif" font-size="16" fill="#8f3023">Useful maximum: 18503 bytes</text>
+<text x="480" y="460" text-anchor="middle" font-family="Georgia,serif" font-size="16" fill="#23231f">Frozen geometry matrix</text>
+<text x="20" y="240" transform="rotate(-90 20 240)" text-anchor="middle" font-family="Georgia,serif" font-size="16" fill="#23231f">Cumulative frame bytes</text>
+</svg>
