@@ -282,6 +282,7 @@ export async function runPreflight(
   await dependencies.runVerification(repositoryRoot);
 
   const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-preflight-"));
+  let provisional: PreflightReceipt;
   try {
     const fixture = await dependencies.runFixture(
       repositoryRoot,
@@ -290,7 +291,7 @@ export async function runPreflight(
     if (fixture.status !== "scored") {
       throw new Error(`Research preflight fixture must score, received ${fixture.status}.`);
     }
-    const provisional = decodePreflightReceipt({
+    provisional = decodePreflightReceipt({
       schemaVersion: 1,
       testedCommit: sourceBefore.testedCommit,
       sourceClean: true,
@@ -305,9 +306,9 @@ export async function runPreflight(
       throw new Error("Research preflight source commit changed during verification.");
     }
     assertPreflightSandbox(provisional, await dependencies.inspectSandbox(repositoryRoot));
-    await publishPreflightReceipt(destination, provisional);
-    return provisional;
   } finally {
     await removeTemporaryTree(temporaryRoot);
   }
+  await publishPreflightReceipt(destination, provisional);
+  return provisional;
 }

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -192,6 +192,15 @@ describe("research preflight", () => {
           status: "scored",
           sandbox: { ...sandbox, sourceDigest: "d".repeat(64) },
         }),
+      }),
+    ],
+    [
+      "temporary fixture cleanup failure",
+      dependencies({
+        runFixture: async (_root, output) => {
+          await rm(dirname(output), { recursive: true, force: true });
+          return { status: "scored", sandbox };
+        },
       }),
     ],
   ])("removes stale authorization after %s", async (_name, injected) => {
