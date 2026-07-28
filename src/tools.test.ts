@@ -21,14 +21,19 @@ async function toolFixture() {
     writeFile(reference, "reference\n"),
   ]);
   const sandbox = new FakeCommandSandbox();
-  const checkerRequests: string[] = [];
-  const tools = createAgentTools({
-    agentId: "agent-1",
+  const lease = await sandbox.openAgentLease({
+    profile: "agent",
     workspacePath: workspace,
     evidencePath: evidence,
     referenceCorpusPath: reference,
     sharedGitPath: sharedGit,
-    sandbox,
+    timeoutMs: 1_000,
+  });
+  const checkerRequests: string[] = [];
+  const tools = createAgentTools({
+    agentId: "agent-1",
+    workspacePath: workspace,
+    sandbox: lease,
     activity: new ActivityBus(),
     getActivityCursor: () => 0,
     checker: async ({ candidatePath }) => {

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   SandboxInfrastructureError,
-  type AgentSandboxCommand,
+  type AgentSandboxLeaseRequest,
   type SandboxIdentity,
 } from "./contracts.js";
 import { dockerHostEnvironment, DockerCommandSandbox } from "./container.js";
@@ -22,7 +22,7 @@ const temporaryRoots: string[] = [];
 interface DockerFixture {
   executable: string;
   log: string;
-  request: AgentSandboxCommand;
+  request: AgentSandboxLeaseRequest;
 }
 
 async function dockerFixture(mode: string): Promise<DockerFixture> {
@@ -33,6 +33,7 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
   const sharedGit = join(root, "shared.git");
   const reference = join(root, "reference");
   const log = join(root, "docker.log");
+  const interrupted = join(root, "interrupted");
   const executable = join(root, "docker");
   await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(sharedGit), mkdir(reference)]);
   await writeFile(
@@ -42,15 +43,21 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       `printf '%s\\n' "$1" >> ${JSON.stringify(log)}`,
       `mode=${JSON.stringify(mode)}`,
       'if [ "$1" = "create" ] && [ "$mode" = "stalled-create" ]; then sleep 5; fi',
-      'if [ "$1" = "start" ]; then',
+      `if [ "$1" = "exec" ] && [ "$mode" = "interrupt-once" ] && [ ! -e ${JSON.stringify(interrupted)} ]; then`,
+      `  touch ${JSON.stringify(interrupted)}`,
+      '  printf "Cannot connect to the Docker daemon" >&2',
+      "  exit 125",
+      "fi",
+      'if [ "$1" = "exec" ]; then',
       '  printf "command output"',
       '  printf "command diagnostic" >&2',
+      "  exit 7",
       "fi",
       'if [ "$1" = "inspect" ]; then',
       '  if [ "$mode" = "invalid-inspect" ]; then',
       '    printf "not json"',
       "  else",
-      '    printf \'[{"State":{"Status":"exited","ExitCode":7,"OOMKilled":false,"Error":""}}]\'',
+      '    printf \'[{"State":{"Status":"running","ExitCode":0,"OOMKilled":false,"Error":""}}]\'',
       "  fi",
       "fi",
       'if [ "$1" = "rm" ] && [ "$mode" = "cleanup-failure" ]; then',
@@ -66,7 +73,6 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
     log,
     request: {
       profile: "agent",
-      command: "true",
       timeoutMs: 1_000,
       workspacePath: workspace,
       evidencePath: evidence,
@@ -139,30 +145,42 @@ describe("sandbox container lifecycle", () => {
     expect(environment).not.toHaveProperty("PALIMPSEST_SENTINEL");
   });
 
-  it("returns the inspected command exit and always removes the container", async () => {
+  it("executes multiple commands through one lease and removes it only when closed", async () => {
     const fixture = await dockerFixture("success");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const lease = await sandbox.openAgentLease(fixture.request);
 
-    await expect(sandbox.execute(fixture.request)).resolves.toEqual({
+    await expect(lease.execute({ command: "true", timeoutMs: 1_000 })).resolves.toEqual({
       exitCode: 7,
       stdout: "command output",
       stderr: "command diagnostic",
       timedOut: false,
       outputExceeded: false,
+      sandboxGeneration: 1,
+    });
+    await expect(lease.execute({ command: "false", timeoutMs: 1_000 })).resolves.toMatchObject({
+      exitCode: 7,
+      sandboxGeneration: 1,
     });
     expect((await readFile(fixture.log, "utf8")).trim().split("\n")).toEqual([
       "create",
       "start",
       "inspect",
-      "rm",
+      "exec",
+      "inspect",
+      "exec",
+      "inspect",
     ]);
+
+    await lease.close();
+    expect((await readFile(fixture.log, "utf8")).trim().split("\n").at(-1)).toBe("rm");
   });
 
-  it("classifies invalid container inspection as infrastructure failure and still cleans up", async () => {
+  it("classifies invalid lease inspection as infrastructure failure and cleans up", async () => {
     const fixture = await dockerFixture("invalid-inspect");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
 
-    await expect(sandbox.execute(fixture.request)).rejects.toBeInstanceOf(
+    await expect(sandbox.openAgentLease(fixture.request)).rejects.toBeInstanceOf(
       SandboxInfrastructureError,
     );
     expect((await readFile(fixture.log, "utf8")).trim().split("\n")).toEqual([
@@ -173,35 +191,69 @@ describe("sandbox container lifecycle", () => {
     ]);
   });
 
-  it("surfaces cleanup failure instead of returning a success-shaped result", async () => {
-    const fixture = await dockerFixture("cleanup-failure");
+  it("replaces an interrupted lease without replaying the command", async () => {
+    const fixture = await dockerFixture("interrupt-once");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const lease = await sandbox.openAgentLease(fixture.request);
 
-    await expect(sandbox.execute(fixture.request)).rejects.toThrow(
-      /Docker cleanup failed: cleanup unavailable/,
-    );
+    await expect(
+      lease.execute({ command: "touch durable", timeoutMs: 1_000 }),
+    ).resolves.toMatchObject({
+      exitCode: null,
+      indeterminate: true,
+      sandboxGeneration: 2,
+      stderr: expect.stringContaining("was not replayed"),
+    });
+    expect(
+      (await readFile(fixture.log, "utf8"))
+        .trim()
+        .split("\n")
+        .filter((entry) => entry === "exec"),
+    ).toHaveLength(1);
+
+    await expect(
+      lease.execute({ command: "test -e durable", timeoutMs: 1_000 }),
+    ).resolves.toMatchObject({
+      exitCode: 7,
+      sandboxGeneration: 2,
+    });
+    await lease.close();
   });
 
-  it("applies the command deadline while Docker creates the container and still cleans up", async () => {
+  it("surfaces lease cleanup failure instead of claiming completion", async () => {
+    const fixture = await dockerFixture("cleanup-failure");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const lease = await sandbox.openAgentLease(fixture.request);
+
+    await expect(lease.close()).rejects.toThrow(/Docker cleanup failed: cleanup unavailable/);
+    await expect(lease.close()).rejects.toThrow(/Docker cleanup failed: cleanup unavailable/);
+    expect(
+      (await readFile(fixture.log, "utf8"))
+        .trim()
+        .split("\n")
+        .filter((operation) => operation === "rm"),
+    ).toHaveLength(2);
+  });
+
+  it("bounds agent lease creation and cleans up a late container", async () => {
     const fixture = await dockerFixture("stalled-create");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
 
-    await expect(sandbox.execute(fixture.request)).resolves.toMatchObject({
-      exitCode: null,
-      timedOut: true,
-      outputExceeded: false,
-    });
+    await expect(
+      sandbox.openAgentLease({ ...fixture.request, timeoutMs: 30 }),
+    ).rejects.toBeInstanceOf(SandboxInfrastructureError);
     const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
-    expect(operations[0]).toBe("create");
-    expect(operations.slice(1).length).toBeGreaterThan(0);
-    expect(new Set(operations.slice(1))).toEqual(new Set(["rm"]));
-  });
+    expect(operations).toContain("rm");
+    expect(operations.every((operation) => operation === "create" || operation === "rm")).toBe(
+      true,
+    );
+  }, 10_000);
 
-  it("cancels Docker container creation and still cleans up", async () => {
+  it("cancels agent lease creation and still cleans up", async () => {
     const fixture = await dockerFixture("stalled-create");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
     const controller = new AbortController();
-    const execution = sandbox.execute({
+    const opening = sandbox.openAgentLease({
       ...fixture.request,
       timeoutMs: 10_000,
       signal: controller.signal,
@@ -209,10 +261,10 @@ describe("sandbox container lifecycle", () => {
     await waitForCreate(fixture.log);
     controller.abort();
 
-    await expect(execution).rejects.toMatchObject({ name: "AbortError" });
+    await expect(opening).rejects.toMatchObject({ name: "AbortError" });
     const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
     expect(operations[0]).toBe("create");
     expect(operations.slice(1).length).toBeGreaterThan(0);
     expect(new Set(operations.slice(1))).toEqual(new Set(["rm"]));
-  });
+  }, 10_000);
 });

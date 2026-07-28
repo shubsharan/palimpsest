@@ -97,10 +97,11 @@ describe("run coordinator", () => {
       ],
     });
 
+    const sandbox = new FakeCommandSandbox();
     const result = await runAttempt({
       config,
       adapter,
-      sandbox: new FakeCommandSandbox(),
+      sandbox,
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
       clock: systemMonotonicClock,
     });
@@ -115,6 +116,9 @@ describe("run coordinator", () => {
       "done",
     );
     expect(result.frozen.workspaces).toHaveLength(3);
+    expect(sandbox.leases).toHaveLength(3);
+    expect(sandbox.closedLeases).toBe(3);
+    expect(new Set(sandbox.leases.map((request) => request.profile))).toEqual(new Set(["agent"]));
   });
 
   it("publishes each agent's first private stage before opening its model session", async () => {

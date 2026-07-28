@@ -27,9 +27,9 @@ flowchart LR
     BUILD --> STREAMS[("Three private six-stage streams")]
     BUILD --> FULL["Complete ciphertext"]
 
-    RUN["Run lifecycle"] --> A1["Persistent agent 1"]
-    RUN --> A2["Persistent agent 2"]
-    RUN --> A3["Persistent agent 3"]
+    RUN["Run lifecycle"] --> A1["Agent 1 session and sandbox lease"]
+    RUN --> A2["Agent 2 session and sandbox lease"]
+    RUN --> A3["Agent 3 session and sandbox lease"]
     STREAMS --> RUN
 
     A1 <--> GIT[("Ordinary shared Git")]
@@ -98,17 +98,19 @@ Private evidence is separate from the Git checkout to reduce accidental commits.
 
 ### Command Sandbox
 
-Model-authored shell commands run in short-lived Linux containers rather than directly on the host. The runner supplies one fixed, role-specific view:
+Model-authored shell commands run in attempt-scoped Linux sandbox leases rather than directly on the host. The runner creates one lease for each agent, routes every local command from that agent through the same healthy lease, and supplies one fixed, role-specific view:
 
 - `/workspace` is the calling agent's persistent worktree and is read-write;
 - `/evidence` contains only that agent's released private stages and is read-only;
 - `/reference` is the target-excluded reference corpus and is read-only;
 - `/git/shared.git` is the ordinary shared bare repository and is read-write; and
-- `/tmp` is disposable command-local storage.
+- `/tmp` is private lease-local storage that is discarded with the lease.
 
 Containers receive an allowlisted non-secret environment, no public network, a read-only root, no added capabilities, no new privileges, and fixed host-safety limits. The runner executes an inspected image ID whose source label matches the checked-in sandbox definition. The image identity and effective limits are retained as operational attempt metadata; they do not make a run valid, change a score, or support an adversarial-containment claim.
 
-The sandbox limits what host resources a command can see without prescribing what the agent does inside its declared surfaces. One absolute command deadline covers container creation and attached execution; interrupted creation uses bounded name-based cleanup retries to catch late daemon materialization. Ordinary Git behavior, raw sharing, failed commands, timeouts, and resource termination remain observable model outcomes. Failure to inspect, launch, or clean up the sandbox is an infrastructure failure.
+The sandbox limits what host resources a command can see without prescribing what the agent does inside its declared surfaces. Lease creation and every command have absolute deadlines. A nonzero command leaves a healthy lease available; timeout, cancellation, output overflow, or resource termination abandons the lease so the command cannot continue in the background. A later command may receive a replacement lease over the same host-backed workspace, evidence, reference corpus, and Git repository.
+
+If the sandbox runtime interrupts an in-flight command and returns before the command deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect its persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. Lease generations and recovered indeterminate commands remain visible in the attempt trace.
 
 ## Prompt Contract
 
@@ -254,7 +256,7 @@ Verification is proportional to the active claims:
 - Repository-boundary tests derive active tracked and nonignored paths from Git, so ignored caches, empty legacy directories, and preserved historical evidence cannot change the result.
 - Python unit and property tests cover six-stage geometry, shared partial re-key invariants, immutable earlier evidence, checker non-disclosure, unequal-length scoring, and overlap observation.
 - TypeScript tests cover prompt neutrality, exactly three independent sessions, voluntary completion, waiting and wake behavior, ordinary unmetered Git, token and wall-time cutoffs, sandbox mounts and path containment, resumable trace chronology, reachable Git history, freeze, reviewer selection, and evaluation statuses.
-- Docker-backed fixtures prove declared workspace and Git access while host, peer, oracle, credential, and public-network probes fail, and prove that no command container survives success, nonzero exit, timeout, cancellation, or output overflow.
+- Docker-backed fixtures prove declared workspace and Git access while host, peer, oracle, credential, and public-network probes fail; prove that ordinary commands reuse one agent lease; and prove that timeout, cancellation, output overflow, lease close, and grading remove their owned containers.
 - Path-containment tests prove absolute, parent-relative, missing, non-regular, and symbolic-link escape outputs fail explicitly.
 - Evaluator tests cover reviewer selection ordering, `scored`, `not-runnable`, `no-output`, and `execution-error`; session and Git tests cover voluntary completion, waiting, cutoffs, ordinary branches, and peer-visible ref changes.
 - One fresh offline build-run-evaluate smoke test proves the active path without an external model call.

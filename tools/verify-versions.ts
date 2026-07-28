@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export const EXPECTED_TOOL_VERSIONS = {
-  docker: "29.2.1",
+  docker: "29.6.2",
   git: "2.48.1",
   node: "26.5.0",
   pnpm: "10.14.0",

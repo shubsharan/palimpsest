@@ -12,7 +12,12 @@ import {
   SandboxInfrastructureError,
   type SandboxIdentity,
 } from "./contracts.js";
-import { buildDockerCreateArguments, validateSandboxImageInspection } from "./docker.js";
+import {
+  buildAgentDockerCreateArguments,
+  buildDockerCreateArguments,
+  buildDockerExecArguments,
+  validateSandboxImageInspection,
+} from "./docker.js";
 
 const TEST_IDENTITY: SandboxIdentity = {
   imageTag: "palimpsest-puzzle-sandbox:0.1.0",
@@ -66,10 +71,9 @@ describe("sandbox Docker image and arguments", () => {
     const sharedGit = join(root, "shared.git");
     const reference = join(root, "reference");
     await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(sharedGit), mkdir(reference)]);
-    const args = await buildDockerCreateArguments(
+    const args = await buildAgentDockerCreateArguments(
       {
         profile: "agent",
-        command: "git status",
         timeoutMs: 1_000,
         workspacePath: workspace,
         evidencePath: evidence,
@@ -103,7 +107,15 @@ describe("sandbox Docker image and arguments", () => {
       "GIT_TERMINAL_PROMPT=0",
     ]);
     expect(joined).not.toMatch(/OPENAI_API_KEY|process\.env/);
-    expect(args.at(-1)).toBe("git status");
+    expect(args.at(-1)).toBe("while :; do sleep 3600; done");
+
+    const execArgs = buildDockerExecArguments(
+      { command: "git status", timeoutMs: 1_000 },
+      "palimpsest-agent-test",
+      { uid: 501, gid: 20 },
+    );
+    expect(execArgs.slice(0, 2)).toEqual(["exec", "--workdir"]);
+    expect(execArgs.at(-1)).toBe("git status");
   });
 
   it("gives evaluation only ciphertext, frozen Git, and a contained output path", async () => {

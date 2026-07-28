@@ -17,6 +17,7 @@ import {
   freezeGitEnvironment,
   GitActivityMonitor,
   type FrozenGitEnvironment,
+  type GitEnvironment,
 } from "./git.js";
 import { AGENT_IDS, type AgentId, type ModelAdapter } from "./model.js";
 import { observeOverlap } from "./overlap.js";
@@ -25,7 +26,12 @@ import { createOpenAIModelAdapter } from "./provider.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
-import { SANDBOX_POLICY, type CommandSandbox, type SandboxIdentity } from "./sandbox/contracts.js";
+import {
+  SANDBOX_POLICY,
+  type AgentSandboxLease,
+  type CommandSandbox,
+  type SandboxIdentity,
+} from "./sandbox/contracts.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
@@ -171,6 +177,36 @@ async function publishStage(
   );
 }
 
+async function openAgentLeases(options: {
+  sandbox: CommandSandbox;
+  git: GitEnvironment;
+  evidencePaths: Record<AgentId, string>;
+  referenceCorpusPath: string;
+}): Promise<Record<AgentId, AgentSandboxLease>> {
+  const settled = await Promise.allSettled(
+    AGENT_IDS.map(async (agentId) => {
+      const workspace = options.git.workspaces.find((candidate) => candidate.agentId === agentId);
+      if (!workspace) throw new Error(`Git workspace is missing for ${agentId}.`);
+      const lease = await options.sandbox.openAgentLease({
+        profile: "agent",
+        workspacePath: workspace.path,
+        evidencePath: options.evidencePaths[agentId],
+        referenceCorpusPath: options.referenceCorpusPath,
+        sharedGitPath: options.git.barePath,
+        timeoutMs: 30_000,
+      });
+      return [agentId, lease] as const;
+    }),
+  );
+  const opened = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  const failed = settled.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") {
+    await Promise.all(opened.map(([, lease]) => lease.close()));
+    throw failed.reason;
+  }
+  return Object.fromEntries(opened) as Record<AgentId, AgentSandboxLease>;
+}
+
 export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
   const config = validateAttemptConfig(options.config);
   await mkdir(config.artifactRoot, { recursive: false });
@@ -219,6 +255,12 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     number
   >;
   for (const agentId of AGENT_IDS) cursors[agentId] = activity.latestSequence;
+  const sandboxLeases = await openAgentLeases({
+    sandbox: options.sandbox,
+    git,
+    evidencePaths,
+    referenceCorpusPath: config.referenceCorpusPath,
+  });
 
   const globalController = new AbortController();
   const scheduleController = new AbortController();
@@ -247,10 +289,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     const tools = createAgentTools({
       agentId,
       workspacePath: workspace.path,
-      evidencePath: evidencePaths[agentId],
-      referenceCorpusPath: config.referenceCorpusPath,
-      sharedGitPath: git.barePath,
-      sandbox: options.sandbox,
+      sandbox: sandboxLeases[agentId],
       activity,
       checker: options.checker,
       getReleasedStages: () => [...releasedStages[agentId]].sort((left, right) => left - right),
@@ -282,6 +321,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     globalController.signal.removeEventListener("abort", stopScheduleAtWallTime);
     await Promise.all([stagePublishing, wallTime]);
     await monitor.stop();
+    await Promise.all(AGENT_IDS.map((agentId) => sandboxLeases[agentId].close()));
   }
   activity.end(globalController.signal.aborted ? "time-exhausted" : "sessions-ended");
   await observationLog.append("attempt.sessions-ended", {

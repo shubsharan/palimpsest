@@ -202,6 +202,60 @@ describe("model session lifecycle", () => {
     expect(cancel).toHaveBeenCalledWith("time-exhausted");
   });
 
+  it("traces a recovered indeterminate command and lets the model continue", async () => {
+    const turns: ModelTurn[] = [
+      {
+        toolCalls: [{ id: "command-1", name: "run_command", arguments: { command: "work" } }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      },
+      {
+        toolCalls: [],
+        finalResponse: "inspected and recovered",
+        usage: { inputTokens: 1, outputTokens: 1 },
+      },
+    ];
+    const observe = vi.fn();
+    const tools: AgentToolSet = {
+      definitions: [],
+      execute: async () => ({
+        exitCode: null,
+        stdout: "",
+        stderr: "The interrupted command was not replayed.",
+        timedOut: false,
+        outputExceeded: false,
+        indeterminate: true,
+        sandboxGeneration: 2,
+      }),
+    };
+
+    await expect(
+      runAgentSession({
+        agentId: "agent-1",
+        prompt: "solve",
+        adapter: adapterWith({
+          async respond() {
+            const turn = turns.shift();
+            if (turn === undefined) throw new Error("Unexpected model turn.");
+            return turn;
+          },
+        }),
+        tools,
+        tokenBudget: 20,
+        signal: new AbortController().signal,
+        getActivityCursor: () => 0,
+        observe,
+      }),
+    ).resolves.toMatchObject({
+      state: "finished",
+      finalResponse: "inspected and recovered",
+    });
+    expect(observe).toHaveBeenCalledWith(
+      "sandbox.recovered",
+      { callId: "command-1", sandboxGeneration: 2 },
+      "agent-1",
+    );
+  });
+
   it("classifies model-session construction failures as infrastructure errors", async () => {
     const tools = createTools();
     const adapter: ModelAdapter = {

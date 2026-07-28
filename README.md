@@ -10,9 +10,10 @@ The runner observes the resulting work. It does not assign roles, impose rounds,
 - [Architecture](docs/architecture.md): active runtime, sandbox, trace, overlap, and failure semantics.
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
 - [Feature 009 quickstart](specs/009-refactor-puzzle-architecture/quickstart.md): current setup, verification, and offline acceptance flow.
+- [Feature 010 specification](specs/010-agent-sandbox-lifecycle/spec.md): attempt-scoped agent sandbox and recovery behavior.
 - [Operator CLI contract](specs/009-refactor-puzzle-architecture/contracts/operator-cli.md): required flags, defaults, and result compatibility.
 
-Feature 009 is the single active specification. Superseded designs and generated experimental evidence remain recoverable from Git history rather than occupying the working tree.
+Feature 010 is the active specification; Feature 009 remains the implemented architecture baseline. Superseded designs and generated experimental evidence remain recoverable from Git history rather than occupying the working tree.
 
 ## Setup
 
@@ -26,7 +27,7 @@ pnpm puzzle:sandbox:build
 
 The first bootstrap and sandbox image build may use the network. Once the uv cache is populated, verification uses the locked environment offline.
 
-The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model API calls remain on the host; provider credentials are never mounted into command containers.
+The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model API calls remain on the host; provider credentials are never mounted into either sandbox.
 
 ## Verify
 

@@ -181,6 +181,17 @@ export async function runAgentSession(options: {
         await observe("tool.error", { id: call.id, name: call.name, error: detail });
       }
       if (
+        typeof output === "object" &&
+        output !== null &&
+        "indeterminate" in output &&
+        output.indeterminate === true
+      ) {
+        await observe("sandbox.recovered", {
+          callId: call.id,
+          sandboxGeneration: "sandboxGeneration" in output ? output.sandboxGeneration : undefined,
+        });
+      }
+      if (
         waiting &&
         typeof output === "object" &&
         output !== null &&

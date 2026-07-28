@@ -1,5 +1,8 @@
 import {
+  type AgentSandboxLease,
+  type AgentSandboxLeaseRequest,
   type CommandSandbox,
+  type EvaluationSandboxCommand,
   type SandboxCommand,
   type SandboxCommandResult,
   type SandboxIdentity,
@@ -23,6 +26,8 @@ const SUCCESS: SandboxCommandResult = {
 export class FakeCommandSandbox implements CommandSandbox {
   readonly identity = TEST_SANDBOX_IDENTITY;
   readonly requests: SandboxCommand[] = [];
+  readonly leases: AgentSandboxLeaseRequest[] = [];
+  closedLeases = 0;
   readonly #execute: (request: SandboxCommand) => Promise<SandboxCommandResult>;
 
   constructor(
@@ -31,7 +36,29 @@ export class FakeCommandSandbox implements CommandSandbox {
     this.#execute = execute;
   }
 
-  async execute(request: SandboxCommand): Promise<SandboxCommandResult> {
+  async openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease> {
+    this.leases.push(request);
+    const mounts = {
+      profile: request.profile,
+      workspacePath: request.workspacePath,
+      evidencePath: request.evidencePath,
+      referenceCorpusPath: request.referenceCorpusPath,
+      sharedGitPath: request.sharedGitPath,
+    } as const;
+    return {
+      identity: this.identity,
+      execute: async (command) => {
+        const fullRequest = { ...mounts, ...command };
+        this.requests.push(fullRequest);
+        return this.#execute(fullRequest);
+      },
+      close: async () => {
+        this.closedLeases += 1;
+      },
+    };
+  }
+
+  async execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult> {
     this.requests.push(request);
     return this.#execute(request);
   }

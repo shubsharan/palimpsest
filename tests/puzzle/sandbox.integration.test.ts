@@ -35,6 +35,17 @@ async function assertNoSandboxContainers(labelValue: string): Promise<void> {
   expect(stdout.trim()).toBe("");
 }
 
+async function sandboxContainerCount(labelValue: string): Promise<number> {
+  const { stdout } = await execFileAsync("docker", [
+    "ps",
+    "--all",
+    "--quiet",
+    "--filter",
+    `label=${SANDBOX_CONTAINER_LABEL}=${labelValue}`,
+  ]);
+  return stdout.trim() === "" ? 0 : stdout.trim().split("\n").length;
+}
+
 async function agentFixture() {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-integration-"));
   const git = await createGitEnvironment(join(root, "git"));
@@ -78,14 +89,21 @@ describe("real Docker command containment", () => {
     const fixture = await agentFixture();
     process.env.OPENAI_API_KEY = "host-provider-secret";
     const sandbox = await createDockerCommandSandbox();
+    const lease = await sandbox.openAgentLease({
+      profile: "agent",
+      timeoutMs: 30_000,
+      workspacePath: fixture.workspace,
+      evidencePath: fixture.evidence,
+      referenceCorpusPath: fixture.reference,
+      sharedGitPath: fixture.git.barePath,
+    });
     expect(sandbox.identity).toEqual({
       imageTag: SANDBOX_IMAGE_TAG,
       imageId: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       sourceDigest: await sandboxDockerfileDigest(),
       profileVersion: 1,
     });
-    const result = await sandbox.execute({
-      profile: "agent",
+    const result = await lease.execute({
       command: [
         'test "$(cat /evidence/stage.txt)" = private-stage',
         'test "$(cat /reference/reference.txt)" = reference-corpus',
@@ -100,10 +118,6 @@ describe("real Docker command containment", () => {
         "git push origin HEAD:refs/heads/team/result",
       ].join(" && "),
       timeoutMs: 30_000,
-      workspacePath: fixture.workspace,
-      evidencePath: fixture.evidence,
-      referenceCorpusPath: fixture.reference,
-      sharedGitPath: fixture.git.barePath,
     });
 
     expect(result).toMatchObject({
@@ -112,6 +126,8 @@ describe("real Docker command containment", () => {
       outputExceeded: false,
     });
     expect(await listRemoteRefs(fixture.git.barePath)).toHaveProperty("refs/heads/team/result");
+    expect(await sandboxContainerCount(sandbox.containerLabelValue)).toBe(1);
+    await lease.close();
     await assertNoSandboxContainers(sandbox.containerLabelValue);
   }, 60_000);
 
@@ -174,27 +190,27 @@ describe("real Docker command containment", () => {
   it("force-removes containers after failure, timeout, cancellation, and output overflow", async () => {
     const fixture = await agentFixture();
     const sandbox = await createDockerCommandSandbox();
-    const base = {
+    const lease = await sandbox.openAgentLease({
       profile: "agent" as const,
+      timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
       referenceCorpusPath: fixture.reference,
       sharedGitPath: fixture.git.barePath,
-    };
+    });
 
-    await expect(
-      sandbox.execute({ ...base, command: "exit 7", timeoutMs: 10_000 }),
-    ).resolves.toMatchObject({ exitCode: 7 });
-    await assertNoSandboxContainers(sandbox.containerLabelValue);
+    await expect(lease.execute({ command: "exit 7", timeoutMs: 10_000 })).resolves.toMatchObject({
+      exitCode: 7,
+    });
+    expect(await sandboxContainerCount(sandbox.containerLabelValue)).toBe(1);
 
-    await expect(
-      sandbox.execute({ ...base, command: "sleep 5", timeoutMs: 30 }),
-    ).resolves.toMatchObject({ timedOut: true });
+    await expect(lease.execute({ command: "sleep 5", timeoutMs: 30 })).resolves.toMatchObject({
+      timedOut: true,
+    });
     await assertNoSandboxContainers(sandbox.containerLabelValue);
 
     const controller = new AbortController();
-    const cancelled = sandbox.execute({
-      ...base,
+    const cancelled = lease.execute({
       command: "sleep 5",
       timeoutMs: 10_000,
       signal: controller.signal,
@@ -204,8 +220,7 @@ describe("real Docker command containment", () => {
     await assertNoSandboxContainers(sandbox.containerLabelValue);
 
     await expect(
-      sandbox.execute({
-        ...base,
+      lease.execute({
         command: `python3 -c "print('x' * 5000000)"`,
         timeoutMs: 10_000,
       }),
@@ -214,5 +229,6 @@ describe("real Docker command containment", () => {
       stderr: expect.stringContaining("4 MiB"),
     });
     await assertNoSandboxContainers(sandbox.containerLabelValue);
+    await lease.close();
   }, 30_000);
 });
