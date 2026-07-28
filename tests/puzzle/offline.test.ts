@@ -69,6 +69,9 @@ describe("offline behavior-neutral runner", () => {
     await access(join(result.run.attemptRoot, "trace.meta.json"));
     await access(join(result.run.attemptRoot, "overlap.json"));
     await access(join(result.run.attemptRoot, "frozen", "shared.git"));
+    await expect(access(join(result.run.attemptRoot, "preflight.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
 
     const buildManifest = decodeBuildManifest(
       await readJson(join(result.build.buildPath, "puzzle-build.json")),

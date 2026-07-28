@@ -9,11 +9,12 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Proposal](docs/proposal.md): puzzle, agent experience, evaluation, and claim boundary.
 - [Architecture](docs/architecture.md): configuration, runtime, artifacts, and failure semantics.
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
+- [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
 - [Feature 011 quickstart](specs/011-configurable-research-runs/quickstart.md): current setup and acceptance flow.
 - [Experiment schema](experiments/schema.json): strict version-1 manifest format.
 - [Baseline experiment](experiments/config.yaml): the current three-agent research condition.
 
-Feature 011 is the active specification. Feature 009 remains in the repository as the implemented behavior-neutral foundation that Feature 011 generalizes.
+Feature 011 defines the configurable research runner. Feature 012 is authoritative for verification and experiment authorization. Feature 009 remains the implemented behavior-neutral foundation.
 
 ## Setup
 
@@ -22,10 +23,9 @@ Use the tool versions pinned in `.tool-versions` and start Docker Engine or Dock
 ```bash
 pnpm install --frozen-lockfile
 uv sync --frozen --project python
-pnpm puzzle:sandbox:build
 ```
 
-The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model calls happen on the host; provider credentials are never mounted into command containers.
+The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model calls happen on the host; provider credentials are never mounted into command containers.
 
 ## Configure A Run
 
@@ -81,21 +81,25 @@ pnpm puzzle:evaluate -- \
 
 The runner does not prescribe a solver file, command, workspace, role, or collaboration pattern.
 
-## Verify
+## Development Check
 
 ```bash
-pnpm verify
-git diff --check
+pnpm check
 ```
 
-Verification makes no live provider request. The deterministic end-to-end path is:
+The advisory Linux workflow runs this command for pull requests and pushes to `main`, then builds the sandbox image. It catches locked-dependency, formatting, lint, compile, and Dockerfile build failures without running unit suites, real-container behavior tests, or the offline fixture. It is intentionally not a required branch-protection check.
+
+## Research Preflight
+
+Before spending money on a live experiment or producing findings for publication, commit the exact source, leave the worktree clean, start Docker, and run:
 
 ```bash
-output="$(mktemp -d)/palimpsest-offline"
-pnpm puzzle:offline -- --output "$output"
+pnpm preflight
 ```
 
-Generated runs belong under the ignored `artifacts/` directory.
+Preflight rebuilds the agent sandbox, runs the complete verification suite including real-container tests, and executes a fresh deterministic build-run-evaluate fixture without an external model call. Only then does it write `artifacts/preflight.json`, binding the tested commit to the immutable sandbox identity. Any failed rerun removes the old receipt.
+
+Generated runs belong under the ignored `artifacts/` directory. Provider-backed runs require the current clean checkout and sandbox to match `artifacts/preflight.json` before any model session begins. The matching receipt is copied into each attempt before its sessions start, while `attempt.json` independently records the sandbox actually used.
 
 ## Scope
 

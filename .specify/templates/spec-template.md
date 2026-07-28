@@ -87,6 +87,8 @@
 
 **Infrastructure Failures**: [State which failures prevent execution or scoring without reclassifying model behavior]
 
+**Verification Boundary**: [State which checks are advisory development feedback, which preflight authorizes paid or findings-bearing live research, and which tested source/sandbox provenance is retained]
+
 **Out-of-Scope Claims**: [State which reasoning, collaboration, security, reproducibility, or benchmark claims are not supported]
 
 ## Requirements *(mandatory)*

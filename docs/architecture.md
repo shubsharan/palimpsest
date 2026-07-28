@@ -117,7 +117,7 @@ Optional post-freeze overlap observation reports obvious exact or normalized raw
 All commands dispatch through `src/cli.ts` and emit one JSON object on success:
 
 ```bash
-pnpm puzzle:sandbox:build
+pnpm preflight
 pnpm puzzle:build -- --config experiments/config.yaml --output artifacts/build
 pnpm puzzle:run -- --config experiments/config.yaml --run gpt-only \
   --build artifacts/build --output artifacts/attempt
@@ -136,17 +136,14 @@ Configuration, build, adapter construction, provider execution, sandbox, Git, tr
 
 The architecture preserves the strongest durable boundary available: publication of a complete attempt before optional observation, and publication of a complete experiment summary after each durable attempt.
 
+`pnpm preflight` is the authorization boundary for provider-backed work. It requires a clean committed checkout, rebuilds the sandbox, runs full verification plus a fresh offline fixture, and writes `artifacts/preflight.json` only on success. A provider-backed attempt must match that receipt before model sessions begin and copies it into the attempt root first.
+
 ## Verification
 
 The repository verifies strict config decoding, mocked provider turns and credential scrubbing, dynamic 2/3/5-agent puzzle geometry, zero/one/multiple re-keys, concurrent sessions, Git workspaces, stage scheduling, trace and artifact decoding, attempt durability, sequential experiment indexing, reviewer-selected evaluation, and Docker containment.
 
 Canonical acceptance is:
 
-```bash
-pnpm verify
-git diff --check
-output="$(mktemp -d)/palimpsest-offline"
-pnpm puzzle:offline -- --output "$output"
-```
+`pnpm check` plus a sandbox image build provides advisory mechanical feedback for pull requests and pushes to `main`; it checks locked dependencies, formatting, lint, compilation, and the Dockerfile without running test suites, and is not a required merge gate. `pnpm preflight` is the canonical consequential-research check: it runs the full `pnpm verify` suite, rebuilds and identifies the agent-visible sandbox, executes a fresh scored offline fixture, and records the tested commit. Publication review uses the copied attempt receipt and `attempt.json.sandbox` to identify the verified runner and experimental environment.
 
 No verification command requires provider credentials or a billable model request.

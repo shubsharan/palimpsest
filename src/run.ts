@@ -26,6 +26,12 @@ import {
   type ModelBinding,
 } from "./model.js";
 import { observeOverlap } from "./overlap.js";
+import {
+  assertPreflightSandbox,
+  publishPreflightReceipt,
+  readCurrentPreflight,
+  type PreflightReceipt,
+} from "./preflight.js";
 import { buildAgentPrompt } from "./prompt.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
@@ -82,6 +88,7 @@ export interface RunAttemptOptions {
   sandbox: CommandSandbox;
   clock: MonotonicClock;
   gitPollIntervalMs?: number;
+  preflight?: PreflightReceipt;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -265,6 +272,9 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   const config = validateAttemptConfig(options.config);
   const agents = validateAgentRuntimes(options.agents, config.agentIds);
   await mkdir(config.artifactRoot, { recursive: false });
+  if (options.preflight) {
+    await publishPreflightReceipt(join(config.artifactRoot, "preflight.json"), options.preflight);
+  }
   const git = await createGitEnvironment(join(config.artifactRoot, "git"), config.agentIds);
   const evidencePaths = Object.fromEntries(
     await Promise.all(
@@ -504,6 +514,10 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const root = resolve(options.root);
   const buildRoot = resolve(options.buildRoot);
   const output = resolve(options.output);
+  const usesProvider = Object.values(options.agents).some(
+    (runtime) => runtime.model.provider !== "fixture",
+  );
+  const preflight = usesProvider ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
   const agentStages = Object.fromEntries(
@@ -533,12 +547,14 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     stageIntervalMs: manifest.stageIntervalMs,
   };
   const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
+  if (preflight) assertPreflightSandbox(preflight, sandbox.identity);
   const result = await runAttempt({
     config,
     agents: options.agents,
     checker: createChecker(root, buildRoot),
     sandbox,
     clock: options.clock ?? systemMonotonicClock,
+    ...(preflight === undefined ? {} : { preflight }),
   });
   const overlap = await finalizeAttempt({
     attemptRoot: output,

@@ -108,6 +108,11 @@ describe("operator CLI contract", () => {
     }
   });
 
+  it("routes the explicit research preflight through the root CLI", async () => {
+    const scripts = await packageScripts();
+    expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
+  });
+
   it("accepts the provider-neutral build, run, experiment, and evaluate flag names", () => {
     expect(
       parseFlags([
