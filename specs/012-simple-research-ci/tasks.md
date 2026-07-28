@@ -92,9 +92,9 @@
 - [x] T018 [P] Update advisory CI, preflight, live operator flow, and publication provenance in `README.md`, `docs/architecture.md`, and `docs/roadmap.md`
 - [x] T019 [P] Mark Feature 012 as the active verification authority without rewriting completed Feature 009 implementation history in `README.md` and `specs/009-refactor-puzzle-architecture/quickstart.md`
 - [x] T020 Run focused TypeScript/Python tests, `pnpm check`, full `pnpm verify`, formatting, linting, type checking, and `git diff --check`
-- [ ] T021 Commit the exact feature source, run real clean-checkout `pnpm preflight`, and verify the canonical receipt commit plus sandbox equal the checkout and fresh fixture artifacts
+- [x] T021 Commit the exact feature source, run real clean-checkout `pnpm preflight`, and verify the canonical receipt commit plus sandbox equal the checkout and fresh fixture artifacts
 - [x] T022 Remove only the required `verify` status checks from live `main` branch protection, then re-query protection contexts and rulesets to prove zero required status gates remain
-- [ ] T023 Audit every FR and SC in `specs/012-simple-research-ci/spec.md` against code, tests, the real receipt, workflow content, documentation, and live branch protection; mark all completed tasks
+- [x] T023 Audit every FR and SC in `specs/012-simple-research-ci/spec.md` against code, tests, the real receipt, workflow content, documentation, and live branch protection; mark all completed tasks
 
 ## Dependencies and Execution Order
 

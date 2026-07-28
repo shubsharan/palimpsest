@@ -1,6 +1,6 @@
 # Feature Specification: Simple Research Verification
 
-**Feature Branch**: `012-simple-research-ci` **Created**: 2026-07-28 **Status**: Draft **Input**: User description: "Keep CI to basic dependency, build, lint, and Docker smoke checks; use an explicit full preflight before spending on experiments or publishing findings; record tested commit provenance; remove required verify branch protection; and stop compiling an exact host Git release."
+**Feature Branch**: `012-simple-research-ci` **Created**: 2026-07-28 **Status**: Complete **Input**: User description: "Keep CI to basic dependency, build, lint, and Docker smoke checks; use an explicit full preflight before spending on experiments or publishing findings; record tested commit provenance; remove required verify branch protection; and stop compiling an exact host Git release."
 
 ## User Scenarios & Testing _(mandatory)_
 
