@@ -161,11 +161,16 @@ export class DockerCommandSandbox implements CommandSandbox {
     }
   }
 
-  async #inspectState(containerName: string): Promise<ContainerState> {
-    const result = requireSuccessfulDocker(
-      "container inspection",
-      await this.#runDocker(["inspect", containerName]),
-    );
+  async #inspectState(
+    containerName: string,
+    options: { deadline: number; signal?: AbortSignal },
+  ): Promise<ContainerState> {
+    const result = await this.#runDocker(["inspect", containerName], options);
+    if (result.cancelled) throw abortError();
+    if (result.timedOut) {
+      throw new SandboxInfrastructureError("Docker container inspection timed out.");
+    }
+    requireSuccessfulDocker("container inspection", result);
     let parsed: unknown;
     try {
       parsed = JSON.parse(processText(result, "stdout"));
@@ -278,7 +283,10 @@ export class DockerCommandSandbox implements CommandSandbox {
     }
     let state: ContainerState;
     try {
-      state = await this.#inspectState(containerName);
+      state = await this.#inspectState(containerName, {
+        deadline,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+      });
     } catch (error) {
       await this.#remove(containerName);
       throw error;
@@ -401,7 +409,10 @@ export class DockerCommandSandbox implements CommandSandbox {
         if (executed.exitCode !== 0) {
           let state: ContainerState;
           try {
-            state = await this.#inspectState(containerName);
+            state = await this.#inspectState(containerName, {
+              deadline,
+              ...(command.signal === undefined ? {} : { signal: command.signal }),
+            });
           } catch (error) {
             await createReplacement(deadline, command.signal);
             return indeterminateResult(
@@ -553,7 +564,10 @@ export class DockerCommandSandbox implements CommandSandbox {
         let exitCode: number | null = started.exitCode;
         let resourceMessage = "";
         if (!started.timedOut && !started.outputExceeded) {
-          const state = await this.#inspectState(containerName);
+          const state = await this.#inspectState(containerName, {
+            deadline,
+            ...(request.signal === undefined ? {} : { signal: request.signal }),
+          });
           if (state.Status !== "exited" || typeof state.ExitCode !== "number") {
             throw new SandboxInfrastructureError(
               `Docker did not report an exited command state: ${JSON.stringify(state)}`,

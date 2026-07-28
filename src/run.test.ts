@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,8 +8,26 @@ import { FixtureModelAdapter } from "./fixture.js";
 import { AGENT_IDS, type ModelAdapter } from "./model.js";
 import { systemMonotonicClock } from "./reveal.js";
 import { runAttempt, validateAttemptConfig, type AttemptConfig } from "./run.js";
-import { SandboxInfrastructureError } from "./sandbox/contracts.js";
+import {
+  SandboxInfrastructureError,
+  type AgentSandboxLease,
+  type AgentSandboxLeaseRequest,
+} from "./sandbox/contracts.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
+
+class StalledLeaseSandbox extends FakeCommandSandbox {
+  override async openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease> {
+    this.leases.push(request);
+    return new Promise((_, reject) => {
+      const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+      if (request.signal?.aborted) {
+        abort();
+        return;
+      }
+      request.signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+}
 
 async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptConfig> {
   const makeStages = async (agentId: (typeof AGENT_IDS)[number]) => {
@@ -173,6 +191,56 @@ describe("run coordinator", () => {
       clock: systemMonotonicClock,
     });
     expect(result.sessions.every((session) => session.state === "time-exhausted")).toBe(true);
+  });
+
+  it("bounds initial lease setup by the global wall-time cutoff", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-lease-cutoff-"));
+    const config = await fixtureConfig(root, 250);
+    const sandbox = new StalledLeaseSandbox();
+    const startedAt = performance.now();
+
+    await expect(
+      runAttempt({
+        config,
+        adapter: FixtureModelAdapter.repeatingWait(),
+        sandbox,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock: systemMonotonicClock,
+      }),
+    ).rejects.toThrow("Attempt wall-time cutoff expired during agent sandbox setup.");
+
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    expect(sandbox.leases).toHaveLength(3);
+    expect(
+      sandbox.leases.every(
+        (request) =>
+          request.signal !== undefined &&
+          request.timeoutMs > 0 &&
+          request.timeoutMs <= config.wallTimeMs,
+      ),
+    ).toBe(true);
+  });
+
+  it("closes every lease when stage publication fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-stage-cleanup-"));
+    const config = await fixtureConfig(root, 80);
+    const missingStage = config.agentStages["agent-1"][1];
+    if (missingStage === undefined) throw new Error("Fixture omitted agent-1 stage 2.");
+    await rm(missingStage);
+    const sandbox = new FakeCommandSandbox();
+
+    await expect(
+      runAttempt({
+        config,
+        adapter: FixtureModelAdapter.repeatingWait(),
+        sandbox,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock: systemMonotonicClock,
+      }),
+    ).rejects.toThrow();
+
+    expect(sandbox.leases).toHaveLength(3);
+    expect(sandbox.closedLeases).toBe(3);
   });
 
   it("classifies command sandbox failures as session infrastructure errors", async () => {

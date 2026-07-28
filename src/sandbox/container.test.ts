@@ -34,6 +34,7 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
   const reference = join(root, "reference");
   const log = join(root, "docker.log");
   const interrupted = join(root, "interrupted");
+  const inspected = join(root, "inspected");
   const executable = join(root, "docker");
   await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(sharedGit), mkdir(reference)]);
   await writeFile(
@@ -54,6 +55,9 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       "  exit 7",
       "fi",
       'if [ "$1" = "inspect" ]; then',
+      '  if [ "$mode" = "stalled-inspect" ]; then sleep 5; fi',
+      `  if [ "$mode" = "stalled-command-inspect" ] && [ -e ${JSON.stringify(inspected)} ]; then sleep 5; fi`,
+      `  touch ${JSON.stringify(inspected)}`,
       '  if [ "$mode" = "invalid-inspect" ]; then',
       '    printf "not json"',
       "  else",
@@ -189,6 +193,36 @@ describe("sandbox container lifecycle", () => {
       "inspect",
       "rm",
     ]);
+  });
+
+  it("bounds lease inspection by the setup deadline and cleans up", async () => {
+    const fixture = await dockerFixture("stalled-inspect");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const startedAt = performance.now();
+
+    await expect(sandbox.openAgentLease({ ...fixture.request, timeoutMs: 500 })).rejects.toThrow(
+      "Docker container inspection timed out.",
+    );
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+    expect((await readFile(fixture.log, "utf8")).trim().split("\n")).toEqual([
+      "create",
+      "start",
+      "inspect",
+      "rm",
+    ]);
+  });
+
+  it("bounds post-command inspection by the command deadline", async () => {
+    const fixture = await dockerFixture("stalled-command-inspect");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const lease = await sandbox.openAgentLease(fixture.request);
+    const startedAt = performance.now();
+
+    await expect(lease.execute({ command: "exit 7", timeoutMs: 30 })).rejects.toThrow(
+      "Docker did not recover before the command deadline.",
+    );
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+    await lease.close();
   });
 
   it("replaces an interrupted lease without replaying the command", async () => {
