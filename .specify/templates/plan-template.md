@@ -41,6 +41,7 @@
 - **Minimal reproducible mechanics**: Only generation, reveal, checking, scoring, and records needed by the current experiment are structured and deterministic.
 - **Observe outcomes honestly**: Model mistakes, workarounds, checker use, and collaboration choices remain scored observations; infrastructure failures are reported separately.
 - **Voluntary native collaboration**: Agents know peers exist and Git is the shared channel, while Git use and collaboration form remain voluntary and unmetered.
+- **Risk-aligned verification**: Development CI is fast and advisory; paid or findings-bearing live experiments use a clean-checkout preflight whose source revision and sandbox identity remain with the attempt artifacts.
 
 ## Project Structure
 

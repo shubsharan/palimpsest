@@ -4,6 +4,7 @@ import { evaluatePuzzleFromFlags } from "./evaluate.js";
 import { runExperimentFromFlags } from "./experiment.js";
 import { parseFlags } from "./flags.js";
 import { runOfflinePuzzleFromFlags } from "./offline.js";
+import { runPreflight } from "./preflight.js";
 
 const [command, ...args] = process.argv.slice(2);
 const flags = parseFlags(args);
@@ -27,6 +28,9 @@ switch (command) {
     break;
   case "offline":
     result = await runOfflinePuzzleFromFlags(flags);
+    break;
+  case "preflight":
+    result = await runPreflight();
     break;
   default:
     throw new Error(

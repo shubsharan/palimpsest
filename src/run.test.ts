@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,10 +7,12 @@ import { describe, expect, it } from "vitest";
 import { decodeAttemptSummary, publishAttemptSummary } from "./artifacts.js";
 import { FixtureModelAdapter } from "./fixture.js";
 import type { AgentId, ModelAdapter, ModelBinding } from "./model.js";
+import type { PreflightReceipt } from "./preflight.js";
 import { systemMonotonicClock } from "./reveal.js";
 import {
   finalizeAttempt,
   runAttempt,
+  runPuzzle,
   validateAttemptConfig,
   type AgentRuntimeBinding,
   type AttemptConfig,
@@ -114,6 +116,77 @@ function finishAdapter(finalResponse = "done"): ModelAdapter {
 }
 
 describe("run coordinator", () => {
+  it("rejects provider-backed sessions before output when preflight is missing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-missing-preflight-"));
+    const output = join(root, "attempt");
+    let opened = false;
+    const agents = runtimes(() => ({
+      openSession() {
+        opened = true;
+        return {
+          respond: async () => ({
+            toolCalls: [],
+            finalResponse: "unexpected",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          }),
+        };
+      },
+    }));
+
+    await expect(
+      runPuzzle({
+        root,
+        buildRoot: join(root, "unused-build"),
+        output,
+        runName: "provider",
+        repetition: 1,
+        agents,
+        tokenBudgetPerAgent: 20,
+        wallTimeMs: 2_000,
+        sandbox: new FakeCommandSandbox(),
+      }),
+    ).rejects.toThrow(/preflight receipt is missing or invalid/i);
+    expect(opened).toBe(false);
+    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("copies preflight provenance before opening provider-backed model sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-preflight-"));
+    const config = await fixtureConfig(root);
+    const preflight: PreflightReceipt = {
+      schemaVersion: 1,
+      testedCommit: "a".repeat(40),
+      sourceClean: true,
+      completedAt: "2026-07-28T12:00:00.000Z",
+      sandbox: new FakeCommandSandbox().identity,
+    };
+    const adapter: ModelAdapter = {
+      openSession() {
+        return {
+          async respond() {
+            expect(
+              JSON.parse(await readFile(join(config.artifactRoot, "preflight.json"), "utf8")),
+            ).toEqual(preflight);
+            return {
+              toolCalls: [],
+              finalResponse: "ready",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            };
+          },
+        };
+      },
+    };
+
+    await runAttempt({
+      config,
+      agents: runtimes(() => adapter),
+      sandbox: new FakeCommandSandbox(),
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock: systemMonotonicClock,
+      preflight,
+    });
+  });
+
   it("accepts dynamic agent and stage geometry without interaction caps", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-config-"));
     const config = await fixtureConfig(root);

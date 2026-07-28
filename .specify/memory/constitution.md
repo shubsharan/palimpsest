@@ -1,14 +1,11 @@
 <!--
 Sync Impact Report
-- Version change: 2.0.0 -> 3.0.0
+- Version change: 3.0.0 -> 4.0.0
 - Modified principles:
-  - I. End-to-End Before Model Evaluation -> I. Puzzle Behavior Before Process
-  - II. Trust Boundaries Are Product Behavior -> II. Environmental Constraints, Not Workflow
-  - III. Versioned Contracts and Immutable Provenance -> III. Minimal Reproducible Mechanics
-  - IV. Deterministic Verification, Honest Claims -> IV. Observe Outcomes Honestly
-  - V. Native, Bounded, Asynchronous Collaboration -> V. Voluntary Native Collaboration
+  - Development Workflow and Quality Gates: merge-time full verification -> advisory
+    development checks plus experiment-time preflight
 - Added sections: none
-- Removed sections: gate authorization, mandatory immutable provenance, Git channel metering, publication slots, replay completion, and red-team release obligations
+- Removed sections: none
 - Templates:
   - updated: .specify/templates/plan-template.md
   - updated: .specify/templates/spec-template.md
@@ -16,11 +13,12 @@ Sync Impact Report
   - reviewed, no change: .specify/templates/checklist-template.md
   - reviewed, no change: .specify/templates/constitution-template.md
 - Runtime guidance:
-  - aligned: AGENTS.md
-  - aligned: CLAUDE.md
-  - aligned: docs/proposal.md
-  - aligned: docs/architecture.md
-  - aligned: docs/roadmap.md
+  - updated: AGENTS.md
+  - updated: CLAUDE.md
+  - reviewed, no change: docs/proposal.md
+  - updated: README.md
+  - updated: docs/architecture.md
+  - updated: docs/roadmap.md
 - Follow-up TODOs: none
 -->
 
@@ -74,7 +72,9 @@ Rationale: Collaboration should be useful and explicitly invited, while its form
 3. Each specification MUST state the puzzle behavior being enabled, agent-visible instructions and tools, environmental constraints, observable outcomes, infrastructure failures, and claims that remain out of scope.
 4. Each plan MUST pass the Constitution Check before research and after design. Any new process requirement or safeguard requires a concrete current experimental need and an explanation of why a simpler observation is insufficient.
 5. Tests MUST cover deterministic mechanics, agent independence, optional collaboration, resource cutoffs, checker disclosure, scoring, and the absence of prescribed workflow. Verification MUST be proportional to the claim; red-team and replay suites are not default completion requirements.
-6. `pnpm verify` MUST pass before implementation is declared complete. A fresh build-run-evaluate fixture MUST demonstrate the active puzzle path without an external model call.
+6. Automated development checks MUST provide fast advisory feedback on proposed changes and the primary branch. They MAY build the sandbox definition as a smoke check, but MUST NOT be required branch-protection gates or run the real-container behavior suite or deterministic end-to-end fixture.
+7. A clean-checkout `pnpm preflight` MUST pass immediately before any live-model experiment that spends money or may support published findings. It MUST rebuild and verify the agent sandbox, exercise the fresh deterministic build-run-evaluate path without external model calls, and bind the successful receipt to the tested source revision and sandbox identity.
+8. Paid attempt artifacts MUST retain the matching preflight provenance. Publication claims MUST identify the tested runner revision and experimental sandbox from those artifacts. Exact host tool patch versions MUST NOT substitute for behavior checks or agent-visible environment identity.
 
 ## Governance
 
@@ -84,4 +84,4 @@ Amendments require explicit rationale, affected principles and artifacts, compat
 
 Feature plans and pull requests MUST record constitution compliance. Reviewers MUST check the actual agent prompt, tool surface, runner behavior, and produced trace rather than relying on intended neutrality. Exceptions require an owner, scope, and removal condition; no exception may justify overstating empirical evidence.
 
-**Version**: 3.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-27
+**Version**: 4.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-28

@@ -6,6 +6,8 @@ Feature 011 is the active implementation. It generalizes the Feature 009 behavio
 
 The project is complete when one local YAML file can reproduce a puzzle condition, assign direct-provider models to its agents, retain sequential attempts, and leave each frozen attempt available for explicit reviewer evaluation.
 
+Feature 012 defines the active verification policy: advisory mechanical CI and a fail-closed preflight at the point of consequential provider-backed research.
+
 ## Delivery Sequence
 
 ### 1. Establish The Experiment Contract
@@ -90,6 +92,8 @@ Generated attempts stay untracked. Git history remains the archive for supersede
 
 Verification proves that the runner behaves as documented. It does not require agents to solve well, use Git, detect a re-key, collaborate effectively, or avoid workarounds.
 
+CI provides one advisory mechanical check covering locked dependencies, formatting, lint, compilation, and a sandbox image build without test suites or a required status gate. Before provider-backed work that spends money or may support findings, `pnpm preflight` runs the full suite and fresh scored fixture, then records the tested commit and sandbox identity.
+
 ## Definition Of Done
 
 Palimpsest is delivered when:
@@ -102,7 +106,7 @@ Palimpsest is delivered when:
 - no automatic fallback or hidden retry can change a declared condition;
 - each attempt publishes schema version 2 before optional overlap observation and remains available for explicit reviewer-selected evaluation;
 - the checked-in three-agent, six-stage, one-re-key fixture still runs end-to-end without an external model request; and
-- `pnpm verify`, `git diff --check`, and a fresh offline run pass.
+- advisory checks remain available for development, while a matching preflight receipt authorizes provider-backed attempts.
 
 ## Claim Boundary
 

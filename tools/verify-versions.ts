@@ -7,8 +7,6 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export const EXPECTED_TOOL_VERSIONS = {
-  docker: "29.6.2",
-  git: "2.48.1",
   node: "26.5.0",
   pnpm: "10.14.0",
   python: "3.12.4",
@@ -26,16 +24,12 @@ async function commandVersion(command: string, args: string[], prefix: RegExp): 
 }
 
 export async function readActualToolVersions(): Promise<ToolVersionMap> {
-  const [docker, pnpm, python, uv, git] = await Promise.all([
-    commandVersion("docker", ["version", "--format", "{{.Client.Version}}"], /^/),
+  const [pnpm, python, uv] = await Promise.all([
     commandVersion("pnpm", ["--version"], /^/),
     commandVersion("python3", ["--version"], /^Python\s+/),
     commandVersion("uv", ["--version"], /^uv\s+/),
-    commandVersion("git", ["--version"], /^git version\s+/),
   ]);
   return {
-    docker,
-    git,
     node: process.versions.node,
     pnpm,
     python,

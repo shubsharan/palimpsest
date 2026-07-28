@@ -2,6 +2,8 @@
 
 This is the post-implementation acceptance flow for Feature 009.
 
+Feature 012 now governs advisory CI, experiment-time preflight, and provenance. Use `specs/012-simple-research-ci/quickstart.md` for current research authorization; the commands below remain the completed Feature 009 architecture acceptance record.
+
 ## Prerequisites
 
 - Use the versions pinned in `.tool-versions`.
