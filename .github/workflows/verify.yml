@@ -42,12 +42,12 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
 
-      - name: Install Docker CLI 29.2.1
+      - name: Install Docker CLI 29.6.2
         run: |
           curl --fail --location --retry 3 \
-            https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz \
+            https://download.docker.com/linux/static/stable/x86_64/docker-29.6.2.tgz \
             --output "$RUNNER_TEMP/docker.tgz"
-          echo "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  $RUNNER_TEMP/docker.tgz" \
+          echo "d6204aea92238e2453d5445c885b9d2e5eb8f82915568ec50edf9dbe12a3ac74  $RUNNER_TEMP/docker.tgz" \
             | sha256sum --check
           mkdir "$RUNNER_TEMP/docker-cli"
           tar --extract --gzip --file "$RUNNER_TEMP/docker.tgz" \
