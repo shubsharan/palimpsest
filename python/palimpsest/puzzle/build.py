@@ -27,6 +27,7 @@ from .manifest import (
     RekeyTransition,
     TargetSource,
     make_agent_ids,
+    stage_filename,
 )
 from .revision import build_successive_revision
 from .shards import assign_streams, contradiction_metrics, eligible_symbols, split_text
@@ -332,7 +333,6 @@ def _build_into(
 
     cipher_by_agent: dict[str, tuple[str, ...]] = {}
     stages: list[EvidenceStage] = []
-    ordinal_width = max(2, len(str(definition.stage_count)))
     for agent_id, plain_stages in streams.items():
         cipher_stages: list[str] = []
         for ordinal, plain_stage in enumerate(plain_stages, start=1):
@@ -340,11 +340,11 @@ def _build_into(
             cipher_stage = apply_mapping(plain_stage, keys[key_version])
             cipher_stages.append(cipher_stage)
             cipher_bytes = (cipher_stage + "\n").encode("utf-8")
-            label = f"{ordinal:0{ordinal_width}d}"
-            source_path = Path(f"private/{agent_id}/stages/stage-{label}.txt")
+            filename = stage_filename(ordinal, definition.stage_count)
+            source_path = Path(f"private/{agent_id}/stages/{filename}")
             _write(destination / source_path, cipher_bytes)
             _write(
-                destination / f"oracle/checker/{agent_id}/stage-{label}.txt",
+                destination / f"oracle/checker/{agent_id}/{filename}",
                 (plain_stage + "\n").encode("utf-8"),
             )
             stages.append(

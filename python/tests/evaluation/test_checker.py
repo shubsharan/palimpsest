@@ -41,6 +41,34 @@ def test_checker_uses_dynamic_agent_and_released_prefix(build_root: Path) -> Non
     assert result.accuracy == 1.0
 
 
+def test_checker_matches_dynamic_stage_filename_width(tmp_path: Path) -> None:
+    output = tmp_path / "wide-stage-build"
+    build_puzzle(
+        ROOT,
+        output,
+        {
+            "target": {"corpus": "middlemarch", "chapters": {"start": 10, "end": 15}},
+            "references": ["jane-eyre", "moby-dick"],
+            "seed": 17,
+            "agentCount": 2,
+            "stageCount": 100,
+            "stageIntervalMs": 10,
+            "rekeys": [],
+        },
+    )
+    truth = (output / "oracle/checker/agent-1/stage-001.txt").read_text(encoding="utf-8")
+
+    result = check_reconstruction(
+        build_root=output,
+        agent_id="agent-1",
+        released_ordinals=(1,),
+        candidate=truth,
+    )
+
+    assert result.coverage == 1.0
+    assert result.accuracy == 1.0
+
+
 def test_checker_rejects_gaps_and_undeclared_agents(build_root: Path) -> None:
     with pytest.raises(ValueError, match="released prefix"):
         check_reconstruction(

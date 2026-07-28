@@ -87,6 +87,15 @@ def make_agent_ids(agent_count: int) -> tuple[str, ...]:
     return tuple(f"agent-{index}" for index in range(1, agent_count + 1))
 
 
+def stage_filename(ordinal: int, stage_count: int) -> str:
+    if type(stage_count) is not int or stage_count < 1:
+        raise ValueError("Puzzle stage count must be a positive integer.")
+    if type(ordinal) is not int or ordinal < 1 or ordinal > stage_count:
+        raise ValueError("Stage ordinal must be within the puzzle stage count.")
+    width = max(2, len(str(stage_count)))
+    return f"stage-{ordinal:0{width}d}.txt"
+
+
 @dataclass(frozen=True)
 class TargetSource:
     source_id: str
