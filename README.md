@@ -9,10 +9,11 @@ The runner observes the resulting work. It does not assign roles, impose rounds,
 - [Proposal](docs/proposal.md): puzzle, agent experience, evaluation, and claim boundary.
 - [Architecture](docs/architecture.md): active runtime, sandbox, trace, overlap, and failure semantics.
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
-- [Feature 009 quickstart](specs/009-refactor-puzzle-architecture/quickstart.md): current setup, verification, and offline acceptance flow.
+- [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
+- [Feature 009 quickstart](specs/009-refactor-puzzle-architecture/quickstart.md): implemented runner architecture and offline acceptance flow.
 - [Operator CLI contract](specs/009-refactor-puzzle-architecture/contracts/operator-cli.md): required flags, defaults, and result compatibility.
 
-Feature 009 is the single active specification. Superseded designs and generated experimental evidence remain recoverable from Git history rather than occupying the working tree.
+Feature 009 defines the implemented runner architecture. Feature 012 is authoritative for current verification and experiment authorization. Superseded designs and generated experimental evidence remain recoverable from Git history rather than occupying the working tree.
 
 ## Setup
 
@@ -21,30 +22,29 @@ Use the tool versions pinned in `.tool-versions` and start Docker Engine or Dock
 ```bash
 pnpm install --frozen-lockfile
 uv sync --frozen --project python
-pnpm puzzle:sandbox:build
 ```
 
-The first bootstrap and sandbox image build may use the network. Once the uv cache is populated, verification uses the locked environment offline.
+The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline.
 
 The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model API calls remain on the host; provider credentials are never mounted into command containers.
 
-## Verify
+## Development Check
 
 ```bash
-pnpm verify
-git diff --check
+pnpm check
 ```
 
-The suite includes real Docker containment and cleanup checks. A deterministic end-to-end fixture, which makes no external model call, is available with:
+The advisory Linux workflow runs this command for pull requests and pushes to `main`, then builds the sandbox image. It catches locked-dependency, formatting, lint, compile, and Dockerfile build failures without running unit suites, real-container behavior tests, or the offline fixture. It is intentionally not a required branch-protection check.
+
+## Research Preflight
+
+Before spending money on a live experiment or producing findings for publication, commit the exact source, leave the worktree clean, start Docker, and run:
 
 ```bash
-output="$(mktemp -d)/palimpsest-offline"
-pnpm puzzle:offline -- --output "$output"
+pnpm preflight
 ```
 
-Pull requests and merge-queue candidates run the same gate as the required `verify` check with the exact versions in `.tool-versions`, a freshly built sandbox image, and a base-relative whitespace check.
-
-Inspect `$output/attempt/attempt.json`, `trace.meta.json`, `trace.jsonl`, `overlap.json`, and `evaluation/result.json`.
+Preflight rebuilds the agent sandbox, runs the complete verification suite including real-container tests, and executes a fresh deterministic build-run-evaluate fixture without an external model call. Only then does it write `artifacts/preflight.json`, binding the tested commit to the immutable sandbox identity. Any failed rerun removes the old receipt.
 
 ## Operator Flow
 
@@ -54,6 +54,7 @@ The individual commands require explicit paths and run limits:
 build_root="artifacts/build-17"
 attempt_root="artifacts/attempt-17"
 
+pnpm preflight
 pnpm puzzle:build -- --output "$build_root" --seed 17
 pnpm puzzle:run -- \
   --build "$build_root" \
@@ -66,6 +67,8 @@ pnpm puzzle:evaluate -- --attempt "$attempt_root"
 ```
 
 Generated attempts belong under the ignored `artifacts/` directory. Build, run, and evaluation commands emit one JSON object on standard output and fail nonzero when their declared infrastructure cannot be provided. A build output must be absent or empty, a run output must be absent, and evaluation is one-shot because it creates the attempt's `evaluation/` directory exclusively.
+
+OpenAI runs require the current clean checkout and sandbox to match `artifacts/preflight.json` before the provider adapter is created. The matching receipt is copied to `$attempt_root/preflight.json` before model sessions begin, while `attempt.json` retains the sandbox identity used by the attempt.
 
 Every command is dispatched by `src/cli.ts`. Runtime behavior lives in small owner modules under `src/`, with the Docker boundary alone nested under `src/sandbox/`; deterministic construction and evaluation live under `python/palimpsest/`.
 

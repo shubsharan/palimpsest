@@ -137,7 +137,8 @@ async function deletedReferences(paths: string[]): Promise<string[]> {
 }
 
 describe("active repository boundary", () => {
-  test("the active toolchain exactly matches every declared pin", async () => {
+  test("exact pins cover language bootstrap tools, not host Git or Docker", async () => {
+    expect(Object.keys(EXPECTED_TOOL_VERSIONS).sort()).toEqual(["node", "pnpm", "python", "uv"]);
     await expect(readActualToolVersions()).resolves.toEqual(EXPECTED_TOOL_VERSIONS);
     await expect(verifyDeclaredPins()).resolves.toBeUndefined();
   });
@@ -163,6 +164,33 @@ describe("active repository boundary", () => {
     expect(pythonSources.length).toBeGreaterThan(0);
     expect(pythonSources.every((path) => path.startsWith("python/palimpsest/"))).toBe(true);
     expect(paths.filter((path) => path.startsWith("tools/"))).toEqual(["tools/verify-versions.ts"]);
+  });
+
+  test("keeps Linux CI fast, visible, and advisory", async () => {
+    const [workflow, packageSource] = await Promise.all([
+      readFile(".github/workflows/verify.yml", "utf8"),
+      readFile("package.json", "utf8"),
+    ]);
+    const packageManifest = JSON.parse(packageSource) as {
+      scripts: Record<string, string>;
+    };
+    const check = packageManifest.scripts.check ?? "";
+
+    expect(workflow).toMatch(/pull_request:/);
+    expect(workflow).toMatch(/push:\s*\n\s+branches:\s*\[main\]/);
+    expect(workflow).toContain("run: pnpm check");
+    expect(workflow).toContain("run: pnpm puzzle:sandbox:build");
+    expect(workflow).not.toMatch(
+      /merge_group|docker(?:-| )29|make configure|run: pnpm verify\b|sandbox\.integration|puzzle:offline/i,
+    );
+    expect(workflow).not.toContain("kernel.org/pub/software/scm/git");
+    expect(workflow).not.toContain("continue-on-error");
+    expect(check).toContain("pnpm verify:versions");
+    expect(check).toContain("pnpm format:check");
+    expect(check).toContain("pnpm lint");
+    expect(check).toContain("pnpm build");
+    expect(check).not.toContain("pnpm test");
+    expect(check).not.toContain("puzzle:");
   });
 
   test("has no workspace, alias, barrel, facade, or obsolete mixed owner", async () => {

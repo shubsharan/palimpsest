@@ -2,6 +2,7 @@ import { buildPuzzleFromFlags, buildSandbox } from "./build.js";
 import { evaluatePuzzleFromFlags } from "./evaluate.js";
 import { parseFlags } from "./flags.js";
 import { runOfflinePuzzleFromFlags } from "./offline.js";
+import { runPreflight } from "./preflight.js";
 import { runPuzzleFromFlags } from "./run.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -23,6 +24,9 @@ switch (command) {
     break;
   case "offline":
     result = await runOfflinePuzzleFromFlags(flags);
+    break;
+  case "preflight":
+    result = await runPreflight();
     break;
   default:
     throw new Error(

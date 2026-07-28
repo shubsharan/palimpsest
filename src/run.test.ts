@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { FixtureModelAdapter } from "./fixture.js";
 import { AGENT_IDS, type ModelAdapter } from "./model.js";
+import type { PreflightReceipt } from "./preflight.js";
 import { systemMonotonicClock } from "./reveal.js";
 import { runAttempt, validateAttemptConfig, type AttemptConfig } from "./run.js";
 import { SandboxInfrastructureError } from "./sandbox/contracts.js";
@@ -43,6 +44,43 @@ async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptC
 }
 
 describe("run coordinator", () => {
+  it("copies preflight provenance before opening paid model sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-preflight-"));
+    const config = await fixtureConfig(root);
+    const preflight: PreflightReceipt = {
+      schemaVersion: 1,
+      testedCommit: "a".repeat(40),
+      sourceClean: true,
+      completedAt: "2026-07-28T12:00:00.000Z",
+      sandbox: new FakeCommandSandbox().identity,
+    };
+    const adapter: ModelAdapter = {
+      openSession() {
+        return {
+          async respond() {
+            expect(
+              JSON.parse(await readFile(join(config.artifactRoot, "preflight.json"), "utf8")),
+            ).toEqual(preflight);
+            return {
+              toolCalls: [],
+              finalResponse: "ready",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            };
+          },
+        };
+      },
+    };
+
+    await runAttempt({
+      config,
+      adapter,
+      sandbox: new FakeCommandSandbox(),
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock: systemMonotonicClock,
+      preflight,
+    });
+  });
+
   it("accepts exactly three agents with six stages each and no interaction caps", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-config-"));
     const config = await fixtureConfig(root);

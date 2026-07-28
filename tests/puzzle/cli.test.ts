@@ -83,6 +83,11 @@ describe("operator CLI contract", () => {
     }
   });
 
+  it("routes the explicit research preflight through the root CLI", async () => {
+    const scripts = await packageScripts();
+    expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
+  });
+
   it("accepts every documented flag name, including pnpm's standalone separator", () => {
     expect(
       parseFlags([
@@ -255,6 +260,20 @@ describe("operator CLI contract", () => {
         wallTimeMs: 10_000,
       }),
     ).rejects.toThrow("--model is required");
+
+    const rejectedPaidAttempt = join(temporaryRoot, "missing-preflight-attempt");
+    await expect(
+      runPuzzle({
+        root: temporaryRoot,
+        buildRoot: build.buildPath,
+        output: rejectedPaidAttempt,
+        adapter: "openai",
+        model: "test-model",
+        tokenBudget: 100,
+        wallTimeMs: 10_000,
+      }),
+    ).rejects.toThrow(/preflight receipt is missing or invalid/i);
+    await expect(access(rejectedPaidAttempt)).rejects.toMatchObject({ code: "ENOENT" });
 
     const rejectedAttempt = join(temporaryRoot, "unknown-scenario-attempt");
     await expect(

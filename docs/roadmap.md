@@ -8,7 +8,7 @@ The delivery order follows usable behavior: build the puzzle, let agents work fr
 
 ## Current Status
 
-Feature 009 is the active implementation: a behavior-neutral runner with a hardened Docker/trace boundary, one root TypeScript application, and one Python distribution. Superseded designs and generated evidence remain available through Git history rather than the working tree.
+Feature 009 is the implemented behavior-neutral runner with a hardened Docker/trace boundary, one root TypeScript application, and one Python distribution. Feature 012 defines the active verification policy: advisory development feedback and a fail-closed preflight at the point of consequential research. Superseded designs and generated evidence remain available through Git history rather than the working tree.
 
 The project is complete when the documented build-run-evaluate path works end to end and the runner neither prescribes nor repairs agent collaboration.
 
@@ -112,7 +112,8 @@ Run proportional verification:
 - active-path boundary checks that are invariant to ignored caches, empty directories, and unstaged moves;
 - strict current-version artifact decoder and post-freeze overlap-failure durability tests;
 - root formatting, linting, type checking, tests, and `git diff --check`.
-- one required `verify` pull-request and merge-queue check that recreates the exact pinned toolchain and fresh sandbox before running the full gate.
+- one advisory mechanical check for pull requests and `main` pushes covering locked dependencies, formatting, lint, compilation, and a sandbox image build without test suites, the full fixture, exact host Git compilation, or a required status gate;
+- one clean-checkout `pnpm preflight` before paid or findings-bearing live work, rebuilding the sandbox, running the full suite and a fresh scored fixture, and recording the tested commit plus sandbox identity.
 
 Verification proves that the environment behaves as documented. It does not require agents to solve well, use Git, detect the re-key, collaborate effectively, or avoid workarounds.
 
@@ -132,7 +133,7 @@ Palimpsest is delivered when:
 - obvious raw overlap covers every reachable text blob once, reports repeated tree references and skipped non-text objects, and remains observational only;
 - obsolete Gate-era code, dependencies, generated evidence, workspace/facade layout, and superseded specifications are absent from the working tree while Git history remains the archive;
 - the active commands and docs contain no Git metering, publication slots, behavioral gates, solver schema, exact replay, or red-team release requirement; and
-- a fresh offline fixture and the repository verification suite pass.
+- fast advisory checks remain available for development, and a fresh preflight receipt authorizes each live research source/sandbox pair.
 
 ## Claim Boundary
 

@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Verification**: Verification tasks are MANDATORY and proportional to the feature's claims. Include deterministic puzzle mechanics, independent agent lifecycle, optional Git collaboration, checker disclosure, resource cutoffs, scoring, trace capture, and explicit assertions that the runner does not require a prescribed workflow. Documentation-only work still requires relevant format, link, and consistency validation.
+**Verification**: Verification tasks are MANDATORY and proportional to the feature's claims. Use fast checks for ordinary development work. Require the full clean-checkout preflight, sandbox rebuild, and fresh deterministic fixture only when authorizing paid or publishable research. Include deterministic puzzle mechanics, independent agent lifecycle, optional Git collaboration, checker disclosure, resource cutoffs, scoring, trace capture, and explicit assertions that the runner does not require a prescribed workflow. Documentation-only work still requires relevant format, link, and consistency validation.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -162,7 +162,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Reproduce deterministic puzzle and fixture scores from fixed inputs
 - [ ] TXXX Confirm model workarounds remain observable outcomes rather than validity failures
 - [ ] TXXX Run quickstart.md validation
-- [ ] TXXX Run root pnpm verify from a clean checkout
+- [ ] TXXX Run the fast development check
+- [ ] TXXX When the feature will authorize paid or publishable research, run root pnpm preflight from a clean checkout and retain its receipt
 
 ---
 

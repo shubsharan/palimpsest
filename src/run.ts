@@ -20,6 +20,12 @@ import {
 } from "./git.js";
 import { AGENT_IDS, type AgentId, type ModelAdapter } from "./model.js";
 import { observeOverlap } from "./overlap.js";
+import {
+  assertPreflightSandbox,
+  publishPreflightReceipt,
+  readCurrentPreflight,
+  type PreflightReceipt,
+} from "./preflight.js";
 import { buildAgentPrompt } from "./prompt.js";
 import { createOpenAIModelAdapter } from "./provider.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
@@ -58,6 +64,7 @@ export interface RunAttemptOptions {
   sandbox: CommandSandbox;
   clock: MonotonicClock;
   gitPollIntervalMs?: number;
+  preflight?: PreflightReceipt;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -174,6 +181,9 @@ async function publishStage(
 export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
   const config = validateAttemptConfig(options.config);
   await mkdir(config.artifactRoot, { recursive: false });
+  if (options.preflight) {
+    await publishPreflightReceipt(join(config.artifactRoot, "preflight.json"), options.preflight);
+  }
   const git = await createGitEnvironment(join(config.artifactRoot, "git"));
   const evidencePaths = Object.fromEntries(
     await Promise.all(
@@ -366,6 +376,10 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   if (options.tokenBudget <= 0 || options.wallTimeMs <= 0) {
     throw new Error("Token budget and wall time must be positive.");
   }
+  if (options.adapter === "openai" && !options.model) {
+    throw new Error("--model is required for the live OpenAI adapter.");
+  }
+  const preflight = options.adapter === "openai" ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
   const stagesFor = (agentId: AgentId) =>
@@ -390,19 +404,24 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     shutdownToleranceMs: 5_000,
   };
   let adapter: ModelAdapter;
+  let sandbox: CommandSandbox;
   if (options.adapter === "fixture") {
     adapter = createFixtureModelAdapter(options.fixtureScenario);
+    sandbox = await createDockerCommandSandbox({ root });
   } else {
     if (!options.model) throw new Error("--model is required for the live OpenAI adapter.");
+    sandbox = await createDockerCommandSandbox({ root });
+    if (!preflight) throw new Error("Research preflight receipt is required for live runs.");
+    assertPreflightSandbox(preflight, sandbox.identity);
     adapter = createOpenAIModelAdapter(options.model);
   }
-  const sandbox = await createDockerCommandSandbox({ root });
   const result = await runAttempt({
     config,
     adapter,
     checker: createChecker(root, buildRoot),
     sandbox,
     clock: systemMonotonicClock,
+    ...(preflight === undefined ? {} : { preflight }),
   });
   const overlap = await finalizeAttempt({
     attemptRoot: output,

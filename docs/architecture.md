@@ -233,7 +233,7 @@ Infrastructure failures are reported separately. They do not cause the runner to
 The canonical live workflow uses explicit build and attempt roots plus recorded run limits:
 
 ```bash
-pnpm puzzle:sandbox:build
+pnpm preflight
 pnpm puzzle:build -- --output artifacts/build-17 --seed 17
 pnpm puzzle:run -- \
   --build artifacts/build-17 \
@@ -247,6 +247,8 @@ pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 
 `pnpm puzzle:offline` composes the same build, run, freeze, and evaluate path with deterministic fixture agents and no external model call.
 
+`pnpm preflight` is the authorization boundary for live OpenAI work. It requires a clean committed checkout, rebuilds the sandbox, runs full verification plus a fresh offline fixture, and writes `artifacts/preflight.json` only on success. A live attempt must match that receipt before provider construction and copies it into the attempt root before sessions start.
+
 ## Verification
 
 Verification is proportional to the active claims:
@@ -259,7 +261,7 @@ Verification is proportional to the active claims:
 - Evaluator tests cover reviewer selection ordering, `scored`, `not-runnable`, `no-output`, and `execution-error`; session and Git tests cover voluntary completion, waiting, cutoffs, ordinary branches, and peer-visible ref changes.
 - One fresh offline build-run-evaluate smoke test proves the active path without an external model call.
 
-The canonical acceptance commands are `pnpm verify`, `git diff --check`, and a fresh `pnpm puzzle:offline` run following `specs/009-refactor-puzzle-architecture/quickstart.md`. Pull requests and merge-queue candidates reproduce the pinned environment, build the sandbox, and run the same verification as the required `verify` status check.
+`pnpm check` plus a sandbox image build provides advisory mechanical feedback for pull requests and pushes to `main`; it checks locked dependencies, formatting, lint, compilation, and the Dockerfile without running test suites, and is not a required merge gate. `pnpm preflight` is the canonical consequential-research check: it runs the full `pnpm verify` suite, rebuilds and identifies the agent-visible sandbox, executes a fresh scored offline fixture, and records the tested commit. Publication review uses the copied attempt receipt and `attempt.json.sandbox` to identify the verified runner and experimental environment.
 
 Palimpsest does not require channel-capacity proofs, fixed publication replay, hostile-solver red teams, exact model replay, or a particular empirical agent outcome before the puzzle may be run.
 
