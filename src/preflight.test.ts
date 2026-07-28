@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -130,6 +130,7 @@ describe("research preflight", () => {
   it("publishes one receipt only after the full sequence succeeds", async () => {
     const fixture = await gitFixture();
     const calls: string[] = [];
+    let fixtureTemporaryRoot = "";
     const result = await runPreflight(
       fixture.root,
       dependencies({
@@ -140,8 +141,14 @@ describe("research preflight", () => {
         runVerification: async () => {
           calls.push("verify");
         },
-        runFixture: async () => {
+        runFixture: async (_root, output) => {
           calls.push("fixture");
+          fixtureTemporaryRoot = join(output, "..");
+          const frozen = join(output, "attempt", "frozen", "workspaces");
+          await mkdir(frozen, { recursive: true });
+          await writeFile(join(frozen, "result.txt"), "read only\n", "utf8");
+          await chmod(join(frozen, "result.txt"), 0o444);
+          await chmod(frozen, 0o555);
           return { status: "scored", sandbox };
         },
         inspectSandbox: async () => {
@@ -162,6 +169,7 @@ describe("research preflight", () => {
         JSON.parse(await readFile(preflightReceiptPath(fixture.root), "utf8")),
       ),
     ).toEqual(result);
+    await expect(access(fixtureTemporaryRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each([

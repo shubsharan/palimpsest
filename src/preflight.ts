@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -185,6 +195,28 @@ async function readReceipt(path: string): Promise<PreflightReceipt> {
   }
 }
 
+async function makeTreeWritable(path: string): Promise<void> {
+  const entries = await readdir(path, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) {
+        await makeTreeWritable(child);
+      } else if (!entry.isSymbolicLink()) {
+        const metadata = await lstat(child);
+        await chmod(child, metadata.mode | 0o200);
+      }
+    }),
+  );
+  const metadata = await lstat(path);
+  await chmod(path, metadata.mode | 0o700);
+}
+
+async function removeTemporaryTree(path: string): Promise<void> {
+  await makeTreeWritable(path);
+  await rm(path, { recursive: true, force: true });
+}
+
 export async function readCurrentPreflight(root = resolve(".")): Promise<PreflightReceipt> {
   const receipt = await readReceipt(preflightReceiptPath(root));
   const source = await readSourceState(root);
@@ -276,6 +308,6 @@ export async function runPreflight(
     await publishPreflightReceipt(destination, provisional);
     return provisional;
   } finally {
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await removeTemporaryTree(temporaryRoot);
   }
 }
