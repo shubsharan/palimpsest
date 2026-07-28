@@ -6,10 +6,11 @@ describe("agent prompt", () => {
   it("makes concurrent peers and Git communication explicit without revealing the transition", () => {
     const prompt = buildAgentPrompt({
       agentId: "agent-2",
+      agentCount: 5,
     });
 
     expect(prompt).toContain("Agent 2");
-    expect(prompt).toContain("three agents working concurrently");
+    expect(prompt).toContain("5 agents working concurrently");
     expect(prompt).toContain("Git repository");
     expect(prompt).toContain("Workspace: /workspace");
     expect(prompt).toContain("Private evidence: /evidence");

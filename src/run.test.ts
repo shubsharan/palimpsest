@@ -1,49 +1,102 @@
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { decodeAttemptSummary, publishAttemptSummary } from "./artifacts.js";
 import { FixtureModelAdapter } from "./fixture.js";
-import { AGENT_IDS, type ModelAdapter } from "./model.js";
+import type { AgentId, ModelAdapter, ModelBinding } from "./model.js";
 import { systemMonotonicClock } from "./reveal.js";
-import { runAttempt, validateAttemptConfig, type AttemptConfig } from "./run.js";
+import {
+  finalizeAttempt,
+  runAttempt,
+  validateAttemptConfig,
+  type AgentRuntimeBinding,
+  type AttemptConfig,
+} from "./run.js";
 import { SandboxInfrastructureError } from "./sandbox/contracts.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
+const AGENTS = ["agent-1", "agent-2"] as const satisfies readonly AgentId[];
+const BUILD_ID = `build-${"a".repeat(64)}`;
+
+function model(profile: string, requestedModel = profile): ModelBinding {
+  return {
+    profile,
+    provider: `${profile}-provider`,
+    driver: "openai-compatible",
+    requestedModel,
+    settings: {},
+    providerOptions: {},
+  };
+}
+
+function runtimes(
+  adapterFor: (agentId: AgentId) => ModelAdapter,
+): Record<AgentId, AgentRuntimeBinding> {
+  return Object.fromEntries(
+    AGENTS.map((agentId, index) => [
+      agentId,
+      {
+        model: model(index === 0 ? "model-a" : "model-b"),
+        adapter: adapterFor(agentId),
+      },
+    ]),
+  ) as Record<AgentId, AgentRuntimeBinding>;
+}
+
 async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptConfig> {
-  const makeStages = async (agentId: (typeof AGENT_IDS)[number]) => {
-    await mkdir(join(root, "source", agentId), { recursive: true });
-    return Promise.all(
-      Array.from({ length: 6 }, async (_, index) => {
-        const path = join(root, "source", agentId, `stage-${index + 1}.txt`);
-        await writeFile(path, `${agentId}-${index + 1}\n`, { encoding: "utf8", flag: "wx" });
-        return path;
+  const stageCount = 3;
+  const agentStages = Object.fromEntries(
+    await Promise.all(
+      AGENTS.map(async (agentId) => {
+        await mkdir(join(root, "source", agentId), { recursive: true });
+        const paths = await Promise.all(
+          Array.from({ length: stageCount }, async (_, index) => {
+            const path = join(root, "source", agentId, `stage-${index + 1}.txt`);
+            await writeFile(path, `${agentId}-${index + 1}\n`, { encoding: "utf8", flag: "wx" });
+            return path;
+          }),
+        );
+        return [agentId, paths] as const;
       }),
-    );
-  };
-  const stages: AttemptConfig["agentStages"] = {
-    "agent-1": await makeStages("agent-1"),
-    "agent-2": await makeStages("agent-2"),
-    "agent-3": await makeStages("agent-3"),
-  };
+    ),
+  ) as Record<AgentId, readonly string[]>;
   const reference = join(root, "reference");
   await writeFile(reference, "reference\n", "utf8");
   return {
-    attemptId: "fixture",
+    attemptId: "attempt-baseline-001",
+    buildId: BUILD_ID,
+    runName: "baseline",
+    repetition: 1,
     artifactRoot: join(root, "attempt"),
-    buildPath: join(root, "build.json"),
+    buildRoot: join(root, "build"),
     referenceCorpusPath: reference,
-    agentStages: stages,
+    agentIds: AGENTS,
+    agentStages,
+    stageCount,
+    rekeyCount: 0,
     tokenBudgetPerAgent: 20,
     wallTimeMs,
     stageIntervalMs: 10,
-    shutdownToleranceMs: 100,
+  };
+}
+
+function finishAdapter(finalResponse = "done"): ModelAdapter {
+  return {
+    openSession: () => ({
+      respond: async () => ({
+        toolCalls: [],
+        finalResponse,
+        usage: { inputTokens: 2, outputTokens: 1 },
+      }),
+    }),
   };
 }
 
 describe("run coordinator", () => {
-  it("accepts exactly three agents with six stages each and no interaction caps", async () => {
+  it("accepts dynamic agent and stage geometry without interaction caps", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-config-"));
     const config = await fixtureConfig(root);
 
@@ -61,7 +114,7 @@ describe("run coordinator", () => {
     expect(() => validateAttemptConfig({ ...config, [key]: value })).toThrow(message);
   });
 
-  it("rejects invalid stage geometry", async () => {
+  it("rejects mismatched agents and stages", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-config-geometry-"));
     const config = await fixtureConfig(root);
     expect(() =>
@@ -69,67 +122,95 @@ describe("run coordinator", () => {
         ...config,
         agentStages: {
           ...config.agentStages,
-          "agent-3": config.agentStages["agent-3"].slice(0, 5),
+          "agent-2": config.agentStages["agent-2"]!.slice(0, 2),
         },
       }),
-    ).toThrow("six stages");
+    ).toThrow("exactly 3 stages");
+    expect(() =>
+      validateAttemptConfig({
+        ...config,
+        agentIds: ["agent-1", "agent-3"],
+      }),
+    ).toThrow("agentIds must be ordered canonically");
   });
 
-  it("runs exactly three persistent sessions without a round barrier", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-supervisor-"));
+  it("runs a mixed-model assignment and records configured bindings in the trace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-mixed-model-"));
     const config = await fixtureConfig(root);
-    const adapter = new FixtureModelAdapter({
-      "agent-1": [
-        { toolCalls: [], finalResponse: "done", usage: { inputTokens: 2, outputTokens: 1 } },
-      ],
-      "agent-2": [
-        {
-          toolCalls: [{ id: "wait-1", name: "wait_for_activity", arguments: { afterSequence: 0 } }],
-          usage: { inputTokens: 2, outputTokens: 1 },
-        },
-        { toolCalls: [], finalResponse: "done later", usage: { inputTokens: 1, outputTokens: 1 } },
-      ],
-      "agent-3": [
-        {
-          toolCalls: [{ id: "cmd-1", name: "run_command", arguments: { command: "true" } }],
-          usage: { inputTokens: 12, outputTokens: 9 },
-        },
-      ],
-    });
+    const openedBy: string[] = [];
+    const agents = runtimes((agentId) => ({
+      openSession: () => {
+        openedBy.push(agentId);
+        return {
+          respond: async () => ({
+            toolCalls: [],
+            finalResponse: `done by ${agentId}`,
+            usage: { inputTokens: 2, outputTokens: 1 },
+            responseIdentity: {
+              actualProvider: `${agentId}-actual-provider`,
+              actualModel: `${agentId}-actual-model`,
+            },
+          }),
+        };
+      },
+    }));
 
     const result = await runAttempt({
       config,
-      adapter,
+      agents,
       sandbox: new FakeCommandSandbox(),
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
       clock: systemMonotonicClock,
     });
 
-    expect(result.sessions).toHaveLength(3);
-    expect(result.sessions.map((session) => session.state).sort()).toEqual([
-      "finished",
-      "finished",
-      "token-exhausted",
+    expect(openedBy.sort()).toEqual([...AGENTS]);
+    expect(result.agentIds).toEqual(AGENTS);
+    expect(
+      result.sessions.map(({ agentId, model: binding }) => [agentId, binding.profile]),
+    ).toEqual([
+      ["agent-1", "model-a"],
+      ["agent-2", "model-b"],
     ]);
-    expect(result.sessions.find((session) => session.agentId === "agent-1")?.finalResponse).toBe(
-      "done",
-    );
-    expect(result.frozen.workspaces).toHaveLength(3);
+    expect(result.sessions[1]?.model).toMatchObject({
+      actualProvider: "agent-2-actual-provider",
+      actualModel: "agent-2-actual-model",
+    });
+    expect(result.frozen.workspaces.map(({ agentId }) => agentId)).toEqual(AGENTS);
+
+    const trace = (await readFile(result.tracePath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { kind: string; data: unknown });
+    expect(trace.find(({ kind }) => kind === "attempt.configured")?.data).toEqual({
+      attemptId: config.attemptId,
+      buildId: BUILD_ID,
+      runName: "baseline",
+      repetition: 1,
+      tokenBudgetPerAgent: 20,
+      wallTimeMs: 2_000,
+      stageIntervalMs: 10,
+      agentCount: 2,
+      stageCount: 3,
+      rekeyCount: 0,
+      models: [
+        { agentId: "agent-1", ...model("model-a") },
+        { agentId: "agent-2", ...model("model-b") },
+      ],
+    });
   });
 
-  it("publishes each agent's first private stage before opening its model session", async () => {
+  it("publishes first private evidence before opening each model session", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-initial-stage-"));
     const config = await fixtureConfig(root);
     const seen = new Map<string, string>();
-    const adapter: ModelAdapter = {
+    const agents = runtimes(() => ({
       openSession(context) {
         return {
           async respond(request) {
-            const prompt = request.prompt ?? "";
-            const evidenceLine = prompt
+            const evidenceLine = (request.prompt ?? "")
               .split("\n")
               .find((line) => line.startsWith("Private evidence: "));
-            if (!evidenceLine) throw new Error("Prompt omitted the private evidence path.");
+            if (!evidenceLine) throw new Error("Prompt omitted private evidence.");
             seen.set(context.agentId, evidenceLine.slice("Private evidence: ".length));
             return {
               toolCalls: [],
@@ -139,16 +220,17 @@ describe("run coordinator", () => {
           },
         };
       },
-    };
+    }));
     const result = await runAttempt({
       config,
-      adapter,
+      agents,
       sandbox: new FakeCommandSandbox(),
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
       clock: systemMonotonicClock,
     });
-    expect([...seen.keys()].sort()).toEqual([...AGENT_IDS]);
-    for (const agentId of AGENT_IDS) {
+
+    expect([...seen.keys()].sort()).toEqual([...AGENTS]);
+    for (const agentId of AGENTS) {
       expect(seen.get(agentId)).toBe("/evidence");
       expect(await readdir(join(config.artifactRoot, "private-evidence", agentId))).toContain(
         "stage-01-stage-1.txt",
@@ -163,12 +245,83 @@ describe("run coordinator", () => {
     const adapter = FixtureModelAdapter.repeatingWait();
     const result = await runAttempt({
       config,
-      adapter,
+      agents: runtimes(() => adapter),
       sandbox: new FakeCommandSandbox(),
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
       clock: systemMonotonicClock,
     });
     expect(result.sessions.every((session) => session.state === "time-exhausted")).toBe(true);
+  });
+
+  it("freezes and publishes attempt v2 when a provider fails before opening a session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-provider-failure-"));
+    const config = await fixtureConfig(root);
+    const agents = runtimes((agentId) =>
+      agentId === "agent-1"
+        ? {
+            openSession() {
+              throw new Error("provider unavailable");
+            },
+          }
+        : finishAdapter(),
+    );
+    const result = await runAttempt({
+      config,
+      agents,
+      sandbox: new FakeCommandSandbox(),
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock: systemMonotonicClock,
+    });
+
+    expect(result.sessions[0]).toMatchObject({
+      state: "infrastructure-error",
+      terminationReason: "provider unavailable",
+      model: model("model-a"),
+    });
+    expect(result.frozen.frozen).toBe(true);
+    await expect(
+      finalizeAttempt({
+        attemptRoot: config.artifactRoot,
+        buildRoot: config.buildRoot,
+        result,
+        publishSummary: publishAttemptSummary,
+        observeOverlap: async () => ({
+          findings: [],
+          scan: {
+            reachableObjectCount: 0,
+            reachableBlobReferenceCount: 0,
+            uniqueReachableBlobCount: 0,
+            uniqueTextBlobCount: 0,
+            repeatedTreeReferenceCount: 0,
+            skippedNonTextBlobCount: 0,
+          },
+        }),
+        appendTrace: async () => undefined,
+      }),
+    ).resolves.toEqual({
+      findings: [],
+      scan: {
+        reachableObjectCount: 0,
+        reachableBlobReferenceCount: 0,
+        uniqueReachableBlobCount: 0,
+        uniqueTextBlobCount: 0,
+        repeatedTreeReferenceCount: 0,
+        skippedNonTextBlobCount: 0,
+      },
+    });
+
+    const summary = decodeAttemptSummary(
+      JSON.parse(await readFile(join(config.artifactRoot, "attempt.json"), "utf8")),
+    );
+    expect(summary).toMatchObject({
+      schemaVersion: 2,
+      buildId: BUILD_ID,
+      agentIds: AGENTS,
+    });
+    expect(summary.sessions[0]).toMatchObject({
+      state: "infrastructure-error",
+      model: model("model-a"),
+    });
   });
 
   it("classifies command sandbox failures as session infrastructure errors", async () => {
@@ -181,13 +334,14 @@ describe("run coordinator", () => {
           usage: { inputTokens: 1, outputTokens: 1 },
         },
       ],
+      "agent-2": [{ toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 } }],
     });
     const sandbox = new FakeCommandSandbox(async () => {
       throw new SandboxInfrastructureError("Docker daemon unavailable.");
     });
     const result = await runAttempt({
       config,
-      adapter,
+      agents: runtimes(() => adapter),
       sandbox,
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
       clock: systemMonotonicClock,

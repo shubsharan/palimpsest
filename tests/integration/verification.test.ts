@@ -29,12 +29,13 @@ const CURRENT_GUIDANCE_PATHS = new Set([
   "docs/roadmap.md",
   "AGENTS.md",
   "CLAUDE.md",
-  "specs/009-refactor-puzzle-architecture/spec.md",
-  "specs/009-refactor-puzzle-architecture/data-model.md",
-  "specs/009-refactor-puzzle-architecture/contracts/attempt-artifacts.md",
-  "specs/009-refactor-puzzle-architecture/contracts/behavior-baseline.md",
-  "specs/009-refactor-puzzle-architecture/contracts/command-sandbox.md",
-  "specs/009-refactor-puzzle-architecture/contracts/operator-cli.md",
+  "experiments/config.yaml",
+  "experiments/schema.json",
+  "specs/011-configurable-research-runs/spec.md",
+  "specs/011-configurable-research-runs/data-model.md",
+  "specs/011-configurable-research-runs/contracts/experiment-config.md",
+  "specs/011-configurable-research-runs/contracts/operator-cli.md",
+  "specs/011-configurable-research-runs/contracts/research-artifacts.md",
 ]);
 
 const DELETED_LAYOUT_PATHS = [
@@ -193,7 +194,7 @@ describe("active repository boundary", () => {
     expect(activeConfiguration).not.toMatch(
       /@palimpsest\/puzzle-runner|packages\/puzzle-runner|tools\/puzzle/,
     );
-    expect(packageSource).toMatch(/oxfmt .* src tools tests specs docs /);
+    expect(packageSource).toMatch(/oxfmt .* src tools tests specs docs experiments /);
     expect(packageSource).toMatch(/oxlint --deny-warnings src tools tests vitest\.config\.ts/);
     expect(tsconfig).toContain('"src/**/*.ts"');
     expect(tsconfig).toContain('"tests/**/*.ts"');
@@ -210,15 +211,65 @@ describe("active repository boundary", () => {
     expect(await deletedReferences(await activeRepositoryPaths())).toEqual([]);
   });
 
-  test("keeps migration-history guidance targeted to the current acceptance flow", async () => {
-    const quickstart = await readFile(
-      "specs/009-refactor-puzzle-architecture/quickstart.md",
-      "utf8",
-    );
-    expect(quickstart).toContain("one root `src/` application");
-    expect(quickstart).toContain("one `python/palimpsest` distribution");
+  test("keeps current guidance targeted to the configurable acceptance flow", async () => {
+    const quickstart = await readFile("specs/011-configurable-research-runs/quickstart.md", "utf8");
+    expect(quickstart).toContain("experiments/config.yaml");
+    expect(quickstart).toContain("pnpm puzzle:experiment");
+    expect(quickstart).toContain("without a billable provider call");
     expect(quickstart).not.toMatch(/\ball \d+ TypeScript cases pass\b/);
     expect(quickstart).not.toMatch(/\ball \d+ .*Python cases.*pass\b/);
+  });
+
+  test("keeps one strict experiment interface and six operator commands", async () => {
+    const [packageSource, schemaSource, baselineSource, cliSource] = await Promise.all([
+      readFile("package.json", "utf8"),
+      readFile("experiments/schema.json", "utf8"),
+      readFile("experiments/config.yaml", "utf8"),
+      readFile("src/cli.ts", "utf8"),
+    ]);
+    const packageManifest = JSON.parse(packageSource) as {
+      scripts?: Record<string, string>;
+    };
+    const schema = JSON.parse(schemaSource) as {
+      additionalProperties?: unknown;
+      properties?: Record<string, unknown>;
+    };
+
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toHaveProperty("puzzle");
+    expect(schema.properties).toHaveProperty("providers");
+    expect(schema.properties).toHaveProperty("models");
+    expect(schema.properties).toHaveProperty("runs");
+    expect(baselineSource).toContain("schemaVersion: 1");
+    expect(packageManifest.scripts).toMatchObject({
+      "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",
+      "puzzle:build": "tsx src/cli.ts build",
+      "puzzle:run": "tsx src/cli.ts run",
+      "puzzle:experiment": "tsx src/cli.ts experiment",
+      "puzzle:evaluate": "tsx src/cli.ts evaluate",
+      "puzzle:offline": "tsx src/cli.ts offline",
+    });
+    expect(cliSource).toContain('case "experiment"');
+  });
+
+  test("has no provider-specific live CLI flags or fixed runtime agent set", async () => {
+    const guidance = (
+      await Promise.all(
+        ["README.md", "docs/architecture.md", "docs/roadmap.md", "AGENTS.md", "CLAUDE.md"].map(
+          (path) => readFile(path, "utf8"),
+        ),
+      )
+    ).join("\n");
+    const dynamicOwners = (
+      await Promise.all(
+        ["src/run.ts", "src/git.ts", "src/prompt.ts", "src/trace.ts", "src/evaluate.ts"].map(
+          (path) => readFile(path, "utf8"),
+        ),
+      )
+    ).join("\n");
+
+    expect(guidance).not.toMatch(/--adapter(?:\s|`)|--model(?:\s|`)/);
+    expect(dynamicOwners).not.toMatch(/\bAGENT_IDS\b|exactly three agents/i);
   });
 
   test("has no retired specification, evidence, package, or tool-state roots", async () => {

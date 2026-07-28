@@ -5,7 +5,7 @@ from collections import Counter
 
 import pytest
 from palimpsest.puzzle.cipher import stationary_key
-from palimpsest.puzzle.revision import build_revision
+from palimpsest.puzzle.revision import build_revision, build_successive_revision
 from palimpsest.puzzle.text import (
     canonicalize_capitalization,
     render,
@@ -149,3 +149,33 @@ def test_revision_changed_mass_reaches_target() -> None:
     counts = Counter(post)
     changed_mass = sum(counts[entry.plain_type] for entry in result.changed_entries)
     assert changed_mass / sum(counts.values()) >= 0.2
+
+
+def test_successive_revision_uses_the_immediately_preceding_key() -> None:
+    vocabulary, pre, post = _revision_fixture()
+    base = stationary_key(vocabulary, "11" * 32)
+    first = build_revision(
+        stationary_key=base,
+        pre_tokens=pre,
+        post_tokens=post,
+        seed_hex="22" * 32,
+        minimum_occurrences=8,
+        stratum_count=4,
+        token_mass_target=0.2,
+    )
+    second = build_successive_revision(
+        prior_key=first.revised_key,
+        pre_tokens=post,
+        post_tokens=pre,
+        seed_hex="33" * 32,
+        minimum_occurrences=8,
+        stratum_count=4,
+        token_mass_target=0.2,
+    )
+
+    second_changed = {entry.plain_type for entry in second.changed_entries}
+    assert all(second.revised_key[word] != first.revised_key[word] for word in second_changed)
+    assert all(
+        second.revised_key[word] == first.revised_key[word]
+        for word in set(vocabulary) - second_changed
+    )

@@ -1,141 +1,109 @@
-# Palimpsest Roadmap
+# Roadmap
 
-## Purpose
+## Direction
 
-This roadmap delivers Palimpsest as a playable three-agent decipherment puzzle. The proposal defines the puzzle and interpretation. The architecture defines the minimal runner and visibility boundaries. The active Spec Kit feature turns those decisions into implementation tasks.
+Feature 011 is the active implementation. It generalizes the Feature 009 behavior-neutral runner into researcher-authored, provider-neutral experiments without turning Palimpsest into a service or workflow product.
 
-The delivery order follows usable behavior: build the puzzle, let agents work freely, let them check their work, evaluate what they leave behind, and remove machinery that does not serve those behaviors.
-
-## Current Status
-
-Feature 009 is the active implementation: a behavior-neutral runner with a hardened Docker/trace boundary, one root TypeScript application, and one Python distribution. Superseded designs and generated evidence remain available through Git history rather than the working tree.
-
-The project is complete when the documented build-run-evaluate path works end to end and the runner neither prescribes nor repairs agent collaboration.
+The project is complete when one local YAML file can reproduce a puzzle condition, assign direct-provider models to its agents, retain sequential attempts, and leave each frozen attempt available for explicit reviewer evaluation.
 
 ## Delivery Sequence
 
-### 1. Align the Puzzle
+### 1. Establish The Experiment Contract
 
-Keep one current explanation of:
+- Check in a strict version-1 JSON Schema and readable baseline YAML.
+- Declare one puzzle, limits, direct provider connections, model profiles, run conditions, and explicit repetitions.
+- Reject unknown keys, literal credentials, unsafe provider options, unresolved references, invalid mixed assignments, and invalid puzzle geometry before side effects.
+- Materialize a resolved non-secret configuration with canonical dynamic agent identities and ordered model bindings.
 
-- the word-substitution puzzle;
-- three private contiguous shard streams;
-- six clock-driven stages;
-- the hidden shared partial re-key;
-- the explicit joint-team and Git prompt;
-- voluntary collaboration and unconstrained strategy;
-- aggregate private checking;
-- token and wall-time termination;
-- reviewer-selected evaluation; and
-- limited research claims.
+This step is done when a homogeneous and mixed fixture condition resolve from one file without source edits or live credentials.
 
-The constitution, proposal, architecture, roadmap, active specification, plan, tasks, runtime guidance, and operator commands must describe the same behavior.
+### 2. Generalize Deterministic Construction
 
-### 2. Build Playable Evidence
+- Make the provenance registry authoritative for source paths, formats, byte lengths, and digests.
+- Interpret configured chapter ranges as one-based and inclusive; ignore table-of-contents chapter matches.
+- Generate the declared number of private streams and stages.
+- Support zero or more ordered partial re-keys, each derived from the prior key and constrained by recurring evidence on both sides of its boundary.
+- Publish strict build schema version 2 with dynamic agent IDs, stage geometry, re-key transitions, paths, counts, and hashes.
 
-Deliver `puzzle:build`.
+This step is done when fixed 2-, 3-, and 5-agent configurations with zero, one, and two re-keys rebuild byte-identically and infeasible geometry fails explicitly.
 
-- Reuse deterministic text preparation, cipher, partial re-key, sharding, and scoring primitives where they match the active design.
-- Produce three private six-stage streams with useful evidence before and after the shared transition.
-- Keep earlier stages immutable and keep the transition hidden from agent-visible names and metadata.
-- Store private evidence and the oracle outside Git and agent workspaces until release.
-- Prepare the complete ciphertext for final execution.
+### 3. Add Direct Provider-Neutral Sessions
 
-This step is done when repeated fixture builds reproduce the stage bytes, transition, checker truth, and complete evaluation input.
+- Keep the existing `ModelAdapter` as the single runtime boundary.
+- Use AI SDK direct providers for one OpenAI, Anthropic, Google, or OpenAI-compatible turn at a time.
+- Construct one model binding and adapter per declared agent, including mixed conditions.
+- Forward model settings, provider options, tools, conversation history, and abort signals without delegating Palimpsest's lifecycle.
+- Require normalized provider-reported input/output usage and preserve optional actual provider/model identity.
+- Add no gateway, model registry, provider fallback, hidden retry, or vendor SDK coupling to the runner.
 
-### 3. Run the Team
+This step is done when mocked first and continuation turns, mixed assignments, usage, abort, and scrubbed provider errors pass without network access.
 
-Deliver `puzzle:run`.
+### 4. Make The Runtime Dynamic
 
-- Start exactly three independent persistent model sessions.
-- Tell every agent that two peers are working concurrently with different evidence and that Git is the shared team channel.
-- Provide equivalent local tools, reference data, ordinary Git, aggregate checking, and activity waiting.
-- Run model-authored commands in a fixed Docker sandbox with `/workspace`, `/evidence`, `/reference`, `/git/shared.git`, and `/tmp` as the only declared surfaces.
-- Release six private stages on one monotonic schedule independent of model behavior.
-- Wake waiting sessions on private-stage or peer-visible Git activity without synchronizing the team.
-- Allow unlimited response, tool, checker, and Git cycles within cumulative per-agent token budgets and one global wall-time cutoff.
-- Freeze the repository and workspaces when the run ends.
+- Create `agent-1` through `agent-N` workspaces, private evidence roots, sessions, prompts, trace identities, and frozen records.
+- Release the configured number of stages on one monotonic schedule.
+- Preserve independent concurrent sessions, shared ordinary Git, equivalent tools, aggregate private checking, token cutoffs, and one wall-time cutoff.
+- Validate evaluation workspaces against each attempt rather than a static enumeration.
+- Keep durable attempt publication before optional overlap observation.
 
-This step is done when independent work, continuous collaboration, waiting, voluntary completion, individual token exhaustion, and global time exhaustion all complete without rounds, roles, checkpoints, or required Git actions.
+This step is done when the existing behavioral fixtures work for dynamic identities without introducing roles, rounds, checkpoints, or solver conventions.
 
-### 4. Check, Evaluate, and Observe
+### 5. Preserve Sequential Research Runs
 
-Deliver `puzzle:evaluate` and the private checker.
+- Build one immutable puzzle per experiment.
+- Execute conditions and repetitions sequentially in declaration order while keeping sessions inside each attempt concurrent.
+- Publish `experiment.json` atomically after every durable attempt.
+- Retain requested and actual model identities, normalized usage, termination, roots, and resolved scientific inputs without credential values.
+- Freeze and index an attempt containing a provider infrastructure-error session, then stop before launching another.
+- Leave reviewer selection and evaluation as a separate explicit action.
 
-- Return only matched-word count, total-word count, coverage, accuracy, or a plain error for currently visible private evidence.
-- Let a reviewer inspect frozen work and record the selected command and output path before execution.
-- Run the selected solver in its own sandbox with the frozen workspace, complete ciphertext, frozen Git, and temporary storage, but no oracle, peer evidence, host files, credentials, or public network.
-- Report `scored`, `not-runnable`, `no-output`, or `execution-error`.
-- Preserve normalized model-turn summaries, full tool arguments/results, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, scores, sandbox image identity, and effective operational limits.
-- Resume one validated, redacted trace across run, overlap, and evaluation processes with contiguous sequence numbers and nondecreasing elapsed times.
-- Report only obvious exact or normalized raw overlap from logical-path/blob pairs reachable through current refs, including committed-then-deleted content; retain both path and blob provenance, materialize each unique text blob once, and count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
+This step is done when a multi-condition fixture experiment preserves all prior attempts across a later failure and every indexed attempt can be evaluated independently.
 
-This step is done when successful, partial, missing, ambiguous, broken, raw-sharing, repeated-checking, and no-Git fixtures all remain inspectable outcomes.
+### 6. Keep The Surface Small
 
-### 5. Simplify the Active Surface
-
-Make the sandbox preparation and three canonical puzzle commands the project entrypoints:
+The operator surface is six commands:
 
 ```bash
 pnpm puzzle:sandbox:build
-pnpm puzzle:build -- --output artifacts/build-17 --seed 17
-pnpm puzzle:run -- \
-  --build artifacts/build-17 \
-  --output artifacts/attempt-17 \
-  --adapter openai \
-  --model "<model>" \
-  --token-budget 200000 \
-  --wall-time-ms 3600000
-pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
+pnpm puzzle:build -- --config experiments/config.yaml --output artifacts/build
+pnpm puzzle:run -- --config experiments/config.yaml --run gpt-only \
+  --build artifacts/build --output artifacts/attempt
+pnpm puzzle:experiment -- --config experiments/config.yaml \
+  --output artifacts/experiment
+pnpm puzzle:evaluate -- --attempt artifacts/attempt --workspace agent-1 \
+  --command "sh solve.sh" --output-path reconstruction.txt
+pnpm puzzle:offline -- --output artifacts/offline
 ```
 
-Keep code that directly supports generation, staged delivery, sessions, Git, checking, observation, evaluation, scoring, and the standard command sandbox. Remove active command paths and runtime dependencies whose purpose is Git byte accounting, publication slots, structured hypotheses, private deliverables, exact artifact replay, gate authorization, adversarial compression, hostile-solver promotion, or red-team release.
+All commands route through `src/cli.ts`. TypeScript owns configuration, provider construction, sessions, tools, Git, traces, artifacts, and orchestration. Python owns deterministic corpus preparation, cipher/re-key geometry, checker, overlap, and scoring. Docker remains the only nested runtime subsystem.
 
-Route every operator command through the dispatcher in `src/cli.ts`; keep lifecycle composition in `src/run.ts`, one owner per model/provider/fixture/reveal/artifact/checker/overlap/trace concern, and nest only the real Docker subsystem under `src/sandbox/`. Keep deterministic Python construction and evaluation under `python/palimpsest/`. Remove the former workspace package, tool facades, source nesting, private barrels, compatibility names, and stored-record migrations.
+Generated attempts stay untracked. Git history remains the archive for superseded implementations and research evidence; active docs describe only the current path.
 
-Publish the frozen attempt summary atomically before optional overlap observation. If observation fails, retain an evaluatable `attempt.json`, trace, frozen Git, and workspaces, append only a best-effort trace diagnostic, and return the original infrastructure failure without a success object or failure sidecar.
+### 7. Verify Without Provider Spend
 
-Remove superseded specifications, tracked historical run artifacts, ignored Gate/harness/replay output, and obsolete package roots from the working tree. Keep generated attempts untracked and use Git history as the archive for removed implementation, specifications, and artifacts. Current product docs, runtime guidance, package scripts, and code paths describe only the active puzzle.
+- Schema and semantic tests cover every invalid manifest class.
+- Mocked provider tests cover model settings, history, tools, usage, abort, identity, failures, and secret scrubbing.
+- Python tests cover registered corpora, chapter parsing, dynamic streams, successive re-keys, deterministic builds, checking, overlap, and scoring.
+- TypeScript tests cover sessions, prompts, Git, releases, traces, cutoffs, freezing, durability, experiments, and reviewer-selected evaluation.
+- Docker tests cover mounts, environment isolation, network denial, path containment, termination, and cleanup.
+- A fixture experiment and fresh `puzzle:offline` flow exercise the complete path without a live provider call.
 
-### 6. Verify the Puzzle Path
+Verification proves that the runner behaves as documented. It does not require agents to solve well, use Git, detect a re-key, collaborate effectively, or avoid workarounds.
 
-Run proportional verification:
-
-- format and link checks for current documentation;
-- Python unit and property tests for build, partial re-key, checker, overlap observer, and scorer;
-- TypeScript tests for prompt neutrality, session independence, stage timing, wake behavior, Git, cutoffs, freeze, and evaluation;
-- Docker-backed tests for role-specific mounts, environment isolation, public-network denial, path containment, resource termination, and orphan-free cleanup;
-- trace tests for validated resumption, shared redaction, contiguous sequence, and nondecreasing elapsed time;
-- Git-history tests for committed-then-deleted text, unique blob processing, repeated tree references, and skipped non-text objects;
-- fixture cases for diverse model behaviors and all evaluation statuses;
-- one fresh `puzzle:offline` build-run-evaluate smoke test without an external model call;
-- active-path boundary checks that are invariant to ignored caches, empty directories, and unstaged moves;
-- strict current-version artifact decoder and post-freeze overlap-failure durability tests;
-- root formatting, linting, type checking, tests, and `git diff --check`.
-- one required `verify` pull-request and merge-queue check that recreates the exact pinned toolchain and fresh sandbox before running the full gate.
-
-Verification proves that the environment behaves as documented. It does not require agents to solve well, use Git, detect the re-key, collaborate effectively, or avoid workarounds.
-
-## Definition of Done
+## Definition Of Done
 
 Palimpsest is delivered when:
 
-- one command builds a deterministic three-stream, six-stage puzzle with one hidden shared partial re-key;
-- one command runs exactly three persistent concurrent sessions with the explicit team/Git prompt and no prescribed workflow;
-- model-authored and reviewer-selected commands run only inside their fixed Docker profiles, and sandbox identity and limits remain operational metadata rather than validity criteria;
-- each agent can use local tools, ordinary shared Git, aggregate private checking, and activity waiting;
-- only voluntary completion, per-agent cumulative token exhaustion, and the global wall-time cutoff end model work;
-- the runner freezes whatever work exists without requiring commits, checkpoints, manifests, or private submissions;
-- a reviewer can record and execute the best inferred solver path against the complete ciphertext;
-- deterministic scoring and normalized observation preserve model outcomes separately from infrastructure failures;
-- one validated trace preserves strict chronology across live and post-run processes;
-- obvious raw overlap covers every reachable text blob once, reports repeated tree references and skipped non-text objects, and remains observational only;
-- obsolete Gate-era code, dependencies, generated evidence, workspace/facade layout, and superseded specifications are absent from the working tree while Git history remains the archive;
-- the active commands and docs contain no Git metering, publication slots, behavioral gates, solver schema, exact replay, or red-team release requirement; and
-- a fresh offline fixture and the repository verification suite pass.
+- one strict YAML file declares the corpus, chapter range, seed, agents, stages, re-keys, limits, provider models, assignments, and repetitions;
+- fixed scientific inputs deterministically reproduce build schema version 2 for supported dynamic puzzle geometry;
+- one named run constructs the declared provider-neutral binding for every agent and preserves independent concurrent sessions;
+- one experiment command builds once, runs sequential attempts, and atomically indexes every durable result;
+- provider credentials never enter checked-in configuration, generated records, traces, errors, or command containers;
+- no automatic fallback or hidden retry can change a declared condition;
+- each attempt publishes schema version 2 before optional overlap observation and remains available for explicit reviewer-selected evaluation;
+- the checked-in three-agent, six-stage, one-re-key fixture still runs end-to-end without an external model request; and
+- `pnpm verify`, `git diff --check`, and a fresh offline run pass.
 
 ## Claim Boundary
 
-The delivered artifact is one compound puzzle with deterministic construction and scoring. It supports observation of how a particular team used private evidence, Git, checking, and prior rules during one attempt.
-
-It does not claim to isolate collaboration value, prove semantic reasoning, certify belief revision, prevent raw communication, reproduce model decisions, exclude source recognition, or provide a hardened public benchmark. Those limitations do not block running the puzzle; they define how its results should be described.
+The delivered artifact supports controlled local comparisons and qualitative inspection of particular runs. It does not isolate collaboration value, prove semantic reasoning or belief revision, equate provider token accounting, reproduce live model decisions, prevent raw communication, provide statistical analysis, or establish a secure public benchmark.

@@ -191,3 +191,24 @@ def build_revision(
         changed_entries=changed_entries,
         matched_controls=tuple(controls),
     )
+
+
+def build_successive_revision(
+    *,
+    prior_key: dict[str, str],
+    pre_tokens: list[str],
+    post_tokens: list[str],
+    seed_hex: str,
+    minimum_occurrences: int,
+    stratum_count: int,
+    token_mass_target: float,
+) -> RevisionResult:
+    return build_revision(
+        stationary_key=prior_key,
+        pre_tokens=pre_tokens,
+        post_tokens=post_tokens,
+        seed_hex=seed_hex,
+        minimum_occurrences=minimum_occurrences,
+        stratum_count=stratum_count,
+        token_mass_target=token_mass_target,
+    )

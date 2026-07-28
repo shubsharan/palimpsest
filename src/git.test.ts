@@ -52,6 +52,27 @@ describe("ordinary shared Git", () => {
     expect(await listRemoteRefs(frozen.barePath)).toEqual({});
   });
 
+  it("creates and freezes the declared dynamic workspace set", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-dynamic-git-"));
+    const environment = await createGitEnvironment(join(root, "active"), [
+      "agent-1",
+      "agent-2",
+      "agent-3",
+      "agent-4",
+      "agent-5",
+    ]);
+    const frozen = await freezeGitEnvironment(environment, join(root, "frozen"));
+
+    expect(environment.workspaces.map(({ agentId }) => agentId)).toEqual([
+      "agent-1",
+      "agent-2",
+      "agent-3",
+      "agent-4",
+      "agent-5",
+    ]);
+    expect(frozen.workspaces).toHaveLength(5);
+  });
+
   it("publishes peer-visible ref changes as wake activity", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-git-activity-"));
     const environment = await createGitEnvironment(root);

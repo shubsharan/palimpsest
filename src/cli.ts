@@ -1,8 +1,9 @@
 import { buildPuzzleFromFlags, buildSandbox } from "./build.js";
+import { runConfiguredPuzzleFromFlags } from "./configured-run.js";
 import { evaluatePuzzleFromFlags } from "./evaluate.js";
+import { runExperimentFromFlags } from "./experiment.js";
 import { parseFlags } from "./flags.js";
 import { runOfflinePuzzleFromFlags } from "./offline.js";
-import { runPuzzleFromFlags } from "./run.js";
 
 const [command, ...args] = process.argv.slice(2);
 const flags = parseFlags(args);
@@ -16,7 +17,10 @@ switch (command) {
     result = await buildPuzzleFromFlags(flags);
     break;
   case "run":
-    result = await runPuzzleFromFlags(flags);
+    result = await runConfiguredPuzzleFromFlags(flags);
+    break;
+  case "experiment":
+    result = await runExperimentFromFlags(flags);
     break;
   case "evaluate":
     result = await evaluatePuzzleFromFlags(flags);
