@@ -61,7 +61,7 @@ As a researcher or reviewer, I want each live experiment artifact to identify th
 
 ## Puzzle & Observation Boundaries _(mandatory)_
 
-**Puzzle Behavior**: The three-agent puzzle, staged private evidence, hidden partial re-key, aggregate checker, reviewer-selected evaluation, and scoring behavior remain unchanged.
+**Puzzle Behavior**: Configured agent/stage geometry, staged private evidence, partial re-keys, aggregate checking, reviewer-selected evaluation, and scoring remain unchanged.
 
 **Agent Instructions & Tools**: Agent prompts, peer context, voluntary unmetered Git, scientific tools, and requested but unenforced collaboration behavior remain unchanged. Only the provenance of the host runner and agent sandbox is added to attempt artifacts.
 
@@ -116,7 +116,7 @@ As a researcher or reviewer, I want each live experiment artifact to identify th
 ## Assumptions
 
 - The project has one or a few trusted maintainers who may merge while advisory checks are failing and repair the primary branch directly.
-- Paid experiments use the OpenAI model adapter; deterministic fixture runs do not require provider credentials or incur model spend.
+- Paid experiments use configured direct-provider adapters; deterministic fixture runs do not require provider credentials or incur model spend.
 - Publication review uses the provenance already retained with experiment artifacts; no separate publishing service is introduced.
 - Ignored generated output does not make the source state dirty, while modified tracked files and untracked nonignored files do.
 - A detached revision is acceptable when it is a valid commit and the source state is clean.

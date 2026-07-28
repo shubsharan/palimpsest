@@ -1,159 +1,139 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
-from itertools import pairwise
 from pathlib import Path
 
 import pytest
 from palimpsest.puzzle.build import build_puzzle
 from palimpsest.puzzle.cipher import apply_mapping
-from palimpsest.puzzle.manifest import AGENT_IDS, STAGE_COUNT, PuzzleBuild
-from palimpsest.puzzle.text import word_tokens
+from palimpsest.puzzle.manifest import PuzzleBuild
 
 ROOT = Path(__file__).resolve().parents[3]
-GOLDEN = json.loads((ROOT / "tests/golden/behavior.json").read_text(encoding="utf-8"))
-SEED_17 = GOLDEN["fixedSeed17Build"]
 
 
-@pytest.fixture(scope="module")
-def built_puzzle(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, PuzzleBuild]:
-    output = tmp_path_factory.mktemp("puzzle-build") / "build"
-    inputs = SEED_17["inputs"]
-    return output, build_puzzle(
-        ROOT,
-        output,
-        seed=inputs["seed"],
-        stage_interval_ms=inputs["stageIntervalMs"],
-        transition_stage=inputs["transitionStage"],
-        changed_token_mass=inputs["changedTokenMass"],
-    )
+def definition(
+    *,
+    agent_count: int = 3,
+    stage_count: int = 6,
+    rekeys: list[dict[str, int | float]] | None = None,
+) -> dict[str, object]:
+    return {
+        "target": {"corpus": "middlemarch", "chapters": {"start": 10, "end": 15}},
+        "references": ["jane-eyre", "moby-dick"],
+        "seed": 17,
+        "agentCount": agent_count,
+        "stageCount": stage_count,
+        "stageIntervalMs": 120_000,
+        "rekeys": [{"atStage": 4, "changedTokenMass": 0.2}] if rekeys is None else rekeys,
+    }
 
 
-def test_build_is_byte_deterministic_with_three_six_stage_private_streams(
-    tmp_path: Path,
-    built_puzzle: tuple[Path, PuzzleBuild],
-) -> None:
-    first_root, first = built_puzzle
+def files(root: Path) -> dict[Path, bytes]:
+    return {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+@pytest.mark.parametrize(
+    "puzzle",
+    [
+        definition(agent_count=2, stage_count=4, rekeys=[]),
+        definition(agent_count=3, stage_count=6),
+        definition(
+            agent_count=3,
+            stage_count=6,
+            rekeys=[
+                {"atStage": 3, "changedTokenMass": 0.2},
+                {"atStage": 5, "changedTokenMass": 0.2},
+            ],
+        ),
+        definition(agent_count=5, stage_count=6, rekeys=[]),
+    ],
+)
+def test_dynamic_builds_are_byte_deterministic(tmp_path: Path, puzzle: dict[str, object]) -> None:
+    first_root = tmp_path / "first"
     second_root = tmp_path / "second"
-    inputs = SEED_17["inputs"]
-    second = build_puzzle(
-        ROOT,
-        second_root,
-        seed=inputs["seed"],
-        stage_interval_ms=inputs["stageIntervalMs"],
-        transition_stage=inputs["transitionStage"],
-        changed_token_mass=inputs["changedTokenMass"],
+
+    first = build_puzzle(ROOT, first_root, puzzle)
+    second = build_puzzle(ROOT, second_root, puzzle)
+
+    assert first == second
+    assert files(first_root) == files(second_root)
+    assert first.agent_count == puzzle["agentCount"]
+    assert len(first.stages) == puzzle["agentCount"] * puzzle["stageCount"]
+    assert (
+        PuzzleBuild.from_dict(
+            json.loads((first_root / "puzzle-build.json").read_text(encoding="utf-8"))
+        )
+        == first
     )
 
-    assert first.to_dict() == second.to_dict()
-    first_files = {
-        path.relative_to(first_root): path.read_bytes()
-        for path in first_root.rglob("*")
-        if path.is_file()
-    }
-    second_files = {
-        path.relative_to(second_root): path.read_bytes()
-        for path in second_root.rglob("*")
-        if path.is_file()
-    }
-    assert first_files == second_files
-    assert first.build_id == SEED_17["buildId"]
-    assert first.agent_count == SEED_17["geometry"]["agentCount"]
-    assert first.stage_count == SEED_17["geometry"]["stageCount"]
-    assert first.transition_stage == SEED_17["geometry"]["transitionStage"]
-    assert len(first.changed_symbols) > 1
-    source_paths = [stage.source_path for stage in first.stages]
-    for agent_id in AGENT_IDS:
-        stages = [stage for stage in first.stages if stage.agent_id == agent_id]
-        assert [stage.ordinal for stage in stages] == list(range(1, STAGE_COUNT + 1))
-        assert all(stage.token_count > 0 for stage in stages)
-        for left, right in pairwise(stages):
-            assert left.source_path != right.source_path
-            assert (first_root / left.source_path).read_bytes() != (
-                first_root / right.source_path
-            ).read_bytes()
-    assert source_paths == sorted(source_paths)
 
-
-def test_every_stream_has_learnable_pre_rules_and_consequential_post_contradictions(
-    built_puzzle: tuple[Path, PuzzleBuild],
+def test_successive_rekeys_use_versioned_keys_and_preserve_prior_stage_bytes(
+    tmp_path: Path,
 ) -> None:
-    build_root, build = built_puzzle
-    base_key = json.loads((build_root / "oracle/base-key.json").read_text(encoding="utf-8"))
-    revised_key = json.loads((build_root / "oracle/revised-key.json").read_text(encoding="utf-8"))
-    changed = set(build.changed_symbols)
+    puzzle = definition(
+        rekeys=[
+            {"atStage": 3, "changedTokenMass": 0.2},
+            {"atStage": 5, "changedTokenMass": 0.2},
+        ]
+    )
+    root = tmp_path / "build"
+    build = build_puzzle(ROOT, root, puzzle)
+    keys = [
+        json.loads((root / path).read_text(encoding="utf-8")) for path in build.oracle_key_paths
+    ]
 
-    assert set(base_key) == set(base_key.values()) == set(revised_key) == set(revised_key.values())
-    assert all(base_key[word] != revised_key[word] for word in changed)
-    assert all(base_key[word] == revised_key[word] for word in set(base_key) - changed)
+    assert [transition.at_stage for transition in build.rekeys] == [3, 5]
+    assert [stage.key_version for stage in build.stages if stage.agent_id == "agent-1"] == [
+        0,
+        0,
+        1,
+        1,
+        2,
+        2,
+    ]
+    for transition in build.rekeys:
+        prior = keys[transition.key_version - 1]
+        current = keys[transition.key_version]
+        changed = set(transition.changed_symbols)
+        assert all(prior[word] != current[word] for word in changed)
+        assert all(prior[word] == current[word] for word in set(prior) - changed)
 
-    for agent_id in AGENT_IDS:
-        pre = []
-        post = []
-        for ordinal in range(1, STAGE_COUNT + 1):
-            truth = (build_root / f"oracle/checker/{agent_id}/stage-{ordinal:02d}.txt").read_text(
-                encoding="utf-8"
-            )
-            target = pre if ordinal < build.transition_stage else post
-            target.extend(token.normalized for token in word_tokens(truth))
-        pre_counts = Counter(pre)
-        post_counts = Counter(post)
-        assert all(pre_counts[word] > 0 and post_counts[word] > 0 for word in changed)
-        post_changed_mass = sum(post_counts[word] for word in changed) / len(post)
-        assert post_changed_mass >= 0.15
+    for ordinal in (2, 3, 4, 5):
+        stage = next(
+            stage
+            for stage in build.stages
+            if stage.agent_id == "agent-1" and stage.ordinal == ordinal
+        )
+        truth = (root / f"oracle/checker/agent-1/stage-{ordinal:02d}.txt").read_text(
+            encoding="utf-8"
+        )
+        ciphertext = (root / stage.source_path).read_text(encoding="utf-8")
+        assert ciphertext.strip() == apply_mapping(truth.strip(), keys[stage.key_version])
 
 
-def test_stage_four_uses_the_shared_revised_key_without_rewriting_prior_bytes(
-    built_puzzle: tuple[Path, PuzzleBuild],
+def test_zero_rekeys_uses_one_stationary_key(tmp_path: Path) -> None:
+    build = build_puzzle(ROOT, tmp_path / "build", definition(rekeys=[]))
+
+    assert build.rekeys == ()
+    assert len(build.oracle_key_paths) == 1
+    assert {stage.key_version for stage in build.stages} == {0}
+
+
+def test_build_rejects_infeasible_rekey_geometry_without_publishing(
+    tmp_path: Path,
 ) -> None:
-    build_root, build = built_puzzle
-    before = {
-        stage.source_path: (build_root / stage.source_path).read_bytes()
-        for stage in build.stages
-        if stage.ordinal < build.transition_stage
-    }
-    inputs = SEED_17["inputs"]
-    rebuilt = build_puzzle(
-        ROOT,
-        build_root.parent / "rebuilt",
-        seed=inputs["seed"],
-        stage_interval_ms=inputs["stageIntervalMs"],
-        transition_stage=inputs["transitionStage"],
-        changed_token_mass=inputs["changedTokenMass"],
+    output = tmp_path / "build"
+    puzzle = definition(
+        agent_count=5,
+        rekeys=[
+            {"atStage": 3, "changedTokenMass": 0.2},
+            {"atStage": 5, "changedTokenMass": 0.2},
+        ],
     )
 
-    assert rebuilt.changed_symbols == build.changed_symbols
-    assert before == {path: (build_root.parent / "rebuilt" / path).read_bytes() for path in before}
-
-    base_key = json.loads((build_root / "oracle/base-key.json").read_text(encoding="utf-8"))
-    revised_key = json.loads((build_root / "oracle/revised-key.json").read_text(encoding="utf-8"))
-    for agent_id in AGENT_IDS:
-        for ordinal, key in ((3, base_key), (4, revised_key)):
-            truth = (build_root / f"oracle/checker/{agent_id}/stage-{ordinal:02d}.txt").read_text(
-                encoding="utf-8"
-            )
-            cipher = (build_root / f"private/{agent_id}/stages/stage-{ordinal:02d}.txt").read_text(
-                encoding="utf-8"
-            )
-            assert cipher.strip() == apply_mapping(truth.strip(), key)
-
-
-def test_build_keeps_public_private_evaluation_and_oracle_content_separate(
-    built_puzzle: tuple[Path, PuzzleBuild],
-) -> None:
-    build_root, build = built_puzzle
-    public_files = [path for path in (build_root / "public").rglob("*") if path.is_file()]
-    private_files = [path for path in (build_root / "private").rglob("*") if path.is_file()]
-    oracle_files = [path for path in (build_root / "oracle").rglob("*") if path.is_file()]
-
-    assert public_files
-    assert len(private_files) == 3 * STAGE_COUNT
-    assert (build_root / build.public_ciphertext_path).is_file()
-    assert (build_root / "oracle/plaintext.txt").is_file()
-    assert all("plaintext" not in path.name and "key" not in path.name for path in public_files)
-    assert all("plaintext" not in path.name and "key" not in path.name for path in private_files)
-    assert oracle_files
+    with pytest.raises(ValueError, match=r"[Rr]e-key at stage"):
+        build_puzzle(ROOT, output, puzzle)
+    assert not output.exists()
 
 
 def test_build_refuses_an_existing_nonempty_destination(tmp_path: Path) -> None:
@@ -162,5 +142,5 @@ def test_build_refuses_an_existing_nonempty_destination(tmp_path: Path) -> None:
     (output / "keep.txt").write_text("user data\n", encoding="utf-8")
 
     with pytest.raises(FileExistsError, match="non-empty"):
-        build_puzzle(ROOT, output)
+        build_puzzle(ROOT, output, definition())
     assert (output / "keep.txt").read_text(encoding="utf-8") == "user data\n"

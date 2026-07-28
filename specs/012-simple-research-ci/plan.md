@@ -4,7 +4,7 @@
 
 ## Summary
 
-Replace the heavyweight required pull-request gate with a mechanical advisory Linux smoke check, and move complete behavioral verification to one explicit `pnpm preflight` immediately before a live experiment that spends money or may support findings. CI installs locked dependencies, checks formatting and lint, compiles TypeScript, and builds the sandbox image without running test suites. Preflight invalidates stale authorization, requires a clean commit, runs the complete suite plus a fresh offline fixture, and atomically publishes one receipt. An OpenAI run validates that receipt against the current commit and inspected sandbox before constructing model sessions, then copies it into the attempt artifacts.
+Replace the heavyweight required pull-request gate with a mechanical advisory Linux smoke check, and move complete behavioral verification to one explicit `pnpm preflight` immediately before a live experiment that spends money or may support findings. CI installs locked dependencies, checks formatting and lint, compiles TypeScript, and builds the sandbox image without running test suites. Preflight invalidates stale authorization, requires a clean commit, runs the complete suite plus a fresh offline fixture, and atomically publishes one receipt. A provider-backed run validates that receipt against the current commit and inspected sandbox before model sessions begin, then copies it into the attempt artifacts.
 
 ## Technical Context
 
@@ -49,7 +49,7 @@ tools/verify-versions.ts           # exact language/package declarations only
 src/
 ├── cli.ts                         # routes preflight
 ├── preflight.ts                   # receipt, full preflight, and live-run validation
-└── run.ts                         # gates OpenAI runs and copies receipt into attempts
+└── run.ts                         # gates provider-backed runs and copies receipts
 tests/
 ├── integration/verification.test.ts
 └── puzzle/
@@ -88,7 +88,7 @@ Any failure leaves no successful canonical receipt.
 
 ### Live-Run Authorization
 
-Fixture runs remain receipt-free. Before an OpenAI run can create its model adapter or make a provider request, `src/run.ts` requires:
+Fixture runs remain receipt-free. Before a provider-backed run can begin a model session or make a provider request, `src/run.ts` requires:
 
 - a valid canonical receipt;
 - a still-clean worktree at the receipt's commit;

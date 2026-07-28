@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { AGENT_IDS, type AgentId } from "./model.js";
+import { isAgentId, type AgentId } from "./model.js";
 
 export interface ObservationEvent {
   sequence: number;
@@ -87,7 +87,7 @@ function requireEvent(
   if (typeof event.kind !== "string" || event.kind.length === 0 || !("data" in event)) {
     throw new Error(`${path} event ${expectedSequence} is missing kind or data.`);
   }
-  if (event.agentId !== undefined && !AGENT_IDS.includes(event.agentId)) {
+  if (event.agentId !== undefined && !isAgentId(event.agentId)) {
     throw new Error(`${path} event ${expectedSequence} has an invalid agentId.`);
   }
   return event as ObservationEvent;

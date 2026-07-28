@@ -35,15 +35,13 @@ Run preflight once, then use the existing operator flow without changing the che
 ```bash
 pnpm preflight
 
-pnpm puzzle:build -- --output artifacts/build-live --seed 17
+pnpm puzzle:build -- --config experiments/config.yaml --output artifacts/build-live
 
 pnpm puzzle:run -- \
+  --config experiments/config.yaml \
+  --run gpt-only \
   --build artifacts/build-live \
-  --output artifacts/attempt-live \
-  --adapter openai \
-  --model <model> \
-  --token-budget <per-agent-budget> \
-  --wall-time-ms <limit>
+  --output artifacts/attempt-live
 ```
 
 Before publishing findings, inspect both:
@@ -65,4 +63,4 @@ pnpm preflight
 rm source-drift-probe
 ```
 
-The failed preflight leaves no `artifacts/preflight.json`. A missing, stale, dirty, or sandbox-mismatched receipt also makes an OpenAI run fail before its first provider call.
+The failed preflight leaves no `artifacts/preflight.json`. A missing, stale, dirty, or sandbox-mismatched receipt also makes a provider-backed run fail before its first provider call.

@@ -7,11 +7,12 @@
   "scripts": {
     "build": "tsc -b",
     "check": "pnpm verify:versions && pnpm format:check && pnpm lint && pnpm build",
-    "format": "oxfmt --config oxfmt.json --write README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml python",
-    "format:check": "oxfmt --config oxfmt.json --check README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml --check python",
+    "format": "oxfmt --config oxfmt.json --write README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs experiments fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml python",
+    "format:check": "oxfmt --config oxfmt.json --check README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs experiments fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml --check python",
     "lint": "oxlint --deny-warnings src tools tests vitest.config.ts && uv run --offline --frozen --project python ruff check --config python/pyproject.toml python",
     "puzzle:build": "tsx src/cli.ts build",
     "puzzle:evaluate": "tsx src/cli.ts evaluate",
+    "puzzle:experiment": "tsx src/cli.ts experiment",
     "puzzle:offline": "tsx src/cli.ts offline",
     "puzzle:run": "tsx src/cli.ts run",
     "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",
@@ -22,6 +23,16 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify": "pnpm verify:versions && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:ts && pnpm test:py",
     "verify:versions": "tsx tools/verify-versions.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.22",
+    "@ai-sdk/google": "4.0.25",
+    "@ai-sdk/openai": "4.0.21",
+    "@ai-sdk/openai-compatible": "3.0.15",
+    "ai": "7.0.38",
+    "ajv": "8.20.0",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "26.1.1",

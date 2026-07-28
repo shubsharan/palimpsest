@@ -50,7 +50,7 @@
 
 ## Live-Run Gate
 
-**Decision**: Require and validate the receipt only for the OpenAI adapter. Validate source state first, then inspect the sandbox and require identity equality before constructing the adapter. Copy the receipt into the newly created attempt root before sessions start.
+**Decision**: Require and validate the receipt for any configured provider-backed run while fixture-only runs remain exempt. Validate source state first, then inspect the sandbox and require identity equality before model sessions start. Copy the receipt into the newly created attempt root before sessions start.
 
 **Rationale**: The first provider request occurs only when a session responds. Gating in `runPuzzle` therefore prevents spend without changing provider code or checking every turn. Fixture verification remains usable without self-authorizing preflight.
 

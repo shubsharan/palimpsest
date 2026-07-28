@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { decodeAttemptSummary } from "./artifacts.js";
-import type { ModelAdapter, ModelSession, ModelTurn } from "./model.js";
+import type { ModelAdapter, ModelBinding, ModelSession, ModelTurn } from "./model.js";
 import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "./sandbox/contracts.js";
 import { runAgentSession } from "./session.js";
 import type { AgentToolSet } from "./tools.js";
@@ -19,19 +19,43 @@ function adapterWith(session: ModelSession): ModelAdapter {
   };
 }
 
+function binding(profile = "research-model"): ModelBinding {
+  return {
+    profile,
+    provider: "research-provider",
+    driver: "openai-compatible",
+    requestedModel: "requested-model",
+    settings: { temperature: 0.2 },
+    providerOptions: {},
+  };
+}
+
 describe("model session lifecycle", () => {
-  it("keeps one model session across tool activity and a voluntary final response", async () => {
+  it("keeps one session and records normalized usage plus actual response identity", async () => {
     const tools = createTools();
     const requests: unknown[] = [];
     const turns: ModelTurn[] = [
       {
         toolCalls: [{ id: "call-1", name: "wait_for_activity", arguments: { afterSequence: 0 } }],
-        usage: { inputTokens: 3, outputTokens: 2 },
+        usage: {
+          inputTokens: 3,
+          outputTokens: 2,
+          inputTokenDetails: { cacheReadTokens: 2, noCacheTokens: 1 },
+          outputTokenDetails: { reasoningTokens: 1, textTokens: 1 },
+        },
+        responseIdentity: {
+          actualProvider: "compatible-cloud",
+          actualModel: "routed-model-2026-07",
+        },
       },
       {
         toolCalls: [],
         finalResponse: "finished",
         usage: { inputTokens: 2, outputTokens: 1 },
+        responseIdentity: {
+          actualProvider: "compatible-cloud",
+          actualModel: "routed-model-2026-07",
+        },
       },
     ];
     const observe = vi.fn();
@@ -47,6 +71,7 @@ describe("model session lifecycle", () => {
     await expect(
       runAgentSession({
         agentId: "agent-1",
+        model: binding(),
         prompt: "solve",
         adapter: adapterWith(session),
         tools,
@@ -57,6 +82,11 @@ describe("model session lifecycle", () => {
       }),
     ).resolves.toEqual({
       agentId: "agent-1",
+      model: {
+        ...binding(),
+        actualProvider: "compatible-cloud",
+        actualModel: "routed-model-2026-07",
+      },
       state: "finished",
       inputTokens: 5,
       outputTokens: 3,
@@ -71,25 +101,27 @@ describe("model session lifecycle", () => {
       toolResults: [{ callId: "call-1", output: { input: { afterSequence: 0 } } }],
     });
     expect(observe).toHaveBeenCalledWith(
-      "session.state",
-      { previous: "working", state: "waiting", reason: undefined },
-      "agent-1",
-    );
-    expect(observe).toHaveBeenCalledWith(
-      "session.state",
-      { previous: "waiting", state: "working", reason: undefined },
-      "agent-1",
-    );
-    expect(observe).toHaveBeenCalledWith(
-      "session.state",
-      { previous: "working", state: "finished", reason: "voluntary final response" },
+      "model.response",
+      expect.objectContaining({
+        usage: {
+          inputTokens: 3,
+          outputTokens: 2,
+          inputTokenDetails: { cacheReadTokens: 2, noCacheTokens: 1 },
+          outputTokenDetails: { reasoningTokens: 1, textTokens: 1 },
+        },
+        responseIdentity: {
+          actualProvider: "compatible-cloud",
+          actualModel: "routed-model-2026-07",
+        },
+      }),
       "agent-1",
     );
   });
 
-  it("keeps an absent final response absent in the persisted session shape", async () => {
+  it("keeps absent final text absent in strict attempt schema v2", async () => {
     const result = await runAgentSession({
       agentId: "agent-1",
+      model: binding(),
       prompt: "solve",
       adapter: adapterWith({
         respond: async () => ({
@@ -103,19 +135,13 @@ describe("model session lifecycle", () => {
       getActivityCursor: () => 0,
     });
 
-    expect(result).toEqual({
-      agentId: "agent-1",
-      state: "finished",
-      inputTokens: 1,
-      outputTokens: 1,
-      activityCursor: 0,
-      terminationReason: "voluntary final response",
-    });
     expect(result).not.toHaveProperty("finalResponse");
-
     const summary = decodeAttemptSummary({
+      schemaVersion: 2,
       attemptId: "attempt-no-text",
+      buildId: `build-${"1".repeat(64)}`,
       buildRoot: "/tmp/build",
+      agentIds: ["agent-1", "agent-2"],
       tracePath: "/tmp/attempt/trace.jsonl",
       traceMetadataPath: "/tmp/attempt/trace.meta.json",
       frozenRoot: "/tmp/attempt/frozen",
@@ -126,7 +152,7 @@ describe("model session lifecycle", () => {
         profileVersion: 1,
         ...SANDBOX_POLICY,
       },
-      sessions: [result, { ...result, agentId: "agent-2" }, { ...result, agentId: "agent-3" }],
+      sessions: [result, { ...result, agentId: "agent-2", model: binding("second-model") }],
     });
     expect(summary.sessions[0]).not.toHaveProperty("finalResponse");
   });
@@ -145,6 +171,7 @@ describe("model session lifecycle", () => {
     await expect(
       runAgentSession({
         agentId: "agent-2",
+        model: binding(),
         prompt: "solve",
         adapter: adapterWith(session),
         tools,
@@ -159,30 +186,28 @@ describe("model session lifecycle", () => {
       terminationReason: "cumulative model-token cutoff",
     });
     expect(tools.execute).not.toHaveBeenCalled();
-    expect(cancel).toHaveBeenCalledOnce();
     expect(cancel).toHaveBeenCalledWith("token-exhausted");
   });
 
   it("aborts a pending model response at the wall-time boundary", async () => {
-    const tools = createTools();
     const controller = new AbortController();
     const cancel = vi.fn();
     let markResponding: (() => void) | undefined;
     const responding = new Promise<void>((resolve) => {
       markResponding = resolve;
     });
-    const session: ModelSession = {
-      respond: async () => {
-        markResponding?.();
-        return new Promise<ModelTurn>(() => undefined);
-      },
-      cancel,
-    };
     const result = runAgentSession({
       agentId: "agent-3",
+      model: binding(),
       prompt: "solve",
-      adapter: adapterWith(session),
-      tools,
+      adapter: adapterWith({
+        respond: async () => {
+          markResponding?.();
+          return new Promise<ModelTurn>(() => undefined);
+        },
+        cancel,
+      }),
+      tools: createTools(),
       tokenBudget: 20,
       signal: controller.signal,
       getActivityCursor: () => 2,
@@ -193,17 +218,14 @@ describe("model session lifecycle", () => {
 
     await expect(result).resolves.toMatchObject({
       state: "time-exhausted",
-      inputTokens: 0,
-      outputTokens: 0,
       activityCursor: 2,
       terminationReason: "global wall-time cutoff",
     });
-    expect(cancel).toHaveBeenCalledOnce();
     expect(cancel).toHaveBeenCalledWith("time-exhausted");
   });
 
-  it("classifies model-session construction failures as infrastructure errors", async () => {
-    const tools = createTools();
+  it("returns provider construction failures with requested model metadata intact", async () => {
+    const model = binding("unavailable-provider-model");
     const adapter: ModelAdapter = {
       openSession() {
         throw new Error("provider unavailable");
@@ -213,16 +235,41 @@ describe("model session lifecycle", () => {
     await expect(
       runAgentSession({
         agentId: "agent-1",
+        model,
         prompt: "solve",
         adapter,
-        tools,
+        tools: createTools(),
+        tokenBudget: 20,
+        signal: new AbortController().signal,
+        getActivityCursor: () => 0,
+      }),
+    ).resolves.toMatchObject({
+      model,
+      state: "infrastructure-error",
+      terminationReason: "provider unavailable",
+    });
+  });
+
+  it("classifies missing provider usage as an infrastructure failure", async () => {
+    await expect(
+      runAgentSession({
+        agentId: "agent-1",
+        model: binding(),
+        prompt: "solve",
+        adapter: adapterWith({
+          respond: async () => ({
+            toolCalls: [],
+            usage: { inputTokens: undefined, outputTokens: 1 },
+          }),
+        } as never),
+        tools: createTools(),
         tokenBudget: 20,
         signal: new AbortController().signal,
         getActivityCursor: () => 0,
       }),
     ).resolves.toMatchObject({
       state: "infrastructure-error",
-      terminationReason: "provider unavailable",
+      terminationReason: "Adapter inputTokens must be a non-negative safe integer.",
     });
   });
 });

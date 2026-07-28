@@ -27,16 +27,14 @@ The prior canonical receipt is removed before verification begins. Only complete
 
 ## Live Run
 
-The existing OpenAI run command and flags remain unchanged:
+The configured provider-backed run command and flags remain unchanged:
 
 ```bash
 pnpm puzzle:run -- \
+  --config experiments/config.yaml \
+  --run <run-name> \
   --build <build-root> \
-  --output <attempt-root> \
-  --adapter openai \
-  --model <model> \
-  --token-budget <per-agent-budget> \
-  --wall-time-ms <limit>
+  --output <attempt-root>
 ```
 
 Before any provider call, the command requires:

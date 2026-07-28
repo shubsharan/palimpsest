@@ -2,9 +2,23 @@ import { resolve } from "node:path";
 
 import { decodeBuildResult, decodeEvaluationRecord, decodeOverlapResult } from "./artifacts.js";
 import { buildPuzzle, type BuildPuzzleResult } from "./build.js";
+import type { PuzzleDefinition } from "./config.js";
 import { evaluatePuzzle } from "./evaluate.js";
 import { requiredFlag } from "./flags.js";
-import { runPuzzle, type RunPuzzleResult } from "./run.js";
+import { createFixtureAgentRuntimes, runPuzzle, type RunPuzzleResult } from "./run.js";
+
+const OFFLINE_PUZZLE: PuzzleDefinition = {
+  target: {
+    corpus: "middlemarch",
+    chapters: { start: 10, end: 15 },
+  },
+  references: ["jane-eyre", "moby-dick"],
+  seed: 0,
+  agentCount: 3,
+  stageCount: 6,
+  stageIntervalMs: 20,
+  rekeys: [{ atStage: 4, changedTokenMass: 0.2 }],
+};
 
 export interface OfflinePuzzleOptions {
   root: string;
@@ -25,18 +39,16 @@ export async function runOfflinePuzzle(
   const build = await buildPuzzle({
     root,
     output: resolve(output, "build"),
-    seed: 0,
-    stageIntervalMs: 20,
-    transitionStage: 4,
-    changedTokenMass: 0.2,
+    puzzle: OFFLINE_PUZZLE,
   });
   const run = await runPuzzle({
     root,
     buildRoot: build.buildPath,
     output: resolve(output, "attempt"),
-    adapter: "fixture",
-    fixtureScenario: "collaborative-revision",
-    tokenBudget: 100,
+    runName: "offline",
+    repetition: 1,
+    agents: createFixtureAgentRuntimes(build.agentIds, "collaborative-revision"),
+    tokenBudgetPerAgent: 100,
     wallTimeMs: 10_000,
   });
   const evaluation = await evaluatePuzzle({

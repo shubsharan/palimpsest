@@ -1,17 +1,28 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { buildPuzzle } from "../../src/build.js";
-import { evaluatePuzzle } from "../../src/evaluate.js";
+import type { PuzzleDefinition } from "../../src/config.js";
 import { parseFlags } from "../../src/flags.js";
-import { runPuzzle } from "../../src/run.js";
 
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
+const smallPuzzle: PuzzleDefinition = {
+  target: {
+    corpus: "middlemarch",
+    chapters: { start: 10, end: 15 },
+  },
+  references: ["jane-eyre", "moby-dick"],
+  seed: 17,
+  agentCount: 2,
+  stageCount: 4,
+  stageIntervalMs: 10,
+  rekeys: [],
+};
 
 interface CommandResult {
   exitCode: number;
@@ -64,8 +75,21 @@ async function packageScripts(): Promise<Record<string, string>> {
   return packageJson.scripts;
 }
 
+async function artifactFiles(directory: string, current = directory): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(current, { withFileTypes: true })) {
+    const path = join(current, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await artifactFiles(directory, path)));
+    } else if (entry.isFile()) {
+      files.push(relative(directory, path));
+    }
+  }
+  return files.sort();
+}
+
 describe("operator CLI contract", () => {
-  it("keeps the five public command names without depending on their private entrypoint layout", async () => {
+  it("publishes the five existing commands plus experiment", async () => {
     const scripts = await packageScripts();
     const commandNames = Object.keys(scripts)
       .filter((name) => name.startsWith("puzzle:"))
@@ -74,6 +98,7 @@ describe("operator CLI contract", () => {
     expect(commandNames).toEqual([
       "puzzle:build",
       "puzzle:evaluate",
+      "puzzle:experiment",
       "puzzle:offline",
       "puzzle:run",
       "puzzle:sandbox:build",
@@ -88,234 +113,140 @@ describe("operator CLI contract", () => {
     expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
   });
 
-  it("accepts every documented flag name, including pnpm's standalone separator", () => {
+  it("accepts the provider-neutral build, run, experiment, and evaluate flag names", () => {
     expect(
       parseFlags([
         "--",
+        "--config",
+        "experiments/config.yaml",
+        "--run",
+        "mixed",
         "--output",
         "attempt",
-        "--seed",
-        "0",
-        "--stage-interval-ms",
-        "120000",
-        "--transition-stage",
-        "4",
-        "--changed-token-mass",
-        "0.2",
         "--build",
         "build",
-        "--adapter",
-        "fixture",
-        "--token-budget",
-        "100",
-        "--wall-time-ms",
-        "10000",
-        "--model",
-        "model",
-        "--fixture-scenario",
-        "collaborative-revision",
         "--attempt",
         "attempt",
         "--workspace",
         "agent-1",
         "--command",
         "sh solve.sh",
+        "--output-path",
+        "reconstruction.txt",
         "--notes",
         "reviewed",
       ]),
     ).toEqual(
       new Map([
+        ["--config", "experiments/config.yaml"],
+        ["--run", "mixed"],
         ["--output", "attempt"],
-        ["--seed", "0"],
-        ["--stage-interval-ms", "120000"],
-        ["--transition-stage", "4"],
-        ["--changed-token-mass", "0.2"],
         ["--build", "build"],
-        ["--adapter", "fixture"],
-        ["--token-budget", "100"],
-        ["--wall-time-ms", "10000"],
-        ["--model", "model"],
-        ["--fixture-scenario", "collaborative-revision"],
         ["--attempt", "attempt"],
         ["--workspace", "agent-1"],
         ["--command", "sh solve.sh"],
+        ["--output-path", "reconstruction.txt"],
         ["--notes", "reviewed"],
       ]),
     );
   });
 
   it("rejects missing flag values and duplicate names explicitly", () => {
-    expect(() => parseFlags(["--output"])).toThrow("--output requires a value.");
-    expect(() => parseFlags(["--output", "one", "--output", "two"])).toThrow(
-      "--output may be provided only once.",
+    expect(() => parseFlags(["--config"])).toThrow("--config requires a value.");
+    expect(() => parseFlags(["--config", "one", "--config", "two"])).toThrow(
+      "--config may be provided only once.",
     );
   });
 
-  it("emits one extensible build result with defaults and an absolute path", async () => {
+  it("builds from one experiment config and emits one absolute result", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-cli-"));
-    const defaultOutput = join(temporaryRoot, "default");
-    const explicitOutput = join(temporaryRoot, "explicit");
-    const first = await buildPuzzle({
-      root,
-      output: defaultOutput,
-    });
-    const second = await buildPuzzle({
-      root,
-      output: explicitOutput,
-      seed: 0,
-      stageIntervalMs: 120_000,
-      transitionStage: 4,
-      changedTokenMass: 0.2,
-    });
-
-    expect(first).toMatchObject({
-      buildId: expect.stringMatching(/^build-/),
-      buildPath: defaultOutput,
-    });
-    expect(Object.keys(first)).toEqual(
-      expect.arrayContaining(["buildId", "buildPath", "agentCount", "stageCount"]),
-    );
-    expect(isAbsolute(first.buildPath)).toBe(true);
-    expect(second.buildId).toBe(first.buildId);
-
+    const output = join(temporaryRoot, "build");
     const scripts = await packageScripts();
     const command = scripts["puzzle:build"]?.split(/\s+/);
     expect(command?.[0]).toBe("tsx");
+
     const result = await execute(
       process.execPath,
-      [tsxCli, ...(command?.slice(1) ?? []), "--output", join(temporaryRoot, "stdout")],
-      {
-        cwd: root,
-      },
+      [
+        tsxCli,
+        ...(command?.slice(1) ?? []),
+        "--config",
+        "experiments/config.yaml",
+        "--output",
+        output,
+      ],
+      { cwd: root },
     );
+
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(expectOneJsonObject(result.stdout)).toMatchObject({
-      buildId: expect.stringMatching(/^build-/),
-      buildPath: expect.stringMatching(/^\//),
+      buildId: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      buildPath: output,
+      agentIds: ["agent-1", "agent-2", "agent-3"],
+      stageCount: 6,
     });
   }, 30_000);
 
-  it("preserves deterministic private streams while separating public and oracle files", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-contract-"));
+  it("rejects an invalid config before creating a build directory", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-config-"));
+    const config = join(temporaryRoot, "invalid.yaml");
+    const output = join(temporaryRoot, "build");
+    const baseline = await readFile(join(root, "experiments", "config.yaml"), "utf8");
+    await writeFile(config, `${baseline}\nunknownTopLevelKey: true\n`, "utf8");
+    const scripts = await packageScripts();
+    const command = scripts["puzzle:build"]?.split(/\s+/);
+
+    const result = await execute(
+      process.execPath,
+      [tsxCli, ...(command?.slice(1) ?? []), "--config", config, "--output", output],
+      { cwd: root },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Experiment configuration is invalid");
+    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rebuilds dynamic geometry byte-identically", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-determinism-"));
     const firstOutput = join(temporaryRoot, "first");
     const secondOutput = join(temporaryRoot, "second");
     const first = await buildPuzzle({
       root,
       output: firstOutput,
-      seed: 17,
-      stageIntervalMs: 10,
-      transitionStage: 4,
-      changedTokenMass: 0.2,
+      puzzle: smallPuzzle,
     });
     const second = await buildPuzzle({
       root,
       output: secondOutput,
-      seed: 17,
-      stageIntervalMs: 10,
-      transitionStage: 4,
-      changedTokenMass: 0.2,
+      puzzle: smallPuzzle,
     });
 
-    expect(first).toMatchObject({ agentCount: 3, stageCount: 6, transitionStage: 4 });
-    expect(second.buildId).toBe(first.buildId);
-    const manifest = JSON.parse(await readFile(join(firstOutput, "puzzle-build.json"), "utf8")) as {
-      stages: { sourcePath: string }[];
-      publicCiphertextPath: string;
-      oracleRoot: string;
-    };
-    expect(manifest.stages).toHaveLength(18);
-    expect(new Set(manifest.stages.map((stage) => stage.sourcePath.split("/")[1]))).toEqual(
-      new Set(["agent-1", "agent-2", "agent-3"]),
-    );
-    await access(join(firstOutput, manifest.publicCiphertextPath));
-    await access(join(firstOutput, manifest.oracleRoot, "plaintext.txt"));
-    expect(manifest.publicCiphertextPath.startsWith(manifest.oracleRoot)).toBe(false);
-  }, 30_000);
-
-  it("enforces run positivity and the OpenAI model relationship before sandbox startup", async () => {
-    await expect(
-      runPuzzle({
-        root,
-        buildRoot: "unused",
-        output: "unused",
-        adapter: "fixture",
-        tokenBudget: 0,
-        wallTimeMs: 10_000,
-      }),
-    ).rejects.toThrow("Token budget and wall time must be positive.");
-
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-run-contract-"));
-    const build = await buildPuzzle({
-      root,
-      output: join(temporaryRoot, "build"),
-      stageIntervalMs: 1,
+    expect(first).toEqual({
+      buildId: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      buildPath: firstOutput,
+      agentIds: ["agent-1", "agent-2"],
+      stageCount: 4,
     });
-    await expect(
-      runPuzzle({
-        root,
-        buildRoot: build.buildPath,
-        output: join(temporaryRoot, "attempt"),
-        adapter: "openai",
-        tokenBudget: 100,
-        wallTimeMs: 10_000,
-      }),
-    ).rejects.toThrow("--model is required");
+    expect(second).toEqual({ ...first, buildPath: secondOutput });
 
-    const rejectedPaidAttempt = join(temporaryRoot, "missing-preflight-attempt");
-    await expect(
-      runPuzzle({
-        root: temporaryRoot,
-        buildRoot: build.buildPath,
-        output: rejectedPaidAttempt,
-        adapter: "openai",
-        model: "test-model",
-        tokenBudget: 100,
-        wallTimeMs: 10_000,
+    const firstFiles = await artifactFiles(firstOutput);
+    expect(firstFiles).toEqual(await artifactFiles(secondOutput));
+    await Promise.all(
+      firstFiles.map(async (path) => {
+        expect(await readFile(join(firstOutput, path))).toEqual(
+          await readFile(join(secondOutput, path)),
+        );
       }),
-    ).rejects.toThrow(/preflight receipt is missing or invalid/i);
-    await expect(access(rejectedPaidAttempt)).rejects.toMatchObject({ code: "ENOENT" });
-
-    const rejectedAttempt = join(temporaryRoot, "unknown-scenario-attempt");
-    await expect(
-      runPuzzle({
-        root,
-        buildRoot: build.buildPath,
-        output: rejectedAttempt,
-        adapter: "fixture",
-        fixtureScenario: "unknown",
-        tokenBudget: 100,
-        wallTimeMs: 10_000,
-      }),
-    ).rejects.toThrow(/unknown fixture scenario.*collaborative-revision/i);
-    await expect(access(rejectedAttempt)).rejects.toMatchObject({ code: "ENOENT" });
-  }, 30_000);
-
-  it("requires evaluator command and output flags together before sandbox startup", async () => {
-    const attemptRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-contract-"));
-    await writeFile(
-      join(attemptRoot, "attempt.json"),
-      `${JSON.stringify({
-        buildRoot: join(attemptRoot, "build"),
-        tracePath: join(attemptRoot, "trace.jsonl"),
-        frozenRoot: join(attemptRoot, "frozen"),
-        sandbox: { imageId: "sha256:contract" },
-      })}\n`,
-      "utf8",
     );
-
-    await expect(
-      evaluatePuzzle({
-        root,
-        attempt: join(attemptRoot, "frozen"),
-        command: "sh solve.sh",
-      }),
-    ).rejects.toThrow("Reviewer command and output path must be provided together.");
-  });
+  }, 30_000);
 
   it.each([
     ["puzzle:build", []],
     ["puzzle:run", []],
     ["puzzle:evaluate", []],
+    ["puzzle:experiment", []],
     ["puzzle:offline", []],
     ["puzzle:sandbox:build", []],
   ])(

@@ -68,9 +68,9 @@
 
 ## Phase 5: User Story 3 - Trace Findings to Tested Code (Priority: P2)
 
-**Goal**: Prevent OpenAI calls from stale or missing preflight evidence and retain the exact receipt with every authorized live attempt.
+**Goal**: Prevent provider calls from stale or missing preflight evidence and retain the exact receipt with every authorized live attempt.
 
-**Independent Test**: Missing, dirty, stale-commit, and sandbox-mismatched cases fail before adapter creation; a matching case copies `preflight.json` into the attempt before sessions start and matches `attempt.json.sandbox`.
+**Independent Test**: Missing, dirty, stale-commit, and sandbox-mismatched cases fail before model sessions; a matching case copies `preflight.json` into the attempt before sessions start and matches `attempt.json.sandbox`.
 
 ### Verification for User Story 3
 
@@ -79,7 +79,7 @@
 
 ### Implementation for User Story 3
 
-- [x] T017 [US3] Validate the current receipt and inspected sandbox before OpenAI adapter creation, then copy the receipt into the attempt root before sessions in `src/run.ts`
+- [x] T017 [US3] Validate the current receipt and inspected sandbox before provider-backed model sessions, then copy the receipt into the attempt root in `src/run.ts`
 
 **Checkpoint**: Consequential live runs cannot spend before authorization, and their artifacts retain the tested source/sandbox evidence.
 
@@ -120,7 +120,7 @@
 1. Land governance and the strict receipt contract.
 2. Deliver the advisory check independently as the first usable increment.
 3. Implement preflight using existing full verification and fixture behavior.
-4. Gate only the OpenAI adapter and retain one attempt-bound receipt.
+4. Gate provider-backed attempts and retain one attempt-bound receipt.
 5. Reconcile docs, verify from a clean commit, then change only the live required-status policy.
 
 No test matrix, release environment, generalized attestation, signing, receipt database, compatibility layer, or remote service is part of this feature.
