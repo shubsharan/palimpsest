@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,79 +9,17 @@ import {
   decodeBuildManifest,
   decodeBuildResult,
   decodeEvaluationRecord,
+  decodeExperimentSummary,
   decodeOverlapResult,
+  publishExperimentSummary,
 } from "./artifacts.js";
 import { readJsonObject } from "./python.js";
+import { testAttemptSummary, testBuildManifest, testExperimentSummary } from "./test-helpers.js";
 
 const digest = "a".repeat(64);
-const imageId = `sha256:${"b".repeat(64)}`;
 
-function buildManifest(): Record<string, unknown> {
-  const transitionStage = 4;
-  const stageIntervalMs = 20;
-  return {
-    schemaVersion: 1,
-    buildId: `build-${digest}`,
-    agentCount: 3,
-    stageCount: 6,
-    transitionStage,
-    stageIntervalMs,
-    changedSymbols: ["A", "B"],
-    publicCiphertextPath: "evaluation/ciphertext.txt",
-    referenceCorpusPath: "public/reference.txt",
-    privateStageRoots: {
-      "agent-1": "private/agent-1/stages",
-      "agent-2": "private/agent-2/stages",
-      "agent-3": "private/agent-3/stages",
-    },
-    oracleRoot: "oracle",
-    stages: ["agent-1", "agent-2", "agent-3"].flatMap((agentId) =>
-      Array.from({ length: 6 }, (_, index) => {
-        const ordinal = index + 1;
-        return {
-          agentId,
-          ordinal,
-          releaseOffsetMs: index * stageIntervalMs,
-          sourcePath: `private/${agentId}/stages/stage-${String(ordinal).padStart(2, "0")}.txt`,
-          tokenCount: 10,
-          sha256: digest,
-          regime: ordinal < transitionStage ? "base" : "revised",
-        };
-      }),
-    ),
-  };
-}
-
-function attemptSummary(): Record<string, unknown> {
-  return {
-    attemptId: "attempt-fixture",
-    buildRoot: "/tmp/palimpsest/build",
-    tracePath: "/tmp/palimpsest/attempt/trace.jsonl",
-    traceMetadataPath: "/tmp/palimpsest/attempt/trace.meta.json",
-    frozenRoot: "/tmp/palimpsest/attempt/frozen",
-    sandbox: {
-      imageTag: "palimpsest-puzzle-sandbox:0.1.0",
-      imageId,
-      sourceDigest: digest,
-      profileVersion: 1,
-      network: "none",
-      cpus: 2,
-      memoryBytes: 2_147_483_648,
-      pids: 256,
-      tmpfsBytes: 268_435_456,
-      maxOutputBytes: 4_194_304,
-    },
-    sessions: ["agent-1", "agent-2", "agent-3"].map((agentId) => ({
-      agentId,
-      state: "finished",
-      inputTokens: 1,
-      outputTokens: 1,
-      activityCursor: 0,
-      terminationReason: "finished",
-      finalResponse: "done",
-    })),
-  };
-}
+const buildManifest = testBuildManifest;
+const attemptSummary = testAttemptSummary;
 
 function overlapResult(): Record<string, unknown> {
   return {
@@ -129,22 +67,66 @@ describe("stored artifact decoders", () => {
       decodeBuildResult({
         buildId: `build-${digest}`,
         buildPath: "/tmp/palimpsest/build",
-        agentCount: 3,
+        agentIds: ["agent-1", "agent-2", "agent-3"],
         stageCount: 6,
-        transitionStage: 4,
       }),
-    ).toMatchObject({ agentCount: 3, stageCount: 6 });
+    ).toMatchObject({ agentIds: ["agent-1", "agent-2", "agent-3"], stageCount: 6 });
     expect(decodeBuildManifest(buildManifest()).stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);
+    expect(decodeExperimentSummary(testExperimentSummary()).attempts).toHaveLength(1);
     expect(decodeOverlapResult(overlapResult()).findings).toHaveLength(1);
     expect(decodeEvaluationRecord(evaluationRecord()).status).toBe("scored");
+  });
+
+  it("accepts dynamic build and attempt geometry", () => {
+    expect(
+      decodeBuildManifest(buildManifest({ agentCount: 2, stageCount: 3, rekeyStages: [] })),
+    ).toMatchObject({
+      agentIds: ["agent-1", "agent-2"],
+      stageCount: 3,
+      rekeys: [],
+    });
+    expect(
+      decodeBuildManifest(buildManifest({ agentCount: 5, stageCount: 7, rekeyStages: [3, 6] })),
+    ).toMatchObject({
+      agentIds: ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"],
+      stageCount: 7,
+      rekeys: [
+        { atStage: 3, keyVersion: 1 },
+        { atStage: 6, keyVersion: 2 },
+      ],
+    });
+    expect(
+      decodeAttemptSummary(
+        attemptSummary({
+          agentIds: ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"],
+        }),
+      ).agentIds,
+    ).toEqual(["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"]);
   });
 
   it.each([
     ["non-object root", () => decodeBuildManifest([])],
     [
       "unsupported build version",
-      () => decodeBuildManifest({ ...buildManifest(), schemaVersion: 2 }),
+      () => decodeBuildManifest({ ...buildManifest(), schemaVersion: 1 }),
+    ],
+    [
+      "target duplicated as reference",
+      () => {
+        const value = buildManifest();
+        const references = [...(value.references as Record<string, unknown>[])];
+        references[0] = { ...references[0], sourceId: "middlemarch" };
+        return decodeBuildManifest({ ...value, references });
+      },
+    ],
+    [
+      "unordered rekeys",
+      () => {
+        const value = buildManifest({ stageCount: 6, rekeyStages: [3, 5] });
+        const rekeys = [...(value.rekeys as Record<string, unknown>[])].reverse();
+        return decodeBuildManifest({ ...value, rekeys });
+      },
     ],
     [
       "wrong build field type",
@@ -173,11 +155,11 @@ describe("stored artifact decoders", () => {
       },
     ],
     [
-      "invalid stage regime",
+      "invalid stage key version",
       () => {
         const value = buildManifest();
         const stages = [...(value.stages as Record<string, unknown>[])];
-        stages[0] = { ...stages[0], regime: "revised" };
+        stages[0] = { ...stages[0], keyVersion: 1 };
         return decodeBuildManifest({ ...value, stages });
       },
     ],
@@ -196,8 +178,45 @@ describe("stored artifact decoders", () => {
 
   it.each([
     [
+      "unsupported attempt version",
+      () => decodeAttemptSummary({ ...attemptSummary(), schemaVersion: 1 }),
+    ],
+    [
       "relative build root",
       () => decodeAttemptSummary({ ...attemptSummary(), buildRoot: "build" }),
+    ],
+    [
+      "noncanonical dynamic agent IDs",
+      () =>
+        decodeAttemptSummary({
+          ...attemptSummary(),
+          agentIds: ["agent-1", "agent-3", "agent-2"],
+        }),
+    ],
+    [
+      "missing model binding",
+      () => {
+        const value = attemptSummary();
+        const sessions = [...(value.sessions as Record<string, unknown>[])];
+        const { model: _model, ...withoutModel } = sessions[0]!;
+        sessions[0] = withoutModel;
+        return decodeAttemptSummary({ ...value, sessions });
+      },
+    ],
+    [
+      "unsupported model driver",
+      () => {
+        const value = attemptSummary();
+        const sessions = [...(value.sessions as Record<string, unknown>[])];
+        sessions[0] = {
+          ...sessions[0],
+          model: {
+            ...(sessions[0]!.model as Record<string, unknown>),
+            driver: "gateway",
+          },
+        };
+        return decodeAttemptSummary({ ...value, sessions });
+      },
     ],
     [
       "unsupported session enum",
@@ -258,6 +277,64 @@ describe("stored artifact decoders", () => {
     ],
   ])("rejects a malformed attempt: %s", (_name, decode) => {
     expect(decode).toThrow();
+  });
+
+  it.each([
+    [
+      "unsupported summary version",
+      () => decodeExperimentSummary({ ...testExperimentSummary(), schemaVersion: 2 }),
+    ],
+    [
+      "relative build root",
+      () => decodeExperimentSummary({ ...testExperimentSummary(), buildRoot: "build" }),
+    ],
+    [
+      "non-object resolved config",
+      () => decodeExperimentSummary({ ...testExperimentSummary(), resolvedConfig: [] }),
+    ],
+    [
+      "zero repetition",
+      () => {
+        const value = testExperimentSummary();
+        const attempts = [...(value.attempts as Record<string, unknown>[])];
+        attempts[0] = { ...attempts[0], repetition: 0 };
+        return decodeExperimentSummary({ ...value, attempts });
+      },
+    ],
+    [
+      "duplicate completed attempt",
+      () => {
+        const value = testExperimentSummary();
+        const attempt = (value.attempts as Record<string, unknown>[])[0]!;
+        return decodeExperimentSummary({ ...value, attempts: [attempt, attempt] });
+      },
+    ],
+  ])("rejects a malformed experiment summary: %s", (_name, decode) => {
+    expect(decode).toThrow();
+  });
+
+  it("atomically replaces the complete experiment summary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-summary-"));
+    const initial = testExperimentSummary();
+    await publishExperimentSummary(root, initial);
+    const next = {
+      ...initial,
+      attempts: [
+        ...(initial.attempts as Record<string, unknown>[]),
+        {
+          runName: "mixed",
+          repetition: 1,
+          attemptId: "attempt-mixed-1",
+          attemptRoot: "/tmp/palimpsest/attempts/mixed/001",
+        },
+      ],
+    };
+
+    await publishExperimentSummary(root, next);
+
+    expect(JSON.parse(await readFile(join(root, "experiment.json"), "utf8"))).toEqual(
+      decodeExperimentSummary(next),
+    );
   });
 
   it.each([
@@ -433,7 +510,7 @@ describe("stored artifact decoders", () => {
     expect(decodeEvaluationRecord(value).status).toBe(value.status);
   });
 
-  it.each(["puzzle-build.json", "attempt.json", "overlap.json", "result.json"])(
+  it.each(["puzzle-build.json", "attempt.json", "experiment.json", "overlap.json", "result.json"])(
     "rejects invalid JSON in %s before any decoder can return a partial object",
     async (name) => {
       const root = await mkdtemp(join(tmpdir(), "palimpsest-artifact-json-"));

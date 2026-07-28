@@ -1,5 +1,12 @@
-import type { AgentId } from "./model.js";
-import type { ModelAdapter, ModelRequest, ModelToolResult, TokenUsage } from "./model.js";
+import type {
+  AgentId,
+  ModelAdapter,
+  ModelBinding,
+  ModelRequest,
+  ModelResponseIdentity,
+  ModelToolResult,
+  TokenUsage,
+} from "./model.js";
 import { SandboxInfrastructureError } from "./sandbox/contracts.js";
 import type { AgentToolSet } from "./tools.js";
 
@@ -13,6 +20,7 @@ export type SessionState =
 
 export interface AgentSessionResult {
   agentId: AgentId;
+  model: ModelBinding;
   state: SessionState;
   inputTokens: number;
   outputTokens: number;
@@ -27,12 +35,47 @@ export type SessionObserver = (
   agentId: AgentId,
 ) => void | Promise<void>;
 
+function validateTokenCount(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw new Error(`Adapter ${name} must be a non-negative safe integer.`);
+  }
+}
+
 function validateUsage(usage: TokenUsage): void {
-  for (const [key, value] of Object.entries(usage)) {
-    if (!Number.isSafeInteger(value) || value < 0) {
-      throw new Error(`Adapter ${key} must be a non-negative safe integer.`);
+  if (!Number.isSafeInteger(usage.inputTokens) || usage.inputTokens < 0) {
+    throw new Error("Adapter inputTokens must be a non-negative safe integer.");
+  }
+  if (!Number.isSafeInteger(usage.outputTokens) || usage.outputTokens < 0) {
+    throw new Error("Adapter outputTokens must be a non-negative safe integer.");
+  }
+  validateTokenCount(usage.inputTokenDetails?.noCacheTokens, "inputTokenDetails.noCacheTokens");
+  validateTokenCount(usage.inputTokenDetails?.cacheReadTokens, "inputTokenDetails.cacheReadTokens");
+  validateTokenCount(
+    usage.inputTokenDetails?.cacheWriteTokens,
+    "inputTokenDetails.cacheWriteTokens",
+  );
+  validateTokenCount(usage.outputTokenDetails?.textTokens, "outputTokenDetails.textTokens");
+  validateTokenCount(
+    usage.outputTokenDetails?.reasoningTokens,
+    "outputTokenDetails.reasoningTokens",
+  );
+}
+
+function mergeResponseIdentity(
+  binding: ModelBinding,
+  identity: ModelResponseIdentity | undefined,
+): ModelBinding {
+  if (identity === undefined) return binding;
+  for (const [name, value] of Object.entries(identity)) {
+    if (value !== undefined && (typeof value !== "string" || value.trim().length === 0)) {
+      throw new Error(`Adapter responseIdentity.${name} must be a non-empty string.`);
     }
   }
+  return {
+    ...binding,
+    ...(identity.actualProvider === undefined ? {} : { actualProvider: identity.actualProvider }),
+    ...(identity.actualModel === undefined ? {} : { actualModel: identity.actualModel }),
+  };
 }
 
 class SessionAbortedError extends Error {}
@@ -57,6 +100,7 @@ function awaitWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<
 
 export async function runAgentSession(options: {
   agentId: AgentId;
+  model: ModelBinding;
   prompt: string;
   adapter: ModelAdapter;
   tools: AgentToolSet;
@@ -70,6 +114,7 @@ export async function runAgentSession(options: {
   let outputTokens = 0;
   let finalResponse: string | undefined;
   let terminationReason = "";
+  let modelBinding = options.model;
 
   const observe = async (kind: string, data: unknown) => {
     await options.observe?.(kind, data, options.agentId);
@@ -84,7 +129,10 @@ export async function runAgentSession(options: {
   };
   const currentState = (): SessionState => state;
 
-  await observe("session.started", { tokenBudget: options.tokenBudget });
+  await observe("session.started", {
+    tokenBudget: options.tokenBudget,
+    model: modelBinding,
+  });
   let model;
   try {
     model = await options.adapter.openSession({
@@ -96,6 +144,7 @@ export async function runAgentSession(options: {
     await transition("infrastructure-error", detail);
     return {
       agentId: options.agentId,
+      model: modelBinding,
       state,
       inputTokens,
       outputTokens,
@@ -118,6 +167,7 @@ export async function runAgentSession(options: {
     try {
       turn = await awaitWithAbort(model.respond(request), options.signal);
       validateUsage(turn.usage);
+      modelBinding = mergeResponseIdentity(modelBinding, turn.responseIdentity);
     } catch (error) {
       if (options.signal.aborted) {
         await transition("time-exhausted", "global wall-time cutoff");
@@ -133,6 +183,7 @@ export async function runAgentSession(options: {
     await observe("model.response", {
       usage: turn.usage,
       cumulativeUsage: { inputTokens, outputTokens },
+      responseIdentity: turn.responseIdentity,
       toolCalls: turn.toolCalls.map((call) => ({ id: call.id, name: call.name })),
       finalResponse: turn.finalResponse,
     });
@@ -215,6 +266,7 @@ export async function runAgentSession(options: {
   if (currentState() === "time-exhausted") await model.cancel?.("time-exhausted");
   const common = {
     agentId: options.agentId,
+    model: modelBinding,
     state,
     inputTokens,
     outputTokens,

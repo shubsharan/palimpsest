@@ -5,12 +5,12 @@ import { ActivityBus } from "./activity.js";
 import {
   decodeAttemptSummary,
   decodeBuildManifest,
+  decodeModelBinding,
   publishAttemptSummary,
   type AttemptSummary,
   type OverlapResult,
 } from "./artifacts.js";
 import { createChecker } from "./checker.js";
-import { integerFlag, requiredFlag } from "./flags.js";
 import { createFixtureModelAdapter } from "./fixture.js";
 import {
   createGitEnvironment,
@@ -19,10 +19,15 @@ import {
   type FrozenGitEnvironment,
   type GitEnvironment,
 } from "./git.js";
-import { AGENT_IDS, type AgentId, type ModelAdapter } from "./model.js";
+import {
+  generateAgentIds,
+  isAgentId,
+  type AgentId,
+  type ModelAdapter,
+  type ModelBinding,
+} from "./model.js";
 import { observeOverlap } from "./overlap.js";
 import { buildAgentPrompt } from "./prompt.js";
-import { createOpenAIModelAdapter } from "./provider.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
@@ -37,20 +42,39 @@ import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
 
+const BUILD_ID = /^build-[a-f0-9]{64}$/;
+
 export interface AttemptConfig {
   attemptId: string;
+  buildId: string;
+  runName: string;
+  repetition: number;
   artifactRoot: string;
-  buildPath: string;
+  buildRoot: string;
   referenceCorpusPath: string;
-  agentStages: Record<AgentId, readonly string[]>;
+  agentIds: readonly AgentId[];
+  agentStages: Readonly<Record<AgentId, readonly string[]>>;
+  stageCount: number;
+  rekeyCount: number;
   tokenBudgetPerAgent: number;
   wallTimeMs: number;
   stageIntervalMs: number;
-  shutdownToleranceMs: number;
 }
+
+export interface AgentRuntimeBinding {
+  model: ModelBinding;
+  adapter: ModelAdapter;
+}
+
+export type AgentRuntimeMap = Readonly<Record<AgentId, AgentRuntimeBinding>>;
 
 export interface AttemptResult {
   attemptId: string;
+  buildId: string;
+  runName: string;
+  repetition: number;
+  buildRoot: string;
+  agentIds: readonly AgentId[];
   sessions: readonly AgentSessionResult[];
   frozen: FrozenGitEnvironment;
   tracePath: string;
@@ -60,7 +84,7 @@ export interface AttemptResult {
 
 export interface RunAttemptOptions {
   config: AttemptConfig;
-  adapter: ModelAdapter;
+  agents: AgentRuntimeMap;
   checker: CheckerHook;
   sandbox: CommandSandbox;
   clock: MonotonicClock;
@@ -69,6 +93,15 @@ export interface RunAttemptOptions {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isModelAdapter(value: unknown): value is ModelAdapter {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "openSession" in value &&
+    typeof value.openSession === "function"
+  );
 }
 
 function requireNonEmptyString(record: Record<string, unknown>, key: string): string {
@@ -87,47 +120,100 @@ function requirePositiveInteger(record: Record<string, unknown>, key: string): n
   return value as number;
 }
 
+function requireNonNegativeInteger(record: Record<string, unknown>, key: string): number {
+  const value = record[key];
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`${key} must be a non-negative safe integer.`);
+  }
+  return value as number;
+}
+
+function sameKeys(record: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(record).length === keys.length && keys.every((key) => key in record);
+}
+
 export function validateAttemptConfig(value: unknown): AttemptConfig {
   if (!isRecord(value)) {
     throw new Error("Attempt configuration must be an object.");
   }
-  const stagesValue = value.agentStages;
-  if (!isRecord(stagesValue)) {
-    throw new Error("agentStages must describe exactly three agents.");
-  }
-  const stageKeys = Object.keys(stagesValue).sort();
+  const agentIdsValue = value.agentIds;
   if (
-    stageKeys.length !== AGENT_IDS.length ||
-    AGENT_IDS.some((agentId, index) => stageKeys[index] !== agentId)
+    !Array.isArray(agentIdsValue) ||
+    agentIdsValue.length < 2 ||
+    agentIdsValue.some((agentId) => !isAgentId(agentId))
   ) {
-    throw new Error("agentStages must describe exactly three agents.");
+    throw new Error("agentIds must contain at least two canonical agent IDs.");
   }
-  const requireStages = (agentId: AgentId): readonly string[] => {
-    const stages = stagesValue[agentId];
-    if (
-      !Array.isArray(stages) ||
-      stages.length !== 6 ||
-      stages.some((stage) => typeof stage !== "string" || stage.length === 0)
-    ) {
-      throw new Error(`${agentId} must have exactly six stages.`);
-    }
-    return [...stages] as string[];
-  };
+  const agentIds = [...agentIdsValue] as AgentId[];
+  const expectedAgentIds = generateAgentIds(agentIds.length);
+  if (agentIds.some((agentId, index) => agentId !== expectedAgentIds[index])) {
+    throw new Error("agentIds must be ordered canonically from agent-1 through agent-N.");
+  }
+
+  const stagesValue = value.agentStages;
+  if (!isRecord(stagesValue) || !sameKeys(stagesValue, agentIds)) {
+    throw new Error("agentStages must match agentIds exactly.");
+  }
+  const stageCount = requirePositiveInteger(value, "stageCount");
+  const agentStages = Object.fromEntries(
+    agentIds.map((agentId) => {
+      const stages = stagesValue[agentId];
+      if (
+        !Array.isArray(stages) ||
+        stages.length !== stageCount ||
+        stages.some((stage) => typeof stage !== "string" || stage.length === 0)
+      ) {
+        throw new Error(`${agentId} must have exactly ${String(stageCount)} stages.`);
+      }
+      return [agentId, [...stages] as string[]] as const;
+    }),
+  ) as Record<AgentId, readonly string[]>;
+
+  const buildId = requireNonEmptyString(value, "buildId");
+  if (!BUILD_ID.test(buildId)) {
+    throw new Error("buildId must be a build-prefixed SHA-256 digest.");
+  }
   return {
     attemptId: requireNonEmptyString(value, "attemptId"),
+    buildId,
+    runName: requireNonEmptyString(value, "runName"),
+    repetition: requirePositiveInteger(value, "repetition"),
     artifactRoot: requireNonEmptyString(value, "artifactRoot"),
-    buildPath: requireNonEmptyString(value, "buildPath"),
+    buildRoot: requireNonEmptyString(value, "buildRoot"),
     referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
-    agentStages: {
-      "agent-1": requireStages("agent-1"),
-      "agent-2": requireStages("agent-2"),
-      "agent-3": requireStages("agent-3"),
-    },
+    agentIds,
+    agentStages,
+    stageCount,
+    rekeyCount: requireNonNegativeInteger(value, "rekeyCount"),
     tokenBudgetPerAgent: requirePositiveInteger(value, "tokenBudgetPerAgent"),
     wallTimeMs: requirePositiveInteger(value, "wallTimeMs"),
     stageIntervalMs: requirePositiveInteger(value, "stageIntervalMs"),
-    shutdownToleranceMs: requirePositiveInteger(value, "shutdownToleranceMs"),
   };
+}
+
+function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): AgentRuntimeMap {
+  if (!isRecord(value) || !sameKeys(value, agentIds)) {
+    throw new Error("Agent runtime bindings must match agentIds exactly.");
+  }
+  return Object.fromEntries(
+    agentIds.map((agentId) => {
+      const runtime = value[agentId];
+      if (!isRecord(runtime)) {
+        throw new Error(`Agent runtime binding for ${agentId} must be an object.`);
+      }
+      const adapter = runtime.adapter;
+      if (!isModelAdapter(adapter)) {
+        throw new Error(`Agent runtime binding for ${agentId} must provide an adapter.`);
+      }
+      return [
+        agentId,
+        {
+          model: decodeModelBinding(runtime.model, `Agent runtime binding for ${agentId} model`),
+          adapter,
+        },
+      ] as const;
+    }),
+  ) as Record<AgentId, AgentRuntimeBinding>;
 }
 
 async function publishStages(options: {
@@ -144,7 +230,7 @@ async function publishStages(options: {
     clock: options.clock,
     startedAtMs: options.startedAt,
     stageIntervalMs: options.config.stageIntervalMs,
-    stageCount: 6,
+    stageCount: options.config.stageCount,
     signal: options.signal,
     reveal: (ordinal) => publishStage(options, ordinal),
   });
@@ -155,15 +241,19 @@ async function publishStage(
   ordinal: number,
 ): Promise<void> {
   await Promise.all(
-    AGENT_IDS.map(async (agentId) => {
-      const source = options.config.agentStages[agentId][ordinal - 1];
-      if (source === undefined) throw new Error(`Missing ${agentId} stage ${ordinal}.`);
+    options.config.agentIds.map(async (agentId) => {
+      const source = options.config.agentStages[agentId]?.[ordinal - 1];
+      const evidencePath = options.evidencePaths[agentId];
+      const released = options.releasedStages[agentId];
+      if (source === undefined || evidencePath === undefined || released === undefined) {
+        throw new Error(`Missing ${agentId} stage ${String(ordinal)}.`);
+      }
       const destination = join(
-        options.evidencePaths[agentId],
+        evidencePath,
         `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
       );
       await cp(source, destination, { errorOnExist: true, force: false });
-      options.releasedStages[agentId].add(ordinal);
+      released.add(ordinal);
       const activity = options.activity.publish({
         kind: "stage-released",
         agentId,
@@ -181,6 +271,7 @@ async function publishStage(
 async function openAgentLeases(options: {
   sandbox: CommandSandbox;
   git: GitEnvironment;
+  agentIds: readonly AgentId[];
   evidencePaths: Record<AgentId, string>;
   referenceCorpusPath: string;
   clock: MonotonicClock;
@@ -188,9 +279,12 @@ async function openAgentLeases(options: {
   signal: AbortSignal;
 }): Promise<Record<AgentId, AgentSandboxLease>> {
   const settled = await Promise.allSettled(
-    AGENT_IDS.map(async (agentId) => {
+    options.agentIds.map(async (agentId) => {
       const workspace = options.git.workspaces.find((candidate) => candidate.agentId === agentId);
-      if (!workspace) throw new Error(`Git workspace is missing for ${agentId}.`);
+      const evidencePath = options.evidencePaths[agentId];
+      if (workspace === undefined || evidencePath === undefined) {
+        throw new Error(`Sandbox resources are missing for ${agentId}.`);
+      }
       const remainingMs = Math.ceil(options.cutoffAt - options.clock.nowMs());
       if (remainingMs <= 0 || options.signal.aborted) {
         throw new SandboxInfrastructureError(
@@ -200,7 +294,7 @@ async function openAgentLeases(options: {
       const lease = await options.sandbox.openAgentLease({
         profile: "agent",
         workspacePath: workspace.path,
-        evidencePath: options.evidencePaths[agentId],
+        evidencePath,
         referenceCorpusPath: options.referenceCorpusPath,
         sharedGitPath: options.git.barePath,
         timeoutMs: Math.min(30_000, remainingMs),
@@ -234,11 +328,12 @@ async function openAgentLeases(options: {
 
 export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
   const config = validateAttemptConfig(options.config);
+  const agents = validateAgentRuntimes(options.agents, config.agentIds);
   await mkdir(config.artifactRoot, { recursive: false });
-  const git = await createGitEnvironment(join(config.artifactRoot, "git"));
+  const git = await createGitEnvironment(join(config.artifactRoot, "git"), config.agentIds);
   const evidencePaths = Object.fromEntries(
     await Promise.all(
-      AGENT_IDS.map(async (agentId) => {
+      config.agentIds.map(async (agentId) => {
         const path = join(config.artifactRoot, "private-evidence", agentId);
         await mkdir(path, { recursive: true });
         return [agentId, path] as const;
@@ -254,11 +349,19 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   });
   await observationLog.append("attempt.configured", {
     attemptId: config.attemptId,
+    buildId: config.buildId,
+    runName: config.runName,
+    repetition: config.repetition,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
     wallTimeMs: config.wallTimeMs,
     stageIntervalMs: config.stageIntervalMs,
-    agentCount: 3,
-    stageCount: 6,
+    agentCount: config.agentIds.length,
+    stageCount: config.stageCount,
+    rekeyCount: config.rekeyCount,
+    models: config.agentIds.map((agentId) => ({
+      agentId,
+      ...agents[agentId]!.model,
+    })),
   });
 
   const globalController = new AbortController();
@@ -293,17 +396,16 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     monitorStarted = true;
 
     const releasedStages = Object.fromEntries(
-      AGENT_IDS.map((agentId) => [agentId, new Set<number>()]),
+      config.agentIds.map((agentId) => [agentId, new Set<number>()]),
     ) as Record<AgentId, Set<number>>;
     await publishStage({ config, evidencePaths, releasedStages, activity, observationLog }, 1);
-    const cursors = Object.fromEntries(AGENT_IDS.map((agentId) => [agentId, 0])) as Record<
-      AgentId,
-      number
-    >;
-    for (const agentId of AGENT_IDS) cursors[agentId] = activity.latestSequence;
+    const cursors = Object.fromEntries(
+      config.agentIds.map((agentId) => [agentId, activity.latestSequence]),
+    ) as Record<AgentId, number>;
     const openedLeases = await openAgentLeases({
       sandbox: options.sandbox,
       git,
+      agentIds: config.agentIds,
       evidencePaths,
       referenceCorpusPath: config.referenceCorpusPath,
       clock: options.clock,
@@ -329,29 +431,40 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     });
     void stagePublishing.catch(() => {});
 
-    sessionPromises = AGENT_IDS.map((agentId) => {
+    sessionPromises = config.agentIds.map((agentId) => {
       const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
-      if (!workspace) throw new Error(`Git workspace is missing for ${agentId}.`);
+      const released = releasedStages[agentId];
+      const runtime = agents[agentId];
+      const lease = openedLeases[agentId];
+      if (
+        workspace === undefined ||
+        released === undefined ||
+        runtime === undefined ||
+        lease === undefined
+      ) {
+        throw new Error(`Runtime resources are missing for ${agentId}.`);
+      }
       const tools = createAgentTools({
         agentId,
         workspacePath: workspace.path,
-        sandbox: openedLeases[agentId],
+        sandbox: lease,
         activity,
         checker: options.checker,
-        getReleasedStages: () => [...releasedStages[agentId]].sort((left, right) => left - right),
-        getActivityCursor: () => cursors[agentId],
+        getReleasedStages: () => [...released].sort((left, right) => left - right),
+        getActivityCursor: () => cursors[agentId]!,
         setActivityCursor: (sequence) => {
           cursors[agentId] = sequence;
         },
       });
       return runAgentSession({
         agentId,
-        prompt: buildAgentPrompt({ agentId }),
-        adapter: options.adapter,
+        model: runtime.model,
+        prompt: buildAgentPrompt({ agentId, agentCount: config.agentIds.length }),
+        adapter: runtime.adapter,
         tools,
         tokenBudget: config.tokenBudgetPerAgent,
         signal: globalController.signal,
-        getActivityCursor: () => cursors[agentId],
+        getActivityCursor: () => cursors[agentId]!,
         observe: async (kind, data, observedAgentId) => {
           await observationLog.append(kind, data, observedAgentId);
         },
@@ -380,7 +493,13 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   if (sandboxLeases !== undefined) {
     const leasesToClose = sandboxLeases;
     releaseTasks.push(
-      ...AGENT_IDS.map((agentId) => Promise.resolve().then(() => leasesToClose[agentId].close())),
+      ...config.agentIds.map((agentId) => {
+        const lease = leasesToClose[agentId];
+        if (lease === undefined) {
+          return Promise.reject(new Error(`Sandbox lease is missing for ${agentId}.`));
+        }
+        return Promise.resolve().then(() => lease.close());
+      }),
     );
   }
   const releaseResults = await Promise.allSettled(releaseTasks);
@@ -413,6 +532,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   await observationLog.append("attempt.sessions-ended", {
     sessions: sessions.map((session) => ({
       agentId: session.agentId,
+      model: session.model,
       state: session.state,
       inputTokens: session.inputTokens,
       outputTokens: session.outputTokens,
@@ -429,6 +549,11 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   await observationLog.flush();
   return {
     attemptId: config.attemptId,
+    buildId: config.buildId,
+    runName: config.runName,
+    repetition: config.repetition,
+    buildRoot: config.buildRoot,
+    agentIds: config.agentIds,
     sessions,
     frozen,
     tracePath,
@@ -441,16 +566,17 @@ export interface RunPuzzleOptions {
   root: string;
   buildRoot: string;
   output: string;
-  adapter: "fixture" | "openai";
-  tokenBudget: number;
+  runName: string;
+  repetition: number;
+  agents: AgentRuntimeMap;
+  tokenBudgetPerAgent: number;
   wallTimeMs: number;
-  model?: string;
-  fixtureScenario?: string;
+  sandbox?: CommandSandbox;
+  clock?: MonotonicClock;
 }
 
 export interface RunPuzzleResult extends AttemptResult {
   attemptRoot: string;
-  buildRoot: string;
   overlap: OverlapResult;
 }
 
@@ -465,8 +591,11 @@ export interface FinalizeAttemptOptions {
 
 export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<OverlapResult> {
   const summary = decodeAttemptSummary({
+    schemaVersion: 2,
     attemptId: options.result.attemptId,
+    buildId: options.result.buildId,
     buildRoot: options.buildRoot,
+    agentIds: options.result.agentIds,
     tracePath: options.result.tracePath,
     traceMetadataPath: options.result.traceMetadataPath,
     frozenRoot: options.result.frozen.root,
@@ -485,50 +614,68 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
   }
 }
 
+export function createFixtureAgentRuntimes(
+  agentIds: readonly AgentId[],
+  scenario?: string,
+): AgentRuntimeMap {
+  const adapter = createFixtureModelAdapter(scenario);
+  return Object.fromEntries(
+    agentIds.map((agentId) => [
+      agentId,
+      {
+        model: {
+          profile: "offline-fixture",
+          provider: "fixture",
+          driver: "openai-compatible",
+          requestedModel: scenario ?? "collaborative-revision",
+          settings: {},
+          providerOptions: {},
+        },
+        adapter,
+      },
+    ]),
+  ) as Record<AgentId, AgentRuntimeBinding>;
+}
+
 export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleResult> {
   const root = resolve(options.root);
   const buildRoot = resolve(options.buildRoot);
   const output = resolve(options.output);
-  if (options.tokenBudget <= 0 || options.wallTimeMs <= 0) {
-    throw new Error("Token budget and wall time must be positive.");
-  }
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  const stagesFor = (agentId: AgentId) =>
-    manifest.stages
-      .filter((stage) => stage.agentId === agentId)
-      .sort((left, right) => left.ordinal - right.ordinal)
-      .map((stage) => absoluteFrom(buildRoot, stage.sourcePath));
-  const agentStages: AttemptConfig["agentStages"] = {
-    "agent-1": stagesFor("agent-1"),
-    "agent-2": stagesFor("agent-2"),
-    "agent-3": stagesFor("agent-3"),
-  };
+  const agentStages = Object.fromEntries(
+    manifest.agentIds.map((agentId) => [
+      agentId,
+      manifest.stages
+        .filter((stage) => stage.agentId === agentId)
+        .sort((left, right) => left.ordinal - right.ordinal)
+        .map((stage) => absoluteFrom(buildRoot, stage.sourcePath)),
+    ]),
+  ) as Record<AgentId, readonly string[]>;
+  const attemptId = `attempt-${options.runName}-${String(options.repetition).padStart(3, "0")}-${manifest.buildId.slice("build-".length, "build-".length + 16)}`;
   const config: AttemptConfig = {
-    attemptId: `attempt-${manifest.buildId.slice("build-".length, "build-".length + 16)}`,
+    attemptId,
+    buildId: manifest.buildId,
+    runName: options.runName,
+    repetition: options.repetition,
     artifactRoot: output,
-    buildPath: join(buildRoot, "puzzle-build.json"),
+    buildRoot,
     referenceCorpusPath: absoluteFrom(buildRoot, manifest.referenceCorpusPath),
+    agentIds: manifest.agentIds,
     agentStages,
-    tokenBudgetPerAgent: options.tokenBudget,
+    stageCount: manifest.stageCount,
+    rekeyCount: manifest.rekeys.length,
+    tokenBudgetPerAgent: options.tokenBudgetPerAgent,
     wallTimeMs: options.wallTimeMs,
     stageIntervalMs: manifest.stageIntervalMs,
-    shutdownToleranceMs: 5_000,
   };
-  let adapter: ModelAdapter;
-  if (options.adapter === "fixture") {
-    adapter = createFixtureModelAdapter(options.fixtureScenario);
-  } else {
-    if (!options.model) throw new Error("--model is required for the live OpenAI adapter.");
-    adapter = createOpenAIModelAdapter(options.model);
-  }
-  const sandbox = await createDockerCommandSandbox({ root });
+  const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
   const result = await runAttempt({
     config,
-    adapter,
+    agents: options.agents,
     checker: createChecker(root, buildRoot),
     sandbox,
-    clock: systemMonotonicClock,
+    clock: options.clock ?? systemMonotonicClock,
   });
   const overlap = await finalizeAttempt({
     attemptRoot: output,
@@ -539,27 +686,5 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     appendTrace: appendTraceEvent,
   });
   decodeAttemptSummary(await readJsonObject(join(output, "attempt.json")));
-  return { ...result, attemptRoot: output, buildRoot, overlap };
-}
-
-export function runPuzzleFromFlags(
-  flags: ReadonlyMap<string, string>,
-  root = resolve("."),
-): Promise<RunPuzzleResult> {
-  const adapter = requiredFlag(flags, "--adapter");
-  if (adapter !== "fixture" && adapter !== "openai") {
-    throw new Error("--adapter must be fixture or openai.");
-  }
-  const model = flags.get("--model");
-  const fixtureScenario = flags.get("--fixture-scenario");
-  return runPuzzle({
-    root,
-    buildRoot: requiredFlag(flags, "--build"),
-    output: requiredFlag(flags, "--output"),
-    adapter,
-    tokenBudget: integerFlag(flags, "--token-budget"),
-    wallTimeMs: integerFlag(flags, "--wall-time-ms"),
-    ...(model === undefined ? {} : { model }),
-    ...(fixtureScenario === undefined ? {} : { fixtureScenario }),
-  });
+  return { ...result, attemptRoot: output, overlap };
 }

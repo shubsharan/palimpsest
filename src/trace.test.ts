@@ -57,6 +57,16 @@ describe("trace log", () => {
     expect(await readFile(path, "utf8")).not.toContain("hidden");
   });
 
+  it("accepts canonical dynamic agent identities", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-observations-dynamic-"));
+    const path = join(root, "trace.jsonl");
+    const log = await JsonlObservationLog.create(path, { nowMs: () => 1 });
+    await log.append("model.response", { outputTokens: 1 }, "agent-5");
+    await log.flush();
+
+    await expect(JsonlObservationLog.open(path)).resolves.toBeDefined();
+  });
+
   it("refuses to append to malformed, nonsequential, or regressing traces", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-observations-invalid-"));
     const path = join(root, "trace.jsonl");
@@ -103,7 +113,7 @@ describe("trace log", () => {
         sequence: 1,
         atMs: 0,
         kind: "event",
-        agentId: "agent-4",
+        agentId: "agent-zero",
         data: {},
       })}\n`,
       /invalid agentId/i,

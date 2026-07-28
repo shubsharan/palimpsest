@@ -83,10 +83,12 @@ export async function runPythonJson(
   module: string,
   args: readonly string[],
   signal?: AbortSignal,
+  input?: string | Buffer,
 ): Promise<Record<string, unknown>> {
   const result = await runProcess(await pythonExecutable(root), ["-m", module, ...args], {
     cwd: root,
     ...(signal === undefined ? {} : { signal }),
+    ...(input === undefined ? {} : { input }),
   });
   let value: unknown;
   try {

@@ -1,0 +1,57 @@
+schemaVersion: 1
+
+puzzle:
+  target:
+    corpus: middlemarch
+    chapters:
+      start: 10
+      end: 15
+  references:
+    - jane-eyre
+    - moby-dick
+  seed: 17
+  agentCount: 3
+  stageCount: 6
+  stageIntervalMs: 120000
+  rekeys:
+    - atStage: 4
+      changedTokenMass: 0.2
+
+limits:
+  tokenBudgetPerAgent: 200000
+  wallTimeMs: 3600000
+
+providers:
+  openai:
+    driver: openai
+    apiKeyEnv: OPENAI_API_KEY
+  anthropic:
+    driver: anthropic
+    apiKeyEnv: ANTHROPIC_API_KEY
+  google:
+    driver: google
+    apiKeyEnv: GOOGLE_GENERATIVE_AI_API_KEY
+
+models:
+  gpt:
+    provider: openai
+    model: gpt-5.2
+  claude:
+    provider: anthropic
+    model: claude-opus-4-6
+  gemini:
+    provider: google
+    model: gemini-3.1-pro-preview
+
+runs:
+  - name: gpt-only
+    model: gpt
+  - name: claude-only
+    model: claude
+  - name: gemini-only
+    model: gemini
+  - name: mixed
+    agents:
+      - gpt
+      - claude
+      - gemini
