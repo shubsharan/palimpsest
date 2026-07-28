@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from palimpsest.puzzle.shards import (
     assign_streams,
     contradiction_metrics,
@@ -23,43 +24,68 @@ def test_split_text_preserves_words_and_balances_boundary_segments() -> None:
     assert max(counts) - min(counts) <= 1
 
 
-def test_assign_streams_uses_contiguous_equal_slices() -> None:
-    segments = tuple(f"stage-{index}" for index in range(1, 19))
-    streams = assign_streams(segments)
+def test_assign_streams_uses_declared_dynamic_geometry() -> None:
+    segments = tuple(f"stage-{index}" for index in range(1, 11))
 
-    assert streams == {
-        "agent-1": segments[0:6],
-        "agent-2": segments[6:12],
-        "agent-3": segments[12:18],
+    assert assign_streams(segments, ("agent-1", "agent-2"), 5) == {
+        "agent-1": segments[:5],
+        "agent-2": segments[5:],
     }
+    with pytest.raises(ValueError, match="10 stage segments"):
+        assign_streams(segments[:-1], ("agent-1", "agent-2"), 5)
 
 
-def test_eligible_symbols_intersects_pre_and_post_evidence_for_every_agent() -> None:
+def test_eligible_symbols_uses_only_adjacent_declared_regions() -> None:
     streams = {
-        "agent-1": ("common common private", "common", "common", "common common revised", "x", "y"),
-        "agent-2": ("common common other", "common", "common", "common common revised", "x", "y"),
-        "agent-3": ("common common third", "common", "common", "common common revised", "x", "y"),
+        "agent-1": ("old common common", "old common", "new common common", "new common", "later"),
+        "agent-2": ("old common common", "old common", "new common common", "new common", "later"),
     }
 
-    assert eligible_symbols(streams, transition_stage=4, minimum_occurrences=2) == {"common"}
+    assert eligible_symbols(
+        streams,
+        pre_start=1,
+        pre_end=2,
+        post_start=3,
+        post_end=4,
+        minimum_occurrences=2,
+    ) == {"common"}
 
 
-def test_contradiction_metrics_reports_each_stream_without_mutating_geometry() -> None:
+def test_contradiction_metrics_reports_each_dynamic_stream() -> None:
     streams = {
         agent_id: (
             "changed changed base",
             "changed base",
-            "base",
             "changed changed revised",
             "changed revised",
-            "revised",
         )
-        for agent_id in ("agent-1", "agent-2", "agent-3")
+        for agent_id in ("agent-1", "agent-2")
     }
 
-    metrics = contradiction_metrics(streams, transition_stage=4, changed_symbols={"changed"})
+    metrics = contradiction_metrics(
+        streams,
+        pre_start=1,
+        pre_end=2,
+        post_start=3,
+        post_end=4,
+        changed_symbols={"changed"},
+    )
 
-    assert set(metrics) == {"agent-1", "agent-2", "agent-3"}
+    assert set(metrics) == {"agent-1", "agent-2"}
     assert metrics["agent-1"]["preChangedOccurrences"] == 3
     assert metrics["agent-1"]["postChangedOccurrences"] == 3
-    assert metrics["agent-1"]["postChangedTokenMass"] == 0.5
+    assert metrics["agent-1"]["postChangedTokenMass"] == 0.6
+
+
+def test_adjacent_region_validation_rejects_empty_or_out_of_range_windows() -> None:
+    streams = {"agent-1": ("one", "two")}
+
+    with pytest.raises(ValueError, match="adjacent stage regions"):
+        eligible_symbols(
+            streams,
+            pre_start=1,
+            pre_end=1,
+            post_start=3,
+            post_end=3,
+            minimum_occurrences=1,
+        )

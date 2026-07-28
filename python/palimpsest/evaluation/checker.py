@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ..puzzle.manifest import AGENT_IDS, PuzzleBuild
+from ..puzzle.manifest import PuzzleBuild
 from ..serialization import canonical_json_bytes
 from .score import score_reconstruction
 
@@ -33,7 +33,7 @@ def check_reconstruction(
     candidate: str,
 ):
     build = load_puzzle_build(build_root)
-    if agent_id not in AGENT_IDS:
+    if agent_id not in build.agent_ids:
         raise ValueError(f"Unknown puzzle agent: {agent_id}.")
     ordinals = _released_prefix(released_ordinals, build.stage_count)
     truth = "\n\n".join(

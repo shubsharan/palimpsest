@@ -2,7 +2,16 @@ import { randomUUID } from "node:crypto";
 import { rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, posix, win32 } from "node:path";
 
-import { AGENT_IDS, type AgentId } from "./model.js";
+import {
+  generateAgentIds,
+  isAgentId,
+  type AgentId,
+  type JsonObject,
+  type JsonValue,
+  type ModelBinding,
+  type ModelSettings,
+  type ProviderDriver,
+} from "./model.js";
 import type { EvaluationResult, EvaluationSelection, EvaluationStatus } from "./evaluate.js";
 import {
   SANDBOX_IMAGE_TAG,
@@ -16,38 +25,63 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const BUILD_ID = /^build-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
-const STAGE_COUNT = 6;
+const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export interface BuildPuzzleResult {
   buildId: string;
   buildPath: string;
-  agentCount: 3;
-  stageCount: 6;
-  transitionStage: number;
+  agentIds: readonly AgentId[];
+  stageCount: number;
+}
+
+export interface BuildSource {
+  sourceId: string;
+  chapters: {
+    start: number;
+    end: number;
+  };
+  sha256: string;
+}
+
+export interface BuildReference {
+  sourceId: string;
+  sha256: string;
+  path: string;
+}
+
+export interface BuildRekey {
+  atStage: number;
+  keyVersion: number;
+  changedTokenMass: number;
+  changedSymbols: readonly string[];
+  keyPath: string;
 }
 
 export interface BuildStage {
   agentId: AgentId;
   ordinal: number;
+  keyVersion: number;
   releaseOffsetMs: number;
   sourcePath: string;
   tokenCount: number;
   sha256: string;
-  regime: "base" | "revised";
 }
 
 export interface BuildManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   buildId: string;
-  agentCount: 3;
-  stageCount: 6;
-  transitionStage: number;
+  source: BuildSource;
+  references: readonly BuildReference[];
+  seed: number;
+  agentIds: readonly AgentId[];
+  stageCount: number;
   stageIntervalMs: number;
-  changedSymbols: readonly string[];
+  rekeys: readonly BuildRekey[];
   publicCiphertextPath: string;
   referenceCorpusPath: string;
   privateStageRoots: Record<AgentId, string>;
   oracleRoot: string;
+  baseKeyPath: string;
   stages: readonly BuildStage[];
 }
 
@@ -60,14 +94,36 @@ export interface SandboxPolicy {
   maxOutputBytes: 4_194_304;
 }
 
+export interface AttemptSession extends AgentSessionResult {
+  model: ModelBinding;
+}
+
 export interface AttemptSummary {
+  schemaVersion: 2;
   attemptId: string;
+  buildId: string;
   buildRoot: string;
+  agentIds: readonly AgentId[];
   tracePath: string;
   traceMetadataPath: string;
   frozenRoot: string;
   sandbox: SandboxIdentity & SandboxPolicy;
-  sessions: readonly AgentSessionResult[];
+  sessions: readonly AttemptSession[];
+}
+
+export interface CompletedAttempt {
+  runName: string;
+  repetition: number;
+  attemptId: string;
+  attemptRoot: string;
+}
+
+export interface ExperimentSummary {
+  schemaVersion: 1;
+  resolvedConfig: JsonObject;
+  buildRoot: string;
+  buildId: string;
+  attempts: readonly CompletedAttempt[];
 }
 
 export interface GitOverlapScan {
@@ -122,6 +178,13 @@ function integer(value: unknown, name: string, minimum = 0): number {
   return value;
 }
 
+function safeInteger(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new Error(`${name} must be a safe integer.`);
+  }
+  return value;
+}
+
 function finiteNumber(value: unknown, name: string, minimum = 0, maximum?: number): number {
   if (
     typeof value !== "number" ||
@@ -172,9 +235,112 @@ function absolutePath(value: unknown, name: string): string {
   return path;
 }
 
+function identifier(value: unknown, name: string): string {
+  const result = nonEmptyString(value, name);
+  if (!IDENTIFIER.test(result)) {
+    throw new Error(`${name} must be a lowercase hyphenated identifier.`);
+  }
+  return result;
+}
+
 function agentId(value: unknown, name: string): AgentId {
-  if (value === "agent-1" || value === "agent-2" || value === "agent-3") return value;
+  if (isAgentId(value)) return value;
   throw new Error(`${name} must identify one declared agent.`);
+}
+
+function decodeAgentIds(value: unknown, name: string): readonly AgentId[] {
+  if (!Array.isArray(value) || value.length < 2) {
+    throw new Error(`${name} must contain at least two canonical agent IDs.`);
+  }
+  const decoded = value.map((item, index) => agentId(item, `${name}[${String(index)}]`));
+  const expected = generateAgentIds(decoded.length);
+  if (decoded.some((item, index) => item !== expected[index])) {
+    throw new Error(`${name} must contain exactly agent-1 through agent-N in order.`);
+  }
+  return decoded;
+}
+
+function providerDriver(value: unknown, name: string): ProviderDriver {
+  switch (value) {
+    case "openai":
+    case "anthropic":
+    case "google":
+    case "openai-compatible":
+      return value;
+    default:
+      throw new Error(`${name} contains an unsupported provider driver.`);
+  }
+}
+
+function decodeJsonValue(value: unknown, name: string): JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error(`${name} must contain only finite JSON numbers.`);
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => decodeJsonValue(item, `${name}[${String(index)}]`));
+  }
+  const record = object(value, name);
+  return Object.fromEntries(
+    Object.entries(record).map(([key, item]) => [key, decodeJsonValue(item, `${name}.${key}`)]),
+  );
+}
+
+function decodeJsonObject(value: unknown, name: string): JsonObject {
+  const record = object(value, name);
+  return Object.fromEntries(
+    Object.entries(record).map(([key, item]) => [key, decodeJsonValue(item, `${name}.${key}`)]),
+  );
+}
+
+function decodeModelSettings(value: unknown, name: string): ModelSettings {
+  const record = object(value, name);
+  const allowed = new Set(["maxOutputTokens", "temperature", "topP", "seed"]);
+  const unknown = Object.keys(record).find((key) => !allowed.has(key));
+  if (unknown !== undefined) throw new Error(`${name}.${unknown} is unsupported.`);
+  const maxOutputTokens =
+    record.maxOutputTokens === undefined
+      ? undefined
+      : integer(record.maxOutputTokens, `${name}.maxOutputTokens`, 1);
+  const temperature =
+    record.temperature === undefined
+      ? undefined
+      : finiteNumber(record.temperature, `${name}.temperature`);
+  const topP =
+    record.topP === undefined ? undefined : finiteNumber(record.topP, `${name}.topP`, 0, 1);
+  if (topP !== undefined && topP === 0) throw new Error(`${name}.topP must be greater than zero.`);
+  const seed = record.seed === undefined ? undefined : safeInteger(record.seed, `${name}.seed`);
+  return {
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(topP === undefined ? {} : { topP }),
+    ...(seed === undefined ? {} : { seed }),
+  };
+}
+
+export function decodeModelBinding(value: unknown, name = "Model binding"): ModelBinding {
+  const record = object(value, name);
+  const actualProvider =
+    record.actualProvider === undefined
+      ? undefined
+      : nonEmptyString(record.actualProvider, `${name}.actualProvider`);
+  const actualModel =
+    record.actualModel === undefined
+      ? undefined
+      : nonEmptyString(record.actualModel, `${name}.actualModel`);
+  return {
+    profile: identifier(record.profile, `${name}.profile`),
+    provider: identifier(record.provider, `${name}.provider`),
+    driver: providerDriver(record.driver, `${name}.driver`),
+    requestedModel: nonEmptyString(record.requestedModel, `${name}.requestedModel`),
+    settings: decodeModelSettings(record.settings, `${name}.settings`),
+    providerOptions: decodeJsonObject(record.providerOptions, `${name}.providerOptions`),
+    ...(actualProvider === undefined ? {} : { actualProvider }),
+    ...(actualModel === undefined ? {} : { actualModel }),
+  };
 }
 
 function sessionState(value: unknown, name: string): SessionState {
@@ -211,75 +377,140 @@ function decodeBuildId(value: unknown, name: string): string {
 
 export function decodeBuildResult(value: unknown): BuildPuzzleResult {
   const record = object(value, "Puzzle build result");
-  const agentCount = integer(record.agentCount, "Puzzle build result agentCount");
-  const stageCount = integer(record.stageCount, "Puzzle build result stageCount");
-  if (agentCount !== AGENT_IDS.length || stageCount !== STAGE_COUNT) {
-    throw new Error("Puzzle build result must describe three six-stage agent streams.");
-  }
-  const transitionStage = integer(record.transitionStage, "Puzzle build result transitionStage", 2);
-  if (transitionStage > STAGE_COUNT) {
-    throw new Error("Puzzle build result transitionStage must be between 2 and 6.");
-  }
   return {
     buildId: decodeBuildId(record.buildId, "Puzzle build result buildId"),
     buildPath: absolutePath(record.buildPath, "Puzzle build result buildPath"),
-    agentCount: 3,
-    stageCount: 6,
-    transitionStage,
+    agentIds: decodeAgentIds(record.agentIds, "Puzzle build result agentIds"),
+    stageCount: integer(record.stageCount, "Puzzle build result stageCount", 1),
   };
 }
 
-function decodeAgentPathMap(value: unknown): Record<AgentId, string> {
+function decodeAgentPathMap(value: unknown, agentIds: readonly AgentId[]): Record<AgentId, string> {
   const record = object(value, "Puzzle build privateStageRoots");
-  const keys = Object.keys(record).sort();
-  if (keys.length !== AGENT_IDS.length || keys.some((key, index) => key !== AGENT_IDS[index])) {
-    throw new Error("Puzzle build privateStageRoots must contain exactly three agents.");
+  const keys = Object.keys(record);
+  const declared = new Set(agentIds);
+  if (keys.length !== agentIds.length || keys.some((key) => !declared.has(key as AgentId))) {
+    throw new Error("Puzzle build privateStageRoots must contain exactly the declared agents.");
   }
+  return Object.fromEntries(
+    agentIds.map((id) => [
+      id,
+      safeRelativePath(record[id], `Puzzle build ${id} private stage root`),
+    ]),
+  ) as Record<AgentId, string>;
+}
+
+function decodeBuildSource(value: unknown): BuildSource {
+  const record = object(value, "Puzzle build source");
+  const chapters = object(record.chapters, "Puzzle build source chapters");
+  const start = integer(chapters.start, "Puzzle build source chapters start", 1);
+  const end = integer(chapters.end, "Puzzle build source chapters end", 1);
+  if (end < start) throw new Error("Puzzle build source chapter end must not precede start.");
   return {
-    "agent-1": safeRelativePath(record["agent-1"], "agent-1 private stage root"),
-    "agent-2": safeRelativePath(record["agent-2"], "agent-2 private stage root"),
-    "agent-3": safeRelativePath(record["agent-3"], "agent-3 private stage root"),
+    sourceId: identifier(record.sourceId, "Puzzle build source sourceId"),
+    chapters: { start, end },
+    sha256: digest(record.sha256, "Puzzle build source sha256"),
   };
+}
+
+function decodeBuildReferences(value: unknown, sourceId: string): readonly BuildReference[] {
+  if (!Array.isArray(value)) throw new Error("Puzzle build references must be an array.");
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    const record = object(item, `Puzzle build reference ${String(index + 1)}`);
+    const referenceId = identifier(
+      record.sourceId,
+      `Puzzle build reference ${String(index + 1)} sourceId`,
+    );
+    if (referenceId === sourceId) {
+      throw new Error("Puzzle build target source cannot also be a reference.");
+    }
+    if (seen.has(referenceId)) throw new Error("Puzzle build reference source IDs must be unique.");
+    seen.add(referenceId);
+    return {
+      sourceId: referenceId,
+      sha256: digest(record.sha256, `Puzzle build reference ${String(index + 1)} sha256`),
+      path: safeRelativePath(record.path, `Puzzle build reference ${String(index + 1)} path`),
+    };
+  });
+}
+
+function decodeBuildRekeys(value: unknown, stageCount: number): readonly BuildRekey[] {
+  if (!Array.isArray(value)) throw new Error("Puzzle build rekeys must be an array.");
+  let priorStage = 1;
+  return value.map((item, index) => {
+    const record = object(item, `Puzzle build rekey ${String(index + 1)}`);
+    const atStage = integer(record.atStage, `Puzzle build rekey ${String(index + 1)} atStage`, 2);
+    if (atStage > stageCount || atStage <= priorStage) {
+      throw new Error("Puzzle build rekey stages must be unique, ascending, and within the build.");
+    }
+    priorStage = atStage;
+    const keyVersion = integer(
+      record.keyVersion,
+      `Puzzle build rekey ${String(index + 1)} keyVersion`,
+      1,
+    );
+    if (keyVersion !== index + 1) {
+      throw new Error("Puzzle build rekey keyVersion must match its one-based transition order.");
+    }
+    const changedTokenMass = finiteNumber(
+      record.changedTokenMass,
+      `Puzzle build rekey ${String(index + 1)} changedTokenMass`,
+      0,
+      1,
+    );
+    if (changedTokenMass === 0 || changedTokenMass === 1) {
+      throw new Error("Puzzle build rekey changedTokenMass must be strictly between zero and one.");
+    }
+    if (!Array.isArray(record.changedSymbols) || record.changedSymbols.length === 0) {
+      throw new Error("Puzzle build rekey changedSymbols must be a non-empty array.");
+    }
+    const changedSymbols = record.changedSymbols.map((symbol, symbolIndex) =>
+      nonEmptyString(
+        symbol,
+        `Puzzle build rekey ${String(index + 1)} changedSymbols[${String(symbolIndex)}]`,
+      ),
+    );
+    if (
+      new Set(changedSymbols).size !== changedSymbols.length ||
+      changedSymbols.some(
+        (symbol, symbolIndex) => symbolIndex > 0 && changedSymbols[symbolIndex - 1]! >= symbol,
+      )
+    ) {
+      throw new Error("Puzzle build rekey changedSymbols must be unique and sorted.");
+    }
+    return {
+      atStage,
+      keyVersion,
+      changedTokenMass,
+      changedSymbols,
+      keyPath: safeRelativePath(record.keyPath, `Puzzle build rekey ${String(index + 1)} keyPath`),
+    };
+  });
 }
 
 export function decodeBuildManifest(value: unknown): BuildManifest {
   const record = object(value, "Puzzle build manifest");
-  if (record.schemaVersion !== 1) {
+  if (record.schemaVersion !== 2) {
     throw new Error("Unsupported puzzle build schema version.");
   }
-  const agentCount = integer(record.agentCount, "Puzzle build agentCount");
-  const stageCount = integer(record.stageCount, "Puzzle build stageCount");
-  if (agentCount !== AGENT_IDS.length || stageCount !== STAGE_COUNT) {
-    throw new Error("Puzzle build must describe exactly three agents and six stages.");
-  }
-  const transitionStage = integer(record.transitionStage, "Puzzle build transitionStage", 2);
-  if (transitionStage > STAGE_COUNT) {
-    throw new Error("Puzzle build transitionStage must be between 2 and 6.");
-  }
+  const source = decodeBuildSource(record.source);
+  const references = decodeBuildReferences(record.references, source.sourceId);
+  const agentIds = decodeAgentIds(record.agentIds, "Puzzle build agentIds");
+  const stageCount = integer(record.stageCount, "Puzzle build stageCount", 1);
   const stageIntervalMs = integer(record.stageIntervalMs, "Puzzle build stageIntervalMs", 1);
-  if (!Array.isArray(record.changedSymbols) || record.changedSymbols.length === 0) {
-    throw new Error("Puzzle build changedSymbols must be a non-empty array.");
-  }
-  const changedSymbols = record.changedSymbols.map((symbol, index) =>
-    nonEmptyString(symbol, `Puzzle build changedSymbols[${String(index)}]`),
-  );
-  if (
-    new Set(changedSymbols).size !== changedSymbols.length ||
-    changedSymbols.some((symbol, index) => index > 0 && changedSymbols[index - 1]! >= symbol)
-  ) {
-    throw new Error("Puzzle build changedSymbols must be unique and sorted.");
-  }
-  if (!Array.isArray(record.stages) || record.stages.length !== AGENT_IDS.length * STAGE_COUNT) {
-    throw new Error("Puzzle build must contain exactly three six-stage streams.");
+  const rekeys = decodeBuildRekeys(record.rekeys, stageCount);
+  if (!Array.isArray(record.stages) || record.stages.length !== agentIds.length * stageCount) {
+    throw new Error("Puzzle build must contain one complete stage stream per declared agent.");
   }
   const stages = record.stages.map((rawStage, index): BuildStage => {
     const stage = object(rawStage, `Puzzle build stage ${String(index + 1)}`);
-    const expectedAgent = AGENT_IDS[Math.floor(index / STAGE_COUNT)];
-    const expectedOrdinal = (index % STAGE_COUNT) + 1;
+    const expectedAgent = agentIds[Math.floor(index / stageCount)];
+    const expectedOrdinal = (index % stageCount) + 1;
     const decodedAgent = agentId(stage.agentId, `Puzzle build stage ${String(index + 1)} agentId`);
     const ordinal = integer(stage.ordinal, `Puzzle build stage ${String(index + 1)} ordinal`, 1);
     if (decodedAgent !== expectedAgent || ordinal !== expectedOrdinal) {
-      throw new Error("Puzzle build stages must contain six ordered stages per agent.");
+      throw new Error("Puzzle build stages must contain ordered stages for every declared agent.");
     }
     const releaseOffsetMs = integer(
       stage.releaseOffsetMs,
@@ -288,13 +519,18 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     if (releaseOffsetMs !== (ordinal - 1) * stageIntervalMs) {
       throw new Error("Puzzle build stage offsets must follow the configured interval.");
     }
-    const expectedRegime = ordinal < transitionStage ? "base" : "revised";
-    if (stage.regime !== expectedRegime) {
-      throw new Error("Puzzle build stage regime does not match the transition stage.");
+    const expectedKeyVersion = rekeys.filter((rekey) => rekey.atStage <= ordinal).length;
+    const keyVersion = integer(
+      stage.keyVersion,
+      `Puzzle build ${decodedAgent} stage ${String(ordinal)} keyVersion`,
+    );
+    if (keyVersion !== expectedKeyVersion) {
+      throw new Error("Puzzle build stage keyVersion does not match the rekey schedule.");
     }
     return {
       agentId: decodedAgent,
       ordinal,
+      keyVersion,
       releaseOffsetMs,
       sourcePath: safeRelativePath(
         stage.sourcePath,
@@ -306,17 +542,18 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
         1,
       ),
       sha256: digest(stage.sha256, `Puzzle build ${decodedAgent} stage ${String(ordinal)} sha256`),
-      regime: expectedRegime,
     };
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     buildId: decodeBuildId(record.buildId, "Puzzle build buildId"),
-    agentCount: 3,
-    stageCount: 6,
-    transitionStage,
+    source,
+    references,
+    seed: safeInteger(record.seed, "Puzzle build seed"),
+    agentIds,
+    stageCount,
     stageIntervalMs,
-    changedSymbols,
+    rekeys,
     publicCiphertextPath: safeRelativePath(
       record.publicCiphertextPath,
       "Puzzle build publicCiphertextPath",
@@ -325,20 +562,26 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
       record.referenceCorpusPath,
       "Puzzle build referenceCorpusPath",
     ),
-    privateStageRoots: decodeAgentPathMap(record.privateStageRoots),
+    privateStageRoots: decodeAgentPathMap(record.privateStageRoots, agentIds),
     oracleRoot: safeRelativePath(record.oracleRoot, "Puzzle build oracleRoot"),
+    baseKeyPath: safeRelativePath(record.baseKeyPath, "Puzzle build baseKeyPath"),
     stages,
   };
 }
 
-function decodeSession(value: unknown, index: number): AgentSessionResult {
+function decodeSession(value: unknown, index: number, expectedAgentId: AgentId): AttemptSession {
   const record = object(value, `Attempt session ${String(index + 1)}`);
   const finalResponse =
     record.finalResponse === undefined
       ? undefined
       : nonEmptyString(record.finalResponse, `Attempt session ${String(index + 1)} finalResponse`);
+  const decodedAgentId = agentId(record.agentId, `Attempt session ${String(index + 1)} agentId`);
+  if (decodedAgentId !== expectedAgentId) {
+    throw new Error("Attempt sessions must follow the declared agent order.");
+  }
   const common = {
-    agentId: agentId(record.agentId, `Attempt session ${String(index + 1)} agentId`),
+    agentId: decodedAgentId,
+    model: decodeModelBinding(record.model, `Attempt session ${String(index + 1)} model`),
     state: sessionState(record.state, `Attempt session ${String(index + 1)} state`),
     inputTokens: integer(record.inputTokens, `Attempt session ${String(index + 1)} inputTokens`),
     outputTokens: integer(record.outputTokens, `Attempt session ${String(index + 1)} outputTokens`),
@@ -383,17 +626,20 @@ function decodeSandbox(value: unknown): SandboxIdentity & SandboxPolicy {
 
 export function decodeAttemptSummary(value: unknown): AttemptSummary {
   const record = object(value, "Attempt summary");
-  if (!Array.isArray(record.sessions) || record.sessions.length !== AGENT_IDS.length) {
+  if (record.schemaVersion !== 2) throw new Error("Unsupported attempt schema version.");
+  const agentIds = decodeAgentIds(record.agentIds, "Attempt summary agentIds");
+  if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
   }
-  const sessions = record.sessions.map(decodeSession);
-  const seen = sessions.map((session) => session.agentId).sort();
-  if (seen.some((id, index) => id !== AGENT_IDS[index])) {
-    throw new Error("Attempt summary must contain exactly one session per agent.");
-  }
+  const sessions = record.sessions.map((session, index) =>
+    decodeSession(session, index, agentIds[index]!),
+  );
   return {
+    schemaVersion: 2,
     attemptId: nonEmptyString(record.attemptId, "Attempt summary attemptId"),
+    buildId: decodeBuildId(record.buildId, "Attempt summary buildId"),
     buildRoot: absolutePath(record.buildRoot, "Attempt summary buildRoot"),
+    agentIds,
     tracePath: absolutePath(record.tracePath, "Attempt summary tracePath"),
     traceMetadataPath: absolutePath(record.traceMetadataPath, "Attempt summary traceMetadataPath"),
     frozenRoot: absolutePath(record.frozenRoot, "Attempt summary frozenRoot"),
@@ -409,6 +655,71 @@ export async function publishAttemptSummary(
   const encoded = `${JSON.stringify(decodeAttemptSummary(summary), null, 2)}\n`;
   const temporaryPath = `${attemptRoot}/attempt.json.${randomUUID()}.tmp`;
   const destinationPath = `${attemptRoot}/attempt.json`;
+  try {
+    await writeFile(temporaryPath, encoded, { encoding: "utf8", flag: "wx" });
+    await rename(temporaryPath, destinationPath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
+export function decodeExperimentSummary(value: unknown): ExperimentSummary {
+  const record = object(value, "Experiment summary");
+  if (record.schemaVersion !== 1) throw new Error("Unsupported experiment summary schema version.");
+  if (!Array.isArray(record.attempts)) {
+    throw new Error("Experiment summary attempts must be an array.");
+  }
+  const seenEntries = new Set<string>();
+  const seenAttemptIds = new Set<string>();
+  const seenAttemptRoots = new Set<string>();
+  const attempts = record.attempts.map((item, index): CompletedAttempt => {
+    const attempt = object(item, `Experiment summary attempt ${String(index + 1)}`);
+    const runName = identifier(
+      attempt.runName,
+      `Experiment summary attempt ${String(index + 1)} runName`,
+    );
+    const repetition = integer(
+      attempt.repetition,
+      `Experiment summary attempt ${String(index + 1)} repetition`,
+      1,
+    );
+    const attemptId = nonEmptyString(
+      attempt.attemptId,
+      `Experiment summary attempt ${String(index + 1)} attemptId`,
+    );
+    const attemptRoot = absolutePath(
+      attempt.attemptRoot,
+      `Experiment summary attempt ${String(index + 1)} attemptRoot`,
+    );
+    const entryKey = `${runName}\0${String(repetition)}`;
+    if (
+      seenEntries.has(entryKey) ||
+      seenAttemptIds.has(attemptId) ||
+      seenAttemptRoots.has(attemptRoot)
+    ) {
+      throw new Error("Experiment summary attempts must identify unique durable attempts.");
+    }
+    seenEntries.add(entryKey);
+    seenAttemptIds.add(attemptId);
+    seenAttemptRoots.add(attemptRoot);
+    return { runName, repetition, attemptId, attemptRoot };
+  });
+  return {
+    schemaVersion: 1,
+    resolvedConfig: decodeJsonObject(record.resolvedConfig, "Experiment summary resolvedConfig"),
+    buildRoot: absolutePath(record.buildRoot, "Experiment summary buildRoot"),
+    buildId: decodeBuildId(record.buildId, "Experiment summary buildId"),
+    attempts,
+  };
+}
+
+export async function publishExperimentSummary(
+  experimentRoot: string,
+  summary: ExperimentSummary | unknown,
+): Promise<void> {
+  const encoded = `${JSON.stringify(decodeExperimentSummary(summary), null, 2)}\n`;
+  const temporaryPath = `${experimentRoot}/experiment.json.${randomUUID()}.tmp`;
+  const destinationPath = `${experimentRoot}/experiment.json`;
   try {
     await writeFile(temporaryPath, encoded, { encoding: "utf8", flag: "wx" });
     await rename(temporaryPath, destinationPath);

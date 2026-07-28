@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://palimpsest.local/experiment.schema.json",
+  "title": "Palimpsest Experiment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "puzzle", "limits", "providers", "models", "runs"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "puzzle": { "$ref": "#/$defs/puzzle" },
+    "limits": { "$ref": "#/$defs/limits" },
+    "providers": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/provider" }
+    },
+    "models": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/model" }
+    },
+    "runs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/run" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "environmentName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "puzzle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "references",
+        "seed",
+        "agentCount",
+        "stageCount",
+        "stageIntervalMs",
+        "rekeys"
+      ],
+      "properties": {
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["corpus", "chapters"],
+          "properties": {
+            "corpus": { "$ref": "#/$defs/identifier" },
+            "chapters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "type": "integer", "minimum": 1 },
+                "end": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
+        "references": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "seed": { "type": "integer" },
+        "agentCount": { "type": "integer", "minimum": 2 },
+        "stageCount": { "type": "integer", "minimum": 1 },
+        "stageIntervalMs": { "type": "integer", "minimum": 1 },
+        "rekeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["atStage", "changedTokenMass"],
+            "properties": {
+              "atStage": { "type": "integer", "minimum": 2 },
+              "changedTokenMass": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "exclusiveMaximum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokenBudgetPerAgent", "wallTimeMs"],
+      "properties": {
+        "tokenBudgetPerAgent": { "type": "integer", "minimum": 1 },
+        "wallTimeMs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "provider": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["driver", "apiKeyEnv"],
+          "properties": {
+            "driver": { "enum": ["openai", "anthropic", "google"] },
+            "apiKeyEnv": { "$ref": "#/$defs/environmentName" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["driver", "baseURL"],
+          "properties": {
+            "driver": { "const": "openai-compatible" },
+            "baseURL": { "type": "string", "format": "uri" },
+            "apiKeyEnv": { "$ref": "#/$defs/environmentName" },
+            "headersEnv": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "$ref": "#/$defs/environmentName" }
+            }
+          }
+        }
+      ]
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": { "$ref": "#/$defs/identifier" },
+        "model": { "type": "string", "minLength": 1 },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxOutputTokens": { "type": "integer", "minimum": 1 },
+            "temperature": { "type": "number", "minimum": 0 },
+            "topP": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "seed": { "type": "integer" }
+          }
+        },
+        "providerOptions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "model": { "$ref": "#/$defs/identifier" },
+        "agents": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "repetitions": { "type": "integer", "minimum": 1 }
+      },
+      "oneOf": [
+        { "required": ["model"], "not": { "required": ["agents"] } },
+        { "required": ["agents"], "not": { "required": ["model"] } }
+      ]
+    }
+  }
+}

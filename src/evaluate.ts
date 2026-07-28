@@ -8,7 +8,7 @@ import {
   decodeBuildManifest,
   decodeEvaluationRecord,
 } from "./artifacts.js";
-import type { AgentId } from "./model.js";
+import { isAgentId, type AgentId } from "./model.js";
 import {
   type CommandSandbox,
   SandboxInfrastructureError,
@@ -270,6 +270,9 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   );
   const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
   const workspace = options.workspace ?? "agent-1";
+  if (!attempt.agentIds.includes(workspace)) {
+    throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);
+  }
   const selection: EvaluationSelection | undefined =
     options.command === undefined || options.outputPath === undefined
       ? undefined
@@ -313,16 +316,11 @@ export function evaluatePuzzleFromFlags(
   root = resolve("."),
 ): Promise<EvaluationResult> {
   const workspace = flags.get("--workspace");
-  if (
-    workspace !== undefined &&
-    workspace !== "agent-1" &&
-    workspace !== "agent-2" &&
-    workspace !== "agent-3"
-  ) {
-    throw new Error("--workspace must be agent-1, agent-2, or agent-3.");
+  if (workspace !== undefined && !isAgentId(workspace)) {
+    throw new Error("--workspace must be a canonical agent-N identifier.");
   }
   const command = flags.get("--command");
-  const outputPath = flags.get("--output");
+  const outputPath = flags.get("--output-path");
   const notes = flags.get("--notes");
   return evaluatePuzzle({
     root,

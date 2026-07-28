@@ -1,18 +1,19 @@
 # Palimpsest
 
-Palimpsest is a local, behavior-neutral research runner for a three-agent word-substitution decipherment puzzle. Three persistent model sessions receive different private evidence over time, share ordinary Git, check candidate reconstructions against aggregate private feedback, and decide for themselves how to solve and coordinate.
+Palimpsest is a local research runner for a collaborative word-substitution puzzle. A checked-in YAML file declares the corpus, puzzle geometry, resource limits, model profiles, and run conditions. Persistent model sessions receive different private evidence over time, share ordinary Git, and decide for themselves how to solve and coordinate.
 
-The runner observes the resulting work. It does not assign roles, impose rounds, require Git use, or treat a particular collaboration pattern as valid.
+This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
 ## Read First
 
 - [Proposal](docs/proposal.md): puzzle, agent experience, evaluation, and claim boundary.
-- [Architecture](docs/architecture.md): active runtime, sandbox, trace, overlap, and failure semantics.
+- [Architecture](docs/architecture.md): configuration, runtime, artifacts, and failure semantics.
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
-- [Feature 009 quickstart](specs/009-refactor-puzzle-architecture/quickstart.md): current setup, verification, and offline acceptance flow.
-- [Operator CLI contract](specs/009-refactor-puzzle-architecture/contracts/operator-cli.md): required flags, defaults, and result compatibility.
+- [Feature 010 quickstart](specs/010-configurable-research-runs/quickstart.md): current setup and acceptance flow.
+- [Experiment schema](experiments/schema.json): strict version-1 manifest format.
+- [Baseline experiment](experiments/config.yaml): the current three-agent research condition.
 
-Feature 009 is the single active specification. Superseded designs and generated experimental evidence remain recoverable from Git history rather than occupying the working tree.
+Feature 010 is the active specification. Feature 009 remains in the repository as the implemented behavior-neutral foundation that Feature 010 generalizes.
 
 ## Setup
 
@@ -24,9 +25,61 @@ uv sync --frozen --project python
 pnpm puzzle:sandbox:build
 ```
 
-The first bootstrap and sandbox image build may use the network. Once the uv cache is populated, verification uses the locked environment offline.
+The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model calls happen on the host; provider credentials are never mounted into command containers.
 
-The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model API calls remain on the host; provider credentials are never mounted into command containers.
+## Configure A Run
+
+Copy `experiments/config.yaml` and edit that one file. Its main sections are:
+
+- `puzzle`: registered target and reference corpora, one-based chapter range, seed, agent and stage counts, release interval, and zero or more re-keys;
+- `limits`: per-agent token budget and attempt wall time;
+- `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
+- `models`: reusable provider/model profiles and non-secret settings; and
+- `runs`: homogeneous or ordered mixed-model assignments plus repetitions.
+
+Unknown keys and invalid relationships fail before a build or attempt is created. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary; the experiment does not require provider SDK code in the runner and performs no automatic fallback or retry.
+
+## Run
+
+Build one declared puzzle:
+
+```bash
+pnpm puzzle:build -- \
+  --config experiments/config.yaml \
+  --output artifacts/build
+```
+
+Run one named condition:
+
+```bash
+pnpm puzzle:run -- \
+  --config experiments/config.yaml \
+  --run gpt-only \
+  --build artifacts/build \
+  --output artifacts/attempt
+```
+
+Or build once and run all declared conditions and repetitions sequentially:
+
+```bash
+pnpm puzzle:experiment -- \
+  --config experiments/config.yaml \
+  --output artifacts/experiment
+```
+
+Each durable attempt is indexed in `experiment.json`. Attempts remain separate under `attempts/<run-name>/<NNN>/`; a later failure does not erase completed work.
+
+After inspecting a frozen attempt, the researcher explicitly chooses what to evaluate:
+
+```bash
+pnpm puzzle:evaluate -- \
+  --attempt artifacts/experiment/attempts/gpt-only/001 \
+  --workspace agent-1 \
+  --command "sh solve.sh" \
+  --output-path reconstruction.txt
+```
+
+The runner does not prescribe a solver file, command, workspace, role, or collaboration pattern.
 
 ## Verify
 
@@ -35,42 +88,15 @@ pnpm verify
 git diff --check
 ```
 
-The suite includes real Docker containment and cleanup checks. A deterministic end-to-end fixture, which makes no external model call, is available with:
+Verification makes no live provider request. The deterministic end-to-end path is:
 
 ```bash
 output="$(mktemp -d)/palimpsest-offline"
 pnpm puzzle:offline -- --output "$output"
 ```
 
-Pull requests and merge-queue candidates run the same gate as the required `verify` check with the exact versions in `.tool-versions`, a freshly built sandbox image, and a base-relative whitespace check.
-
-Inspect `$output/attempt/attempt.json`, `trace.meta.json`, `trace.jsonl`, `overlap.json`, and `evaluation/result.json`.
-
-## Operator Flow
-
-The individual commands require explicit paths and run limits:
-
-```bash
-build_root="artifacts/build-17"
-attempt_root="artifacts/attempt-17"
-
-pnpm puzzle:build -- --output "$build_root" --seed 17
-pnpm puzzle:run -- \
-  --build "$build_root" \
-  --output "$attempt_root" \
-  --adapter openai \
-  --model "<model>" \
-  --token-budget 200000 \
-  --wall-time-ms 3600000
-pnpm puzzle:evaluate -- --attempt "$attempt_root"
-```
-
-Generated attempts belong under the ignored `artifacts/` directory. Build, run, and evaluation commands emit one JSON object on standard output and fail nonzero when their declared infrastructure cannot be provided. A build output must be absent or empty, a run output must be absent, and evaluation is one-shot because it creates the attempt's `evaluation/` directory exclusively.
-
-Every command is dispatched by `src/cli.ts`. Runtime behavior lives in small owner modules under `src/`, with the Docker boundary alone nested under `src/sandbox/`; deterministic construction and evaluation live under `python/palimpsest/`.
-
-Run completion publishes `attempt.json` atomically after sessions, trace, Git, and workspaces are frozen and before optional overlap observation begins. If overlap observation fails, the command fails without fabricating `overlap.json`, while the published attempt remains available to `puzzle:evaluate`.
+Generated runs belong under the ignored `artifacts/` directory.
 
 ## Scope
 
-Palimpsest deterministically constructs and scores one compound puzzle. Live model decisions, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner is not a secure multi-tenant service or a general certificate of reasoning, collaboration, or belief revision.
+Palimpsest deterministically constructs and scores configured puzzle conditions. Live model decisions, provider serving behavior, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner does not isolate the value of collaboration, certify belief revision, or provide a hardened public benchmark.

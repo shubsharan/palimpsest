@@ -15,6 +15,7 @@ import { appendTraceEvent } from "../../src/python.js";
 import { finalizeAttempt } from "../../src/run.js";
 import { FakeCommandSandbox } from "../../src/test-helpers.js";
 import type { AttemptResult } from "../../src/run.js";
+import type { AgentId, ModelBinding } from "../../src/model.js";
 
 const SUCCESS = {
   exitCode: 0,
@@ -35,6 +36,16 @@ const EMPTY_OVERLAP: OverlapResult = {
     skippedNonTextBlobCount: 0,
   },
 };
+const BUILD_ID = `build-${"a".repeat(64)}`;
+const AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+const MODEL: ModelBinding = {
+  profile: "fixture",
+  provider: "fixture",
+  driver: "openai-compatible",
+  requestedModel: "durability-fixture",
+  settings: {},
+  providerOptions: {},
+};
 
 interface FrozenFixture {
   attemptRoot: string;
@@ -47,8 +58,8 @@ async function frozenFixture(): Promise<FrozenFixture> {
   const attemptRoot = join(root, "attempt");
   const buildRoot = join(root, "build");
   const frozenRoot = join(attemptRoot, "frozen");
-  const workspaces = ["agent-1", "agent-2", "agent-3"].map((agentId) => ({
-    agentId: agentId as "agent-1" | "agent-2" | "agent-3",
+  const workspaces = AGENT_IDS.map((agentId) => ({
+    agentId,
     path: join(frozenRoot, "workspaces", agentId),
   }));
   await Promise.all([
@@ -77,8 +88,14 @@ async function frozenFixture(): Promise<FrozenFixture> {
     buildRoot,
     result: {
       attemptId: "attempt-durable",
-      sessions: ["agent-1", "agent-2", "agent-3"].map((agentId) => ({
-        agentId: agentId as "agent-1" | "agent-2" | "agent-3",
+      buildId: BUILD_ID,
+      buildRoot,
+      runName: "durability",
+      repetition: 1,
+      agentIds: AGENT_IDS,
+      sessions: AGENT_IDS.map((agentId) => ({
+        agentId,
+        model: MODEL,
         state: "finished" as const,
         inputTokens: 1,
         outputTokens: 1,

@@ -2,7 +2,7 @@ import { chmod, cp, mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { ActivityBus } from "./activity.js";
-import { AGENT_IDS, type AgentId } from "./model.js";
+import { generateAgentIds, type AgentId } from "./model.js";
 import { runProcess } from "./process.js";
 import { SANDBOX_PATHS } from "./sandbox/contracts.js";
 
@@ -56,13 +56,19 @@ export function runGit(args: readonly string[], cwd?: string): Promise<GitComman
   });
 }
 
-export async function createGitEnvironment(root: string): Promise<GitEnvironment> {
+export async function createGitEnvironment(
+  root: string,
+  agentIds: readonly AgentId[] = generateAgentIds(3),
+): Promise<GitEnvironment> {
+  if (agentIds.length < 2 || new Set(agentIds).size !== agentIds.length) {
+    throw new Error("Git environment requires at least two unique agent IDs.");
+  }
   const barePath = join(root, "shared.git");
   const workspaceRoot = join(root, "workspaces");
   await mkdir(workspaceRoot, { recursive: true });
   await runGit(["init", "--bare", "--initial-branch=main", barePath]);
   const workspaces = await Promise.all(
-    AGENT_IDS.map(async (agentId) => {
+    agentIds.map(async (agentId) => {
       const path = join(workspaceRoot, agentId);
       await runGit(["clone", barePath, path]);
       await runGit(["config", "user.name", `Palimpsest ${agentId}`], path);

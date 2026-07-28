@@ -4,6 +4,7 @@ import {
   type SandboxCommandResult,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
+import { generateAgentIds, type AgentId, type ModelBinding } from "./model.js";
 
 export const TEST_SANDBOX_IDENTITY: SandboxIdentity = {
   imageTag: "palimpsest-puzzle-sandbox:0.1.0",
@@ -35,4 +36,148 @@ export class FakeCommandSandbox implements CommandSandbox {
     this.requests.push(request);
     return this.#execute(request);
   }
+}
+
+export const TEST_DIGEST = "a".repeat(64);
+
+export function testModelBinding(overrides: Partial<ModelBinding> = {}): ModelBinding {
+  return {
+    profile: "fixture-model",
+    provider: "fixture-provider",
+    driver: "openai-compatible",
+    requestedModel: "fixture/model",
+    settings: {},
+    providerOptions: {},
+    actualProvider: "fixture",
+    actualModel: "fixture/model-v1",
+    ...overrides,
+  };
+}
+
+export function testBuildManifest(
+  options: {
+    agentCount?: number;
+    stageCount?: number;
+    rekeyStages?: readonly number[];
+  } = {},
+): Record<string, unknown> {
+  const agentIds = generateAgentIds(options.agentCount ?? 3);
+  const stageCount = options.stageCount ?? 6;
+  const rekeyStages = options.rekeyStages ?? [4];
+  const stageIntervalMs = 20;
+  const rekeys = rekeyStages.map((atStage, index) => ({
+    atStage,
+    keyVersion: index + 1,
+    changedTokenMass: 0.2,
+    changedSymbols: ["alpha", "beta"],
+    keyPath: `oracle/keys/key-${String(index + 1).padStart(2, "0")}.json`,
+  }));
+  return {
+    schemaVersion: 2,
+    buildId: `build-${TEST_DIGEST}`,
+    source: {
+      sourceId: "middlemarch",
+      chapters: { start: 10, end: 15 },
+      sha256: TEST_DIGEST,
+    },
+    references: [
+      {
+        sourceId: "jane-eyre",
+        sha256: TEST_DIGEST,
+        path: "public/reference/jane-eyre.txt",
+      },
+      {
+        sourceId: "moby-dick",
+        sha256: TEST_DIGEST,
+        path: "public/reference/moby-dick.txt",
+      },
+    ],
+    seed: 17,
+    agentIds,
+    stageCount,
+    stageIntervalMs,
+    rekeys,
+    publicCiphertextPath: "evaluation/ciphertext.txt",
+    referenceCorpusPath: "public/reference",
+    privateStageRoots: Object.fromEntries(
+      agentIds.map((agentId) => [agentId, `private/${agentId}/stages`]),
+    ),
+    oracleRoot: "oracle",
+    baseKeyPath: "oracle/keys/key-00.json",
+    stages: agentIds.flatMap((agentId) =>
+      Array.from({ length: stageCount }, (_, index) => {
+        const ordinal = index + 1;
+        return {
+          agentId,
+          ordinal,
+          keyVersion: rekeyStages.filter((atStage) => atStage <= ordinal).length,
+          releaseOffsetMs: index * stageIntervalMs,
+          sourcePath: `private/${agentId}/stages/stage-${String(ordinal).padStart(2, "0")}.txt`,
+          tokenCount: 10,
+          sha256: TEST_DIGEST,
+        };
+      }),
+    ),
+  };
+}
+
+export function testAttemptSummary(
+  options: {
+    agentIds?: readonly AgentId[];
+  } = {},
+): Record<string, unknown> {
+  const agentIds = options.agentIds ?? generateAgentIds(3);
+  return {
+    schemaVersion: 2,
+    attemptId: "attempt-fixture",
+    buildId: `build-${TEST_DIGEST}`,
+    buildRoot: "/tmp/palimpsest/build",
+    agentIds,
+    tracePath: "/tmp/palimpsest/attempt/trace.jsonl",
+    traceMetadataPath: "/tmp/palimpsest/attempt/trace.meta.json",
+    frozenRoot: "/tmp/palimpsest/attempt/frozen",
+    sandbox: {
+      ...TEST_SANDBOX_IDENTITY,
+      network: "none",
+      cpus: 2,
+      memoryBytes: 2_147_483_648,
+      pids: 256,
+      tmpfsBytes: 268_435_456,
+      maxOutputBytes: 4_194_304,
+    },
+    sessions: agentIds.map((agentId) => ({
+      agentId,
+      model: testModelBinding(),
+      state: "finished",
+      inputTokens: 1,
+      outputTokens: 1,
+      activityCursor: 0,
+      terminationReason: "finished",
+      finalResponse: "done",
+    })),
+  };
+}
+
+export function testExperimentSummary(): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    resolvedConfig: {
+      schemaVersion: 1,
+      puzzle: {
+        agentIds: generateAgentIds(3),
+        stageCount: 6,
+      },
+      runs: [{ name: "baseline", repetitions: 1 }],
+    },
+    buildRoot: "/tmp/palimpsest/build",
+    buildId: `build-${TEST_DIGEST}`,
+    attempts: [
+      {
+        runName: "baseline",
+        repetition: 1,
+        attemptId: "attempt-fixture",
+        attemptRoot: "/tmp/palimpsest/attempts/baseline/001",
+      },
+    ],
+  };
 }
