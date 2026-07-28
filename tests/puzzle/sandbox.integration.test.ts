@@ -1,16 +1,21 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createDockerCommandSandbox } from "../../src/sandbox/container.js";
 import {
-  createDockerCommandSandbox,
   SANDBOX_CONTAINER_LABEL,
-} from "../../packages/puzzle-runner/src/sandbox.js";
-import { createGitEnvironment, listRemoteRefs } from "../../packages/puzzle-runner/src/git.js";
+  SANDBOX_IMAGE_TAG,
+  SANDBOX_POLICY,
+  SandboxInfrastructureError,
+} from "../../src/sandbox/contracts.js";
+import { sandboxDockerfileDigest } from "../../src/sandbox/docker.js";
+import { resolveWorkspaceRegularFile } from "../../src/sandbox/workspace.js";
+import { createGitEnvironment, listRemoteRefs } from "../../src/git.js";
 
 const execFileAsync = promisify(execFile);
 const originalApiKey = process.env.OPENAI_API_KEY;
@@ -73,6 +78,12 @@ describe("real Docker command containment", () => {
     const fixture = await agentFixture();
     process.env.OPENAI_API_KEY = "host-provider-secret";
     const sandbox = await createDockerCommandSandbox();
+    expect(sandbox.identity).toEqual({
+      imageTag: SANDBOX_IMAGE_TAG,
+      imageId: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      sourceDigest: await sandboxDockerfileDigest(),
+      profileVersion: 1,
+    });
     const result = await sandbox.execute({
       profile: "agent",
       command: [
@@ -103,6 +114,33 @@ describe("real Docker command containment", () => {
     expect(await listRemoteRefs(fixture.git.barePath)).toHaveProperty("refs/heads/team/result");
     await assertNoSandboxContainers(sandbox.containerLabelValue);
   }, 60_000);
+
+  it("rejects escaped workspace paths and an evaluation image mismatch before execution", async () => {
+    const fixture = await agentFixture();
+    const outside = join(fixture.root, "outside.txt");
+    const link = join(fixture.workspace, "escaped.txt");
+    await writeFile(outside, "outside\n");
+    await symlink(outside, link);
+
+    await expect(
+      resolveWorkspaceRegularFile(fixture.workspace, "../outside.txt", "Candidate"),
+    ).rejects.toMatchObject({ name: "WorkspaceFileError", failure: "outside" });
+    await expect(
+      resolveWorkspaceRegularFile(fixture.workspace, "escaped.txt", "Candidate"),
+    ).rejects.toMatchObject({ name: "WorkspaceFileError", failure: "outside" });
+
+    await expect(
+      createDockerCommandSandbox({ expectedImageId: `sha256:${"0".repeat(64)}` }),
+    ).rejects.toThrow(SandboxInfrastructureError);
+    expect(SANDBOX_POLICY).toEqual({
+      network: "none",
+      cpus: 2,
+      memoryBytes: 2_147_483_648,
+      pids: 256,
+      tmpfsBytes: 268_435_456,
+      maxOutputBytes: 4_194_304,
+    });
+  });
 
   it("gives evaluation only the ciphertext, frozen Git, and writable workspace", async () => {
     const fixture = await agentFixture();

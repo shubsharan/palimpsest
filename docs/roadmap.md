@@ -8,7 +8,7 @@ The delivery order follows usable behavior: build the puzzle, let agents work fr
 
 ## Current Status
 
-Feature 006 records the behavior-neutral runner design. Feature 008 implements its current operational boundary: a standard Docker command sandbox, one cross-process trace, reachable-history observation, and removal of the superseded Gate-era tree. It does not change the puzzle or rewrite feature 006.
+Feature 009 is the active implementation: a behavior-neutral runner with a hardened Docker/trace boundary, one root TypeScript application, and one Python distribution. Superseded designs and generated evidence remain available through Git history rather than the working tree.
 
 The project is complete when the documented build-run-evaluate path works end to end and the runner neither prescribes nor repairs agent collaboration.
 
@@ -68,7 +68,7 @@ Deliver `puzzle:evaluate` and the private checker.
 - Report `scored`, `not-runnable`, `no-output`, or `execution-error`.
 - Preserve normalized model-turn summaries, full tool arguments/results, stage chronology, checker aggregates, Git history, termination, reviewer selection, execution, scores, sandbox image identity, and effective operational limits.
 - Resume one validated, redacted trace across run, overlap, and evaluation processes with contiguous sequence numbers and nondecreasing elapsed times.
-- Report only obvious exact or normalized raw overlap from unique text blobs reachable through current refs, including committed-then-deleted content; count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
+- Report only obvious exact or normalized raw overlap from logical-path/blob pairs reachable through current refs, including committed-then-deleted content; retain both path and blob provenance, materialize each unique text blob once, and count repeated commit-tree references and skipped non-text blobs without blocking, warning, rescoring, or invalidating.
 
 This step is done when successful, partial, missing, ambiguous, broken, raw-sharing, repeated-checking, and no-Git fixtures all remain inspectable outcomes.
 
@@ -91,7 +91,11 @@ pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 
 Keep code that directly supports generation, staged delivery, sessions, Git, checking, observation, evaluation, scoring, and the standard command sandbox. Remove active command paths and runtime dependencies whose purpose is Git byte accounting, publication slots, structured hypotheses, private deliverables, exact artifact replay, gate authorization, adversarial compression, hostile-solver promotion, or red-team release.
 
-Remove tracked historical run artifacts and specifications 001 through 005 from the active tree. Preserve specification 006 unchanged as the completed behavior-neutral design record, keep generated attempts untracked, and use Git history as the archive for all removed implementation, specifications, and artifacts. Current product docs, runtime guidance, package scripts, and code paths describe only the active puzzle.
+Route every operator command through the dispatcher in `src/cli.ts`; keep lifecycle composition in `src/run.ts`, one owner per model/provider/fixture/reveal/artifact/checker/overlap/trace concern, and nest only the real Docker subsystem under `src/sandbox/`. Keep deterministic Python construction and evaluation under `python/palimpsest/`. Remove the former workspace package, tool facades, source nesting, private barrels, compatibility names, and stored-record migrations.
+
+Publish the frozen attempt summary atomically before optional overlap observation. If observation fails, retain an evaluatable `attempt.json`, trace, frozen Git, and workspaces, append only a best-effort trace diagnostic, and return the original infrastructure failure without a success object or failure sidecar.
+
+Remove superseded specifications, tracked historical run artifacts, ignored Gate/harness/replay output, and obsolete package roots from the working tree. Keep generated attempts untracked and use Git history as the archive for removed implementation, specifications, and artifacts. Current product docs, runtime guidance, package scripts, and code paths describe only the active puzzle.
 
 ### 6. Verify the Puzzle Path
 
@@ -105,7 +109,10 @@ Run proportional verification:
 - Git-history tests for committed-then-deleted text, unique blob processing, repeated tree references, and skipped non-text objects;
 - fixture cases for diverse model behaviors and all evaluation statuses;
 - one fresh `puzzle:offline` build-run-evaluate smoke test without an external model call;
+- active-path boundary checks that are invariant to ignored caches, empty directories, and unstaged moves;
+- strict current-version artifact decoder and post-freeze overlap-failure durability tests;
 - root formatting, linting, type checking, tests, and `git diff --check`.
+- one required `verify` pull-request and merge-queue check that recreates the exact pinned toolchain and fresh sandbox before running the full gate.
 
 Verification proves that the environment behaves as documented. It does not require agents to solve well, use Git, detect the re-key, collaborate effectively, or avoid workarounds.
 
@@ -123,7 +130,7 @@ Palimpsest is delivered when:
 - deterministic scoring and normalized observation preserve model outcomes separately from infrastructure failures;
 - one validated trace preserves strict chronology across live and post-run processes;
 - obvious raw overlap covers every reachable text blob once, reports repeated tree references and skipped non-text objects, and remains observational only;
-- obsolete Gate-era code, dependencies, tracked artifacts, and specifications 001 through 005 are absent from the active tree while specification 006 remains unchanged and Git history remains the archive;
+- obsolete Gate-era code, dependencies, generated evidence, workspace/facade layout, and superseded specifications are absent from the working tree while Git history remains the archive;
 - the active commands and docs contain no Git metering, publication slots, behavioral gates, solver schema, exact replay, or red-team release requirement; and
 - a fresh offline fixture and the repository verification suite pass.
 

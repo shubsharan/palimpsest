@@ -1,9 +1,4 @@
 {
   "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "paths": {
-      "@palimpsest/puzzle-runner": ["./packages/puzzle-runner/src/index.ts"]
-    }
-  },
-  "include": ["packages/**/*.ts", "tools/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "tools/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }

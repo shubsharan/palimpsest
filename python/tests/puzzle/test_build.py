@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from collections import Counter
 from itertools import pairwise
@@ -9,30 +8,26 @@ from pathlib import Path
 import pytest
 from palimpsest.puzzle.build import build_puzzle
 from palimpsest.puzzle.cipher import apply_mapping
-from palimpsest.puzzle.model import AGENT_IDS, STAGE_COUNT, PuzzleBuild
+from palimpsest.puzzle.manifest import AGENT_IDS, STAGE_COUNT, PuzzleBuild
 from palimpsest.puzzle.text import word_tokens
 
 ROOT = Path(__file__).resolve().parents[3]
-SEED_17_BUILD_ID = "build-3288b873a2da8ee75f4289f86ccf82c699292d975e263a3a07039cca62e20301"
-SEED_17_TREE_SHA256 = "07500012e6875f444affd0605be0ba818ecd8b35a3560ef12852bdbede8de627"
-
-
-def _tree_sha256(root: Path) -> str:
-    digest = hashlib.sha256()
-    for path in sorted(path for path in root.rglob("*") if path.is_file()):
-        relative = path.relative_to(root).as_posix().encode()
-        content = path.read_bytes()
-        digest.update(len(relative).to_bytes(4, "big"))
-        digest.update(relative)
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
-    return digest.hexdigest()
+GOLDEN = json.loads((ROOT / "tests/golden/behavior.json").read_text(encoding="utf-8"))
+SEED_17 = GOLDEN["fixedSeed17Build"]
 
 
 @pytest.fixture(scope="module")
 def built_puzzle(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, PuzzleBuild]:
     output = tmp_path_factory.mktemp("puzzle-build") / "build"
-    return output, build_puzzle(ROOT, output, seed=17, stage_interval_ms=25)
+    inputs = SEED_17["inputs"]
+    return output, build_puzzle(
+        ROOT,
+        output,
+        seed=inputs["seed"],
+        stage_interval_ms=inputs["stageIntervalMs"],
+        transition_stage=inputs["transitionStage"],
+        changed_token_mass=inputs["changedTokenMass"],
+    )
 
 
 def test_build_is_byte_deterministic_with_three_six_stage_private_streams(
@@ -41,7 +36,15 @@ def test_build_is_byte_deterministic_with_three_six_stage_private_streams(
 ) -> None:
     first_root, first = built_puzzle
     second_root = tmp_path / "second"
-    second = build_puzzle(ROOT, second_root, seed=17, stage_interval_ms=25)
+    inputs = SEED_17["inputs"]
+    second = build_puzzle(
+        ROOT,
+        second_root,
+        seed=inputs["seed"],
+        stage_interval_ms=inputs["stageIntervalMs"],
+        transition_stage=inputs["transitionStage"],
+        changed_token_mass=inputs["changedTokenMass"],
+    )
 
     assert first.to_dict() == second.to_dict()
     first_files = {
@@ -55,10 +58,10 @@ def test_build_is_byte_deterministic_with_three_six_stage_private_streams(
         if path.is_file()
     }
     assert first_files == second_files
-    assert len(first_files) == 48
-    assert first.build_id == SEED_17_BUILD_ID
-    assert _tree_sha256(first_root) == SEED_17_TREE_SHA256
-    assert first.transition_stage == 4
+    assert first.build_id == SEED_17["buildId"]
+    assert first.agent_count == SEED_17["geometry"]["agentCount"]
+    assert first.stage_count == SEED_17["geometry"]["stageCount"]
+    assert first.transition_stage == SEED_17["geometry"]["transitionStage"]
     assert len(first.changed_symbols) > 1
     source_paths = [stage.source_path for stage in first.stages]
     for agent_id in AGENT_IDS:
@@ -110,11 +113,14 @@ def test_stage_four_uses_the_shared_revised_key_without_rewriting_prior_bytes(
         for stage in build.stages
         if stage.ordinal < build.transition_stage
     }
+    inputs = SEED_17["inputs"]
     rebuilt = build_puzzle(
         ROOT,
         build_root.parent / "rebuilt",
-        seed=17,
-        stage_interval_ms=25,
+        seed=inputs["seed"],
+        stage_interval_ms=inputs["stageIntervalMs"],
+        transition_stage=inputs["transitionStage"],
+        changed_token_mass=inputs["changedTokenMass"],
     )
 
     assert rebuilt.changed_symbols == build.changed_symbols

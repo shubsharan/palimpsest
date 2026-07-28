@@ -27,10 +27,10 @@ flowchart LR
     BUILD --> STREAMS[("Three private six-stage streams")]
     BUILD --> FULL["Complete ciphertext"]
 
-    SUPERVISOR["Session supervisor"] --> A1["Persistent agent 1"]
-    SUPERVISOR --> A2["Persistent agent 2"]
-    SUPERVISOR --> A3["Persistent agent 3"]
-    STREAMS --> SUPERVISOR
+    RUN["Run lifecycle"] --> A1["Persistent agent 1"]
+    RUN --> A2["Persistent agent 2"]
+    RUN --> A3["Persistent agent 3"]
+    STREAMS --> RUN
 
     A1 <--> GIT[("Ordinary shared Git")]
     A2 <--> GIT
@@ -41,7 +41,7 @@ flowchart LR
     A3 --> CHECK
     ORACLE --> CHECK
 
-    SUPERVISOR --> TRACE[("Attempt trace and frozen workspaces")]
+    RUN --> TRACE[("Attempt trace and frozen workspaces")]
     GIT --> TRACE
     CHECK --> TRACE
 
@@ -54,9 +54,9 @@ flowchart LR
     SCORE --> TRACE
 ```
 
-Python owns deterministic text preparation, cipher generation, partial re-keying, aggregate checking, overlap observation, and final scoring. TypeScript/Node owns session supervision, model adapters, stage delivery, local tool exposure, Git setup, token and wall-time cutoffs, trace capture, reviewer-selected execution, and the operator commands.
+Python owns deterministic text preparation, cipher generation, partial re-keying, aggregate checking, overlap observation, and final scoring. TypeScript/Node owns session lifecycle, the single `ModelAdapter` contract, live provider and deterministic fixture construction, stage delivery, local tool exposure, Git setup, token and wall-time cutoffs, trace capture, reviewer-selected execution, and the operator commands.
 
-The runtimes exchange plain recorded files and narrow subprocess results. A new schema, service, or provenance layer is added only when the active puzzle path needs it.
+The TypeScript runtime is one root application under `src/`; only the Docker command subsystem has a nested `src/sandbox/` ownership boundary. Python is one distribution under `python/palimpsest/`. The runtimes exchange plain recorded files and narrow subprocess results. There is no workspace package, compatibility barrel, deleted-layout alias, or stored-record migration.
 
 ## Puzzle Build
 
@@ -124,7 +124,7 @@ The prompt states:
 
 The prompt does not announce the partial re-key, recommend a decoding technique, prescribe a repository structure, assign work, require Git use, or request mappings, hypotheses, confidence, checkpoints, or reasoning traces.
 
-## Session Supervision
+## Session Lifecycle
 
 `puzzle:run` creates exactly three independent persistent sessions and one shared ordinary Git remote. A session may be:
 
@@ -137,7 +137,7 @@ The prompt does not announce the partial re-key, recommend a decoding technique,
 
 A model response may continue through tool calls, request activity waiting, or end with a final response. There is no configured limit on response count, tool calls, checker calls, Git operations, branches, commits, or collaboration cycles.
 
-The supervisor enforces only:
+The run lifecycle enforces only:
 
 - a cumulative model-token limit for each agent;
 - one wall-time cutoff for the attempt; and
@@ -155,7 +155,7 @@ Stage release and peer-visible Git changes produce activity events. An agent tha
 
 Agents use ordinary local Git behavior: clone, fetch, pull, branch, commit, merge, rebase, inspect, and push as supported by the configured remote. The experimental runner adds no byte accounting, publication slots, required ref namespaces, content warnings, raw-text filters, or collaboration-specific rate limits.
 
-Normal Git failures remain visible to agents. The supervisor does not merge, resolve conflicts, pull, retry, or repair repository state on their behalf.
+Normal Git failures remain visible to agents. The runner does not merge, resolve conflicts, pull, retry, or repair repository state on their behalf.
 
 ## Aggregate Checker
 
@@ -175,6 +175,8 @@ The checker never returns correct plaintext words, expected tokens, mismatch pos
 ## Freeze and Evaluation
 
 The attempt freezes when all sessions have terminated or the wall-time cutoff occurs. Freeze captures the shared repository, each workspace, the stage state, session termination reasons, and the normalized observation stream. It does not require clean worktrees, a final commit, a particular branch, or a private submission.
+
+After freeze, the runner completely writes a same-directory temporary summary and atomically renames it to `attempt.json`. Only then does optional overlap observation begin. An overlap failure remains an infrastructure failure and emits no success object or fabricated `overlap.json`, but it does not remove or invalidate the summary, trace, frozen Git, or frozen workspaces; later evaluation reads the strict current-version attempt without rerunning agents.
 
 `puzzle:evaluate` asks a reviewer to inspect the frozen team work and record:
 
@@ -213,7 +215,7 @@ The attempt trace records:
 
 This chronology lets a reviewer compare the hidden transition's evidence arrival with continued use of an older rule, peer communication, and later code or note changes. It does not require a canonical belief artifact and does not claim access to private chain of thought.
 
-The overlap observer searches only for obvious exact or normalized long spans shared between committed blobs and private evidence. It scans every unique text blob reachable from current Git refs, including content committed and later deleted, and processes each blob identity once. A separate traversal counts repeated blob references across reachable commit trees; binary and invalid UTF-8 blobs are skipped and counted. Reflog-only and unreachable objects are outside the observation. The observer runs after the attempt and never blocks Git, changes a score, invalidates a run, or expands into adversarial encoding detection.
+The overlap observer searches only for obvious exact or normalized long spans shared between committed blobs and private evidence. It retains every unique logical-path/blob pair reachable from current Git refs, including content committed and later deleted, while materializing each unique text blob only once. Findings record both `committedPath` and `committedBlobId`, so identical content at different paths and historical content at one path remain distinguishable. A separate traversal counts repeated blob references across reachable commit trees; binary and invalid UTF-8 blobs are skipped and counted. Reflog-only and unreachable objects are outside the observation. The observer runs after the attempt and never blocks Git, changes a score, invalidates a run, or expands into adversarial encoding detection.
 
 ## Failure Semantics
 
@@ -249,12 +251,15 @@ pnpm puzzle:evaluate -- --attempt artifacts/attempt-17
 
 Verification is proportional to the active claims:
 
+- Repository-boundary tests derive active tracked and nonignored paths from Git, so ignored caches, empty legacy directories, and preserved historical evidence cannot change the result.
 - Python unit and property tests cover six-stage geometry, shared partial re-key invariants, immutable earlier evidence, checker non-disclosure, unequal-length scoring, and overlap observation.
 - TypeScript tests cover prompt neutrality, exactly three independent sessions, voluntary completion, waiting and wake behavior, ordinary unmetered Git, token and wall-time cutoffs, sandbox mounts and path containment, resumable trace chronology, reachable Git history, freeze, reviewer selection, and evaluation statuses.
 - Docker-backed fixtures prove declared workspace and Git access while host, peer, oracle, credential, and public-network probes fail, and prove that no command container survives success, nonzero exit, timeout, cancellation, or output overflow.
 - Path-containment tests prove absolute, parent-relative, missing, non-regular, and symbolic-link escape outputs fail explicitly.
 - Evaluator tests cover reviewer selection ordering, `scored`, `not-runnable`, `no-output`, and `execution-error`; session and Git tests cover voluntary completion, waiting, cutoffs, ordinary branches, and peer-visible ref changes.
 - One fresh offline build-run-evaluate smoke test proves the active path without an external model call.
+
+The canonical acceptance commands are `pnpm verify`, `git diff --check`, and a fresh `pnpm puzzle:offline` run following `specs/009-refactor-puzzle-architecture/quickstart.md`. Pull requests and merge-queue candidates reproduce the pinned environment, build the sandbox, and run the same verification as the required `verify` status check.
 
 Palimpsest does not require channel-capacity proofs, fixed publication replay, hostile-solver red teams, exact model replay, or a particular empirical agent outcome before the puzzle may be run.
 
