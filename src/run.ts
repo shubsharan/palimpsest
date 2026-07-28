@@ -17,6 +17,7 @@ import {
   freezeGitEnvironment,
   GitActivityMonitor,
   type FrozenGitEnvironment,
+  type GitEnvironment,
 } from "./git.js";
 import {
   generateAgentIds,
@@ -36,7 +37,13 @@ import { buildAgentPrompt } from "./prompt.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
-import { SANDBOX_POLICY, type CommandSandbox, type SandboxIdentity } from "./sandbox/contracts.js";
+import {
+  SANDBOX_POLICY,
+  SandboxInfrastructureError,
+  type AgentSandboxLease,
+  type CommandSandbox,
+  type SandboxIdentity,
+} from "./sandbox/contracts.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
@@ -268,6 +275,64 @@ async function publishStage(
   );
 }
 
+async function openAgentLeases(options: {
+  sandbox: CommandSandbox;
+  git: GitEnvironment;
+  agentIds: readonly AgentId[];
+  evidencePaths: Record<AgentId, string>;
+  referenceCorpusPath: string;
+  clock: MonotonicClock;
+  cutoffAt: number;
+  signal: AbortSignal;
+}): Promise<Record<AgentId, AgentSandboxLease>> {
+  const settled = await Promise.allSettled(
+    options.agentIds.map(async (agentId) => {
+      const workspace = options.git.workspaces.find((candidate) => candidate.agentId === agentId);
+      const evidencePath = options.evidencePaths[agentId];
+      if (workspace === undefined || evidencePath === undefined) {
+        throw new Error(`Sandbox resources are missing for ${agentId}.`);
+      }
+      const remainingMs = Math.ceil(options.cutoffAt - options.clock.nowMs());
+      if (remainingMs <= 0 || options.signal.aborted) {
+        throw new SandboxInfrastructureError(
+          "Attempt wall-time cutoff expired during agent sandbox setup.",
+        );
+      }
+      const lease = await options.sandbox.openAgentLease({
+        profile: "agent",
+        workspacePath: workspace.path,
+        evidencePath,
+        referenceCorpusPath: options.referenceCorpusPath,
+        sharedGitPath: options.git.barePath,
+        timeoutMs: Math.min(30_000, remainingMs),
+        signal: options.signal,
+      });
+      return [agentId, lease] as const;
+    }),
+  );
+  const opened = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  const failed = settled.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") {
+    const closeResults = await Promise.allSettled(opened.map(([, lease]) => lease.close()));
+    const closeFailures = closeResults.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    const failure = options.signal.aborted
+      ? new SandboxInfrastructureError(
+          "Attempt wall-time cutoff expired during agent sandbox setup.",
+        )
+      : failed.reason;
+    if (closeFailures.length > 0) {
+      throw new AggregateError(
+        [failure, ...closeFailures],
+        "Agent sandbox setup failed and partial lease cleanup reported errors.",
+      );
+    }
+    throw failure;
+  }
+  return Object.fromEntries(opened) as Record<AgentId, AgentSandboxLease>;
+}
+
 export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
   const config = validateAttemptConfig(options.config);
   const agents = validateAgentRuntimes(options.agents, config.agentIds);
@@ -287,6 +352,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   ) as Record<AgentId, string>;
 
   const startedAt = options.clock.nowMs();
+  const cutoffAt = startedAt + config.wallTimeMs;
   const tracePath = join(config.artifactRoot, "trace.jsonl");
   const observationLog = await JsonlObservationLog.create(tracePath, {
     nowMs: () => options.clock.nowMs() - startedAt,
@@ -308,6 +374,16 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     })),
   });
 
+  const globalController = new AbortController();
+  const scheduleController = new AbortController();
+  const wallController = new AbortController();
+  const stopScheduleAtWallTime = () => scheduleController.abort();
+  globalController.signal.addEventListener("abort", stopScheduleAtWallTime, { once: true });
+  const wallTime = options.clock.waitUntil(cutoffAt, wallController.signal).then((reached) => {
+    if (reached) globalController.abort("time-exhausted");
+  });
+  void wallTime.catch(() => globalController.abort("wall-timer-failed"));
+
   const activity = new ActivityBus(() => options.clock.nowMs() - startedAt);
   const monitor = new GitActivityMonitor({
     barePath: git.barePath,
@@ -317,91 +393,152 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       await observationLog.append("git.changed", { refs });
     },
   });
-  await monitor.start();
 
-  const releasedStages = Object.fromEntries(
-    config.agentIds.map((agentId) => [agentId, new Set<number>()]),
-  ) as Record<AgentId, Set<number>>;
-  await publishStage({ config, evidencePaths, releasedStages, activity, observationLog }, 1);
-  const cursors = Object.fromEntries(
-    config.agentIds.map((agentId) => [agentId, activity.latestSequence]),
-  ) as Record<AgentId, number>;
+  let monitorStarted = false;
+  let sandboxLeases: Record<AgentId, AgentSandboxLease> | undefined;
+  let stagePublishing: Promise<void> | undefined;
+  let sessionPromises: readonly Promise<AgentSessionResult>[] | undefined;
+  let sessions: readonly AgentSessionResult[] | undefined;
+  let primaryFailure: { error: unknown } | undefined;
 
-  const globalController = new AbortController();
-  const scheduleController = new AbortController();
-  const wallController = new AbortController();
-  const stopScheduleAtWallTime = () => scheduleController.abort();
-  globalController.signal.addEventListener("abort", stopScheduleAtWallTime, { once: true });
-  const wallTime = options.clock
-    .waitUntil(startedAt + config.wallTimeMs, wallController.signal)
-    .then((reached) => {
-      if (reached) globalController.abort("time-exhausted");
-    });
-  const stagePublishing = publishStages({
-    config,
-    evidencePaths,
-    releasedStages,
-    activity,
-    observationLog,
-    startedAt,
-    clock: options.clock,
-    signal: scheduleController.signal,
-  });
-
-  const sessionPromises = config.agentIds.map((agentId) => {
-    const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
-    const evidencePath = evidencePaths[agentId];
-    const released = releasedStages[agentId];
-    const runtime = agents[agentId];
-    if (
-      workspace === undefined ||
-      evidencePath === undefined ||
-      released === undefined ||
-      runtime === undefined
-    ) {
-      throw new Error(`Runtime resources are missing for ${agentId}.`);
-    }
-    const tools = createAgentTools({
-      agentId,
-      workspacePath: workspace.path,
-      evidencePath,
-      referenceCorpusPath: config.referenceCorpusPath,
-      sharedGitPath: git.barePath,
-      sandbox: options.sandbox,
-      activity,
-      checker: options.checker,
-      getReleasedStages: () => [...released].sort((left, right) => left - right),
-      getActivityCursor: () => cursors[agentId]!,
-      setActivityCursor: (sequence) => {
-        cursors[agentId] = sequence;
-      },
-    });
-    return runAgentSession({
-      agentId,
-      model: runtime.model,
-      prompt: buildAgentPrompt({ agentId, agentCount: config.agentIds.length }),
-      adapter: runtime.adapter,
-      tools,
-      tokenBudget: config.tokenBudgetPerAgent,
-      signal: globalController.signal,
-      getActivityCursor: () => cursors[agentId]!,
-      observe: async (kind, data, observedAgentId) => {
-        await observationLog.append(kind, data, observedAgentId);
-      },
-    });
-  });
-
-  let sessions: readonly AgentSessionResult[];
   try {
+    await monitor.start();
+    monitorStarted = true;
+
+    const releasedStages = Object.fromEntries(
+      config.agentIds.map((agentId) => [agentId, new Set<number>()]),
+    ) as Record<AgentId, Set<number>>;
+    await publishStage({ config, evidencePaths, releasedStages, activity, observationLog }, 1);
+    const cursors = Object.fromEntries(
+      config.agentIds.map((agentId) => [agentId, activity.latestSequence]),
+    ) as Record<AgentId, number>;
+    const openedLeases = await openAgentLeases({
+      sandbox: options.sandbox,
+      git,
+      agentIds: config.agentIds,
+      evidencePaths,
+      referenceCorpusPath: config.referenceCorpusPath,
+      clock: options.clock,
+      cutoffAt,
+      signal: globalController.signal,
+    });
+    sandboxLeases = openedLeases;
+
+    if (globalController.signal.aborted) {
+      throw new SandboxInfrastructureError(
+        "Attempt wall-time cutoff expired during agent sandbox setup.",
+      );
+    }
+    stagePublishing = publishStages({
+      config,
+      evidencePaths,
+      releasedStages,
+      activity,
+      observationLog,
+      startedAt,
+      clock: options.clock,
+      signal: scheduleController.signal,
+    });
+    void stagePublishing.catch(() => {});
+
+    sessionPromises = config.agentIds.map((agentId) => {
+      const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
+      const released = releasedStages[agentId];
+      const runtime = agents[agentId];
+      const lease = openedLeases[agentId];
+      if (
+        workspace === undefined ||
+        released === undefined ||
+        runtime === undefined ||
+        lease === undefined
+      ) {
+        throw new Error(`Runtime resources are missing for ${agentId}.`);
+      }
+      const tools = createAgentTools({
+        agentId,
+        workspacePath: workspace.path,
+        sandbox: lease,
+        activity,
+        checker: options.checker,
+        getReleasedStages: () => [...released].sort((left, right) => left - right),
+        getActivityCursor: () => cursors[agentId]!,
+        setActivityCursor: (sequence) => {
+          cursors[agentId] = sequence;
+        },
+      });
+      return runAgentSession({
+        agentId,
+        model: runtime.model,
+        prompt: buildAgentPrompt({ agentId, agentCount: config.agentIds.length }),
+        adapter: runtime.adapter,
+        tools,
+        tokenBudget: config.tokenBudgetPerAgent,
+        signal: globalController.signal,
+        getActivityCursor: () => cursors[agentId]!,
+        observe: async (kind, data, observedAgentId) => {
+          await observationLog.append(kind, data, observedAgentId);
+        },
+      });
+    });
     sessions = await Promise.all(sessionPromises);
-  } finally {
-    wallController.abort("sessions-ended");
-    scheduleController.abort("sessions-ended");
-    globalController.signal.removeEventListener("abort", stopScheduleAtWallTime);
-    await Promise.all([stagePublishing, wallTime]);
-    await monitor.stop();
+  } catch (error) {
+    primaryFailure = { error };
+    globalController.abort("attempt-failed");
   }
-  activity.end(globalController.signal.aborted ? "time-exhausted" : "sessions-ended");
+
+  wallController.abort("sessions-ended");
+  scheduleController.abort("sessions-ended");
+  globalController.signal.removeEventListener("abort", stopScheduleAtWallTime);
+
+  const quiesceTasks: Promise<unknown>[] = [wallTime];
+  if (stagePublishing !== undefined) quiesceTasks.push(stagePublishing);
+  if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
+  const quiesceResults = await Promise.allSettled(quiesceTasks);
+  activity.end(
+    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended",
+  );
+
+  const releaseTasks: Promise<unknown>[] = [];
+  if (monitorStarted) releaseTasks.push(Promise.resolve().then(() => monitor.stop()));
+  if (sandboxLeases !== undefined) {
+    const leasesToClose = sandboxLeases;
+    releaseTasks.push(
+      ...config.agentIds.map((agentId) => {
+        const lease = leasesToClose[agentId];
+        if (lease === undefined) {
+          return Promise.reject(new Error(`Sandbox lease is missing for ${agentId}.`));
+        }
+        return Promise.resolve().then(() => lease.close());
+      }),
+    );
+  }
+  const releaseResults = await Promise.allSettled(releaseTasks);
+  const cleanupFailures = [...quiesceResults, ...releaseResults].flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  const distinctCleanupFailures = cleanupFailures.filter(
+    (error, index) => error !== primaryFailure?.error && cleanupFailures.indexOf(error) === index,
+  );
+  if (primaryFailure !== undefined) {
+    if (distinctCleanupFailures.length > 0) {
+      throw new AggregateError(
+        [primaryFailure.error, ...distinctCleanupFailures],
+        "Attempt execution failed and lifecycle cleanup reported additional errors.",
+      );
+    }
+    throw primaryFailure.error;
+  }
+  if (distinctCleanupFailures.length === 1) throw distinctCleanupFailures[0];
+  if (distinctCleanupFailures.length > 1) {
+    throw new AggregateError(
+      distinctCleanupFailures,
+      "Attempt lifecycle cleanup reported multiple errors.",
+    );
+  }
+  if (sessions === undefined) {
+    throw new Error("Attempt sessions did not produce a result.");
+  }
+
   await observationLog.append("attempt.sessions-ended", {
     sessions: sessions.map((session) => ({
       agentId: session.agentId,

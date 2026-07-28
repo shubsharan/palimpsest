@@ -5,8 +5,18 @@ The refactor moves these active contracts to `src/sandbox/contracts.ts` while pr
 ## Type Shapes
 
 ```ts
-interface BaseSandboxCommand {
+export interface BaseSandboxCommand {
   command: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}
+
+export interface AgentSandboxLeaseRequest {
+  profile: "agent";
+  workspacePath: string;
+  evidencePath: string;
+  referenceCorpusPath: string;
+  sharedGitPath: string;
   timeoutMs: number;
   signal?: AbortSignal;
 }
@@ -35,6 +45,8 @@ export interface SandboxCommandResult {
   stderr: string;
   timedOut: boolean;
   outputExceeded: boolean;
+  indeterminate?: true;
+  sandboxGeneration?: number;
 }
 
 export interface SandboxIdentity {
@@ -46,11 +58,18 @@ export interface SandboxIdentity {
 
 export interface CommandSandbox {
   readonly identity: SandboxIdentity;
-  execute(request: SandboxCommand): Promise<SandboxCommandResult>;
+  openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease>;
+  execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult>;
+}
+
+export interface AgentSandboxLease {
+  readonly identity: SandboxIdentity;
+  execute(request: BaseSandboxCommand): Promise<SandboxCommandResult>;
+  close(): Promise<void>;
 }
 ```
 
-An asynchronous factory validates image labels and an optional expected image ID before returning a sandbox. Production model-authored and reviewer-selected shell source executes only through this interface.
+An asynchronous factory validates image labels and an optional expected image ID before returning a sandbox runtime. The run coordinator opens one lease per agent and closes all three before freeze. Production model-authored shell source executes through the assigned lease; reviewer-selected shell source executes through the separate evaluation method.
 
 ## Agent Mounts
 
@@ -60,7 +79,7 @@ An asynchronous factory validates image labels and an optional expected image ID
 | `/evidence`       | Read-only        | Calling agent's released private stages |
 | `/reference`      | Read-only        | Public target-excluded reference corpus |
 | `/git/shared.git` | Read-write       | Ordinary team bare Git repository       |
-| `/tmp`            | Read-write tmpfs | Disposable command-local storage        |
+| `/tmp`            | Read-write tmpfs | Private lease-local storage             |
 
 The workspace Git remote remains `/git/shared.git`. Prompts describe container paths, never host paths.
 
@@ -105,16 +124,18 @@ Execution uses the inspected immutable image ID. Evaluation requires the image I
 ## Failure Contract
 
 - Missing, stale, or uninspectable image rejects before command start and names `pnpm puzzle:sandbox:build`.
-- Docker inspection, creation, start, cleanup, or daemon failure is `SandboxInfrastructureError`.
-- Every command uses an unpredictable container name.
-- Normal exit, nonzero exit, timeout, cancellation, output overflow, and partial launch converge on forced removal of that exact name.
-- One absolute deadline covers creation plus attached execution.
-- Interrupted creation uses the existing bounded settle/retry cleanup for late daemon materialization.
+- Docker inspection, lease creation, command execution, replacement, cleanup, or daemon failure is `SandboxInfrastructureError` unless a recovered interruption returns an explicit indeterminate command result.
+- Every agent lease and evaluation command uses an unpredictable container name.
+- Normal and nonzero exits retain a healthy agent lease. Timeout, cancellation, output overflow, resource termination, and partial launch converge on forced removal of the affected lease.
+- Lease creation and every command use absolute deadlines.
+- Interrupted creation uses bounded settle/retry cleanup for late daemon materialization.
+- If runtime service returns within the command deadline, an interrupted agent lease is replaced over the same host-backed mounts and the command returns `indeterminate: true` without replay.
+- A later command after configured termination may create a new lease generation over the same host-backed mounts.
 - Cleanup failure remains explicit infrastructure failure.
 - Combined output beyond 4 MiB terminates the command and appends the existing host-safety message.
 - Nonzero exit, timeout, resource kill, and output overflow remain command results rather than sandbox infrastructure failures.
 - Missing, non-regular, absolute, outside-workspace, or symlink-escaped candidate/output paths fail explicitly.
-- Agent-side sandbox infrastructure failure terminates that session as `infrastructure-error`.
+- Agent-side sandbox infrastructure failure terminates that session as `infrastructure-error` when recovery cannot complete.
 - Evaluation image mismatch remains evaluation infrastructure failure.
 
 ## Internal Ownership

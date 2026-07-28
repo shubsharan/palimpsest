@@ -21,8 +21,18 @@ export const SANDBOX_POLICY = {
   maxOutputBytes: 4_194_304,
 } as const;
 
-interface BaseSandboxCommand {
+export interface BaseSandboxCommand {
   command: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}
+
+export interface AgentSandboxLeaseRequest {
+  profile: "agent";
+  workspacePath: string;
+  evidencePath: string;
+  referenceCorpusPath: string;
+  sharedGitPath: string;
   timeoutMs: number;
   signal?: AbortSignal;
 }
@@ -51,6 +61,8 @@ export interface SandboxCommandResult {
   stderr: string;
   timedOut: boolean;
   outputExceeded: boolean;
+  indeterminate?: true;
+  sandboxGeneration?: number;
 }
 
 export interface SandboxIdentity {
@@ -62,7 +74,14 @@ export interface SandboxIdentity {
 
 export interface CommandSandbox {
   readonly identity: SandboxIdentity;
-  execute(request: SandboxCommand): Promise<SandboxCommandResult>;
+  openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease>;
+  execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult>;
+}
+
+export interface AgentSandboxLease {
+  readonly identity: SandboxIdentity;
+  execute(request: BaseSandboxCommand): Promise<SandboxCommandResult>;
+  close(): Promise<void>;
 }
 
 export class SandboxInfrastructureError extends Error {
@@ -81,7 +100,7 @@ export class WorkspaceFileError extends Error {
   }
 }
 
-export function validateSandboxCommand(request: SandboxCommand): void {
+export function validateSandboxCommand(request: BaseSandboxCommand): void {
   if (
     request.command.length === 0 ||
     request.command.length > 32_768 ||
@@ -91,5 +110,11 @@ export function validateSandboxCommand(request: SandboxCommand): void {
   }
   if (!Number.isSafeInteger(request.timeoutMs) || request.timeoutMs <= 0) {
     throw new Error("Command timeout must be a positive safe integer.");
+  }
+}
+
+export function validateAgentSandboxLeaseRequest(request: AgentSandboxLeaseRequest): void {
+  if (!Number.isSafeInteger(request.timeoutMs) || request.timeoutMs <= 0) {
+    throw new Error("Sandbox lease timeout must be a positive safe integer.");
   }
 }

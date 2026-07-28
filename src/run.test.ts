@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,7 +17,11 @@ import {
   type AgentRuntimeBinding,
   type AttemptConfig,
 } from "./run.js";
-import { SandboxInfrastructureError } from "./sandbox/contracts.js";
+import {
+  SandboxInfrastructureError,
+  type AgentSandboxLease,
+  type AgentSandboxLeaseRequest,
+} from "./sandbox/contracts.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
 const AGENTS = ["agent-1", "agent-2"] as const satisfies readonly AgentId[];
@@ -46,6 +50,20 @@ function runtimes(
       },
     ]),
   ) as Record<AgentId, AgentRuntimeBinding>;
+}
+
+class StalledLeaseSandbox extends FakeCommandSandbox {
+  override async openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease> {
+    this.leases.push(request);
+    return new Promise((_, reject) => {
+      const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+      if (request.signal?.aborted) {
+        abort();
+        return;
+      }
+      request.signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
 }
 
 async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptConfig> {
@@ -228,10 +246,11 @@ describe("run coordinator", () => {
       },
     }));
 
+    const sandbox = new FakeCommandSandbox();
     const result = await runAttempt({
       config,
       agents,
-      sandbox: new FakeCommandSandbox(),
+      sandbox,
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
       clock: systemMonotonicClock,
     });
@@ -270,6 +289,9 @@ describe("run coordinator", () => {
         { agentId: "agent-2", ...model("model-b") },
       ],
     });
+    expect(sandbox.leases).toHaveLength(AGENTS.length);
+    expect(sandbox.closedLeases).toBe(AGENTS.length);
+    expect(new Set(sandbox.leases.map((request) => request.profile))).toEqual(new Set(["agent"]));
   });
 
   it("publishes first private evidence before opening each model session", async () => {
@@ -324,6 +346,57 @@ describe("run coordinator", () => {
       clock: systemMonotonicClock,
     });
     expect(result.sessions.every((session) => session.state === "time-exhausted")).toBe(true);
+  });
+
+  it("bounds initial lease setup by the global wall-time cutoff", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-lease-cutoff-"));
+    const config = await fixtureConfig(root, 250);
+    const sandbox = new StalledLeaseSandbox();
+    const startedAt = performance.now();
+
+    await expect(
+      runAttempt({
+        config,
+        agents: runtimes(() => FixtureModelAdapter.repeatingWait()),
+        sandbox,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock: systemMonotonicClock,
+      }),
+    ).rejects.toThrow("Attempt wall-time cutoff expired during agent sandbox setup.");
+
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    expect(sandbox.leases).toHaveLength(AGENTS.length);
+    expect(
+      sandbox.leases.every(
+        (request) =>
+          request.signal !== undefined &&
+          request.timeoutMs > 0 &&
+          request.timeoutMs <= config.wallTimeMs,
+      ),
+    ).toBe(true);
+  });
+
+  it("closes every lease when stage publication fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-stage-cleanup-"));
+    const config = await fixtureConfig(root, 80);
+    const agentStages = config.agentStages["agent-1"];
+    const missingStage = agentStages?.[1];
+    if (missingStage === undefined) throw new Error("Fixture omitted agent-1 stage 2.");
+    await rm(missingStage);
+    const sandbox = new FakeCommandSandbox();
+
+    await expect(
+      runAttempt({
+        config,
+        agents: runtimes(() => FixtureModelAdapter.repeatingWait()),
+        sandbox,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock: systemMonotonicClock,
+      }),
+    ).rejects.toThrow();
+
+    expect(sandbox.leases).toHaveLength(AGENTS.length);
+    expect(sandbox.closedLeases).toBe(AGENTS.length);
   });
 
   it("freezes and publishes attempt v2 when a provider fails before opening a session", async () => {

@@ -5,14 +5,20 @@ import {
   SANDBOX_IMAGE_TAG,
   SANDBOX_POLICY,
   SandboxInfrastructureError,
+  type AgentSandboxLease,
+  type AgentSandboxLeaseRequest,
+  type BaseSandboxCommand,
   type CommandSandbox,
-  type SandboxCommand,
+  type EvaluationSandboxCommand,
   type SandboxCommandResult,
   type SandboxIdentity,
+  validateAgentSandboxLeaseRequest,
   validateSandboxCommand,
 } from "./contracts.js";
 import {
+  buildAgentDockerCreateArguments,
   buildDockerCreateArguments,
+  buildDockerExecArguments,
   parseSandboxImageInspection,
   sandboxDockerfileDigest,
   validateSandboxImageInspection,
@@ -81,6 +87,18 @@ function processText(result: ProcessResult, stream: "stdout" | "stderr"): string
   return result[stream].toString("utf8");
 }
 
+function dockerRuntimeInterrupted(result: ProcessResult): boolean {
+  if (result.signal !== null) return true;
+  if (result.exitCode !== 125) return false;
+  const diagnostic = processText(result, "stderr").toLowerCase();
+  return (
+    diagnostic.includes("docker daemon") ||
+    diagnostic.includes("error during connect") ||
+    diagnostic.includes("connection refused") ||
+    diagnostic.includes("unexpected eof")
+  );
+}
+
 function requireSuccessfulDocker(operation: string, result: ProcessResult): ProcessResult {
   if (result.exitCode !== 0 || result.signal !== null) {
     const reason =
@@ -143,11 +161,16 @@ export class DockerCommandSandbox implements CommandSandbox {
     }
   }
 
-  async #inspectState(containerName: string): Promise<ContainerState> {
-    const result = requireSuccessfulDocker(
-      "container inspection",
-      await this.#runDocker(["inspect", containerName]),
-    );
+  async #inspectState(
+    containerName: string,
+    options: { deadline: number; signal?: AbortSignal },
+  ): Promise<ContainerState> {
+    const result = await this.#runDocker(["inspect", containerName], options);
+    if (result.cancelled) throw abortError();
+    if (result.timedOut) {
+      throw new SandboxInfrastructureError("Docker container inspection timed out.");
+    }
+    requireSuccessfulDocker("container inspection", result);
     let parsed: unknown;
     try {
       parsed = JSON.parse(processText(result, "stdout"));
@@ -164,21 +187,287 @@ export class DockerCommandSandbox implements CommandSandbox {
     return (parsed[0] as { State?: ContainerState }).State ?? {};
   }
 
-  async execute(request: SandboxCommand): Promise<SandboxCommandResult> {
-    validateSandboxCommand(request);
-    if (request.signal?.aborted) throw abortError();
-    const deadline = performance.now() + request.timeoutMs;
+  #requireUser(): { uid: number; gid: number } {
     const getUid = process.getuid;
     const getGid = process.getgid;
     if (getUid === undefined || getGid === undefined) {
       throw new SandboxInfrastructureError("The Docker sandbox requires a POSIX host UID and GID.");
     }
+    return { uid: getUid(), gid: getGid() };
+  }
+
+  async #waitForDocker(deadline: number, signal?: AbortSignal): Promise<void> {
+    while (performance.now() < deadline) {
+      if (signal?.aborted) throw abortError();
+      const probeDeadline = Math.min(deadline, performance.now() + 1_000);
+      try {
+        const result = await this.#runDocker(["info", "--format", "{{.ServerVersion}}"], {
+          deadline: probeDeadline,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (result.cancelled) throw abortError();
+        if (!result.timedOut && result.exitCode === 0 && result.signal === null) return;
+      } catch (error) {
+        if (signal?.aborted) throw abortError();
+        if (performance.now() >= deadline) {
+          throw new SandboxInfrastructureError(
+            `Docker did not recover before the command deadline: ${errorDetail(error)}`,
+          );
+        }
+      }
+      const remainingMs = Math.ceil(deadline - performance.now());
+      if (remainingMs <= 0) break;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(100, remainingMs)));
+    }
+    throw new SandboxInfrastructureError("Docker did not recover before the command deadline.");
+  }
+
+  async #createAgentContainer(
+    request: AgentSandboxLeaseRequest,
+    containerName: string,
+    user: { uid: number; gid: number },
+    deadline: number,
+  ): Promise<void> {
+    const createArguments = await buildAgentDockerCreateArguments(
+      request,
+      this.identity,
+      containerName,
+      user,
+      this.containerLabelValue,
+    );
+    let created: ProcessResult;
+    try {
+      created = await this.#runDocker(createArguments, {
+        deadline,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+      });
+    } catch (error) {
+      await this.#remove(containerName, true);
+      throw new SandboxInfrastructureError(
+        `Docker agent sandbox creation failed: ${errorDetail(error)}`,
+      );
+    }
+    if (created.cancelled) {
+      await this.#remove(containerName, true);
+      throw abortError();
+    }
+    if (created.timedOut) {
+      await this.#remove(containerName, true);
+      throw new SandboxInfrastructureError("Docker agent sandbox creation timed out.");
+    }
+    if (created.exitCode !== 0 || created.signal !== null) {
+      const detail = processText(created, "stderr").trim() || "no error detail";
+      await this.#remove(containerName, true);
+      throw new SandboxInfrastructureError(`Docker agent sandbox creation failed: ${detail}`);
+    }
+
+    const started = await this.#runDocker(["start", containerName], {
+      deadline,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+    });
+    if (started.cancelled) {
+      await this.#remove(containerName);
+      throw abortError();
+    }
+    if (
+      started.timedOut ||
+      started.exitCode !== 0 ||
+      started.signal !== null ||
+      deadline <= performance.now()
+    ) {
+      const detail = started.timedOut
+        ? "start timed out"
+        : processText(started, "stderr").trim() || "start failed";
+      await this.#remove(containerName);
+      throw new SandboxInfrastructureError(`Docker agent sandbox ${detail}.`);
+    }
+    let state: ContainerState;
+    try {
+      state = await this.#inspectState(containerName, {
+        deadline,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+      });
+    } catch (error) {
+      await this.#remove(containerName);
+      throw error;
+    }
+    if (state.Status !== "running") {
+      await this.#remove(containerName);
+      throw new SandboxInfrastructureError(
+        `Docker agent sandbox did not remain running: ${JSON.stringify(state)}`,
+      );
+    }
+  }
+
+  async openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease> {
+    validateAgentSandboxLeaseRequest(request);
+    if (request.signal?.aborted) throw abortError();
+    const user = this.#requireUser();
+    const initialDeadline = performance.now() + request.timeoutMs;
+    let containerName = `palimpsest-agent-${randomUUID()}`;
+    let generation = 1;
+    let containerPresent = false;
+    let available = false;
+    let closed = false;
+
+    await this.#createAgentContainer(request, containerName, user, initialDeadline);
+    containerPresent = true;
+    available = true;
+
+    const discard = async (): Promise<void> => {
+      if (!containerPresent) {
+        available = false;
+        return;
+      }
+      await this.#remove(containerName);
+      containerPresent = false;
+      available = false;
+    };
+    const createReplacement = async (deadline: number, signal?: AbortSignal): Promise<void> => {
+      await this.#waitForDocker(deadline, signal);
+      if (containerPresent) await discard();
+      generation += 1;
+      containerName = `palimpsest-agent-${randomUUID()}`;
+      const remainingMs = Math.max(1, Math.ceil(deadline - performance.now()));
+      await this.#createAgentContainer(
+        {
+          ...request,
+          timeoutMs: remainingMs,
+          ...(signal === undefined ? {} : { signal }),
+        },
+        containerName,
+        user,
+        deadline,
+      );
+      containerPresent = true;
+      available = true;
+    };
+    const indeterminateResult = (
+      result: ProcessResult | undefined,
+      detail: string,
+    ): SandboxCommandResult => ({
+      exitCode: null,
+      stdout: result === undefined ? "" : processText(result, "stdout"),
+      stderr:
+        `${result === undefined ? "" : processText(result, "stderr")}\n${detail}\nThe interrupted command was not replayed; inspect the persistent workspace before continuing.`.trim(),
+      timedOut: false,
+      outputExceeded: false,
+      indeterminate: true,
+      sandboxGeneration: generation,
+    });
+
+    return {
+      identity: this.identity,
+      execute: async (command: BaseSandboxCommand): Promise<SandboxCommandResult> => {
+        validateSandboxCommand(command);
+        if (closed) throw new SandboxInfrastructureError("Agent sandbox lease is closed.");
+        if (command.signal?.aborted) throw abortError();
+        const deadline = performance.now() + command.timeoutMs;
+        if (!available) {
+          await createReplacement(deadline, command.signal);
+        }
+
+        let executed: ProcessResult;
+        try {
+          executed = await this.#runDocker(buildDockerExecArguments(command, containerName, user), {
+            deadline,
+            maxOutputBytes: SANDBOX_POLICY.maxOutputBytes,
+            ...(command.signal === undefined ? {} : { signal: command.signal }),
+          });
+        } catch (error) {
+          await createReplacement(deadline, command.signal);
+          return indeterminateResult(
+            undefined,
+            `Sandbox runtime interrupted command execution: ${errorDetail(error)}`,
+          );
+        }
+
+        if (executed.cancelled) {
+          await discard();
+          throw abortError();
+        }
+        const overflowMessage = executed.outputExceeded
+          ? "\nCommand output exceeded the 4 MiB host safety limit."
+          : "";
+        if (executed.timedOut || executed.outputExceeded) {
+          await discard();
+          return {
+            exitCode: executed.exitCode,
+            stdout: processText(executed, "stdout"),
+            stderr: `${processText(executed, "stderr")}${overflowMessage}`,
+            timedOut: executed.timedOut,
+            outputExceeded: executed.outputExceeded,
+            sandboxGeneration: generation,
+          };
+        }
+
+        if (dockerRuntimeInterrupted(executed)) {
+          await createReplacement(deadline, command.signal);
+          return indeterminateResult(executed, "Sandbox runtime interrupted command execution.");
+        }
+
+        if (executed.exitCode !== 0) {
+          let state: ContainerState;
+          try {
+            state = await this.#inspectState(containerName, {
+              deadline,
+              ...(command.signal === undefined ? {} : { signal: command.signal }),
+            });
+          } catch (error) {
+            await createReplacement(deadline, command.signal);
+            return indeterminateResult(
+              executed,
+              `Sandbox runtime interrupted command inspection: ${errorDetail(error)}`,
+            );
+          }
+          if (state.Status !== "running") {
+            if (state.OOMKilled === true) {
+              await discard();
+              return {
+                exitCode: executed.exitCode,
+                stdout: processText(executed, "stdout"),
+                stderr: `${processText(executed, "stderr")}\nCommand was terminated by the sandbox memory limit.`,
+                timedOut: false,
+                outputExceeded: false,
+                sandboxGeneration: generation,
+              };
+            }
+            await createReplacement(deadline, command.signal);
+            return indeterminateResult(
+              executed,
+              `Sandbox stopped during command execution: ${JSON.stringify(state)}`,
+            );
+          }
+        }
+
+        return {
+          exitCode: executed.exitCode,
+          stdout: processText(executed, "stdout"),
+          stderr: processText(executed, "stderr"),
+          timedOut: false,
+          outputExceeded: false,
+          sandboxGeneration: generation,
+        };
+      },
+      close: async (): Promise<void> => {
+        if (closed) return;
+        await discard();
+        closed = true;
+      },
+    };
+  }
+
+  async execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult> {
+    validateSandboxCommand(request);
+    if (request.signal?.aborted) throw abortError();
+    const deadline = performance.now() + request.timeoutMs;
+    const user = this.#requireUser();
     const containerName = `palimpsest-${request.profile}-${randomUUID()}`;
     const createArguments = await buildDockerCreateArguments(
       request,
       this.identity,
       containerName,
-      { uid: getUid(), gid: getGid() },
+      user,
       this.containerLabelValue,
     );
     let removal: Promise<void> | undefined;
@@ -275,7 +564,10 @@ export class DockerCommandSandbox implements CommandSandbox {
         let exitCode: number | null = started.exitCode;
         let resourceMessage = "";
         if (!started.timedOut && !started.outputExceeded) {
-          const state = await this.#inspectState(containerName);
+          const state = await this.#inspectState(containerName, {
+            deadline,
+            ...(request.signal === undefined ? {} : { signal: request.signal }),
+          });
           if (state.Status !== "exited" || typeof state.ExitCode !== "number") {
             throw new SandboxInfrastructureError(
               `Docker did not report an exited command state: ${JSON.stringify(state)}`,

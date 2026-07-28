@@ -11,6 +11,8 @@ import {
   SANDBOX_PROFILE_LABEL,
   SANDBOX_SOURCE_LABEL,
   SandboxInfrastructureError,
+  type AgentSandboxLeaseRequest,
+  type BaseSandboxCommand,
   type SandboxCommand,
   type SandboxIdentity,
   validateSandboxCommand,
@@ -215,4 +217,55 @@ export async function buildDockerCreateArguments(
     request.command,
   );
   return args;
+}
+
+export function buildDockerExecArguments(
+  request: BaseSandboxCommand,
+  containerName: string,
+  user: { uid: number; gid: number },
+): string[] {
+  validateSandboxCommand(request);
+  return [
+    "exec",
+    "--workdir",
+    SANDBOX_PATHS.workspace,
+    "--user",
+    `${String(user.uid)}:${String(user.gid)}`,
+    containerName,
+    "/usr/bin/env",
+    "-i",
+    "HOME=/workspace",
+    "LANG=C.UTF-8",
+    "LC_ALL=C.UTF-8",
+    "TMPDIR=/tmp",
+    "GIT_TERMINAL_PROMPT=0",
+    "/bin/sh",
+    "-lc",
+    request.command,
+  ];
+}
+
+export function buildAgentDockerCreateArguments(
+  request: AgentSandboxLeaseRequest,
+  identity: SandboxIdentity,
+  containerName: string,
+  user: { uid: number; gid: number },
+  containerLabelValue = "1",
+): Promise<string[]> {
+  return buildDockerCreateArguments(
+    {
+      profile: "agent",
+      command: "while :; do sleep 3600; done",
+      timeoutMs: request.timeoutMs,
+      workspacePath: request.workspacePath,
+      evidencePath: request.evidencePath,
+      referenceCorpusPath: request.referenceCorpusPath,
+      sharedGitPath: request.sharedGitPath,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+    },
+    identity,
+    containerName,
+    user,
+    containerLabelValue,
+  );
 }

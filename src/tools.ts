@@ -1,6 +1,6 @@
 import { ActivityBus, type ActivityEvent } from "./activity.js";
 import type { AgentId } from "./model.js";
-import type { CommandSandbox, SandboxCommandResult } from "./sandbox/contracts.js";
+import type { AgentSandboxLease, SandboxCommandResult } from "./sandbox/contracts.js";
 import { resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
 
 export interface ToolDefinition {
@@ -90,10 +90,7 @@ function activitySummary(event: ActivityEvent): string {
 export function createAgentTools(options: {
   agentId: AgentId;
   workspacePath: string;
-  evidencePath: string;
-  referenceCorpusPath: string;
-  sharedGitPath: string;
-  sandbox: CommandSandbox;
+  sandbox: AgentSandboxLease;
   activity: ActivityBus;
   checker: CheckerHook;
   getReleasedStages: () => readonly number[];
@@ -112,13 +109,8 @@ export function createAgentTools(options: {
           throw new Error("run_command timeoutMs must be a positive safe integer.");
         }
         const request = {
-          profile: "agent" as const,
           command: input.command,
           timeoutMs: requestedTimeout as number,
-          workspacePath: options.workspacePath,
-          evidencePath: options.evidencePath,
-          referenceCorpusPath: options.referenceCorpusPath,
-          sharedGitPath: options.sharedGitPath,
           ...(signal === undefined ? {} : { signal }),
         };
         return options.sandbox.execute(request) satisfies Promise<SandboxCommandResult>;

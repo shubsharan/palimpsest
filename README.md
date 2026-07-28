@@ -9,12 +9,13 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Proposal](docs/proposal.md): puzzle, agent experience, evaluation, and claim boundary.
 - [Architecture](docs/architecture.md): configuration, runtime, artifacts, and failure semantics.
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
+- [Feature 010 specification](specs/010-agent-sandbox-lifecycle/spec.md): attempt-scoped agent sandbox and recovery behavior.
 - [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
 - [Feature 011 quickstart](specs/011-configurable-research-runs/quickstart.md): current setup and acceptance flow.
 - [Experiment schema](experiments/schema.json): strict version-1 manifest format.
 - [Baseline experiment](experiments/config.yaml): the current three-agent research condition.
 
-Feature 011 defines the configurable research runner. Feature 012 is authoritative for verification and experiment authorization. Feature 009 remains the implemented behavior-neutral foundation.
+Feature 011 defines the configurable research runner, including the attempt-scoped sandbox lifecycle introduced by Feature 010. Feature 012 is authoritative for verification and experiment authorization. Feature 009 remains the implemented behavior-neutral foundation.
 
 ## Setup
 
@@ -25,7 +26,7 @@ pnpm install --frozen-lockfile
 uv sync --frozen --project python
 ```
 
-The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Model calls happen on the host; provider credentials are never mounted into command containers.
+The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
 
 ## Configure A Run
 
