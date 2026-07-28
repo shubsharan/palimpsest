@@ -1,6 +1,6 @@
 # Tasks: Configurable Research Runs
 
-**Input**: Design documents from `/specs/010-configurable-research-runs/` **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
+**Input**: Design documents from `/specs/011-configurable-research-runs/` **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 
 **Verification**: Tests are mandatory and precede implementation. No task may use a live provider call.
 

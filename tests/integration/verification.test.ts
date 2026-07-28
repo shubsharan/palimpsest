@@ -31,11 +31,11 @@ const CURRENT_GUIDANCE_PATHS = new Set([
   "CLAUDE.md",
   "experiments/config.yaml",
   "experiments/schema.json",
-  "specs/010-configurable-research-runs/spec.md",
-  "specs/010-configurable-research-runs/data-model.md",
-  "specs/010-configurable-research-runs/contracts/experiment-config.md",
-  "specs/010-configurable-research-runs/contracts/operator-cli.md",
-  "specs/010-configurable-research-runs/contracts/research-artifacts.md",
+  "specs/011-configurable-research-runs/spec.md",
+  "specs/011-configurable-research-runs/data-model.md",
+  "specs/011-configurable-research-runs/contracts/experiment-config.md",
+  "specs/011-configurable-research-runs/contracts/operator-cli.md",
+  "specs/011-configurable-research-runs/contracts/research-artifacts.md",
 ]);
 
 const DELETED_LAYOUT_PATHS = [
@@ -212,7 +212,7 @@ describe("active repository boundary", () => {
   });
 
   test("keeps current guidance targeted to the configurable acceptance flow", async () => {
-    const quickstart = await readFile("specs/010-configurable-research-runs/quickstart.md", "utf8");
+    const quickstart = await readFile("specs/011-configurable-research-runs/quickstart.md", "utf8");
     expect(quickstart).toContain("experiments/config.yaml");
     expect(quickstart).toContain("pnpm puzzle:experiment");
     expect(quickstart).toContain("without a billable provider call");

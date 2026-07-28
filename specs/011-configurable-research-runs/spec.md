@@ -1,6 +1,6 @@
 # Feature Specification: Configurable Research Runs
 
-**Feature Branch**: `010-configurable-research-runs` **Created**: 2026-07-27 **Status**: Implemented **Input**: Researcher-authored puzzle configurations and direct multi-provider model comparisons without provider-specific runner code
+**Feature Branch**: `011-configurable-research-runs` **Created**: 2026-07-27 **Status**: Implemented **Input**: Researcher-authored puzzle configurations and direct multi-provider model comparisons without provider-specific runner code
 
 ## User Scenarios & Testing _(mandatory)_
 

@@ -9,11 +9,11 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Proposal](docs/proposal.md): puzzle, agent experience, evaluation, and claim boundary.
 - [Architecture](docs/architecture.md): configuration, runtime, artifacts, and failure semantics.
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
-- [Feature 010 quickstart](specs/010-configurable-research-runs/quickstart.md): current setup and acceptance flow.
+- [Feature 011 quickstart](specs/011-configurable-research-runs/quickstart.md): current setup and acceptance flow.
 - [Experiment schema](experiments/schema.json): strict version-1 manifest format.
 - [Baseline experiment](experiments/config.yaml): the current three-agent research condition.
 
-Feature 010 is the active specification. Feature 009 remains in the repository as the implemented behavior-neutral foundation that Feature 010 generalizes.
+Feature 011 is the active specification. Feature 009 remains in the repository as the implemented behavior-neutral foundation that Feature 011 generalizes.
 
 ## Setup
 

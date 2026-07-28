@@ -2,7 +2,7 @@
 
 ## Direction
 
-Feature 010 is the active implementation. It generalizes the Feature 009 behavior-neutral runner into researcher-authored, provider-neutral experiments without turning Palimpsest into a service or workflow product.
+Feature 011 is the active implementation. It generalizes the Feature 009 behavior-neutral runner into researcher-authored, provider-neutral experiments without turning Palimpsest into a service or workflow product.
 
 The project is complete when one local YAML file can reproduce a puzzle condition, assign direct-provider models to its agents, retain sequential attempts, and leave each frozen attempt available for explicit reviewer evaluation.
 

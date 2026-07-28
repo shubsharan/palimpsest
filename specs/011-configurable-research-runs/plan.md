@@ -1,6 +1,6 @@
 # Implementation Plan: Configurable Research Runs
 
-**Branch**: `010-configurable-research-runs` | **Date**: 2026-07-27 | **Spec**: [spec.md](spec.md) **Input**: Feature specification from `/specs/010-configurable-research-runs/spec.md`
+**Branch**: `011-configurable-research-runs` | **Date**: 2026-07-27 | **Spec**: [spec.md](spec.md) **Input**: Feature specification from `/specs/011-configurable-research-runs/spec.md`
 
 ## Summary
 
@@ -25,7 +25,7 @@ _GATE: Passed before Phase 0 research and passed again after Phase 1 design._
 ### Documentation (this feature)
 
 ```text
-specs/010-configurable-research-runs/
+specs/011-configurable-research-runs/
 ├── spec.md
 ├── plan.md
 ├── research.md
