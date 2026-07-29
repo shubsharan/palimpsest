@@ -2,7 +2,7 @@
 
 ## A configurable collaborative decipherment puzzle
 
-Palimpsest gives several frontier-model agents different private fragments of a word-substitution cipher and asks them to recover as much of the original text as possible. The agents work concurrently, share an ordinary Git repository, and decide for themselves how to solve and coordinate.
+Palimpsest gives three frontier-model agents different private fragments of a word-substitution cipher and asks them to recover as much of the original text as possible. The agents work concurrently and decide for themselves how to solve. Communication availability varies by declared condition: shared conditions expose ordinary peer Git, while isolated conditions preserve team identity without peer visibility.
 
 The project is a local puzzle and an observational research artifact. It is not an enterprise application, a hosted experiment service, a hardened adversarial benchmark, or a prescribed multi-agent workflow.
 
@@ -14,7 +14,7 @@ One experiment manifest selects a target from the checked-in corpus registry, an
 
 The prepared ciphertext is divided into one private contiguous stream per agent. Every stream has the same number of immutable stages, released on a shared wall-clock schedule. Earlier stages remain available exactly as released.
 
-At each configured re-key boundary, a deterministic subset of mappings changes across every stream while the remaining mappings stay valid. Each revision is derived from the immediately preceding key. These transitions are hidden from agents: prompts, stage names, checker results, and their shared repository do not announce them.
+At each configured re-key boundary, a deterministic subset of mappings changes across every stream while the remaining mappings stay valid. Each revision is derived from the immediately preceding key. These transitions are hidden from agents: prompts, stage names, checker results, and their agent-visible Git do not announce them.
 
 The checked-in baseline retains the original research condition: three agents, six stages, and one partial re-key beginning at stage four. Other manifests can vary those dimensions so long as the corpus can support the requested geometry.
 
@@ -24,27 +24,27 @@ The manifest also declares direct provider connections and named model profiles.
 
 Provider credentials are read only from named environment variables. They are not valid literal configuration values and are excluded from traces, attempt records, experiment summaries, error text, and command sandboxes. The runner does not silently fall back to another provider or retry an attempt.
 
-Persistent model sessions begin together and remain independent. Each receives the same concise instructions except for its identity, peer count, and private paths:
+Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, private evidence allocation, schedule, limits, tools, references, and evaluation boundary. Only channel availability differs between communication-paired prompts.
 
-> You are Agent N, one of M agents working concurrently to solve Palimpsest. Each agent receives different private evidence. Your team shares a Git repository; use it to coordinate, exchange code and compact findings, review one another's work, and assemble the best solver you can. The other agents are working at the same time. Choose your own roles, strategy, branches, files, and collaboration cadence. Avoid committing raw ciphertext or reconstructed prose.
+Shared conditions state that the team has a shared Git repository and peer activity. Isolated conditions state that peer communication is unavailable and give each agent an independent Git repository. Both state that the other agents are working concurrently on different private evidence.
 
-The instruction makes the team and communication channel explicit. It does not recommend a decoding algorithm, assign roles, impose rounds, require Git use, or request mappings, hypotheses, confidence values, checkpoints, or reasoning traces.
+The instruction makes team identity and condition-specific channel availability explicit. It does not reveal the key regime, special word sets, scoring expectations, roles, workflows, required artifacts, or a decoding algorithm.
 
-Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; ordinary shared Git; an aggregate reconstruction checker; and a way to wait for activity. A waiting session may resume when private evidence or peer-visible Git state changes. Other sessions do not synchronize with it.
+Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; Git appropriate to the communication condition; an aggregate reconstruction checker; and a way to wait for relevant activity. A waiting session may resume when private evidence or visible Git state changes. Other sessions do not synchronize with it.
 
-Git is the supplied peer communication channel, but its use remains voluntary and unmetered. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, relay raw evidence, or ignore the repository.
+Git use remains voluntary and unmetered in every condition. In shared conditions agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, relay raw evidence, or ignore the repository. In isolated conditions agents can use their own Git history but cannot observe peer repositories, evidence, or activity.
 
 ## The Run
 
 The runner supplies an environment rather than a work plan.
 
 - Evidence stages appear on a fixed monotonic schedule independent of model turns, token use, Git activity, checker calls, or apparent progress.
-- Sessions may take as many model responses, tool calls, checker calls, and collaboration cycles as their cumulative provider-reported token budgets and the attempt wall-time limit permit.
+- Sessions may take as many model responses, tool calls, checker calls, and, when available, collaboration cycles as their cumulative provider-reported token budgets and the attempt wall-time limit permit.
 - An agent's final response ends only that session. Token exhaustion ends only the affected session. The wall-time cutoff stops every active session.
 - There are no rounds, launch barriers, assigned turns, publication slots, required commits, prescribed branches, checkpoints, or submission schemas.
 - Standard sandboxing and secret handling protect the host, provider credentials, prepared plaintext, and cipher keys. They do not constrain solving behavior.
 
-Private evidence lives outside Git so an agent does not commit it accidentally during ordinary work. The runner does not inspect or reject Git content if an agent deliberately copies material into the repository.
+Private evidence lives outside Git so an agent does not commit it accidentally during ordinary work. The runner does not inspect or reject Git content if an agent deliberately copies material into a visible repository.
 
 ## Checking Work
 
@@ -54,7 +54,7 @@ It never returns correct words, expected words, mismatch locations, unreleased r
 
 ## Final Evaluation
 
-At the wall-time cutoff, or after all sessions have ended, the runner freezes the shared repository and every agent workspace. It publishes the durable attempt before optional overlap observation.
+At the wall-time cutoff, or after all sessions have ended, the runner freezes every repository and agent workspace. It publishes the durable attempt before optional overlap observation.
 
 A reviewer then inspects the frozen work and explicitly selects the workspace, command, and output path that best represent its solver. Palimpsest does not require a solver manifest, language, canonical file name, private deliverable, or prescribed team output.
 
@@ -64,7 +64,7 @@ The selected code runs against the complete ciphertext without the oracle, peer 
 
 An experiment builds its puzzle once, then executes conditions and repetitions sequentially. Sessions inside one attempt remain concurrent. After each durable attempt, an atomically replaced `experiment.json` indexes the resolved non-secret condition and attempt root. A later failure cannot erase earlier attempts.
 
-Attempt records retain the requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, Git history, frozen work, overlap observations, reviewer selection, execution result, and score. They do not retain complete provider response payloads or credential values.
+Attempt records retain the block, condition, communication mode, key regime, protocol identity, requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, all Git histories, frozen work, overlap observations, reviewer selection, execution result, and score. They do not retain complete provider response payloads or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 

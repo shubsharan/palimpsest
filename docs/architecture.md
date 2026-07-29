@@ -47,7 +47,7 @@ For fixed registered source bytes and resolved scientific inputs, build identity
 
 ## Attempt Runtime
 
-`puzzle:run` selects one named condition from the manifest and checks that its puzzle definition matches the supplied build before creating the output root. It constructs one declared model binding and adapter per agent.
+`puzzle:run` selects one named run from the current manifest and checks that its puzzle definition matches the supplied build before creating the output root. It constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
@@ -145,6 +145,10 @@ The architecture preserves the strongest durable boundary available: publication
 ## Verification
 
 The repository verifies strict config decoding, mocked provider turns and credential scrubbing, dynamic 2/3/5-agent puzzle geometry, zero/one/multiple re-keys, concurrent sessions, Git workspaces, stage scheduling, trace and artifact decoding, attempt durability, sequential experiment indexing, reviewer-selected evaluation, and Docker containment.
+
+## Planned Study Conditions
+
+Features 013 through 015 will add deterministic paired blocks and canonical `CS`, `CR`, `IS`, and `IR` conditions. Shared conditions will retain one peer-visible Git repository. Isolated conditions will preserve the same team identity and non-treatment inputs while giving each agent an independent usable repository with no peer evidence or activity. The host record will freeze every repository and workspace regardless of agent visibility. These are accepted design constraints, not behavior provided by the current Feature 011 runtime.
 
 Canonical acceptance is:
 
