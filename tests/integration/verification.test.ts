@@ -239,11 +239,11 @@ describe("active repository boundary", () => {
     expect(await deletedReferences(await activeRepositoryPaths())).toEqual([]);
   });
 
-  test("keeps current guidance targeted to the configurable acceptance flow", async () => {
-    const quickstart = await readFile("specs/011-configurable-research-runs/quickstart.md", "utf8");
+  test("keeps current guidance targeted to the frozen study acceptance flow", async () => {
+    const quickstart = await readFile("specs/015-frozen-five-block-protocol/quickstart.md", "utf8");
     expect(quickstart).toContain("experiments/config.yaml");
     expect(quickstart).toContain("pnpm puzzle:experiment");
-    expect(quickstart).toContain("without a billable provider call");
+    expect(quickstart).toContain("provider-free");
     expect(quickstart).not.toMatch(/\ball \d+ TypeScript cases pass\b/);
     expect(quickstart).not.toMatch(/\ball \d+ .*Python cases.*pass\b/);
   });
@@ -264,11 +264,14 @@ describe("active repository boundary", () => {
     };
 
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.properties).toHaveProperty("puzzle");
+    expect(schema.properties).toHaveProperty("blocks");
+    expect(schema.properties).toHaveProperty("assignment");
     expect(schema.properties).toHaveProperty("providers");
     expect(schema.properties).toHaveProperty("models");
-    expect(schema.properties).toHaveProperty("runs");
-    expect(baselineSource).toContain("schemaVersion: 1");
+    expect(schema.properties).toHaveProperty("orders");
+    expect(schema.properties).toHaveProperty("failurePolicy");
+    expect(schema.properties).not.toHaveProperty("runs");
+    expect(baselineSource).toContain("schemaVersion: 2");
     expect(packageManifest.scripts).toMatchObject({
       "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",
       "puzzle:build": "tsx src/cli.ts build",

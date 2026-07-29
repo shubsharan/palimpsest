@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { rename, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, posix, relative, sep, win32 } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, posix, relative, sep, win32 } from "node:path";
 
 import {
   ATTEMPT_CUTOFF_MS,
@@ -34,6 +34,20 @@ const PAIRED_BUILD_ID = /^paired-[0-9a-f]{64}$/;
 const ALLOCATION_ID = /^allocation-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const REGISTERED_BLOCK_IDS = [
+  "calibration-theron-ware",
+  "validation-odd-women",
+  "validation-pointed-firs",
+  "validation-custom-country",
+  "validation-woodlanders",
+] as const;
+const CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
+const VALIDATION_ORDERS = [
+  ["CS", "CR", "IR", "IS"],
+  ["CR", "IS", "CS", "IR"],
+  ["IS", "IR", "CR", "CS"],
+  ["IR", "CS", "IS", "CR"],
+] as const;
 
 export interface BuildPuzzleResult {
   pairedBuildId: string;
@@ -226,11 +240,13 @@ export interface FrozenGitInventory {
   workspaces: readonly FrozenGitWorkspace[];
 }
 
-export interface AttemptSummary {
-  schemaVersion: 3;
+export type StudyPhase = "calibration" | "validation";
+export type AttemptStudyPhase = "standalone" | StudyPhase;
+export type InfrastructureClassification = "none" | "session-infrastructure-error";
+
+interface AttemptSummaryBase {
+  schemaVersion: 4;
   attemptId: string;
-  runName: string;
-  repetition: number;
   blockId: string;
   condition: ResolvedCondition["id"];
   communicationMode: ResolvedCondition["communicationMode"];
@@ -249,21 +265,176 @@ export interface AttemptSummary {
   frozen: FrozenGitInventory;
   sandbox: SandboxIdentity & SandboxPolicy;
   sessions: readonly AttemptSession[];
+  monetaryAuthorizationCeilingCents: number;
+  infrastructureClassification: InfrastructureClassification;
 }
 
-export interface CompletedAttempt {
-  runName: string;
-  repetition: number;
+export interface StandaloneAttemptSummary extends AttemptSummaryBase {
+  studyPhase: "standalone";
+  studyRootId?: never;
+  conditionOrderPosition?: never;
+  designDigest?: never;
+  replacementOfAttemptId?: never;
+}
+
+export interface StudyAttemptSummary extends AttemptSummaryBase {
+  studyPhase: StudyPhase;
+  studyRootId: string;
+  conditionOrderPosition: number;
+  designDigest: string;
+  replacementOfAttemptId?: string;
+}
+
+export type AttemptSummary = StandaloneAttemptSummary | StudyAttemptSummary;
+
+export interface DesignBuildBinding {
+  blockId: string;
+  buildRoot: string;
+  buildManifestDigest: string;
+  manifest: BuildManifest;
+}
+
+export interface DesignAgentAssignment {
+  agentId: AgentId;
+  modelProfileId: string;
+}
+
+export interface DesignOrders {
+  calibration: readonly ResolvedCondition["id"][];
+  validation: readonly (readonly ResolvedCondition["id"][])[];
+}
+
+export interface DesignRubric {
+  id: string;
+  path: string;
+  sha256: string;
+}
+
+export interface DesignScoring {
+  metricId: string;
+  reviewerSelectionId: string;
+}
+
+export interface DesignPromptTemplate {
+  agentId: AgentId;
+  communicationMode: ResolvedCondition["communicationMode"];
+  template: string;
+  sha256: string;
+}
+
+export interface DesignPromptSnapshot {
+  condition: ResolvedCondition["id"];
+  agentId: AgentId;
+  prompt: string;
+  sha256: string;
+}
+
+export interface DesignFailurePolicy {
+  stopOn: "session-infrastructure-error";
+  automaticRetry: false;
+  replacement: "explicit-appended";
+}
+
+export interface DesignTotalCeilings {
+  tokens: number;
+  monetaryAuthorizationCents: number;
+}
+
+export interface DesignBaselineBudgets {
+  tokenBudgetPerAgent: number;
+  perAttemptMonetaryCeilingCents: number;
+}
+
+export interface DesignReceipt {
+  schemaVersion: 1;
+  createdAt: string;
+  sourceRevision: string;
+  sandbox: SandboxIdentity & SandboxPolicy;
+  manifestDigest: string;
+  immutableManifestDigest: string;
+  designDigest: string;
+  immutableManifest: JsonObject;
+  builds: readonly DesignBuildBinding[];
+  assignment: readonly DesignAgentAssignment[];
+  orders: DesignOrders;
+  rubric: DesignRubric;
+  scoring: DesignScoring;
+  promptTemplates: readonly DesignPromptTemplate[];
+  baselinePrompts: readonly DesignPromptSnapshot[];
+  failurePolicy: DesignFailurePolicy;
+  baselineBudgets: DesignBaselineBudgets;
+  totalCeilings: DesignTotalCeilings;
+}
+
+export interface PlannedCell {
+  cellId: string;
+  phase: StudyPhase;
+  blockId: string;
+  condition: ResolvedCondition["id"];
+  conditionOrderPosition: number;
+  phasePosition: number;
+  buildRoot: string;
+  pairedBuildId: string;
+  buildId: string;
+}
+
+export type LaunchKind = "primary" | "replacement";
+export type LaunchReservationState = "reserved" | "resolved";
+
+export interface LaunchReservation {
+  reservationId: string;
+  cellId: string;
+  reservedAt: string;
+  kind: LaunchKind;
+  replacementOfAttemptId?: string;
+  authorizedTokens: number;
+  monetaryAuthorizationCeilingCents: number;
+  state: LaunchReservationState;
+  attemptId?: string;
+}
+
+export interface PhaseAdjustment {
+  fieldPath: "budgets.tokenBudgetPerAgent" | "budgets.perAttemptMonetaryCeilingCents";
+  priorValue: number;
+  resolvedValue: number;
+  priorManifestDigest: string;
+  currentManifestDigest: string;
+}
+
+export interface PhaseAttemptReference {
   attemptId: string;
   attemptRoot: string;
+  cellId: string;
+  reservationId: string;
+  infrastructureClassification: InfrastructureClassification;
+  actualTokenUsage: number;
+  replacementOfAttemptId?: string;
 }
 
-export interface ExperimentSummary {
+export interface PhaseFailure {
+  kind: "unresolved-reservation" | "session-infrastructure-error";
+  reservationId: string;
+  attemptId?: string;
+  detail: string;
+}
+
+export type PhaseState = "ready" | "running" | "blocked" | "complete";
+
+export interface PhaseSummary {
   schemaVersion: 1;
-  resolvedConfig: JsonObject;
-  buildRoot: string;
-  buildId: string;
-  attempts: readonly CompletedAttempt[];
+  phase: StudyPhase;
+  state: PhaseState;
+  manifestDigest: string;
+  immutableManifestDigest: string;
+  designDigest: string;
+  plannedCells: readonly PlannedCell[];
+  adjustments: readonly PhaseAdjustment[];
+  reservations: readonly LaunchReservation[];
+  attempts: readonly PhaseAttemptReference[];
+  cumulativeAuthorizedTokens: number;
+  cumulativeAuthorizedMonetaryCents: number;
+  cumulativeActualTokens: number;
+  failure?: PhaseFailure;
 }
 
 export interface GitOverlapScan {
@@ -499,6 +670,34 @@ function decodeJsonObject(value: unknown, name: string): JsonObject {
   return Object.fromEntries(
     Object.entries(record).map(([key, item]) => [key, decodeJsonValue(item, `${name}.${key}`)]),
   );
+}
+
+function assertSecretFreeJson(value: JsonValue, path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertSecretFreeJson(child, `${path}[${String(index)}]`));
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  for (const [key, child] of Object.entries(value)) {
+    const normalized = key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+    const environmentReference = normalized.endsWith("env");
+    const secretBearing =
+      !environmentReference &&
+      (normalized.includes("apikey") ||
+        normalized === "authorization" ||
+        normalized.endsWith("credential") ||
+        normalized.endsWith("credentials") ||
+        normalized.endsWith("password") ||
+        normalized.endsWith("secret") ||
+        normalized === "token" ||
+        normalized.endsWith("accesstoken") ||
+        normalized.endsWith("authtoken") ||
+        normalized.endsWith("bearertoken"));
+    if (secretBearing) {
+      throw new Error(`${path}.${key} is secret-bearing.`);
+    }
+    assertSecretFreeJson(child, `${path}.${key}`);
+  }
 }
 
 function decodeModelSettings(value: unknown, name: string): ModelSettings {
@@ -1428,31 +1627,37 @@ function decodeAttemptProtocol(
 }
 
 export function decodeAttemptSummary(value: unknown): AttemptSummary {
-  const record = strictObject(value, "Attempt summary", [
-    "schemaVersion",
-    "attemptId",
-    "runName",
-    "repetition",
-    "blockId",
-    "condition",
-    "communicationMode",
-    "keyRegime",
-    "variantId",
-    "buildId",
-    "buildRoot",
-    "agentIds",
-    "releaseOffsetsMs",
-    "cutoffMs",
-    "tokenBudgetPerAgent",
-    "protocolDigest",
-    "protocol",
-    "tracePath",
-    "traceMetadataPath",
-    "frozen",
-    "sandbox",
-    "sessions",
-  ]);
-  if (record.schemaVersion !== 3) throw new Error("Unsupported attempt schema version.");
+  const record = strictObjectWithOptional(
+    value,
+    "Attempt summary",
+    [
+      "schemaVersion",
+      "attemptId",
+      "studyPhase",
+      "blockId",
+      "condition",
+      "communicationMode",
+      "keyRegime",
+      "variantId",
+      "buildId",
+      "buildRoot",
+      "agentIds",
+      "releaseOffsetsMs",
+      "cutoffMs",
+      "tokenBudgetPerAgent",
+      "protocolDigest",
+      "protocol",
+      "tracePath",
+      "traceMetadataPath",
+      "frozen",
+      "sandbox",
+      "sessions",
+      "monetaryAuthorizationCeilingCents",
+      "infrastructureClassification",
+    ],
+    ["studyRootId", "conditionOrderPosition", "designDigest", "replacementOfAttemptId"],
+  );
+  if (record.schemaVersion !== 4) throw new Error("Unsupported attempt schema version.");
   const agentIds = decodeAttemptAgentIds(record.agentIds, "Attempt summary agentIds");
   if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
@@ -1500,11 +1705,25 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     throw new Error("Attempt summary protocolDigest does not match its protocol snapshot.");
   }
   const frozen = decodeFrozenGitInventory(record.frozen, condition.communicationMode, agentIds);
-  return {
-    schemaVersion: 3,
-    attemptId: nonEmptyString(record.attemptId, "Attempt summary attemptId"),
-    runName: identifier(record.runName, "Attempt summary runName"),
-    repetition: integer(record.repetition, "Attempt summary repetition", 1),
+  const attemptId = nonEmptyString(record.attemptId, "Attempt summary attemptId");
+  const infrastructureClassification = decodeInfrastructureClassification(
+    record.infrastructureClassification,
+    "Attempt summary infrastructureClassification",
+  );
+  const hasInfrastructureSession = sessions.some(
+    (session) => session.state === "infrastructure-error",
+  );
+  if (
+    (infrastructureClassification === "session-infrastructure-error") !==
+    hasInfrastructureSession
+  ) {
+    throw new Error(
+      "Attempt summary infrastructureClassification must match its frozen session states.",
+    );
+  }
+  const common: AttemptSummaryBase = {
+    schemaVersion: 4,
+    attemptId,
     blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -1523,6 +1742,43 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     frozen,
     sandbox,
     sessions,
+    monetaryAuthorizationCeilingCents: integer(
+      record.monetaryAuthorizationCeilingCents,
+      "Attempt summary monetaryAuthorizationCeilingCents",
+    ),
+    infrastructureClassification,
+  };
+  if (record.studyPhase === "standalone") {
+    if (
+      record.studyRootId !== undefined ||
+      record.conditionOrderPosition !== undefined ||
+      record.designDigest !== undefined ||
+      record.replacementOfAttemptId !== undefined
+    ) {
+      throw new Error("Standalone attempt summary must not contain study provenance or lineage.");
+    }
+    return { ...common, studyPhase: "standalone" };
+  }
+  const studyPhase = decodeStudyPhase(record.studyPhase, "Attempt summary studyPhase");
+  const replacementOfAttemptId =
+    record.replacementOfAttemptId === undefined
+      ? undefined
+      : nonEmptyString(record.replacementOfAttemptId, "Attempt summary replacementOfAttemptId");
+  if (replacementOfAttemptId === attemptId) {
+    throw new Error("Attempt summary cannot replace itself.");
+  }
+  return {
+    ...common,
+    studyPhase,
+    studyRootId: identifier(record.studyRootId, "Attempt summary studyRootId"),
+    conditionOrderPosition: boundedInteger(
+      record.conditionOrderPosition,
+      "Attempt summary conditionOrderPosition",
+      1,
+      4,
+    ),
+    designDigest: digest(record.designDigest, "Attempt summary designDigest"),
+    ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
   };
 }
 
@@ -1530,80 +1786,819 @@ export async function publishAttemptSummary(
   attemptRoot: string,
   summary: AttemptSummary,
 ): Promise<void> {
-  const encoded = `${JSON.stringify(decodeAttemptSummary(summary), null, 2)}\n`;
-  const temporaryPath = `${attemptRoot}/attempt.json.${randomUUID()}.tmp`;
-  const destinationPath = `${attemptRoot}/attempt.json`;
-  try {
-    await writeFile(temporaryPath, encoded, { encoding: "utf8", flag: "wx" });
-    await rename(temporaryPath, destinationPath);
-  } finally {
-    await rm(temporaryPath, { force: true });
-  }
+  await publishExclusiveJson(join(attemptRoot, "attempt.json"), decodeAttemptSummary(summary));
 }
 
-export function decodeExperimentSummary(value: unknown): ExperimentSummary {
-  const record = object(value, "Experiment summary");
-  if (record.schemaVersion !== 1) throw new Error("Unsupported experiment summary schema version.");
-  if (!Array.isArray(record.attempts)) {
-    throw new Error("Experiment summary attempts must be an array.");
+function boundedInteger(value: unknown, name: string, minimum: number, maximum: number): number {
+  const decoded = integer(value, name, minimum);
+  if (decoded > maximum) {
+    throw new Error(`${name} must be at most ${String(maximum)}.`);
   }
-  const seenEntries = new Set<string>();
-  const seenAttemptIds = new Set<string>();
-  const seenAttemptRoots = new Set<string>();
-  const attempts = record.attempts.map((item, index): CompletedAttempt => {
-    const attempt = object(item, `Experiment summary attempt ${String(index + 1)}`);
-    const runName = identifier(
-      attempt.runName,
-      `Experiment summary attempt ${String(index + 1)} runName`,
-    );
-    const repetition = integer(
-      attempt.repetition,
-      `Experiment summary attempt ${String(index + 1)} repetition`,
-      1,
-    );
-    const attemptId = nonEmptyString(
-      attempt.attemptId,
-      `Experiment summary attempt ${String(index + 1)} attemptId`,
-    );
-    const attemptRoot = absolutePath(
-      attempt.attemptRoot,
-      `Experiment summary attempt ${String(index + 1)} attemptRoot`,
-    );
-    const entryKey = `${runName}\0${String(repetition)}`;
-    if (
-      seenEntries.has(entryKey) ||
-      seenAttemptIds.has(attemptId) ||
-      seenAttemptRoots.has(attemptRoot)
-    ) {
-      throw new Error("Experiment summary attempts must identify unique durable attempts.");
-    }
-    seenEntries.add(entryKey);
-    seenAttemptIds.add(attemptId);
-    seenAttemptRoots.add(attemptRoot);
-    return { runName, repetition, attemptId, attemptRoot };
-  });
+  return decoded;
+}
+
+function timestamp(value: unknown, name: string): string {
+  const decoded = nonEmptyString(value, name);
+  if (!Number.isFinite(Date.parse(decoded))) {
+    throw new Error(`${name} must be an ISO 8601 timestamp.`);
+  }
+  return decoded;
+}
+
+function stringDigest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function decodeStudyPhase(value: unknown, name: string): StudyPhase {
+  if (value === "calibration" || value === "validation") return value;
+  throw new Error(`${name} must be calibration or validation.`);
+}
+
+function decodeInfrastructureClassification(
+  value: unknown,
+  name: string,
+): InfrastructureClassification {
+  if (value === "none" || value === "session-infrastructure-error") return value;
+  throw new Error(`${name} must be none or session-infrastructure-error.`);
+}
+
+function decodeConditionOrder(
+  value: unknown,
+  expected: readonly ResolvedCondition["id"][],
+  name: string,
+): readonly ResolvedCondition["id"][] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== expected.length ||
+    value.some((condition, index) => condition !== expected[index])
+  ) {
+    throw new Error(`${name} does not match the frozen condition order.`);
+  }
+  return expected.map((condition) => resolveCondition(condition).id);
+}
+
+function decodeDesignBuild(value: unknown, index: number): DesignBuildBinding {
+  const name = `Design receipt build ${String(index + 1)}`;
+  const record = strictObject(value, name, [
+    "blockId",
+    "buildRoot",
+    "buildManifestDigest",
+    "manifest",
+  ]);
+  const blockId = identifier(record.blockId, `${name} blockId`);
+  const expectedBlockId = REGISTERED_BLOCK_IDS[index];
+  if (blockId !== expectedBlockId) {
+    throw new Error("Design receipt builds must contain the five registered blocks in order.");
+  }
+  const manifest = decodeBuildManifest(record.manifest);
+  if (manifest.blockId !== blockId) {
+    throw new Error(`${name} manifest must match its blockId.`);
+  }
   return {
-    schemaVersion: 1,
-    resolvedConfig: decodeJsonObject(record.resolvedConfig, "Experiment summary resolvedConfig"),
-    buildRoot: absolutePath(record.buildRoot, "Experiment summary buildRoot"),
-    buildId: decodeBuildId(record.buildId, "Experiment summary buildId"),
-    attempts,
+    blockId,
+    buildRoot: absolutePath(record.buildRoot, `${name} buildRoot`),
+    buildManifestDigest: digest(record.buildManifestDigest, `${name} buildManifestDigest`),
+    manifest,
   };
 }
 
-export async function publishExperimentSummary(
-  experimentRoot: string,
-  summary: ExperimentSummary | unknown,
-): Promise<void> {
-  const encoded = `${JSON.stringify(decodeExperimentSummary(summary), null, 2)}\n`;
-  const temporaryPath = `${experimentRoot}/experiment.json.${randomUUID()}.tmp`;
-  const destinationPath = `${experimentRoot}/experiment.json`;
+function decodeDesignAssignment(value: unknown, index: number): DesignAgentAssignment {
+  const name = `Design receipt assignment ${String(index + 1)}`;
+  const record = strictObject(value, name, ["agentId", "modelProfileId"]);
+  const decodedAgentId = agentId(record.agentId, `${name} agentId`);
+  if (decodedAgentId !== ATTEMPT_AGENT_IDS[index]) {
+    throw new Error("Design receipt assignment must follow canonical agent order.");
+  }
+  return {
+    agentId: decodedAgentId,
+    modelProfileId: identifier(record.modelProfileId, `${name} modelProfileId`),
+  };
+}
+
+function decodeDesignOrders(value: unknown): DesignOrders {
+  const record = strictObject(value, "Design receipt orders", ["calibration", "validation"]);
+  if (!Array.isArray(record.validation) || record.validation.length !== VALIDATION_ORDERS.length) {
+    throw new Error("Design receipt validation orders must contain four block orders.");
+  }
+  return {
+    calibration: decodeConditionOrder(
+      record.calibration,
+      CALIBRATION_ORDER,
+      "Design receipt calibration order",
+    ),
+    validation: record.validation.map((order, index) =>
+      decodeConditionOrder(
+        order,
+        VALIDATION_ORDERS[index]!,
+        `Design receipt validation order ${String(index + 1)}`,
+      ),
+    ),
+  };
+}
+
+function decodeDesignPromptTemplate(value: unknown, index: number): DesignPromptTemplate {
+  const name = `Design receipt prompt template ${String(index + 1)}`;
+  const record = strictObject(value, name, ["agentId", "communicationMode", "template", "sha256"]);
+  const decodedAgentId = agentId(record.agentId, `${name} agentId`);
+  if (decodedAgentId !== ATTEMPT_AGENT_IDS[Math.floor(index / 2)]) {
+    throw new Error("Design receipt prompt templates must follow canonical agent order.");
+  }
+  const communicationMode = index % 2 === 0 ? "shared" : "isolated";
+  if (record.communicationMode !== communicationMode) {
+    throw new Error(
+      "Design receipt prompt templates must contain shared then isolated for each agent.",
+    );
+  }
+  const template = nonEmptyString(record.template, `${name} template`);
+  const sha256 = digest(record.sha256, `${name} sha256`);
+  if (stringDigest(template) !== sha256) {
+    throw new Error(`${name} sha256 must match its template bytes.`);
+  }
+  return { agentId: decodedAgentId, communicationMode, template, sha256 };
+}
+
+function decodeDesignPromptSnapshot(value: unknown, index: number): DesignPromptSnapshot {
+  const name = `Design receipt baseline prompt ${String(index + 1)}`;
+  const record = strictObject(value, name, ["condition", "agentId", "prompt", "sha256"]);
+  const condition = resolveCondition(record.condition).id;
+  const decodedAgentId = agentId(record.agentId, `${name} agentId`);
+  const prompt = nonEmptyString(record.prompt, `${name} prompt`);
+  const sha256 = digest(record.sha256, `${name} sha256`);
+  if (stringDigest(prompt) !== sha256) {
+    throw new Error(`${name} sha256 must match its prompt bytes.`);
+  }
+  return { condition, agentId: decodedAgentId, prompt, sha256 };
+}
+
+export function decodeDesignReceipt(value: unknown): DesignReceipt {
+  const record = strictObject(value, "Design receipt", [
+    "schemaVersion",
+    "createdAt",
+    "sourceRevision",
+    "sandbox",
+    "manifestDigest",
+    "immutableManifestDigest",
+    "designDigest",
+    "immutableManifest",
+    "builds",
+    "assignment",
+    "orders",
+    "rubric",
+    "scoring",
+    "promptTemplates",
+    "baselinePrompts",
+    "failurePolicy",
+    "baselineBudgets",
+    "totalCeilings",
+  ]);
+  if (record.schemaVersion !== 1) {
+    throw new Error("Unsupported design receipt schema version.");
+  }
+  if (!Array.isArray(record.builds) || record.builds.length !== REGISTERED_BLOCK_IDS.length) {
+    throw new Error("Design receipt must contain exactly five registered builds.");
+  }
+  const builds = record.builds.map(decodeDesignBuild);
+  if (
+    new Set(builds.map((build) => build.buildRoot)).size !== builds.length ||
+    new Set(builds.map((build) => build.manifest.pairedBuildId)).size !== builds.length
+  ) {
+    throw new Error("Design receipt builds must have unique roots and paired identities.");
+  }
+  if (!Array.isArray(record.assignment) || record.assignment.length !== ATTEMPT_AGENT_IDS.length) {
+    throw new Error("Design receipt assignment must contain exactly three agents.");
+  }
+  const assignment = record.assignment.map(decodeDesignAssignment);
+  const rubric = strictObject(record.rubric, "Design receipt rubric", ["id", "path", "sha256"]);
+  const scoring = strictObject(record.scoring, "Design receipt scoring", [
+    "metricId",
+    "reviewerSelectionId",
+  ]);
+  if (
+    !Array.isArray(record.promptTemplates) ||
+    record.promptTemplates.length !== ATTEMPT_AGENT_IDS.length * 2
+  ) {
+    throw new Error(
+      "Design receipt must contain shared and isolated prompt templates for each agent.",
+    );
+  }
+  const promptTemplates = record.promptTemplates.map(decodeDesignPromptTemplate);
+  if (
+    !Array.isArray(record.baselinePrompts) ||
+    record.baselinePrompts.length !== ATTEMPT_AGENT_IDS.length * 4
+  ) {
+    throw new Error("Design receipt must contain twelve baseline prompt snapshots.");
+  }
+  const baselinePrompts = record.baselinePrompts.map(decodeDesignPromptSnapshot);
+  const promptKeys = baselinePrompts.map((prompt) => `${prompt.condition}\0${prompt.agentId}`);
+  if (new Set(promptKeys).size !== promptKeys.length) {
+    throw new Error("Design receipt baseline prompts must contain each condition-agent pair once.");
+  }
+  const failurePolicy = strictObject(record.failurePolicy, "Design receipt failurePolicy", [
+    "stopOn",
+    "automaticRetry",
+    "replacement",
+  ]);
+  if (
+    failurePolicy.stopOn !== "session-infrastructure-error" ||
+    failurePolicy.automaticRetry !== false ||
+    failurePolicy.replacement !== "explicit-appended"
+  ) {
+    throw new Error("Design receipt failurePolicy must match the frozen replacement policy.");
+  }
+  const baselineBudgets = strictObject(record.baselineBudgets, "Design receipt baselineBudgets", [
+    "tokenBudgetPerAgent",
+    "perAttemptMonetaryCeilingCents",
+  ]);
+  const totalCeilings = strictObject(record.totalCeilings, "Design receipt totalCeilings", [
+    "tokens",
+    "monetaryAuthorizationCents",
+  ]);
+  const immutableManifest = decodeJsonObject(
+    record.immutableManifest,
+    "Design receipt immutableManifest",
+  );
+  assertSecretFreeJson(immutableManifest, "Design receipt immutableManifest");
+  return {
+    schemaVersion: 1,
+    createdAt: timestamp(record.createdAt, "Design receipt createdAt"),
+    sourceRevision: gitObjectId(record.sourceRevision, "Design receipt sourceRevision"),
+    sandbox: decodeSandbox(record.sandbox),
+    manifestDigest: digest(record.manifestDigest, "Design receipt manifestDigest"),
+    immutableManifestDigest: digest(
+      record.immutableManifestDigest,
+      "Design receipt immutableManifestDigest",
+    ),
+    designDigest: digest(record.designDigest, "Design receipt designDigest"),
+    immutableManifest,
+    builds,
+    assignment,
+    orders: decodeDesignOrders(record.orders),
+    rubric: {
+      id: identifier(rubric.id, "Design receipt rubric id"),
+      path: safeRelativePath(rubric.path, "Design receipt rubric path"),
+      sha256: digest(rubric.sha256, "Design receipt rubric sha256"),
+    },
+    scoring: {
+      metricId: identifier(scoring.metricId, "Design receipt scoring metricId"),
+      reviewerSelectionId: identifier(
+        scoring.reviewerSelectionId,
+        "Design receipt scoring reviewerSelectionId",
+      ),
+    },
+    promptTemplates,
+    baselinePrompts,
+    failurePolicy: {
+      stopOn: "session-infrastructure-error",
+      automaticRetry: false,
+      replacement: "explicit-appended",
+    },
+    baselineBudgets: {
+      tokenBudgetPerAgent: integer(
+        baselineBudgets.tokenBudgetPerAgent,
+        "Design receipt baseline token budget per agent",
+        1,
+      ),
+      perAttemptMonetaryCeilingCents: integer(
+        baselineBudgets.perAttemptMonetaryCeilingCents,
+        "Design receipt baseline per-attempt monetary authorization ceiling",
+      ),
+    },
+    totalCeilings: {
+      tokens: integer(totalCeilings.tokens, "Design receipt total token ceiling", 1),
+      monetaryAuthorizationCents: integer(
+        totalCeilings.monetaryAuthorizationCents,
+        "Design receipt total monetary authorization ceiling",
+      ),
+    },
+  };
+}
+
+function decodePlannedCell(value: unknown, index: number, phase: StudyPhase): PlannedCell {
+  const name = `Phase planned cell ${String(index + 1)}`;
+  const record = strictObject(value, name, [
+    "cellId",
+    "phase",
+    "blockId",
+    "condition",
+    "conditionOrderPosition",
+    "phasePosition",
+    "buildRoot",
+    "pairedBuildId",
+    "buildId",
+  ]);
+  if (record.phase !== phase) {
+    throw new Error(`${name} phase must match its phase summary.`);
+  }
+  const phasePosition = integer(record.phasePosition, `${name} phasePosition`, 1);
+  if (phasePosition !== index + 1) {
+    throw new Error("Phase planned cells must be in contiguous phase-position order.");
+  }
+  return {
+    cellId: nonEmptyString(record.cellId, `${name} cellId`),
+    phase,
+    blockId: identifier(record.blockId, `${name} blockId`),
+    condition: resolveCondition(record.condition).id,
+    conditionOrderPosition: boundedInteger(
+      record.conditionOrderPosition,
+      `${name} conditionOrderPosition`,
+      1,
+      4,
+    ),
+    phasePosition,
+    buildRoot: absolutePath(record.buildRoot, `${name} buildRoot`),
+    pairedBuildId: decodePrefixedDigest(
+      record.pairedBuildId,
+      PAIRED_BUILD_ID,
+      `${name} pairedBuildId`,
+    ),
+    buildId: decodeBuildId(record.buildId, `${name} buildId`),
+  };
+}
+
+export function decodeLaunchReservation(
+  value: unknown,
+  name = "Launch reservation",
+): LaunchReservation {
+  const record = strictObjectWithOptional(
+    value,
+    name,
+    [
+      "reservationId",
+      "cellId",
+      "reservedAt",
+      "kind",
+      "authorizedTokens",
+      "monetaryAuthorizationCeilingCents",
+      "state",
+    ],
+    ["replacementOfAttemptId", "attemptId"],
+  );
+  if (record.kind !== "primary" && record.kind !== "replacement") {
+    throw new Error(`${name} kind must be primary or replacement.`);
+  }
+  if (record.state !== "reserved" && record.state !== "resolved") {
+    throw new Error(`${name} state must be reserved or resolved.`);
+  }
+  const replacementOfAttemptId =
+    record.replacementOfAttemptId === undefined
+      ? undefined
+      : nonEmptyString(record.replacementOfAttemptId, `${name} replacementOfAttemptId`);
+  const attemptId =
+    record.attemptId === undefined
+      ? undefined
+      : nonEmptyString(record.attemptId, `${name} attemptId`);
+  if ((record.kind === "replacement") !== (replacementOfAttemptId !== undefined)) {
+    throw new Error(`${name} replacement lineage must match its kind.`);
+  }
+  if ((record.state === "resolved") !== (attemptId !== undefined)) {
+    throw new Error(`${name} attemptId must be present exactly when resolved.`);
+  }
+  if (attemptId !== undefined && attemptId === replacementOfAttemptId) {
+    throw new Error(`${name} replacement attempt cannot replace itself.`);
+  }
+  return {
+    reservationId: nonEmptyString(record.reservationId, `${name} reservationId`),
+    cellId: nonEmptyString(record.cellId, `${name} cellId`),
+    reservedAt: timestamp(record.reservedAt, `${name} reservedAt`),
+    kind: record.kind,
+    ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
+    authorizedTokens: integer(record.authorizedTokens, `${name} authorizedTokens`, 1),
+    monetaryAuthorizationCeilingCents: integer(
+      record.monetaryAuthorizationCeilingCents,
+      `${name} monetaryAuthorizationCeilingCents`,
+    ),
+    state: record.state,
+    ...(attemptId === undefined ? {} : { attemptId }),
+  };
+}
+
+function decodePhaseAdjustment(value: unknown, index: number): PhaseAdjustment {
+  const name = `Phase adjustment ${String(index + 1)}`;
+  const record = strictObject(value, name, [
+    "fieldPath",
+    "priorValue",
+    "resolvedValue",
+    "priorManifestDigest",
+    "currentManifestDigest",
+  ]);
+  if (
+    record.fieldPath !== "budgets.tokenBudgetPerAgent" &&
+    record.fieldPath !== "budgets.perAttemptMonetaryCeilingCents"
+  ) {
+    throw new Error(`${name} fieldPath is not calibration-adjustable.`);
+  }
+  const minimum = record.fieldPath === "budgets.tokenBudgetPerAgent" ? 1 : 0;
+  return {
+    fieldPath: record.fieldPath,
+    priorValue: integer(record.priorValue, `${name} priorValue`, minimum),
+    resolvedValue: integer(record.resolvedValue, `${name} resolvedValue`, minimum),
+    priorManifestDigest: digest(record.priorManifestDigest, `${name} priorManifestDigest`),
+    currentManifestDigest: digest(record.currentManifestDigest, `${name} currentManifestDigest`),
+  };
+}
+
+function decodePhaseAttemptReference(value: unknown, index: number): PhaseAttemptReference {
+  const name = `Phase attempt ${String(index + 1)}`;
+  const record = strictObjectWithOptional(
+    value,
+    name,
+    [
+      "attemptId",
+      "attemptRoot",
+      "cellId",
+      "reservationId",
+      "infrastructureClassification",
+      "actualTokenUsage",
+    ],
+    ["replacementOfAttemptId"],
+  );
+  const attemptId = nonEmptyString(record.attemptId, `${name} attemptId`);
+  const replacementOfAttemptId =
+    record.replacementOfAttemptId === undefined
+      ? undefined
+      : nonEmptyString(record.replacementOfAttemptId, `${name} replacementOfAttemptId`);
+  if (replacementOfAttemptId === attemptId) {
+    throw new Error(`${name} cannot replace itself.`);
+  }
+  return {
+    attemptId,
+    attemptRoot: absolutePath(record.attemptRoot, `${name} attemptRoot`),
+    cellId: nonEmptyString(record.cellId, `${name} cellId`),
+    reservationId: nonEmptyString(record.reservationId, `${name} reservationId`),
+    infrastructureClassification: decodeInfrastructureClassification(
+      record.infrastructureClassification,
+      `${name} infrastructureClassification`,
+    ),
+    actualTokenUsage: integer(record.actualTokenUsage, `${name} actualTokenUsage`),
+    ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
+  };
+}
+
+function decodePhaseFailure(value: unknown): PhaseFailure {
+  const record = strictObjectWithOptional(
+    value,
+    "Phase failure",
+    ["kind", "reservationId", "detail"],
+    ["attemptId"],
+  );
+  if (record.kind !== "unresolved-reservation" && record.kind !== "session-infrastructure-error") {
+    throw new Error("Phase failure kind is unsupported.");
+  }
+  const attemptId =
+    record.attemptId === undefined
+      ? undefined
+      : nonEmptyString(record.attemptId, "Phase failure attemptId");
+  if ((record.kind === "session-infrastructure-error") !== (attemptId !== undefined)) {
+    throw new Error("Phase failure attemptId must be present only for a frozen session failure.");
+  }
+  return {
+    kind: record.kind,
+    reservationId: nonEmptyString(record.reservationId, "Phase failure reservationId"),
+    ...(attemptId === undefined ? {} : { attemptId }),
+    detail: nonEmptyString(record.detail, "Phase failure detail"),
+  };
+}
+
+function assertPlannedMatrix(phase: StudyPhase, cells: readonly PlannedCell[]): void {
+  const expectedCount = phase === "calibration" ? 4 : 16;
+  if (cells.length !== expectedCount) {
+    throw new Error(
+      `Phase summary ${phase} plan must contain exactly ${String(expectedCount)} cells.`,
+    );
+  }
+  const expectedBlocks =
+    phase === "calibration" ? REGISTERED_BLOCK_IDS.slice(0, 1) : REGISTERED_BLOCK_IDS.slice(1);
+  const expectedOrders = phase === "calibration" ? [CALIBRATION_ORDER] : VALIDATION_ORDERS;
+  cells.forEach((cell, index) => {
+    const blockIndex = Math.floor(index / 4);
+    const conditionIndex = index % 4;
+    if (
+      cell.blockId !== expectedBlocks[blockIndex] ||
+      cell.condition !== expectedOrders[blockIndex]![conditionIndex] ||
+      cell.conditionOrderPosition !== conditionIndex + 1
+    ) {
+      throw new Error(
+        "Phase summary planned cells do not match the frozen block-condition matrix.",
+      );
+    }
+  });
+}
+
+export function decodePhaseSummary(value: unknown): PhaseSummary {
+  const record = strictObjectWithOptional(
+    value,
+    "Phase summary",
+    [
+      "schemaVersion",
+      "phase",
+      "state",
+      "manifestDigest",
+      "immutableManifestDigest",
+      "designDigest",
+      "plannedCells",
+      "adjustments",
+      "reservations",
+      "attempts",
+      "cumulativeAuthorizedTokens",
+      "cumulativeAuthorizedMonetaryCents",
+      "cumulativeActualTokens",
+    ],
+    ["failure"],
+  );
+  if (record.schemaVersion !== 1) {
+    throw new Error("Unsupported phase summary schema version.");
+  }
+  const phase = decodeStudyPhase(record.phase, "Phase summary phase");
+  if (
+    record.state !== "ready" &&
+    record.state !== "running" &&
+    record.state !== "blocked" &&
+    record.state !== "complete"
+  ) {
+    throw new Error("Phase summary state is unsupported.");
+  }
+  if (!Array.isArray(record.plannedCells)) {
+    throw new Error("Phase summary plannedCells must be an array.");
+  }
+  const plannedCells = record.plannedCells.map((cell, index) =>
+    decodePlannedCell(cell, index, phase),
+  );
+  assertPlannedMatrix(phase, plannedCells);
+  const cellIds = plannedCells.map((cell) => cell.cellId);
+  if (new Set(cellIds).size !== cellIds.length) {
+    throw new Error("Phase summary planned cell IDs must be unique.");
+  }
+  if (!Array.isArray(record.adjustments)) {
+    throw new Error("Phase summary adjustments must be an array.");
+  }
+  const adjustments = record.adjustments.map(decodePhaseAdjustment);
+  if (phase === "calibration" && adjustments.length !== 0) {
+    throw new Error("Calibration phase summary must not contain adjustments.");
+  }
+  if (
+    adjustments.length > 2 ||
+    new Set(adjustments.map((adjustment) => adjustment.fieldPath)).size !== adjustments.length
+  ) {
+    throw new Error("Phase summary adjustments must contain each adjustable field at most once.");
+  }
+  const manifestDigest = digest(record.manifestDigest, "Phase summary manifestDigest");
+  for (const adjustment of adjustments) {
+    if (adjustment.currentManifestDigest !== manifestDigest) {
+      throw new Error("Phase adjustment current manifest digest must match the phase summary.");
+    }
+  }
+  if (!Array.isArray(record.reservations)) {
+    throw new Error("Phase summary reservations must be an array.");
+  }
+  const reservations = record.reservations.map((reservation, index) =>
+    decodeLaunchReservation(reservation, `Phase reservation ${String(index + 1)}`),
+  );
+  if (
+    new Set(reservations.map((reservation) => reservation.reservationId)).size !==
+    reservations.length
+  ) {
+    throw new Error("Phase summary reservation IDs must be unique.");
+  }
+  const cellIdSet = new Set(cellIds);
+  if (reservations.some((reservation) => !cellIdSet.has(reservation.cellId))) {
+    throw new Error("Phase summary reservations must reference planned cells.");
+  }
+  const primaryCells = reservations
+    .filter((reservation) => reservation.kind === "primary")
+    .map((reservation) => reservation.cellId);
+  if (new Set(primaryCells).size !== primaryCells.length) {
+    throw new Error("Phase summary cannot reserve a primary cell more than once.");
+  }
+  if (primaryCells.some((cellId, index) => plannedCells[index]?.cellId !== cellId)) {
+    throw new Error("Phase summary primary reservations must follow planned cell order.");
+  }
+  const unresolved = reservations.filter((reservation) => reservation.state === "reserved");
+  if (unresolved.length > 1 || (unresolved.length === 1 && reservations.at(-1) !== unresolved[0])) {
+    throw new Error("Phase summary may contain only one final unresolved reservation.");
+  }
+  if (!Array.isArray(record.attempts)) {
+    throw new Error("Phase summary attempts must be an array.");
+  }
+  const attempts = record.attempts.map(decodePhaseAttemptReference);
+  if (
+    new Set(attempts.map((attempt) => attempt.attemptId)).size !== attempts.length ||
+    new Set(attempts.map((attempt) => attempt.attemptRoot)).size !== attempts.length ||
+    new Set(attempts.map((attempt) => attempt.reservationId)).size !== attempts.length
+  ) {
+    throw new Error("Phase summary durable attempt identities must be unique.");
+  }
+  const attemptsById = new Map<string, PhaseAttemptReference>();
+  const attemptsByReservation = new Map<string, PhaseAttemptReference>();
+  for (const attempt of attempts) {
+    const reservation = reservations.find(
+      (candidate) => candidate.reservationId === attempt.reservationId,
+    );
+    if (
+      reservation === undefined ||
+      reservation.state !== "resolved" ||
+      reservation.attemptId !== attempt.attemptId ||
+      reservation.cellId !== attempt.cellId ||
+      reservation.replacementOfAttemptId !== attempt.replacementOfAttemptId
+    ) {
+      throw new Error("Phase attempt must match one resolved launch reservation.");
+    }
+    attemptsById.set(attempt.attemptId, attempt);
+    attemptsByReservation.set(attempt.reservationId, attempt);
+  }
+  if (
+    reservations.some(
+      (reservation) =>
+        (reservation.state === "resolved") !== attemptsByReservation.has(reservation.reservationId),
+    )
+  ) {
+    throw new Error("Phase resolved reservations and durable attempts must correspond exactly.");
+  }
+  const replacementSources = new Set<string>();
+  for (const reservation of reservations) {
+    if (reservation.kind !== "replacement") continue;
+    const source = attemptsById.get(reservation.replacementOfAttemptId!);
+    const replacementAttempt = attemptsByReservation.get(reservation.reservationId);
+    if (
+      source === undefined ||
+      source.cellId !== reservation.cellId ||
+      source.infrastructureClassification !== "session-infrastructure-error" ||
+      replacementSources.has(source.attemptId) ||
+      (replacementAttempt !== undefined &&
+        attempts.indexOf(source) >= attempts.indexOf(replacementAttempt))
+    ) {
+      throw new Error("Phase replacement lineage must cite one earlier eligible attempt.");
+    }
+    replacementSources.add(source.attemptId);
+  }
+  const cumulativeAuthorizedTokens = integer(
+    record.cumulativeAuthorizedTokens,
+    "Phase summary cumulativeAuthorizedTokens",
+  );
+  const cumulativeAuthorizedMonetaryCents = integer(
+    record.cumulativeAuthorizedMonetaryCents,
+    "Phase summary cumulativeAuthorizedMonetaryCents",
+  );
+  const cumulativeActualTokens = integer(
+    record.cumulativeActualTokens,
+    "Phase summary cumulativeActualTokens",
+  );
+  if (
+    cumulativeAuthorizedTokens !==
+      reservations.reduce((sum, reservation) => sum + reservation.authorizedTokens, 0) ||
+    cumulativeAuthorizedMonetaryCents !==
+      reservations.reduce(
+        (sum, reservation) => sum + reservation.monetaryAuthorizationCeilingCents,
+        0,
+      ) ||
+    cumulativeActualTokens !== attempts.reduce((sum, attempt) => sum + attempt.actualTokenUsage, 0)
+  ) {
+    throw new Error("Phase summary cumulative accounting must equal its launch records.");
+  }
+  const failure = record.failure === undefined ? undefined : decodePhaseFailure(record.failure);
+  if ((record.state === "blocked") !== (failure !== undefined)) {
+    throw new Error("Phase summary failure must be present exactly when blocked.");
+  }
+  if (failure?.kind === "unresolved-reservation") {
+    const reservation = reservations.find(
+      (candidate) => candidate.reservationId === failure.reservationId,
+    );
+    if (reservation?.state !== "reserved") {
+      throw new Error("Phase unresolved failure must cite its unresolved reservation.");
+    }
+  }
+  if (failure?.kind === "session-infrastructure-error") {
+    const attempt = attemptsById.get(failure.attemptId!);
+    if (
+      attempt === undefined ||
+      attempt.reservationId !== failure.reservationId ||
+      attempt.infrastructureClassification !== "session-infrastructure-error" ||
+      replacementSources.has(attempt.attemptId)
+    ) {
+      throw new Error("Phase session failure must cite one unresolved eligible attempt.");
+    }
+  }
+  if (record.state === "ready" && (reservations.length !== 0 || attempts.length !== 0)) {
+    throw new Error("Ready phase summary cannot contain launched work.");
+  }
+  if (record.state === "complete") {
+    if (unresolved.length !== 0) {
+      throw new Error("Complete phase summary cannot contain an unresolved reservation.");
+    }
+    for (const cellId of cellIds) {
+      const cellAttempts = attempts.filter((attempt) => attempt.cellId === cellId);
+      const finalAttempt = cellAttempts.find(
+        (attempt) =>
+          attempt.infrastructureClassification === "none" &&
+          !replacementSources.has(attempt.attemptId),
+      );
+      if (finalAttempt === undefined) {
+        throw new Error("Complete phase summary must resolve every planned cell successfully.");
+      }
+    }
+  }
+  return {
+    schemaVersion: 1,
+    phase,
+    state: record.state,
+    manifestDigest,
+    immutableManifestDigest: digest(
+      record.immutableManifestDigest,
+      "Phase summary immutableManifestDigest",
+    ),
+    designDigest: digest(record.designDigest, "Phase summary designDigest"),
+    plannedCells,
+    adjustments,
+    reservations,
+    attempts,
+    cumulativeAuthorizedTokens,
+    cumulativeAuthorizedMonetaryCents,
+    cumulativeActualTokens,
+    ...(failure === undefined ? {} : { failure }),
+  };
+}
+
+async function readStoredJson(path: string, name: string): Promise<unknown> {
+  let source: string;
   try {
-    await writeFile(temporaryPath, encoded, { encoding: "utf8", flag: "wx" });
-    await rename(temporaryPath, destinationPath);
+    source = await readFile(path, "utf8");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${name} is missing or unreadable: ${detail}`);
+  }
+  try {
+    return JSON.parse(source) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${name} is not valid JSON: ${detail}`);
+  }
+}
+
+async function publishExclusiveJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    await link(temporaryPath, path);
   } finally {
     await rm(temporaryPath, { force: true });
   }
+}
+
+async function publishAtomicJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    await rename(temporaryPath, path);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
+export function designReceiptPath(studyRoot: string): string {
+  return join(studyRoot, "design.json");
+}
+
+export async function readDesignReceipt(studyRoot: string): Promise<DesignReceipt> {
+  const path = designReceiptPath(studyRoot);
+  return decodeDesignReceipt(await readStoredJson(path, "Design receipt"));
+}
+
+export async function publishDesignReceipt(
+  studyRoot: string,
+  receipt: DesignReceipt | unknown,
+): Promise<void> {
+  await publishExclusiveJson(designReceiptPath(studyRoot), decodeDesignReceipt(receipt));
+}
+
+export function phaseSummaryPath(studyRoot: string, phase: StudyPhase): string {
+  return join(studyRoot, phase, "phase.json");
+}
+
+export async function readPhaseSummary(
+  studyRoot: string,
+  phase: StudyPhase,
+): Promise<PhaseSummary> {
+  const path = phaseSummaryPath(studyRoot, phase);
+  const summary = decodePhaseSummary(await readStoredJson(path, `${phase} phase summary`));
+  if (summary.phase !== phase) {
+    throw new Error(`${phase} phase summary contains phase ${summary.phase}.`);
+  }
+  return summary;
+}
+
+export async function publishPhaseSummary(
+  studyRoot: string,
+  summary: PhaseSummary | unknown,
+): Promise<void> {
+  const decoded = decodePhaseSummary(summary);
+  await publishAtomicJson(phaseSummaryPath(studyRoot, decoded.phase), decoded);
 }
 
 const SCAN_FIELDS = [

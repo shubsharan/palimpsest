@@ -96,6 +96,8 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
     buildRoot,
     result: {
       attemptId: "attempt-durable",
+      studyPhase: "standalone",
+      monetaryAuthorizationCeilingCents: 0,
       blockId: artifact.blockId,
       condition: artifact.condition,
       communicationMode: artifact.communicationMode,
@@ -103,8 +105,6 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
       variantId: artifact.variantId,
       buildId: artifact.buildId,
       buildRoot,
-      runName: "durability",
-      repetition: 1,
       agentIds: AGENT_IDS,
       releaseOffsetsMs: artifact.releaseOffsetsMs,
       cutoffMs: artifact.cutoffMs,
@@ -183,7 +183,11 @@ describe("post-freeze attempt durability", () => {
 
       const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
       expect(summary).toMatchObject({
+        schemaVersion: 4,
         attemptId: fixture.result.attemptId,
+        studyPhase: "standalone",
+        monetaryAuthorizationCeilingCents: 0,
+        infrastructureClassification: "none",
         buildRoot: fixture.buildRoot,
         condition,
         communicationMode,
@@ -193,6 +197,10 @@ describe("post-freeze attempt durability", () => {
         },
       });
       expect(summary.frozen.repositories).toHaveLength(repositoryCount);
+      expect(summary).not.toHaveProperty("studyRootId");
+      expect(summary).not.toHaveProperty("conditionOrderPosition");
+      expect(summary).not.toHaveProperty("designDigest");
+      expect(summary).not.toHaveProperty("replacementOfAttemptId");
       const selectedWorkspace = summary.frozen.workspaces.find(
         ({ agentId }) => agentId === "agent-1",
       );
@@ -241,6 +249,41 @@ describe("post-freeze attempt durability", () => {
       ).resolves.toBe("still here\n");
     },
   );
+
+  it("classifies a frozen infrastructure session during durable finalization", async () => {
+    const fixture = await frozenFixture();
+    const result: AttemptResult = {
+      ...fixture.result,
+      sessions: fixture.result.sessions.map((session) =>
+        session.agentId === "agent-1"
+          ? {
+              ...session,
+              state: "infrastructure-error",
+              terminationReason: "provider unavailable",
+            }
+          : session,
+      ),
+    };
+
+    await finalizeAttempt({
+      attemptRoot: fixture.attemptRoot,
+      buildRoot: fixture.buildRoot,
+      result,
+      publishSummary: publishAttemptSummary,
+      observeOverlap: async () => EMPTY_OVERLAP,
+      appendTrace: appendTraceEvent,
+    });
+
+    const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
+    expect(summary).toMatchObject({
+      studyPhase: "standalone",
+      infrastructureClassification: "session-infrastructure-error",
+    });
+    expect(summary.sessions.find(({ agentId }) => agentId === "agent-1")).toMatchObject({
+      state: "infrastructure-error",
+      terminationReason: "provider unavailable",
+    });
+  });
 
   it("does not begin overlap or expose a partial summary when attempt publication fails", async () => {
     const fixture = await frozenFixture();

@@ -1,7 +1,6 @@
 # Tasks: Frozen Five-Block Protocol
 
-**Input**: Design documents from `specs/015-frozen-five-block-protocol/`
-**Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/study-protocol.md`, `quickstart.md`
+**Input**: Design documents from `specs/015-frozen-five-block-protocol/` **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/study-protocol.md`, `quickstart.md`
 
 **Verification**: Tests are mandatory because this feature freezes a findings-bearing study protocol. All acceptance remains provider-free. The final clean receipt-bound preflight verifies the exact committed source and rebuilt sandbox without opening a provider session.
 
@@ -11,9 +10,9 @@
 
 **Purpose**: Freeze the human-readable protocol inputs before runtime work.
 
-- [ ] T001 Create the versioned non-aggregating behavior review rubric in `experiments/behavior-rubric.md`
-- [ ] T002 Update the strict schema-version-2 example manifest and remove the obsolete `runs` shape in `experiments/schema.json` and `experiments/config.yaml`
-- [ ] T003 [P] Add schema-version-2 valid, drift, secret, order, and ceiling fixtures in `tests/fixtures/config/`
+- [x] T001 Create the versioned non-aggregating behavior review rubric in `experiments/behavior-rubric.md`
+- [x] T002 Update the strict schema-version-2 example manifest and remove the obsolete `runs` shape in `experiments/schema.json` and `experiments/config.yaml`
+- [x] T003 [P] Add schema-version-2 valid, drift, secret, order, and ceiling fixtures in `tests/fixtures/config/`
 
 ---
 
@@ -21,11 +20,11 @@
 
 **Purpose**: Establish strict manifest and artifact types used by every story.
 
-- [ ] T004 Add failing strict manifest-decoding, exact matrix, rubric-digest, and authorized-ceiling tests in `src/config.test.ts`
-- [ ] T005 Implement schema-version-2 manifest decoding, credential-free resolution, exact cell expansion, and manifest digests while deleting schema-version-1 run selection in `src/config.ts` and `src/configured-run.ts`
-- [ ] T006 Add failing schema-version-4 attempt, design-receipt, phase-summary, launch-reservation, and lineage codec tests in `src/artifacts.test.ts`
-- [ ] T007 Implement strict schema-version-4 attempts and schema-version-1 design/phase artifacts, removing `runName` and `repetition`, in `src/artifacts.ts`
-- [ ] T008 [P] Update artifact JSON schema fixtures and direct decoder callers for schema version 4 in `src/artifacts.test.ts` and `tests/fixtures/`
+- [x] T004 Add failing strict manifest-decoding, exact matrix, rubric-digest, and authorized-ceiling tests in `src/config.test.ts`
+- [x] T005 Implement schema-version-2 manifest decoding, credential-free resolution, exact cell expansion, and manifest digests while deleting schema-version-1 run selection in `src/config.ts` and `src/configured-run.ts`
+- [x] T006 Add failing schema-version-4 attempt, design-receipt, phase-summary, launch-reservation, and lineage codec tests in `src/artifacts.test.ts`
+- [x] T007 Implement strict schema-version-4 attempts and schema-version-1 design/phase artifacts, removing `runName` and `repetition`, in `src/artifacts.ts`
+- [x] T008 [P] Update direct decoder callers and strict fixture records for schema version 4 in `src/artifacts.test.ts`, `src/test-helpers.ts`, and `tests/puzzle/`
 
 **Checkpoint**: The manifest and durable records reject compatibility inputs and round-trip without credentials.
 
@@ -39,16 +38,16 @@
 
 ### Verification
 
-- [ ] T009 [P] [US1] Add failing prompt-template parity and receipt snapshot tests in `src/prompt.test.ts`
-- [ ] T010 [P] [US1] Add failing five-build preparation, exclusive receipt publication, build-drift, immutable-drift, and adjustment tests in `src/study.test.ts`
-- [ ] T011 [P] [US1] Add failing CLI contract tests for `puzzle:build --block` and calibration receipt timing in `tests/puzzle/cli.test.ts`
+- [x] T009 [P] [US1] Add failing prompt-template parity and receipt snapshot tests in `src/prompt.test.ts`
+- [x] T010 [P] [US1] Add failing five-build preparation, exclusive receipt publication, build-drift, immutable-drift, and adjustment tests in `src/study.test.ts`
+- [x] T011 [P] [US1] Add failing CLI contract tests for `puzzle:build --block` and phase flags in `tests/puzzle/cli.test.ts`, with receipt timing checked in `tests/puzzle/experiment.test.ts`
 
 ### Implementation
 
-- [ ] T012 [US1] Expose token-placeholder prompt templates while preserving Feature 014 concrete prompt bytes in `src/prompt.ts`
-- [ ] T013 [US1] Implement design preparation, raw build/rubric/prompt binding, deterministic digests, exclusive `design.json` publication, and validation adjustment checks in `src/study.ts`
-- [ ] T014 [US1] Wire block selection and study-root receipt preparation through `src/build.ts` and `src/experiment.ts`
-- [ ] T015 [US1] Verify User Story 1 with focused tests and record its exact commands in `specs/015-frozen-five-block-protocol/quickstart.md`
+- [x] T012 [US1] Expose token-placeholder prompt templates while preserving Feature 014 concrete prompt bytes in `src/prompt.ts`
+- [x] T013 [US1] Implement design preparation, raw build/rubric/prompt binding, deterministic digests, exclusive `design.json` publication, and validation adjustment checks in `src/study.ts`
+- [x] T014 [US1] Wire block selection and study-root receipt preparation through `src/build.ts` and `src/experiment.ts`
+- [x] T015 [US1] Verify User Story 1 with focused tests and record its exact commands in `specs/015-frozen-five-block-protocol/quickstart.md`
 
 **Checkpoint**: A provider-free calibration setup leaves one immutable receipt binding all five actual builds.
 
@@ -62,18 +61,18 @@
 
 ### Verification
 
-- [ ] T016 [P] [US2] Add failing phase-state, launch-reservation, resume, sequential-attempt, accounting, and complete-matrix tests in `src/study.test.ts`
-- [ ] T017 [P] [US2] Add failing attempt study-provenance and standalone compatibility tests in `src/run.test.ts` and `src/artifacts.test.ts`
-- [ ] T018 [P] [US2] Add failing provider-preflight ordering and experiment CLI tests in `src/experiment.test.ts` and `tests/puzzle/cli.test.ts`
-- [ ] T019 [P] [US2] Add the provider-free five-build/twenty-cell acceptance fixture with fake clocks and fixture adapters in `tests/puzzle/offline.test.ts`
+- [x] T016 [P] [US2] Add failing phase-state, launch-reservation, resume, sequential-attempt, accounting, and complete-matrix tests in `src/study.test.ts`
+- [x] T017 [P] [US2] Add failing attempt study-provenance and standalone compatibility tests in `src/run.test.ts` and `src/artifacts.test.ts`
+- [x] T018 [P] [US2] Add failing provider-preflight ordering and experiment CLI tests in `src/experiment.test.ts` and `tests/puzzle/cli.test.ts`
+- [x] T019 [P] [US2] Add the provider-free five-build/twenty-cell coordinator fixture in `tests/puzzle/experiment.test.ts` and retain fake-clock concurrent sessions in `tests/puzzle/offline.test.ts`
 
 ### Implementation
 
-- [ ] T020 [US2] Implement strict phase initialization, atomic launch reservation, durable indexing, resume, and authorization accounting in `src/study.ts`
-- [ ] T021 [US2] Extend one-attempt execution with standalone/calibration/validation provenance and frozen session-infrastructure classification in `src/run.ts`
-- [ ] T022 [US2] Replace run-name/repetition expansion with `--phase calibration|validation`, ensure preflight precedes provider setup, and keep `puzzle:run --condition` single-attempt in `src/experiment.ts` and `src/offline.ts`
-- [ ] T023 [US2] Update CLI parsing and package command contracts for phase and study-root selection in `src/cli.ts`, `package.json`, and `tests/puzzle/cli.test.ts`
-- [ ] T024 [US2] Verify User Story 2 with the complete provider-free twenty-cell acceptance and focused runtime suites in `tests/puzzle/experiment.test.ts` and `src/study.test.ts`
+- [x] T020 [US2] Implement strict phase initialization, atomic launch reservation, durable indexing, resume, and authorization accounting in `src/study.ts`
+- [x] T021 [US2] Extend one-attempt execution with standalone/calibration/validation provenance and frozen session-infrastructure classification in `src/run.ts`
+- [x] T022 [US2] Replace run-name/repetition expansion with `--phase calibration|validation`, ensure preflight precedes provider setup, and keep `puzzle:run --condition` single-attempt in `src/experiment.ts` and `src/offline.ts`
+- [x] T023 [US2] Update CLI parsing and package command contracts for phase and study-root selection in `src/cli.ts`, `package.json`, and `tests/puzzle/cli.test.ts`
+- [x] T024 [US2] Verify User Story 2 with the complete provider-free twenty-cell acceptance and focused runtime suites in `tests/puzzle/experiment.test.ts` and `src/study.test.ts`
 
 **Checkpoint**: Calibration and validation are deterministic local phase expansions; no already indexed cell relaunches.
 
@@ -87,14 +86,14 @@
 
 ### Verification
 
-- [ ] T025 [P] [US3] Add failing eligible, model-outcome, duplicate, lineage, replacement-failure, and ceiling tests in `src/study.test.ts`
-- [ ] T026 [P] [US3] Add failing `--replace <attempt-id>` CLI and non-retry resume tests in `src/experiment.test.ts` and `tests/puzzle/cli.test.ts`
+- [x] T025 [P] [US3] Add failing eligible, model-outcome, duplicate, lineage, replacement-failure, and ceiling tests in `src/study.test.ts`
+- [x] T026 [P] [US3] Add failing `--replace <attempt-id>` CLI and non-retry resume tests in `src/experiment.test.ts` and `tests/puzzle/cli.test.ts`
 
 ### Implementation
 
-- [ ] T027 [US3] Implement cited replacement validation, inherited treatment/design/budget identity, one-replacement lineage, and appended reservation/accounting in `src/study.ts`
-- [ ] T028 [US3] Wire explicit replacement execution and nonzero phase-stop reporting in `src/experiment.ts`
-- [ ] T029 [US3] Verify User Story 3 with focused artifact, study, experiment, and CLI suites in `src/artifacts.test.ts`, `src/study.test.ts`, `src/experiment.test.ts`, and `tests/puzzle/cli.test.ts`
+- [x] T027 [US3] Implement cited replacement validation, inherited treatment/design/budget identity, one-replacement lineage, and appended reservation/accounting in `src/study.ts`
+- [x] T028 [US3] Wire explicit replacement execution and nonzero phase-stop reporting in `src/experiment.ts`
+- [x] T029 [US3] Verify User Story 3 with focused artifact, study, experiment, and CLI suites in `src/artifacts.test.ts`, `src/study.test.ts`, `src/experiment.test.ts`, and `tests/puzzle/cli.test.ts`
 
 **Checkpoint**: Infrastructure replacement is explicit scientific lineage, not a retry mechanism.
 
@@ -104,12 +103,12 @@
 
 **Purpose**: Remove transitional surfaces, reconcile documentation, and prove the complete feature.
 
-- [ ] T030 [P] Remove schema-version-1 run fixtures and update affected documentation in `README.md`, `docs/proposal.md`, and `docs/architecture.md`
-- [ ] T031 [P] Update exact operator commands and artifact layout in `specs/015-frozen-five-block-protocol/quickstart.md`
-- [ ] T032 Run formatting, lint, typecheck, complete TypeScript/Python tests, and `git diff --check` with `pnpm verify`
-- [ ] T033 Execute `specs/015-frozen-five-block-protocol/quickstart.md` in a fresh temporary study root and inspect receipt, phase, attempt, order, accounting, and replacement artifacts
-- [ ] T034 Commit the implementation, run the clean receipt-bound preflight from `package.json` against the exact commit, and retain its source/sandbox receipt without a provider call
-- [ ] T035 Re-run `speckit-analyze` and close every remaining spec/plan/task consistency finding
+- [x] T030 [P] Remove schema-version-1 run compatibility, retain one rejection fixture, and update affected documentation in `README.md`, `docs/proposal.md`, and `docs/architecture.md`
+- [x] T031 [P] Update exact operator commands and artifact layout in `specs/015-frozen-five-block-protocol/quickstart.md`
+- [x] T032 Run formatting, lint, typecheck, complete TypeScript/Python tests, and `git diff --check` with `pnpm verify`
+- [x] T033 Execute `specs/015-frozen-five-block-protocol/quickstart.md` in a fresh temporary study root and inspect receipt, phase, attempt, order, accounting, and replacement artifacts
+- [x] T034 Commit the implementation, run the clean receipt-bound preflight from `package.json` against the exact commit, and retain its source/sandbox receipt without a provider call
+- [x] T035 Re-run `speckit-analyze` and close every remaining spec/plan/task consistency finding
 
 ---
 

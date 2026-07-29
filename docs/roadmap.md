@@ -26,7 +26,7 @@ This feature is done when rebuilds are byte-identical, paragraph order and union
 
 This feature is done when shared peer visibility, isolated non-observability, private Git usability, prompt parity, the declared fake-time release schedule, and the 60-minute cutoff pass without prescribing agent behavior.
 
-## Feature 015: Frozen Five-Block Protocol (Planned)
+## Feature 015: Frozen Five-Block Protocol (Implemented)
 
 - Replace schema v1 and its obsolete `runs` shape with one strict schema-v2 YAML manifest for five blocks, one three-model assignment, four conditions, schedules, budgets, providers, order, failure policy, rubric, and total ceilings.
 - Keep `puzzle:build --block`, add `puzzle:run --condition`, and expand `puzzle:experiment --phase calibration|validation` into sequential attempts.

@@ -1,8 +1,6 @@
 # Specification Quality Checklist: Frozen Five-Block Protocol
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-07-28
-**Feature**: [spec.md](../spec.md)
+**Purpose**: Validate specification completeness and quality before proceeding to planning **Created**: 2026-07-28 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
 

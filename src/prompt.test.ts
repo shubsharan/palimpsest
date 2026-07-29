@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { ATTEMPT_CUTOFF_MS, CONDITION_IDS, RELEASE_OFFSETS_MS } from "./condition.js";
-import { buildAgentPrompt } from "./prompt.js";
+import {
+  buildAgentPrompt,
+  buildAgentPromptTemplate,
+  snapshotAgentPromptTemplates,
+  TOKEN_BUDGET_PLACEHOLDER,
+} from "./prompt.js";
+
+const SHARED_CHANNEL =
+  "Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.";
+const ISOLATED_CHANNEL =
+  "Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.";
 
 describe("agent prompt", () => {
   const prompts = Object.fromEntries(
@@ -56,16 +66,73 @@ describe("agent prompt", () => {
     `);
   });
 
-  it("varies only the communication-channel paragraph", () => {
-    const sharedChannel =
-      "Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.";
-    const isolatedChannel =
-      "Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.";
+  it("exposes canonical token-placeholder templates for the design receipt", () => {
+    const templates = snapshotAgentPromptTemplates();
+    const agentIds = ["agent-1", "agent-2", "agent-3"] as const;
 
-    expect(prompts.CS).toContain(sharedChannel);
-    expect(prompts.IS).toContain(isolatedChannel);
-    expect(prompts.CS.replace(sharedChannel, "<channel>")).toBe(
-      prompts.IS.replace(isolatedChannel, "<channel>"),
+    expect(Object.keys(templates)).toEqual(agentIds);
+    for (const agentId of agentIds) {
+      const conditionTemplates = templates[agentId];
+      expect(Object.keys(conditionTemplates)).toEqual(CONDITION_IDS);
+      expect(conditionTemplates.CS).toBe(conditionTemplates.CR);
+      expect(conditionTemplates.IS).toBe(conditionTemplates.IR);
+      expect(conditionTemplates.CS.replace(SHARED_CHANNEL, "<channel>")).toBe(
+        conditionTemplates.IS.replace(ISOLATED_CHANNEL, "<channel>"),
+      );
+      for (const condition of CONDITION_IDS) {
+        const template = conditionTemplates[condition];
+        expect(template).toContain(
+          `You are Agent ${agentId.slice("agent-".length)}, one of 3 agents`,
+        );
+        expect(template.split(TOKEN_BUDGET_PLACEHOLDER)).toHaveLength(2);
+        expect(template).not.toContain("200000");
+        expect(template.replace(TOKEN_BUDGET_PLACEHOLDER, "200000")).toBe(
+          buildAgentPrompt({
+            agentId,
+            condition,
+            tokenBudgetPerAgent: 200_000,
+          }),
+        );
+      }
+    }
+
+    expect(templates["agent-2"].CS).toMatchInlineSnapshot(`
+      "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
+
+      Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.
+
+      Recover the plaintext of the complete ciphertext as accurately as you can.
+
+      Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
+      Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
+
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+
+      Workspace: /workspace
+      Private evidence: /evidence
+      Reference corpus: /reference
+
+      A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done."
+    `);
+  });
+
+  it("builds any one template from the same canonical bytes", () => {
+    const templates = snapshotAgentPromptTemplates();
+
+    for (const agentId of ["agent-1", "agent-2", "agent-3"] as const) {
+      for (const condition of CONDITION_IDS) {
+        expect(buildAgentPromptTemplate({ agentId, condition })).toBe(
+          templates[agentId][condition],
+        );
+      }
+    }
+  });
+
+  it("varies only the communication-channel paragraph", () => {
+    expect(prompts.CS).toContain(SHARED_CHANNEL);
+    expect(prompts.IS).toContain(ISOLATED_CHANNEL);
+    expect(prompts.CS.replace(SHARED_CHANNEL, "<channel>")).toBe(
+      prompts.IS.replace(ISOLATED_CHANNEL, "<channel>"),
     );
   });
 

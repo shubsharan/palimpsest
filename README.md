@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. A checked-in YAML file declares one block, a token budget, model profiles, and model assignments. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
+Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes five blocks, a three-model assignment, four conditions, schedules, budgets, order, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
@@ -13,12 +13,12 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
 - [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
 - [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
-- [Feature 011 quickstart](specs/011-configurable-research-runs/quickstart.md): current setup and acceptance flow.
-- [Experiment schema](experiments/schema.json): strict version-1 manifest format.
+- [Feature 015 quickstart](specs/015-frozen-five-block-protocol/quickstart.md): frozen calibration, validation, and explicit replacement flow.
+- [Experiment schema](experiments/schema.json): strict version-2 study manifest.
 - [Block catalog](experiments/blocks.json): five pinned paired study blocks.
-- [Baseline experiment](experiments/config.yaml): transitional model assignments used until Feature 015 freezes the study manifest.
+- [Study manifest](experiments/config.yaml): frozen block matrix, assignment, budgets, providers, rubric, and failure policy.
 
-Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 remains planned and will freeze the five-block study protocol.
+Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 freezes the complete five-block protocol.
 
 ## Setup
 
@@ -31,17 +31,19 @@ uv sync --frozen --project python
 
 The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
 
-## Configure A Run
+## Configure The Study
 
-Scientific block inputs live in `experiments/blocks.json`. The run configuration in `experiments/config.yaml` selects one block and declares operational settings:
+Scientific block inputs live in `experiments/blocks.json`. The strict study manifest in `experiments/config.yaml` declares:
 
-- `puzzle`: one block ID;
-- `limits`: one per-agent token budget;
+- `blocks`: one calibration and four validation block IDs in fixed order;
+- `assignment`: one ordered three-agent model assignment used by every cell;
+- `schedule` and `budgets`: the fixed reveal/cutoff values plus per-attempt and study-wide authorizations;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
-- `models`: reusable provider/model profiles and non-secret settings; and
-- `runs`: homogeneous or ordered mixed-model assignments plus repetitions.
+- `models`: provider/model profiles and non-secret settings;
+- `orders`: one calibration and four balanced validation condition sequences; and
+- `scoring`, `rubric`, `adjustableFields`, and `failurePolicy`: the declared observation and replacement boundary.
 
-The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Unknown keys and mismatched block identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
+The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Schema version 1, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
 
 ## Run
 
@@ -55,33 +57,36 @@ pnpm puzzle:build -- \
 
 The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
 
-Run one named model assignment:
+Run one standalone condition with the frozen assignment:
 
 ```bash
 pnpm puzzle:run -- \
   --config experiments/config.yaml \
-  --run gpt-only \
   --condition CR \
   --build artifacts/build \
-  --output artifacts/attempt
+  --attempt-root artifacts/attempt
 ```
 
-Or build once and run all declared model assignments and repetitions sequentially under one condition:
+Run calibration, then validation, under one local study root:
 
 ```bash
 pnpm puzzle:experiment -- \
   --config experiments/config.yaml \
-  --condition CR \
-  --output artifacts/experiment
+  --phase calibration \
+  --study-root artifacts/study
+pnpm puzzle:experiment -- \
+  --config experiments/config.yaml \
+  --phase validation \
+  --study-root artifacts/study
 ```
 
-Each durable attempt is indexed in `experiment.json`. Attempts remain separate under `attempts/<run-name>/<NNN>/`; a later failure does not erase completed work.
+Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, then indexes only strict durable attempts in its `phase.json`. A frozen `session-infrastructure-error` stops the phase; one explicit `--replace <attempt-id>` command may append a cited replacement. Nothing retries automatically.
 
 After inspecting a frozen attempt, the researcher explicitly chooses what to evaluate:
 
 ```bash
 pnpm puzzle:evaluate -- \
-  --attempt artifacts/experiment/attempts/gpt-only/001 \
+  --attempt artifacts/study/validation/attempts/<attempt-id> \
   --workspace agent-1 \
   --command "sh solve.sh" \
   --output-path reconstruction.txt

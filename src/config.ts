@@ -1,20 +1,27 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { parseDocument } from "yaml";
 
-import experimentSchema from "../experiments/schema.json" with { type: "json" };
-import { generateAgentIds, type AgentId } from "./model.js";
+import studySchema from "../experiments/schema.json" with { type: "json" };
+import {
+  ATTEMPT_CUTOFF_MS,
+  RELEASE_OFFSETS_MS,
+  hashProtocolSnapshot,
+  type ConditionId,
+} from "./condition.js";
+import type { AgentId } from "./model.js";
 
 export type ProviderDriver = "openai" | "anthropic" | "google" | "openai-compatible";
+export type StudyPhase = "calibration" | "validation";
 
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
+
+export interface JsonObject {
+  readonly [key: string]: JsonValue;
+}
 
 export interface CommonModelSettings {
   maxOutputTokens?: number;
@@ -32,7 +39,7 @@ export interface OpenAICompatibleProviderConnection {
   driver: "openai-compatible";
   baseURL: string;
   apiKeyEnv?: string;
-  headersEnv?: Readonly<Record<string, string>>;
+  headersEnv?: Record<string, string>;
 }
 
 export type ProviderConnection = OfficialProviderConnection | OpenAICompatibleProviderConnection;
@@ -41,63 +48,121 @@ export interface ModelProfile {
   provider: string;
   model: string;
   settings: CommonModelSettings;
-  providerOptions: Readonly<Record<string, JsonValue>>;
+  providerOptions: Record<string, JsonValue>;
 }
 
-export interface PuzzleDefinition {
-  block: string;
+export interface StudyModelDeclaration {
+  provider: string;
+  model: string;
+  settings?: CommonModelSettings;
+  providerOptions?: Record<string, JsonValue>;
 }
 
-export interface ExperimentLimits {
-  tokenBudgetPerAgent: number;
+export interface StudyBlock {
+  blockId: string;
+  phase: StudyPhase;
 }
 
-export interface ResolvedAgentBinding {
+export interface AgentModelAssignment {
   agentId: AgentId;
-  modelProfile: string;
+  modelProfileId: string;
 }
 
-export interface ResolvedRunCondition {
-  name: string;
-  repetitions: number;
-  agents: readonly ResolvedAgentBinding[];
+export interface StudySchedule {
+  releaseOffsetsMs: number[];
+  cutoffMs: number;
 }
 
-export interface ResolvedExperimentConfig {
-  schemaVersion: 1;
-  puzzle: PuzzleDefinition;
-  limits: ExperimentLimits;
+export interface StudyBudgets {
+  tokenBudgetPerAgent: number;
+  perAttemptMonetaryCeilingCents: number;
+  totalTokenCeiling: number;
+  totalMonetaryCeilingCents: number;
+}
+
+export interface StudyOrders {
+  calibration: ConditionId[];
+  validation: ConditionId[][];
+}
+
+export interface StudyScoring {
+  metricId: "normalized-positional-word-v1";
+  reviewerSelectionId: "manual-workspace-command-output-v1";
+}
+
+export interface StudyRubric {
+  rubricId: string;
+  path: string;
+  sha256: string;
+}
+
+export type AdjustableStudyField =
+  | "budgets.tokenBudgetPerAgent"
+  | "budgets.perAttemptMonetaryCeilingCents";
+
+export interface StudyFailurePolicy {
+  stopOnInfrastructureFailure: true;
+  automaticRetry: false;
+  replacement: "explicit-appended";
+  eligibleClassification: "session-infrastructure-error";
+}
+
+export interface StudyManifest {
+  schemaVersion: 2;
+  blocks: StudyBlock[];
+  assignment: AgentModelAssignment[];
+  providers: Record<string, ProviderConnection>;
+  models: Record<string, StudyModelDeclaration>;
+  schedule: StudySchedule;
+  budgets: StudyBudgets;
+  orders: StudyOrders;
+  scoring: StudyScoring;
+  rubric: StudyRubric;
+  adjustableFields: AdjustableStudyField[];
+  failurePolicy: StudyFailurePolicy;
+}
+
+export type ImmutableStudyManifest = Omit<StudyManifest, "budgets"> & {
+  budgets: Pick<StudyBudgets, "totalTokenCeiling" | "totalMonetaryCeilingCents">;
+};
+
+export interface PlannedStudyCell {
+  cellId: string;
+  phase: StudyPhase;
+  blockId: string;
+  condition: ConditionId;
+  conditionOrderPosition: number;
+  phasePosition: number;
+}
+
+export interface ResolvedStudy {
+  schemaVersion: 2;
+  blocks: readonly StudyBlock[];
+  assignment: readonly AgentModelAssignment[];
   providers: Readonly<Record<string, ProviderConnection>>;
   models: Readonly<Record<string, ModelProfile>>;
-  runs: readonly ResolvedRunCondition[];
-}
-
-interface ExperimentConfig {
-  schemaVersion: 1;
-  puzzle: PuzzleDefinition;
-  limits: ExperimentLimits;
-  providers: Record<string, ProviderConnection>;
-  models: Record<
-    string,
-    {
-      provider: string;
-      model: string;
-      settings?: CommonModelSettings;
-      providerOptions?: Record<string, JsonValue>;
-    }
-  >;
-  runs: {
-    name: string;
-    model?: string;
-    agents?: string[];
-    repetitions?: number;
-  }[];
-}
-
-export interface ResolveExperimentOptions {
-  root?: string;
-  selectedRun?: string;
-  env?: NodeJS.ProcessEnv;
+  schedule: {
+    releaseOffsetsMs: readonly number[];
+    cutoffMs: number;
+  };
+  budgets: Readonly<StudyBudgets>;
+  orders: {
+    calibration: readonly ConditionId[];
+    validation: readonly (readonly ConditionId[])[];
+  };
+  scoring: Readonly<StudyScoring>;
+  rubric: Readonly<StudyRubric>;
+  rubricPath: string;
+  adjustableFields: readonly [
+    "budgets.tokenBudgetPerAgent",
+    "budgets.perAttemptMonetaryCeilingCents",
+  ];
+  failurePolicy: Readonly<StudyFailurePolicy>;
+  calibrationCells: readonly PlannedStudyCell[];
+  validationCells: readonly PlannedStudyCell[];
+  manifestDigest: string;
+  immutableManifestDigest: string;
+  immutableManifest: ImmutableStudyManifest;
 }
 
 const ajv = new Ajv2020({
@@ -116,7 +181,29 @@ ajv.addFormat("uri", {
     }
   },
 });
-const validateSchema: ValidateFunction = ajv.compile(experimentSchema);
+const validateSchema: ValidateFunction = ajv.compile(studySchema);
+
+const EXPECTED_BLOCKS = [
+  { blockId: "calibration-theron-ware", phase: "calibration" },
+  { blockId: "validation-odd-women", phase: "validation" },
+  { blockId: "validation-pointed-firs", phase: "validation" },
+  { blockId: "validation-custom-country", phase: "validation" },
+  { blockId: "validation-woodlanders", phase: "validation" },
+] as const satisfies readonly StudyBlock[];
+
+const EXPECTED_CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
+const EXPECTED_VALIDATION_ORDERS = [
+  ["CS", "CR", "IR", "IS"],
+  ["CR", "IS", "CS", "IR"],
+  ["IS", "IR", "CR", "CS"],
+  ["IR", "CS", "IS", "CR"],
+] as const;
+const EXPECTED_ADJUSTABLE_FIELDS = [
+  "budgets.tokenBudgetPerAgent",
+  "budgets.perAttemptMonetaryCeilingCents",
+] as const;
+const PRIMARY_CELL_COUNT = 20;
+const AGENT_COUNT = 3;
 
 function structuralError(error: ErrorObject): string {
   let path = error.instancePath || "/";
@@ -129,29 +216,29 @@ function structuralError(error: ErrorObject): string {
   return `${path} ${error.message ?? "is invalid"}`;
 }
 
-export function parseExperimentYaml(source: string): unknown {
+export function parseStudyYaml(source: string): unknown {
   const document = parseDocument(source, {
     schema: "core",
     merge: false,
     uniqueKeys: true,
   });
   if (document.errors.length > 0) {
-    throw new Error(`Experiment YAML is invalid: ${document.errors[0]!.message}`);
+    throw new Error(`Study YAML is invalid: ${document.errors[0]!.message}`);
   }
   try {
     return document.toJS({ json: true, maxAliasCount: 0 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Experiment YAML is invalid: ${detail}`);
+    throw new Error(`Study YAML is invalid: ${detail}`);
   }
 }
 
-export function validateExperimentConfig(value: unknown): ExperimentConfig {
+export function validateStudyManifest(value: unknown): StudyManifest {
   if (!validateSchema(value)) {
     const errors = validateSchema.errors?.map(structuralError).join("; ") ?? "unknown error";
-    throw new Error(`Experiment configuration is invalid: ${errors}`);
+    throw new Error(`Study manifest is invalid: ${errors}`);
   }
-  return value as ExperimentConfig;
+  return value as StudyManifest;
 }
 
 function normalizedKey(key: string): string {
@@ -184,7 +271,9 @@ function secretBearingKey(key: string): boolean {
   const normalized = normalizedKey(key);
   return (
     normalized.includes("apikey") ||
+    normalized === "auth" ||
     normalized === "authorization" ||
+    normalized === "bearer" ||
     normalized.endsWith("credential") ||
     normalized.endsWith("credentials") ||
     normalized.endsWith("password") ||
@@ -248,31 +337,109 @@ function safeInteger(value: unknown, path: string, minimum = 0): number {
   return value as number;
 }
 
-function assertSemanticRelationships(config: ExperimentConfig): void {
-  safeInteger(config.limits.tokenBudgetPerAgent, "limits.tokenBudgetPerAgent", 1);
+function equalJson(left: unknown, right: unknown): boolean {
+  return hashProtocolSnapshot(left) === hashProtocolSnapshot(right);
+}
+
+function assertExactProtocol(config: StudyManifest): void {
+  if (!equalJson(config.blocks, EXPECTED_BLOCKS)) {
+    throw new Error("Study manifest blocks must match the exact registered five-block order.");
+  }
+  if (
+    !equalJson(config.orders.calibration, EXPECTED_CALIBRATION_ORDER) ||
+    !equalJson(config.orders.validation, EXPECTED_VALIDATION_ORDERS)
+  ) {
+    throw new Error("Study manifest condition orders must match the exact frozen matrix.");
+  }
+  if (
+    !equalJson(config.schedule.releaseOffsetsMs, RELEASE_OFFSETS_MS) ||
+    config.schedule.cutoffMs !== ATTEMPT_CUTOFF_MS
+  ) {
+    throw new Error("Study manifest schedule must match the fixed condition runtime.");
+  }
+  if (!equalJson(config.adjustableFields, EXPECTED_ADJUSTABLE_FIELDS)) {
+    throw new Error("Study manifest adjustableFields must contain exactly the two budget paths.");
+  }
+}
+
+function assertReferences(config: StudyManifest): void {
+  for (const [name, provider] of Object.entries(config.providers)) {
+    if (provider.driver !== "openai-compatible") continue;
+    const endpoint = new URL(provider.baseURL);
+    if (endpoint.username.length > 0 || endpoint.password.length > 0) {
+      throw new Error(`providers.${name}.baseURL must not contain literal credentials.`);
+    }
+    const secretParameter = [...endpoint.searchParams.keys()].find(secretBearingKey);
+    if (secretParameter !== undefined) {
+      throw new Error(
+        `providers.${name}.baseURL query parameter ${secretParameter} is secret-bearing.`,
+      );
+    }
+  }
   for (const [name, model] of Object.entries(config.models)) {
     if (!(model.provider in config.providers)) {
       throw new Error(`models.${name}.provider references unknown provider ${model.provider}.`);
     }
     validateProviderOptions(model.providerOptions ?? {}, `models.${name}.providerOptions`);
   }
-  const runNames = new Set<string>();
-  for (const [index, run] of config.runs.entries()) {
-    safeInteger(run.repetitions ?? 1, `runs[${String(index)}].repetitions`, 1);
-    if (runNames.has(run.name)) {
-      throw new Error(`runs[${String(index)}].name must be unique.`);
-    }
-    runNames.add(run.name);
-    const profiles = run.model === undefined ? run.agents! : [run.model];
-    if (run.agents !== undefined && run.agents.length !== 3) {
-      throw new Error(`runs[${String(index)}].agents must contain exactly three assignments.`);
-    }
-    for (const profile of profiles) {
-      if (!(profile in config.models)) {
-        throw new Error(`runs[${String(index)}] references unknown model profile ${profile}.`);
-      }
+  for (const [index, assignment] of config.assignment.entries()) {
+    if (!(assignment.modelProfileId in config.models)) {
+      throw new Error(
+        `assignment[${String(index)}].modelProfileId references unknown model profile ${assignment.modelProfileId}.`,
+      );
     }
   }
+}
+
+function multiplyAuthorization(left: number, right: number, path: string): number {
+  const value = left * right;
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${path} must be a safe integer.`);
+  }
+  return value;
+}
+
+function assertAuthorizationCeilings(config: StudyManifest): void {
+  const tokenBudget = safeInteger(
+    config.budgets.tokenBudgetPerAgent,
+    "budgets.tokenBudgetPerAgent",
+    1,
+  );
+  const attemptMoney = safeInteger(
+    config.budgets.perAttemptMonetaryCeilingCents,
+    "budgets.perAttemptMonetaryCeilingCents",
+  );
+  const totalTokens = safeInteger(config.budgets.totalTokenCeiling, "budgets.totalTokenCeiling", 1);
+  const totalMoney = safeInteger(
+    config.budgets.totalMonetaryCeilingCents,
+    "budgets.totalMonetaryCeilingCents",
+  );
+  const authorizedTokens = multiplyAuthorization(
+    multiplyAuthorization(tokenBudget, AGENT_COUNT, "Primary authorized token total"),
+    PRIMARY_CELL_COUNT,
+    "Primary authorized token total",
+  );
+  const authorizedMoney = multiplyAuthorization(
+    attemptMoney,
+    PRIMARY_CELL_COUNT,
+    "Primary authorized monetary total",
+  );
+  if (authorizedTokens > totalTokens) {
+    throw new Error(
+      `budgets.totalTokenCeiling must cover the ${String(authorizedTokens)}-token primary authorization.`,
+    );
+  }
+  if (authorizedMoney > totalMoney) {
+    throw new Error(
+      `budgets.totalMonetaryCeilingCents must cover the ${String(authorizedMoney)}-cent primary authorization.`,
+    );
+  }
+}
+
+function assertSemanticRelationships(config: StudyManifest): void {
+  assertExactProtocol(config);
+  assertReferences(config);
+  assertAuthorizationCeilings(config);
 }
 
 function cloneProvider(provider: ProviderConnection): ProviderConnection {
@@ -285,74 +452,9 @@ function cloneProvider(provider: ProviderConnection): ProviderConnection {
   };
 }
 
-function resolveRuns(config: ExperimentConfig): ResolvedRunCondition[] {
-  const agentIds = generateAgentIds(3);
-  return config.runs.map((run) => {
-    const profiles =
-      run.model === undefined ? run.agents! : Array.from({ length: 3 }, () => run.model!);
-    return {
-      name: run.name,
-      repetitions: run.repetitions ?? 1,
-      agents: profiles.map((modelProfile, index) => ({
-        agentId: agentIds[index]!,
-        modelProfile,
-      })),
-    };
-  });
-}
-
-function requireEnvironmentValue(env: NodeJS.ProcessEnv, variable: string, path: string): string {
-  const value = env[variable];
-  if (value === undefined || value.length === 0) {
-    throw new Error(`${path} requires environment variable ${variable}.`);
-  }
-  return value;
-}
-
-function preflightCredentials(
-  selectedRun: string,
-  runs: readonly ResolvedRunCondition[],
-  models: Readonly<Record<string, ModelProfile>>,
-  providers: Readonly<Record<string, ProviderConnection>>,
-  env: NodeJS.ProcessEnv,
-): void {
-  const run = runs.find((candidate) => candidate.name === selectedRun);
-  if (run === undefined) {
-    throw new Error(`Selected run ${selectedRun} does not exist.`);
-  }
-  const providerNames = new Set(
-    run.agents.map((binding) => models[binding.modelProfile]!.provider),
-  );
-  for (const providerName of providerNames) {
-    const provider = providers[providerName]!;
-    if (provider.apiKeyEnv !== undefined) {
-      requireEnvironmentValue(env, provider.apiKeyEnv, `providers.${providerName}.apiKeyEnv`);
-    }
-    if (provider.driver !== "openai-compatible") continue;
-    for (const [header, variable] of Object.entries(provider.headersEnv ?? {})) {
-      requireEnvironmentValue(env, variable, `providers.${providerName}.headersEnv.${header}`);
-    }
-  }
-}
-
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (typeof value !== "object" || value === null || seen.has(value)) return value;
-  seen.add(value);
-  for (const child of Object.values(value)) deepFreeze(child, seen);
-  return Object.freeze(value);
-}
-
-export async function resolveExperimentConfig(
-  value: unknown,
-  options: ResolveExperimentOptions = {},
-): Promise<ResolvedExperimentConfig> {
-  const config = validateExperimentConfig(value);
-  assertSemanticRelationships(config);
-  const providers = Object.fromEntries(
-    Object.entries(config.providers).map(([name, provider]) => [name, cloneProvider(provider)]),
-  );
-  const models = Object.fromEntries(
-    Object.entries(config.models).map(([name, model]) => [
+function cloneModels(models: Record<string, StudyModelDeclaration>): Record<string, ModelProfile> {
+  return Object.fromEntries(
+    Object.entries(models).map(([name, model]) => [
       name,
       {
         provider: model.provider,
@@ -362,24 +464,136 @@ export async function resolveExperimentConfig(
       },
     ]),
   );
-  const runs = resolveRuns(config);
-  if (options.selectedRun !== undefined) {
-    preflightCredentials(options.selectedRun, runs, models, providers, options.env ?? process.env);
+}
+
+function cellsFor(
+  phase: StudyPhase,
+  blocks: readonly StudyBlock[],
+  orders: readonly (readonly ConditionId[])[],
+): PlannedStudyCell[] {
+  let phasePosition = 0;
+  return blocks.flatMap((block, blockIndex) =>
+    orders[blockIndex]!.map((condition, conditionIndex) => {
+      phasePosition += 1;
+      return {
+        cellId: `${phase}-${String(phasePosition)}-${block.blockId}-${condition}`,
+        phase,
+        blockId: block.blockId,
+        condition,
+        conditionOrderPosition: conditionIndex + 1,
+        phasePosition,
+      };
+    }),
+  );
+}
+
+function immutableProjection(manifest: StudyManifest): ImmutableStudyManifest {
+  return {
+    ...structuredClone(manifest),
+    budgets: {
+      totalTokenCeiling: manifest.budgets.totalTokenCeiling,
+      totalMonetaryCeilingCents: manifest.budgets.totalMonetaryCeilingCents,
+    },
+  };
+}
+
+function rubricPath(repositoryRoot: string, configuredPath: string): string {
+  if (isAbsolute(configuredPath)) {
+    throw new Error("rubric.path must be relative to the repository.");
   }
+  const path = resolve(repositoryRoot, configuredPath);
+  const difference = relative(repositoryRoot, path);
+  if (
+    difference.length === 0 ||
+    difference === ".." ||
+    difference.startsWith(`..${sep}`) ||
+    isAbsolute(difference)
+  ) {
+    throw new Error("rubric.path must remain inside the repository.");
+  }
+  return path;
+}
+
+async function verifyRubric(repositoryRoot: string, rubric: StudyRubric): Promise<string> {
+  const path = rubricPath(repositoryRoot, rubric.path);
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(path);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`rubric.path could not be read: ${detail}`);
+  }
+  const actualDigest = createHash("sha256").update(bytes).digest("hex");
+  if (actualDigest !== rubric.sha256) {
+    throw new Error("Study rubric digest does not match the declared rubric bytes.");
+  }
+  return path;
+}
+
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (typeof value !== "object" || value === null || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+  return Object.freeze(value);
+}
+
+export async function resolveStudy(
+  value: unknown,
+  repositoryRoot = resolve("."),
+): Promise<ResolvedStudy> {
+  const manifest = structuredClone(validateStudyManifest(value));
+  assertSemanticRelationships(manifest);
+  const root = resolve(repositoryRoot);
+  const resolvedRubricPath = await verifyRubric(root, manifest.rubric);
+  const immutableManifest = immutableProjection(manifest);
+  const calibrationBlocks = manifest.blocks.filter((block) => block.phase === "calibration");
+  const validationBlocks = manifest.blocks.filter((block) => block.phase === "validation");
+  const calibrationCells = cellsFor("calibration", calibrationBlocks, [
+    manifest.orders.calibration,
+  ]);
+  const validationCells = cellsFor("validation", validationBlocks, manifest.orders.validation);
+
   return deepFreeze({
-    schemaVersion: 1,
-    puzzle: { block: config.puzzle.block },
-    limits: { ...config.limits },
-    providers,
-    models,
-    runs,
+    schemaVersion: 2,
+    blocks: manifest.blocks.map((block) => ({ ...block })),
+    assignment: manifest.assignment.map((assignment) => ({ ...assignment })),
+    providers: Object.fromEntries(
+      Object.entries(manifest.providers).map(([name, provider]) => [name, cloneProvider(provider)]),
+    ),
+    models: cloneModels(manifest.models),
+    schedule: {
+      releaseOffsetsMs: [...manifest.schedule.releaseOffsetsMs],
+      cutoffMs: manifest.schedule.cutoffMs,
+    },
+    budgets: { ...manifest.budgets },
+    orders: {
+      calibration: [...manifest.orders.calibration],
+      validation: manifest.orders.validation.map((order) => [...order]),
+    },
+    scoring: { ...manifest.scoring },
+    rubric: { ...manifest.rubric },
+    rubricPath: resolvedRubricPath,
+    adjustableFields: [...EXPECTED_ADJUSTABLE_FIELDS],
+    failurePolicy: { ...manifest.failurePolicy },
+    calibrationCells,
+    validationCells,
+    manifestDigest: hashProtocolSnapshot(manifest),
+    immutableManifestDigest: hashProtocolSnapshot(immutableManifest),
+    immutableManifest,
   });
 }
 
-export async function loadExperimentConfig(
+export function expandPhase(study: ResolvedStudy, phase: StudyPhase): readonly PlannedStudyCell[] {
+  return phase === "calibration" ? study.calibrationCells : study.validationCells;
+}
+
+export async function loadStudyManifest(path: string): Promise<StudyManifest> {
+  return validateStudyManifest(parseStudyYaml(await readFile(path, "utf8")));
+}
+
+export async function loadResolvedStudy(
   path: string,
-  options: ResolveExperimentOptions = {},
-): Promise<ResolvedExperimentConfig> {
-  const source = await readFile(path, "utf8");
-  return resolveExperimentConfig(parseExperimentYaml(source), options);
+  repositoryRoot = resolve("."),
+): Promise<ResolvedStudy> {
+  return resolveStudy(await loadStudyManifest(path), repositoryRoot);
 }

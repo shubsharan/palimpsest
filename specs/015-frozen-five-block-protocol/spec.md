@@ -1,6 +1,6 @@
 # Feature Specification: Frozen Five-Block Protocol
 
-**Feature Branch**: `feature/015-frozen-five-block-protocol` **Created**: 2026-07-28 **Status**: Draft **Input**: Freeze one five-block, four-condition study protocol with balanced validation order, a calibration design receipt, explicit infrastructure-failure replacement lineage, provider-free acceptance, and declared token and monetary ceilings.
+**Feature Branch**: `feature/015-frozen-five-block-protocol` **Created**: 2026-07-28 **Status**: Implemented **Input**: Freeze one five-block, four-condition study protocol with balanced validation order, a calibration design receipt, explicit infrastructure-failure replacement lineage, provider-free acceptance, and declared token and monetary ceilings.
 
 ## User Scenarios & Testing
 
@@ -27,7 +27,7 @@ As a researcher, I can select calibration or validation and have the runner expa
 
 **Why this priority**: One deterministic expansion prevents order drift while retaining the existing simple local build, run, freeze, overlap, and explicit evaluation boundaries.
 
-**Independent Test**: Use fixture adapters and fake time to execute calibration as four attempts on the calibration block, then validation as sixteen attempts on the four validation blocks, and verify every phase, block, condition, order position, build, protocol, and design identity.
+**Independent Test**: Use a provider-free durable-attempt fixture to execute calibration as four attempts on the calibration block, then validation as sixteen attempts on the four validation blocks, and verify every phase, block, condition, order position, build, protocol, and design identity. Pair it with the retained fake-clock one-attempt acceptance to verify the unchanged three-session runtime.
 
 **Acceptance Scenarios**:
 
@@ -78,7 +78,7 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 
 **Infrastructure Failures**: Configuration, credential preflight, missing or mismatched design receipt, receipt-bound build drift, provider/session infrastructure state, sandbox, timer, stage publication, Git, trace, freeze, artifact, ceiling, overlap, or evaluation infrastructure can fail explicitly. Only a strict frozen attempt classified `session-infrastructure-error` is eligible for an appended replacement. Pre-freeze failures block that study root without relaunch, while post-publication overlap or evaluation failures are repaired against the same attempt rather than used to repeat model behavior.
 
-**Verification Boundary**: Provider-free fixture adapters, fake clocks, and real local Git/Docker tests verify all twenty cells, receipt freeze, adjustment rules, ceiling arithmetic, replacement eligibility, records, and scoring without billable calls. Advisory checks remain non-authorizing. Every future provider-backed phase still requires the existing clean receipt-bound preflight and retains the tested source revision and sandbox identity.
+**Verification Boundary**: A provider-free coordinator fixture verifies all twenty cells, receipt freeze, adjustment rules, ceiling arithmetic, replacement eligibility, and records. The retained fixture-adapter/fake-clock attempt and real local Git/Docker tests separately verify the unchanged concurrent session, freeze, overlap, and scoring path. Together they require no billable calls. Advisory checks remain non-authorizing. Every future provider-backed phase still requires the existing clean receipt-bound preflight and retains the tested source revision and sandbox identity.
 
 **Out-of-Scope Claims**: The protocol does not automate behavioral review, rubric application, statistical aggregation, provider-price truth, retries, result selection, post-hoc merging, or benchmark claims. Declared monetary ceilings are operator authorization records, not a claim that provider invoices can be predicted or stopped exactly.
 
@@ -139,7 +139,7 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 - **SC-007**: Every indexed attempt round-trips with its phase, position, design/protocol identities, treatment, resource authorization, infrastructure classification, and replacement lineage.
 - **SC-008**: Every tested eligible infrastructure failure stops nonzero and can receive one explicitly cited appended replacement; every tested model outcome or invalid lineage receives zero replacement attempts.
 - **SC-009**: A resumed phase launches zero already indexed cells and proceeds only after every earlier infrastructure-failure cell has an eligible successful replacement.
-- **SC-010**: The complete provider-free twenty-cell protocol, strict negative cases, replacement policy, prompt snapshots, focused suites, full repository verification, clean-checkout preflight, and diff check pass without a live provider call.
+- **SC-010**: The complete provider-free twenty-cell coordinator, retained fake-clock attempt runtime, strict negative cases, replacement policy, prompt snapshots, focused suites, full repository verification, clean-checkout preflight, and diff check pass without a live provider call.
 
 ## Assumptions
 

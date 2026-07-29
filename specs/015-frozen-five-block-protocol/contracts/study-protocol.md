@@ -6,7 +6,7 @@
 
 `resolveStudy(manifest, repositoryRoot)` resolves registered blocks, validates rubric bytes, computes manifest identities, and returns the exact calibration and validation cells without reading credentials.
 
-`applyValidationAdjustments(receipt, currentManifest)` accepts changes only to:
+`initializeStudyPhase({ phase: "validation", ... })` accepts changes only to:
 
 - `budgets.tokenBudgetPerAgent`
 - `budgets.perAttemptMonetaryCeilingCents`
@@ -15,7 +15,7 @@ It returns a deterministic adjustment record and rejects any immutable drift or 
 
 ## Design Preparation
 
-`prepareDesignReceipt(resolvedStudy, studyRoot, buildBlock)`:
+`prepareStudyDesign({ study, studyRoot, ... })`:
 
 1. refuses an existing or partial study root that cannot be validated;
 2. constructs and validates all five registered paired builds;
@@ -41,15 +41,15 @@ Cell IDs and positions are deterministic.
 
 ## Phase Execution
 
-`runStudyPhase(options)`:
+`executeStudyPhase(options)`:
 
 1. validates the receipt, build bindings, phase prerequisites, and current manifest;
 2. reads or initializes strict `phase.json`;
 3. rejects an unresolved reservation or unremediated eligible failure;
 4. selects the next unstarted cell;
 5. verifies remaining token and monetary authorization;
-6. writes a launch reservation;
-7. verifies provider preflight when adapters are not injected;
+6. verifies provider preflight when adapters are not injected;
+7. writes a launch reservation;
 8. executes exactly one attempt with three concurrent sessions;
 9. indexes the strict durable attempt and resolves the reservation;
 10. stops nonzero on eligible infrastructure classification, otherwise continues sequentially.
@@ -58,7 +58,7 @@ Reinvocation never launches an indexed primary cell.
 
 ## Explicit Replacement
 
-`replaceStudyAttempt(options, sourceAttemptId)` validates the frozen cited source before reserving any work. It rejects model outcomes, missing/non-frozen/other-phase/successful/already-replaced attempts and ceiling overflow. It appends exactly one attempt with inherited treatment/design/budgets and `replacementOfAttemptId`.
+`executeStudyPhase({ replaceAttemptId: sourceAttemptId, ... })` validates the frozen cited source before reserving any work. It rejects model outcomes, missing/non-frozen/other-phase/successful/already-replaced attempts and ceiling overflow. It appends exactly one attempt with inherited treatment/design/budgets and `replacementOfAttemptId`.
 
 There is no automatic retry API.
 
@@ -76,7 +76,7 @@ The design receipt binds the template with a token placeholder and the baseline 
 ## CLI
 
 ```text
-pnpm puzzle:build -- --config experiments/config.yaml --block <block-id> --output <build-root>
+pnpm puzzle:build -- --block <block-id> --output <build-root>
 pnpm puzzle:run -- --config experiments/config.yaml --build <build-root> --condition <CS|CR|IS|IR> --attempt-root <path>
 pnpm puzzle:experiment -- --config experiments/config.yaml --phase <calibration|validation> --study-root <path>
 pnpm puzzle:experiment -- --config experiments/config.yaml --phase <calibration|validation> --study-root <path> --replace <attempt-id>

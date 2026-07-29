@@ -4,12 +4,12 @@
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm test -- src/config.test.ts src/study.test.ts src/artifacts.test.ts src/experiment.test.ts
-pnpm test -- tests/puzzle/cli.test.ts tests/puzzle/offline.test.ts
+pnpm exec vitest run src/config.test.ts src/study.test.ts src/artifacts.test.ts src/experiment.test.ts
+pnpm exec vitest run tests/puzzle/cli.test.ts tests/puzzle/offline.test.ts tests/puzzle/experiment.test.ts
 pnpm verify
 ```
 
-The focused acceptance suite must construct the five receipt-bound builds and execute the four calibration plus sixteen validation cells with fixture adapters and fake clocks. It must not require provider credentials or make a provider request.
+The provider-free coordinator acceptance constructs the five receipt-bound builds and executes the four calibration plus sixteen validation cells. The retained offline acceptance separately runs the unchanged three-session attempt with fixture adapters and a fake clock. Neither requires provider credentials or makes a provider request.
 
 ## Inspect The Frozen Matrix
 

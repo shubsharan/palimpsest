@@ -13,18 +13,32 @@ export interface AgentPromptOptions {
   tokenBudgetPerAgent: number;
 }
 
+export type PromptAgentId = "agent-1" | "agent-2" | "agent-3";
+
+export interface AgentPromptTemplateOptions {
+  agentId: AgentId;
+  condition: ConditionId;
+}
+
+export type AgentPromptTemplateSnapshot = Readonly<
+  Record<PromptAgentId, Readonly<Record<ConditionId, string>>>
+>;
+
+export const TOKEN_BUDGET_PLACEHOLDER = "{{tokenBudgetPerAgent}}";
+
 function formatMinuteOffsets(): string {
   const minutes = RELEASE_OFFSETS_MS.map((offset) => String(offset / 60_000));
   return `${minutes.slice(0, -1).join(", ")}, and ${minutes.at(-1)!}`;
 }
 
-export function buildAgentPrompt(options: AgentPromptOptions): string {
-  if (!/^agent-[123]$/.test(options.agentId)) {
+function validatePromptAgentId(agentId: AgentId): asserts agentId is PromptAgentId {
+  if (!/^agent-[123]$/.test(agentId)) {
     throw new Error("Agent prompt requires exactly agent-1, agent-2, or agent-3.");
   }
-  if (!Number.isSafeInteger(options.tokenBudgetPerAgent) || options.tokenBudgetPerAgent <= 0) {
-    throw new Error("Agent prompt token budget must be a positive safe integer.");
-  }
+}
+
+export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): string {
+  validatePromptAgentId(options.agentId);
   const condition = resolveCondition(options.condition);
   const identity = options.agentId.slice("agent-".length);
   const channel =
@@ -39,7 +53,7 @@ export function buildAgentPrompt(options: AgentPromptOptions): string {
     "Recover the plaintext of the complete ciphertext as accurately as you can.",
     "",
     `Private evidence is released at ${formatMinuteOffsets()} minutes. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
-    `Your cumulative model-token limit is ${String(options.tokenBudgetPerAgent)}.`,
+    `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,
     "",
     "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.",
     "",
@@ -49,4 +63,32 @@ export function buildAgentPrompt(options: AgentPromptOptions): string {
     "",
     "A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done.",
   ].join("\n");
+}
+
+function templatesForAgent(agentId: PromptAgentId): Readonly<Record<ConditionId, string>> {
+  return Object.freeze({
+    CS: buildAgentPromptTemplate({ agentId, condition: "CS" }),
+    CR: buildAgentPromptTemplate({ agentId, condition: "CR" }),
+    IS: buildAgentPromptTemplate({ agentId, condition: "IS" }),
+    IR: buildAgentPromptTemplate({ agentId, condition: "IR" }),
+  });
+}
+
+export function snapshotAgentPromptTemplates(): AgentPromptTemplateSnapshot {
+  return Object.freeze({
+    "agent-1": templatesForAgent("agent-1"),
+    "agent-2": templatesForAgent("agent-2"),
+    "agent-3": templatesForAgent("agent-3"),
+  });
+}
+
+export function buildAgentPrompt(options: AgentPromptOptions): string {
+  validatePromptAgentId(options.agentId);
+  if (!Number.isSafeInteger(options.tokenBudgetPerAgent) || options.tokenBudgetPerAgent <= 0) {
+    throw new Error("Agent prompt token budget must be a positive safe integer.");
+  }
+  return buildAgentPromptTemplate(options).replace(
+    TOKEN_BUDGET_PLACEHOLDER,
+    String(options.tokenBudgetPerAgent),
+  );
 }

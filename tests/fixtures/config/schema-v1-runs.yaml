@@ -1,0 +1,9 @@
+schemaVersion: 1
+puzzle: { block: calibration-theron-ware }
+limits: { tokenBudgetPerAgent: 200000 }
+providers:
+  openai: { driver: openai, apiKeyEnv: OPENAI_API_KEY }
+models:
+  gpt: { provider: openai, model: gpt-5.2 }
+runs:
+  - { name: gpt-only, model: gpt }
