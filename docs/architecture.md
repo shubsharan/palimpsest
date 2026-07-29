@@ -47,20 +47,20 @@ For fixed registered source bytes and resolved scientific inputs, build identity
 
 ## Attempt Runtime
 
-`puzzle:run` selects one canonical condition from the manifest and checks that its block and key regime match the supplied build before creating the output root. It derives communication mode and key regime from the condition identifier and constructs one declared model binding and adapter per agent.
+`puzzle:run` selects one named run from the current manifest and checks that its puzzle definition matches the supplied build before creating the output root. It constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
-- creates one shared ordinary bare Git repository for shared conditions or one independent ordinary repository per agent for isolated conditions, plus one workspace per canonical agent ID;
+- creates one shared ordinary bare Git repository and one workspace per canonical agent ID;
 - creates one private evidence directory and independent persistent session per agent;
 - releases equivalent stage ordinals using one monotonic schedule;
-- exposes the same local command, file, Git, checker, and activity-waiting tool surface to every session while limiting Git and activity visibility to the declared communication mode;
+- exposes the same local command, file, Git, checker, and activity-waiting tool surface to every session;
 - enforces provider-reported cumulative input/output token budgets per session and one global wall-time cutoff;
 - records requested model identity, optional actual response identity, usage, tool activity, stage activity, Git changes, and termination;
-- freezes every condition-visible Git repository and workspace after all sessions end; and
+- freezes Git and every workspace after all sessions end; and
 - atomically publishes `attempt.json` before optional overlap observation.
 
-Sessions in one attempt run concurrently. They share neither message history nor private evidence. Shared conditions can observe peer Git activity; isolated conditions retain team identity but cannot observe peer evidence, repositories, or activity. No rounds, roles, checkpoints, mandatory Git behavior, or solver file convention are introduced.
+Sessions in one attempt run concurrently. They share neither message history nor private evidence. No rounds, roles, checkpoints, mandatory Git behavior, or solver file convention are introduced by configurable experiments.
 
 Missing provider usage or a provider request failure is an infrastructure-error session rather than estimated usage or a model-quality outcome. The attempt is still frozen and published. An experiment indexes that durable attempt and then stops before launching another.
 
@@ -98,7 +98,7 @@ Model profiles may pass structurally safe, non-secret provider options. Secret, 
 
 ## Command Sandbox
 
-Model-authored commands run in attempt-scoped Docker sandbox leases rather than directly on the host. The runner creates one lease per configured agent and routes that agent's commands through the same healthy lease. Each lease receives only its writable workspace, currently released private evidence, target-excluded references, condition-visible Git, and private temporary storage. Prepared plaintext, keys, unreleased or peer-private evidence, checker internals, provider credentials, host-control surfaces, and public networking stay outside.
+Model-authored commands run in attempt-scoped Docker sandbox leases rather than directly on the host. The runner creates one lease per configured agent and routes that agent's commands through the same healthy lease. Each lease receives only its writable workspace, currently released private evidence, target-excluded references, shared Git, and private temporary storage. Prepared plaintext, keys, unreleased or peer evidence, checker internals, provider credentials, host-control surfaces, and public networking stay outside.
 
 Lease creation and every command share bounded deadlines under the attempt's global wall-time cutoff. A nonzero command leaves a healthy lease available; timeout, cancellation, output overflow, or resource termination abandons the lease so the command cannot continue in the background. A later command may receive a replacement lease over the same host-backed workspace, evidence, reference corpus, and Git repository.
 
@@ -112,7 +112,7 @@ The sandbox protects the local host and oracle. It is not presented as a hardene
 
 The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify the build, dynamic agent/stage/re-key counts, run and repetition, and requested model bindings without exposing hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
 
-`attempt.json` contains the block, condition, communication mode, key regime, protocol identity, build identity, agent set, model binding per session, usage, termination, every frozen Git repository and workspace, trace, sandbox identity, and operational limits. It is the durable evaluation boundary.
+`attempt.json` schema version 2 contains the build identity, dynamic agent set, model binding per session, usage, termination, frozen Git/workspaces, trace, sandbox identity, and operational limits. It is the durable evaluation boundary.
 
 Optional post-freeze overlap observation reports obvious exact or normalized raw text overlap without warning, blocking, invalidating, or rescoring the run. If observation fails, the already published attempt remains evaluatable.
 
@@ -144,7 +144,11 @@ The architecture preserves the strongest durable boundary available: publication
 
 ## Verification
 
-The repository verifies strict config decoding, mocked provider turns and credential scrubbing, deterministic paired blocks, canonical condition derivation, concurrent sessions, shared peer visibility, isolated Git and activity non-observability, identical non-treatment inputs, stage scheduling, trace and artifact decoding, attempt durability, sequential experiment indexing, reviewer-selected evaluation, and Docker containment.
+The repository verifies strict config decoding, mocked provider turns and credential scrubbing, dynamic 2/3/5-agent puzzle geometry, zero/one/multiple re-keys, concurrent sessions, Git workspaces, stage scheduling, trace and artifact decoding, attempt durability, sequential experiment indexing, reviewer-selected evaluation, and Docker containment.
+
+## Planned Study Conditions
+
+Features 013 through 015 will add deterministic paired blocks and canonical `CS`, `CR`, `IS`, and `IR` conditions. Shared conditions will retain one peer-visible Git repository. Isolated conditions will preserve the same team identity and non-treatment inputs while giving each agent an independent usable repository with no peer evidence or activity. The host record will freeze every repository and workspace regardless of agent visibility. These are accepted design constraints, not behavior provided by the current Feature 011 runtime.
 
 Canonical acceptance is:
 

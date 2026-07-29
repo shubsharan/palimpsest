@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. A checked-in YAML file declares the corpus, puzzle geometry, resource limits, model profiles, and study conditions. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. Shared conditions expose ordinary peer Git; isolated conditions preserve the same team identity while hiding peer repositories and activity.
+Palimpsest is a local research runner for a team word-substitution puzzle. A checked-in YAML file declares the corpus, puzzle geometry, resource limits, model profiles, and run conditions. Persistent model sessions receive different private evidence over time, share ordinary Git in the current runner, and decide for themselves how to solve and coordinate.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 

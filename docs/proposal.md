@@ -14,7 +14,7 @@ One experiment manifest selects a target from the checked-in corpus registry, an
 
 The prepared ciphertext is divided into one private contiguous stream per agent. Every stream has the same number of immutable stages, released on a shared wall-clock schedule. Earlier stages remain available exactly as released.
 
-At each configured re-key boundary, a deterministic subset of mappings changes across every stream while the remaining mappings stay valid. Each revision is derived from the immediately preceding key. These transitions are hidden from agents: prompts, stage names, checker results, and their shared repository do not announce them.
+At each configured re-key boundary, a deterministic subset of mappings changes across every stream while the remaining mappings stay valid. Each revision is derived from the immediately preceding key. These transitions are hidden from agents: prompts, stage names, checker results, and their agent-visible Git do not announce them.
 
 The checked-in baseline retains the original research condition: three agents, six stages, and one partial re-key beginning at stage four. Other manifests can vary those dimensions so long as the corpus can support the requested geometry.
 
@@ -24,9 +24,9 @@ The manifest also declares direct provider connections and named model profiles.
 
 Provider credentials are read only from named environment variables. They are not valid literal configuration values and are excluded from traces, attempt records, experiment summaries, error text, and command sandboxes. The runner does not silently fall back to another provider or retry an attempt.
 
-Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, schedule, limits, tools, references, and evaluation boundary. Only the declared communication channel differs.
+Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, private evidence allocation, schedule, limits, tools, references, and evaluation boundary. Only channel availability differs between communication-paired prompts.
 
-Shared conditions state that the team has a shared Git repository and peer activity. Isolated conditions state that communication is unavailable and give each agent an independent Git repository. Both state that the other agents are working concurrently on different private evidence.
+Shared conditions state that the team has a shared Git repository and peer activity. Isolated conditions state that peer communication is unavailable and give each agent an independent Git repository. Both state that the other agents are working concurrently on different private evidence.
 
 The instruction makes team identity and condition-specific channel availability explicit. It does not reveal the key regime, special word sets, scoring expectations, roles, workflows, required artifacts, or a decoding algorithm.
 
@@ -54,7 +54,7 @@ It never returns correct words, expected words, mismatch locations, unreleased r
 
 ## Final Evaluation
 
-At the wall-time cutoff, or after all sessions have ended, the runner freezes every condition-visible repository and agent workspace. It publishes the durable attempt before optional overlap observation.
+At the wall-time cutoff, or after all sessions have ended, the runner freezes every repository and agent workspace. It publishes the durable attempt before optional overlap observation.
 
 A reviewer then inspects the frozen work and explicitly selects the workspace, command, and output path that best represent its solver. Palimpsest does not require a solver manifest, language, canonical file name, private deliverable, or prescribed team output.
 
@@ -64,7 +64,7 @@ The selected code runs against the complete ciphertext without the oracle, peer 
 
 An experiment builds its puzzle once, then executes conditions and repetitions sequentially. Sessions inside one attempt remain concurrent. After each durable attempt, an atomically replaced `experiment.json` indexes the resolved non-secret condition and attempt root. A later failure cannot erase earlier attempts.
 
-Attempt records retain the block, condition, communication mode, key regime, protocol identity, requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, visible Git histories, frozen work, overlap observations, reviewer selection, execution result, and score. They do not retain complete provider response payloads or credential values.
+Attempt records retain the block, condition, communication mode, key regime, protocol identity, requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, all Git histories, frozen work, overlap observations, reviewer selection, execution result, and score. They do not retain complete provider response payloads or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 
