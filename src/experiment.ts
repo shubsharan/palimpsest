@@ -21,6 +21,7 @@ import {
 import { requiredFlag } from "./flags.js";
 import { isAgentId, type AgentId, type ModelAdapter, type ModelBinding } from "./model.js";
 import { createAiSdkModelAdapter, type CreateAiSdkModelAdapterOptions } from "./provider.js";
+import { readJsonObject } from "./python.js";
 import { runPuzzle } from "./run.js";
 
 export interface ExperimentAgent {
@@ -192,11 +193,128 @@ export function createConfiguredRunAgents(
   return agentsFor(run, createAdapters(config, [run], createAdapter, options.env));
 }
 
+export interface CurrentBuildInputs {
+  blockId: string;
+  source: BuildManifest["source"];
+  references: BuildManifest["references"];
+  seed: number;
+  window: BuildManifest["window"];
+  boundaryStage: 4;
+}
+
+function inputObject(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function inputString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${name} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function inputInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new Error(`${name} must be a positive safe integer.`);
+  }
+  return value as number;
+}
+
+export async function loadCurrentBuildInputs(
+  root: string,
+  blockId: string,
+): Promise<CurrentBuildInputs> {
+  const catalog = await readJsonObject(join(root, "experiments/blocks.json"));
+  const provenance = await readJsonObject(join(root, "fixtures/corpus/provenance.json"));
+  if (catalog.schemaVersion !== 1 || provenance.schemaVersion !== 1) {
+    throw new Error("Current puzzle input schema version is unsupported.");
+  }
+  if (!Array.isArray(catalog.blocks) || !Array.isArray(provenance.sources)) {
+    throw new Error("Current puzzle inputs are malformed.");
+  }
+  const block = inputObject(
+    catalog.blocks.find(
+      (value) =>
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        (value as Record<string, unknown>).blockId === blockId,
+    ),
+    `Block ${blockId}`,
+  );
+  const sourceIds = [
+    inputString(block.sourceId, `Block ${blockId} sourceId`),
+    ...(() => {
+      if (!Array.isArray(block.references)) {
+        throw new Error(`Block ${blockId} references must be an array.`);
+      }
+      return block.references.map((value, index) =>
+        inputString(value, `Block ${blockId} references[${String(index)}]`),
+      );
+    })(),
+  ];
+  const sources = sourceIds.map((sourceId) => {
+    const source = inputObject(
+      provenance.sources.find(
+        (value) =>
+          typeof value === "object" &&
+          value !== null &&
+          !Array.isArray(value) &&
+          (value as Record<string, unknown>).sourceId === sourceId,
+      ),
+      `Provenance source ${sourceId}`,
+    );
+    return {
+      sourceId,
+      sha256: inputString(source.sha256, `Provenance source ${sourceId} sha256`),
+    };
+  });
+  const window = inputObject(block.window, `Block ${blockId} window`);
+  const boundaryStage = inputInteger(block.boundaryStage, `Block ${blockId} boundaryStage`);
+  if (boundaryStage !== 4) throw new Error(`Block ${blockId} boundaryStage must be 4.`);
+  return {
+    blockId,
+    source: sources[0]!,
+    references: sources.slice(1),
+    seed: inputInteger(block.seed, `Block ${blockId} seed`),
+    window: {
+      paragraphStart: inputInteger(window.paragraphStart, `Block ${blockId} paragraphStart`),
+      paragraphEnd: inputInteger(window.paragraphEnd, `Block ${blockId} paragraphEnd`),
+      wordCount: inputInteger(window.wordCount, `Block ${blockId} wordCount`),
+      sha256: inputString(window.sha256, `Block ${blockId} window sha256`),
+    },
+    boundaryStage,
+  };
+}
+
 export function assertBuildMatchesExperimentConfig(
   manifest: BuildManifest,
   config: ResolvedExperimentConfig,
+  current: CurrentBuildInputs,
 ): void {
-  if (manifest.blockId !== config.puzzle.block) {
+  const referencesMatch =
+    manifest.references.length === current.references.length &&
+    manifest.references.every((reference, index) => {
+      const expected = current.references[index];
+      return (
+        expected !== undefined &&
+        reference.sourceId === expected.sourceId &&
+        reference.sha256 === expected.sha256
+      );
+    });
+  if (
+    manifest.blockId !== config.puzzle.block ||
+    manifest.blockId !== current.blockId ||
+    manifest.source.sourceId !== current.source.sourceId ||
+    manifest.source.sha256 !== current.source.sha256 ||
+    !referencesMatch ||
+    manifest.seed !== current.seed ||
+    JSON.stringify(manifest.window) !== JSON.stringify(current.window) ||
+    manifest.boundaryStage !== current.boundaryStage
+  ) {
     throw new Error("Puzzle build does not match the resolved experiment configuration.");
   }
 }
