@@ -331,6 +331,44 @@ describe("frozen attempt evaluation", () => {
 
 describe("condition attempt evaluation", () => {
   it.each([
+    ["not-runnable", {}],
+    ["runnable", { command: "run selected solver", outputPath: "answer.txt" }],
+  ] as const)("requires an explicit workspace before %s evaluation setup", async (_, selection) => {
+    const fixture = await conditionAttemptFixture("IR");
+
+    await expect(
+      evaluatePuzzle({
+        root: process.cwd(),
+        attempt: fixture.attemptRoot,
+        ...selection,
+      }),
+    ).rejects.toThrow("Reviewer workspace must be provided for evaluation.");
+    expect(createSandboxMock).not.toHaveBeenCalled();
+    await expect(access(join(fixture.attemptRoot, "evaluation"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("preserves not-runnable evaluation for an explicitly selected workspace", async () => {
+    const fixture = await conditionAttemptFixture("IR");
+    const sandbox = new FakeCommandSandbox(async () => {
+      throw new Error("Not-runnable evaluation must not execute a command.");
+    });
+    createSandboxMock.mockResolvedValue(
+      sandbox as unknown as Awaited<ReturnType<typeof createDockerCommandSandbox>>,
+    );
+
+    const result = await evaluatePuzzle({
+      root: process.cwd(),
+      attempt: fixture.attemptRoot,
+      workspace: "agent-2",
+    });
+
+    expect(result).toEqual({ status: "not-runnable" });
+    expect(sandbox.requests).toEqual([]);
+  });
+
+  it.each([
     ["CR", "shared"],
     ["IR", "isolated"],
   ] as const)(

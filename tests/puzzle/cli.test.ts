@@ -227,6 +227,25 @@ describe("operator CLI contract", () => {
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("requires a workspace for evaluation", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-workspace-"));
+    const scripts = await packageScripts();
+    const command = scripts["puzzle:evaluate"]?.split(/\s+/);
+
+    const result = await execute(
+      process.execPath,
+      [tsxCli, ...(command?.slice(1) ?? []), "--attempt", join(temporaryRoot, "attempt")],
+      { cwd: root },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Reviewer workspace must be provided for evaluation.");
+    await expect(access(join(temporaryRoot, "attempt", "evaluation"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("rebuilds one pinned block byte-identically", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-determinism-"));
     const firstOutput = join(temporaryRoot, "first");

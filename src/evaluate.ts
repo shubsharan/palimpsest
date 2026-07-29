@@ -260,6 +260,9 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if ((options.command === undefined) !== (options.outputPath === undefined)) {
     throw new Error("Reviewer command and output path must be provided together.");
   }
+  if (options.workspace === undefined) {
+    throw new Error("Reviewer workspace must be provided for evaluation.");
+  }
   validateReviewerSelection(
     options.command === undefined || options.outputPath === undefined
       ? undefined
@@ -270,7 +273,7 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
         },
   );
   const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
-  const workspace = options.workspace ?? "agent-1";
+  const workspace = options.workspace;
   if (!attempt.agentIds.includes(workspace)) {
     throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);
   }
