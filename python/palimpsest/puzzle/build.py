@@ -2,377 +2,279 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
-import math
 import os
 import shutil
-import sys
 import tempfile
-from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from ..serialization import canonical_json_bytes, sha256_hex
+from .block import (
+    AGENT_IDS,
+    BOUNDARY_STAGE,
+    STAGE_COUNT,
+    AllocationResult,
+    BlockDesign,
+    ParagraphAssignment,
+    ParagraphUnit,
+    design_block,
+    load_block_catalog,
+)
+from .block import (
+    OracleDesign as BlockOracleDesign,
+)
 from .cipher import apply_mapping, stationary_key
 from .corpus import (
     SourceDefinition,
     build_reference_corpus,
+    load_paragraphs,
     load_source_registry,
-    select_chapters,
+    serialize_paragraphs,
 )
 from .manifest import (
+    AllocationMetrics,
+    AllocationSummary,
+    BuildVariant,
+    BuildWindow,
     EvidenceStage,
+    ManipulationCheck,
     PuzzleBuild,
     ReferenceSource,
     RekeyTransition,
     TargetSource,
-    make_agent_ids,
+    TierRejection,
     stage_filename,
 )
-from .revision import build_successive_revision
-from .shards import assign_streams, contradiction_metrics, eligible_symbols, split_text
-from .text import canonicalize_capitalization, word_tokens
+from .manifest import (
+    OracleDesign as ManifestOracleDesign,
+)
+from .revision import revise_explicit_types
+from .text import word_tokens
 
-MINIMUM_STREAM_OCCURRENCES = 2
-FREQUENCY_STRATA = 4
-MAXIMUM_ELIGIBLE_CHANGED_MASS = 0.45
-
-
-@dataclass(frozen=True)
-class _RekeyDefinition:
-    at_stage: int
-    changed_token_mass: float
-
-
-@dataclass(frozen=True)
-class _PuzzleDefinition:
-    target_id: str
-    chapter_start: int
-    chapter_end: int
-    reference_ids: tuple[str, ...]
-    seed: int
-    agent_count: int
-    stage_count: int
-    stage_interval_ms: int
-    rekeys: tuple[_RekeyDefinition, ...]
+MINIMUM_MANIPULATION_MASS = 0.15
 
 
 def _seed_hex(seed: int, domain: str) -> str:
-    return hashlib.sha256(f"palimpsest-puzzle:{seed}:{domain}".encode("ascii")).hexdigest()
-
-
-def _record(value: object, name: str, fields: frozenset[str]) -> dict[str, object]:
-    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
-        raise ValueError(f"{name} must be an object.")
-    record = {key: item for key, item in value.items() if isinstance(key, str)}
-    missing = fields - record.keys()
-    extra = record.keys() - fields
-    if missing:
-        raise ValueError(f"{name} {sorted(missing)[0]} is required.")
-    if extra:
-        raise ValueError(f"{name} contains unknown field {sorted(extra)[0]}.")
-    return record
-
-
-def _integer(value: object, name: str, minimum: int | None = None) -> int:
-    if (
-        type(value) is not int
-        or abs(value) > 9_007_199_254_740_991
-        or (minimum is not None and value < minimum)
-    ):
-        suffix = "" if minimum is None else f" of at least {minimum}"
-        raise ValueError(f"{name} must be an integer{suffix}.")
-    return value
-
-
-def _identifier(value: object, name: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{name} must be a non-empty identifier.")
-    return value
-
-
-def _decode_definition(value: object) -> _PuzzleDefinition:
-    puzzle = _record(
-        value,
-        "Puzzle definition",
-        frozenset(
-            {
-                "target",
-                "references",
-                "seed",
-                "agentCount",
-                "stageCount",
-                "stageIntervalMs",
-                "rekeys",
-            }
-        ),
-    )
-    target = _record(
-        puzzle["target"],
-        "Puzzle target",
-        frozenset({"corpus", "chapters"}),
-    )
-    chapters = _record(
-        target["chapters"],
-        "Puzzle target chapters",
-        frozenset({"start", "end"}),
-    )
-    references_value = puzzle["references"]
-    rekeys_value = puzzle["rekeys"]
-    if not isinstance(references_value, list):
-        raise ValueError("Puzzle references must be an array.")
-    if not isinstance(rekeys_value, list):
-        raise ValueError("Puzzle rekeys must be an array.")
-    references = tuple(
-        _identifier(reference, f"Puzzle references[{index}]")
-        for index, reference in enumerate(references_value)
-    )
-    if len(set(references)) != len(references):
-        raise ValueError("Puzzle references must be unique.")
-    target_id = _identifier(target["corpus"], "Puzzle target corpus")
-    if target_id in references:
-        raise ValueError("Puzzle target corpus must be excluded from references.")
-
-    stage_count = _integer(puzzle["stageCount"], "Puzzle stageCount", 1)
-    rekeys: list[_RekeyDefinition] = []
-    for index, raw in enumerate(rekeys_value):
-        rekey = _record(
-            raw,
-            f"Puzzle rekeys[{index}]",
-            frozenset({"atStage", "changedTokenMass"}),
-        )
-        at_stage = _integer(rekey["atStage"], f"Puzzle rekeys[{index}] atStage", 2)
-        mass = rekey["changedTokenMass"]
-        if (
-            isinstance(mass, bool)
-            or not isinstance(mass, (int, float))
-            or not math.isfinite(float(mass))
-            or not 0.0 < float(mass) < 1.0
-        ):
-            raise ValueError(
-                f"Puzzle rekeys[{index}] changedTokenMass must be strictly between zero and one."
-            )
-        rekeys.append(_RekeyDefinition(at_stage=at_stage, changed_token_mass=float(mass)))
-    stages = tuple(rekey.at_stage for rekey in rekeys)
-    if stages != tuple(sorted(set(stages))) or any(stage > stage_count for stage in stages):
-        raise ValueError(
-            "Puzzle re-key stages must be strictly ascending unique values within 2..stageCount."
-        )
-    chapter_start = _integer(chapters["start"], "Puzzle target chapter start", 1)
-    chapter_end = _integer(chapters["end"], "Puzzle target chapter end", 1)
-    if chapter_end < chapter_start:
-        raise ValueError("Puzzle target chapter range must be one-based and ordered.")
-    agent_count = _integer(puzzle["agentCount"], "Puzzle agentCount", 2)
-    make_agent_ids(agent_count)
-    return _PuzzleDefinition(
-        target_id=target_id,
-        chapter_start=chapter_start,
-        chapter_end=chapter_end,
-        reference_ids=references,
-        seed=_integer(puzzle["seed"], "Puzzle seed"),
-        agent_count=agent_count,
-        stage_count=stage_count,
-        stage_interval_ms=_integer(puzzle["stageIntervalMs"], "Puzzle stageIntervalMs", 1),
-        rekeys=tuple(rekeys),
-    )
-
-
-def _prepared_text(source: SourceDefinition, start: int, end: int) -> str:
-    selected = select_chapters(source, start, end)
-    return canonicalize_capitalization(
-        "\n\n".join(f"{chapter.heading}\n\n{chapter.text}" for chapter in selected)
-    )
+    return hashlib.sha256(f"palimpsest-block:{seed}:{domain}".encode("ascii")).hexdigest()
 
 
 def _words(value: str) -> list[str]:
     return [token.normalized for token in word_tokens(value) if token.normalized is not None]
 
 
-def _write(path: Path, content: bytes) -> dict[str, Any]:
+def _write(path: Path, content: bytes) -> dict[str, int | str]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return {"byteLength": len(content), "sha256": sha256_hex(content)}
 
 
-def _region_words(
-    streams: dict[str, tuple[str, ...]],
-    *,
-    start: int,
-    end: int,
-    eligible: set[str],
-) -> list[str]:
+def _assert_available_output(output: Path) -> None:
+    if output.exists() and (not output.is_dir() or any(output.iterdir())):
+        raise FileExistsError(f"Puzzle build output is non-empty: {output}")
+
+
+def _publish_staging(staging: Path, output: Path) -> None:
+    if output.exists():
+        output.rmdir()
+    os.replace(staging, output)
+
+
+def _paragraph_units(source: SourceDefinition) -> tuple[ParagraphUnit, ...]:
+    return tuple(
+        ParagraphUnit.from_text(ordinal, paragraph)
+        for ordinal, paragraph in enumerate(load_paragraphs(source), start=1)
+    )
+
+
+def _allocation_record(design: BlockDesign) -> dict[str, Any]:
+    result = design.allocation
+    metrics = result.design.metrics
+    return {
+        "schemaVersion": 1,
+        "allocationId": result.allocation.allocation_id,
+        "tier": result.tier.name,
+        "metrics": {
+            "regionDeviation": metrics.region_deviation,
+            "stageDeviation": metrics.stage_deviation,
+            "soloChangedSetCoverageByAgent": dict(metrics.solo_coverage),
+            "postChangedMassByAgent": dict(metrics.post_changed_mass),
+            "globalOldKeyLoss": metrics.global_old_key_loss,
+            "maximumControlDistance": metrics.maximum_control_distance,
+            "minOwnerOccurrencesPerRegion": metrics.min_owner_occurrences_per_region,
+            "minSentinelOccurrencesPerAgentRegion": (
+                metrics.min_sentinel_occurrences_per_agent_region
+            ),
+        },
+        "rejectedTiers": [
+            {"tier": rejection.tier, "reasons": list(rejection.reasons)}
+            for rejection in result.rejected_tiers
+        ],
+        "assignments": [
+            {
+                "paragraphOrdinal": assignment.paragraph.ordinal,
+                "agentId": assignment.agent_id,
+                "stage": assignment.stage,
+            }
+            for assignment in result.allocation.assignments
+        ],
+    }
+
+
+def _control_record(design: BlockOracleDesign) -> list[dict[str, Any]]:
     return [
-        word
-        for stages in streams.values()
-        for stage in stages[start - 1 : end]
-        for word in _words(stage)
-        if word in eligible
+        {
+            "changedType": match.changed_type,
+            "controlType": match.control_type,
+            "frequencyDistance": match.frequency_distance,
+            "exposureDistance": match.exposure_distance,
+            "contextDistance": match.context_distance,
+            "distance": match.distance,
+        }
+        for match in design.controls
     ]
 
 
-def _build_into(
-    root: Path,
-    destination: Path,
-    definition: _PuzzleDefinition,
-    registry: dict[str, SourceDefinition],
-) -> PuzzleBuild:
-    try:
-        target_source = registry[definition.target_id]
-        reference_sources = tuple(registry[source_id] for source_id in definition.reference_ids)
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+def _oracle_record(design: BlockOracleDesign) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "anchors": list(design.anchors),
+        "sentinels": list(design.sentinels),
+        "specialists": {agent_id: list(design.specialists[agent_id]) for agent_id in AGENT_IDS},
+        "controls": _control_record(design),
+        "changedTypes": list(design.changed_types),
+    }
 
-    prepared = _prepared_text(
-        target_source,
-        definition.chapter_start,
-        definition.chapter_end,
-    )
-    agent_ids = make_agent_ids(definition.agent_count)
-    segment_count = definition.agent_count * definition.stage_count
-    plain_segments = split_text(prepared, segment_count)
-    streams = assign_streams(plain_segments, agent_ids, definition.stage_count)
-    vocabulary = sorted(set(_words(prepared)))
-    keys = [stationary_key(vocabulary, _seed_hex(definition.seed, "base-key"))]
 
-    boundaries = (1, *(rekey.at_stage for rekey in definition.rekeys), definition.stage_count + 1)
-    transitions: list[RekeyTransition] = []
-    evidence: list[dict[str, Any]] = []
-    for index, rekey in enumerate(definition.rekeys):
-        pre_start = boundaries[index]
-        pre_end = boundaries[index + 1] - 1
-        post_start = boundaries[index + 1]
-        post_end = boundaries[index + 2] - 1
-        eligible = eligible_symbols(
-            streams,
-            pre_start=pre_start,
-            pre_end=pre_end,
-            post_start=post_start,
-            post_end=post_end,
-            minimum_occurrences=MINIMUM_STREAM_OCCURRENCES,
-        )
-        if len(eligible) < FREQUENCY_STRATA * 2:
-            raise ValueError(
-                f"Re-key at stage {rekey.at_stage} has too few recurring symbols "
-                "across every adjacent agent region."
-            )
-        pre_tokens = _region_words(
-            streams,
-            start=pre_start,
-            end=pre_end,
-            eligible=eligible,
-        )
-        post_tokens = _region_words(
-            streams,
-            start=post_start,
-            end=post_end,
-            eligible=eligible,
-        )
-        total_post_tokens = sum(
-            len(_words(stage))
-            for stages in streams.values()
-            for stage in stages[post_start - 1 : post_end]
-        )
-        eligible_post_fraction = len(post_tokens) / total_post_tokens
-        eligible_mass_target = rekey.changed_token_mass / eligible_post_fraction
-        if eligible_mass_target >= MAXIMUM_ELIGIBLE_CHANGED_MASS:
-            raise ValueError(
-                f"Re-key at stage {rekey.at_stage} cannot attain changedTokenMass "
-                "while retaining matched stable controls."
-            )
-        domain = (
-            "partial-rekey"
-            if len(definition.rekeys) == 1
-            else f"partial-rekey:{index + 1}:{rekey.at_stage}"
-        )
-        try:
-            revision = build_successive_revision(
-                prior_key=keys[-1],
-                pre_tokens=pre_tokens,
-                post_tokens=post_tokens,
-                seed_hex=_seed_hex(definition.seed, domain),
-                minimum_occurrences=1,
-                stratum_count=FREQUENCY_STRATA,
-                token_mass_target=eligible_mass_target,
-            )
-            changed_symbols = tuple(sorted(entry.plain_type for entry in revision.changed_entries))
-            metrics = contradiction_metrics(
-                streams,
-                pre_start=pre_start,
-                pre_end=pre_end,
-                post_start=post_start,
-                post_end=post_end,
-                changed_symbols=set(changed_symbols),
-            )
-        except (ValueError, RuntimeError) as error:
-            raise ValueError(f"Re-key at stage {rekey.at_stage} is infeasible: {error}") from error
-        keys.append(revision.revised_key)
-        key_version = index + 1
-        key_path = Path(f"oracle/keys/key-{key_version:02d}.json")
-        transitions.append(
-            RekeyTransition(
-                at_stage=rekey.at_stage,
-                key_version=key_version,
-                changed_token_mass=rekey.changed_token_mass,
-                changed_symbols=changed_symbols,
-                key_path=key_path,
-            )
-        )
-        evidence.append(
-            {
-                "atStage": rekey.at_stage,
-                "keyVersion": key_version,
-                "preStages": {"start": pre_start, "end": pre_end},
-                "postStages": {"start": post_start, "end": post_end},
-                "agents": metrics,
-            }
-        )
-
-    key_paths = tuple(Path(f"oracle/keys/key-{index:02d}.json") for index in range(len(keys)))
-    for path, key in zip(key_paths, keys, strict=True):
-        _write(destination / path, canonical_json_bytes(key))
-
-    cipher_by_agent: dict[str, tuple[str, ...]] = {}
-    stages: list[EvidenceStage] = []
-    for agent_id, plain_stages in streams.items():
-        cipher_stages: list[str] = []
-        for ordinal, plain_stage in enumerate(plain_stages, start=1):
-            key_version = sum(rekey.at_stage <= ordinal for rekey in definition.rekeys)
-            cipher_stage = apply_mapping(plain_stage, keys[key_version])
-            cipher_stages.append(cipher_stage)
-            cipher_bytes = (cipher_stage + "\n").encode("utf-8")
-            filename = stage_filename(ordinal, definition.stage_count)
-            source_path = Path(f"private/{agent_id}/stages/{filename}")
-            _write(destination / source_path, cipher_bytes)
-            _write(
-                destination / f"oracle/checker/{agent_id}/{filename}",
-                (plain_stage + "\n").encode("utf-8"),
-            )
-            stages.append(
-                EvidenceStage(
-                    agent_id=agent_id,
-                    ordinal=ordinal,
-                    key_version=key_version,
-                    release_offset_ms=(ordinal - 1) * definition.stage_interval_ms,
-                    source_path=source_path,
-                    token_count=len(_words(plain_stage)),
-                    sha256=sha256_hex(cipher_bytes),
+def _owner_share(design: BlockOracleDesign) -> float:
+    shares: list[float] = []
+    for agent_index, agent_id in enumerate(AGENT_IDS):
+        for word in design.specialists[agent_id]:
+            exposure = design.profiles[word].exposures
+            pre_total = exposure[0] + exposure[2] + exposure[4]
+            post_total = exposure[1] + exposure[3] + exposure[5]
+            shares.append(
+                min(
+                    exposure[agent_index * 2] / pre_total,
+                    exposure[agent_index * 2 + 1] / post_total,
                 )
             )
-        cipher_by_agent[agent_id] = tuple(cipher_stages)
+    if not shares:
+        raise ValueError("Oracle design has no specialist ownership evidence.")
+    return min(shares)
 
-    ordered_plain = [stage for agent_id in agent_ids for stage in streams[agent_id]]
-    ordered_cipher = [stage for agent_id in agent_ids for stage in cipher_by_agent[agent_id]]
-    full_plaintext = "\n\n".join(ordered_plain) + "\n"
-    full_ciphertext = "\n\n".join(ordered_cipher) + "\n"
-    _write(destination / "evaluation/ciphertext.txt", full_ciphertext.encode("utf-8"))
-    _write(destination / "oracle/plaintext.txt", full_plaintext.encode("utf-8"))
-    _write(destination / "oracle/rekey-evidence.json", canonical_json_bytes(evidence))
 
-    reference_artifacts = []
-    for document in build_reference_corpus(reference_sources):
-        relative = Path("public/reference") / f"{document.document_id}.txt"
+def _manifest_metrics(result: AllocationResult) -> AllocationMetrics:
+    design = result.design
+    metrics = design.metrics
+    return AllocationMetrics(
+        region_deviation=metrics.region_deviation,
+        stage_deviation=metrics.stage_deviation,
+        solo_changed_set_coverage=max(metrics.solo_coverage.values()),
+        min_owner_share=_owner_share(design),
+        anchor_count=len(design.anchors),
+        sentinel_count=len(design.sentinels),
+        specialist_counts={agent_id: len(design.specialists[agent_id]) for agent_id in AGENT_IDS},
+        min_owner_occurrences_per_region=metrics.min_owner_occurrences_per_region,
+        min_sentinel_occurrences_per_agent_region=(
+            metrics.min_sentinel_occurrences_per_agent_region
+        ),
+        unmatched_control_count=len(design.changed_types) - len(design.controls),
+        max_control_distance=metrics.maximum_control_distance,
+    )
+
+
+def _stage_plaintext(assignment: tuple[ParagraphAssignment, ...]) -> str:
+    return serialize_paragraphs(
+        tuple(
+            item.paragraph.text
+            for item in sorted(assignment, key=lambda item: item.paragraph.ordinal)
+        )
+    )
+
+
+def _variant_stage_bytes(
+    assignments: tuple[ParagraphAssignment, ...],
+    *,
+    base_key: dict[str, str],
+    revised_key: dict[str, str],
+    variant_id: str,
+) -> tuple[dict[tuple[str, int], bytes], dict[tuple[str, int], bytes]]:
+    plaintext: dict[tuple[str, int], bytes] = {}
+    ciphertext: dict[tuple[str, int], bytes] = {}
+    for agent_id in AGENT_IDS:
+        for stage in range(1, STAGE_COUNT + 1):
+            cell = tuple(
+                item for item in assignments if item.agent_id == agent_id and item.stage == stage
+            )
+            plain = _stage_plaintext(cell)
+            key = revised_key if variant_id == "rekey" and stage >= BOUNDARY_STAGE else base_key
+            plaintext[agent_id, stage] = plain.encode("utf-8")
+            ciphertext[agent_id, stage] = apply_mapping(plain, key).encode("utf-8")
+    return plaintext, ciphertext
+
+
+def _manipulation_masses(
+    assignments: tuple[ParagraphAssignment, ...],
+    changed_types: frozenset[str],
+) -> tuple[float, dict[str, float]]:
+    changed_by_agent = {agent_id: 0 for agent_id in AGENT_IDS}
+    total_by_agent = {agent_id: 0 for agent_id in AGENT_IDS}
+    for item in assignments:
+        if item.stage < BOUNDARY_STAGE:
+            continue
+        counts = item.paragraph.counts()
+        total_by_agent[item.agent_id] += item.paragraph.word_count
+        changed_by_agent[item.agent_id] += sum(counts[word] for word in changed_types)
+    masses = {
+        agent_id: changed_by_agent[agent_id] / total_by_agent[agent_id] for agent_id in AGENT_IDS
+    }
+    total = sum(total_by_agent.values())
+    return sum(changed_by_agent.values()) / total, masses
+
+
+def validate_pair(
+    *,
+    stationary_stage_bytes: Mapping[tuple[str, int], bytes],
+    rekey_stage_bytes: Mapping[tuple[str, int], bytes],
+    boundary_stage: int,
+    stationary_old_key_loss: float,
+    rekey_old_key_loss: float,
+    changed_token_mass_by_agent: Mapping[str, float],
+) -> None:
+    expected = {
+        (agent_id, ordinal) for agent_id in AGENT_IDS for ordinal in range(1, STAGE_COUNT + 1)
+    }
+    if set(stationary_stage_bytes) != expected or set(rekey_stage_bytes) != expected:
+        raise ValueError("Paired variants must contain complete matching stage geometry.")
+    if boundary_stage != BOUNDARY_STAGE:
+        raise ValueError("Paired variants must use the stage-four boundary.")
+    if any(
+        stationary_stage_bytes[key] != rekey_stage_bytes[key]
+        for key in expected
+        if key[1] < boundary_stage
+    ):
+        raise ValueError("Paired variants diverge before the manipulation boundary.")
+    if stationary_old_key_loss != 0:
+        raise ValueError("Stationary old-key loss must be zero.")
+    if rekey_old_key_loss < MINIMUM_MANIPULATION_MASS:
+        raise ValueError("Re-key old-key loss is below the declared minimum.")
+    if set(changed_token_mass_by_agent) != set(AGENT_IDS) or any(
+        mass < MINIMUM_MANIPULATION_MASS for mass in changed_token_mass_by_agent.values()
+    ):
+        raise ValueError("Every agent must receive the minimum post-boundary changed mass.")
+
+
+def _write_references(
+    destination: Path,
+    sources: tuple[SourceDefinition, ...],
+    variant_id: str,
+) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    for document in build_reference_corpus(sources):
+        relative = Path("variants") / variant_id / "references" / f"{document.document_id}.txt"
         content = document.content.encode("utf-8")
-        reference_artifacts.append(
+        artifacts.append(
             {
                 "sourceId": document.source_id,
                 "sourceSha256": document.sha256,
@@ -380,121 +282,371 @@ def _build_into(
                 **_write(destination / relative, content),
             }
         )
-    if definition.agent_count == 3:
-        readme = (
-            "Palimpsest provides three agents with different private staged evidence and "
-            "a shared target-excluded reference corpus.\n"
-        )
-    else:
-        readme = (
-            f"Palimpsest provides {definition.agent_count} agents with different private "
-            "staged evidence and a shared target-excluded reference corpus.\n"
-        )
-    _write(destination / "public/README.md", readme.encode("utf-8"))
-    _write(
-        destination / "public/reference-manifest.json",
-        canonical_json_bytes({"schemaVersion": 1, "artifacts": reference_artifacts}),
-    )
-    oracle = {
-        "schemaVersion": 2,
-        "keyPaths": [path.as_posix() for path in key_paths],
-        "plaintextPath": "oracle/plaintext.txt",
-        "checkerRoot": "oracle/checker",
-        "rekeyEvidencePath": "oracle/rekey-evidence.json",
-    }
-    _write(destination / "oracle/manifest.json", canonical_json_bytes(oracle))
+    return artifacts
 
-    source_record = TargetSource(
-        source_id=target_source.source_id,
-        sha256=target_source.sha256,
-        chapter_start=definition.chapter_start,
-        chapter_end=definition.chapter_end,
-    )
-    reference_records = tuple(
-        ReferenceSource(
-            source_id=source.source_id,
-            sha256=source.sha256,
-            path=Path("public/reference") / f"{source.source_id}-reference.txt",
+
+def _complete_ciphertext(
+    design: BlockDesign,
+    *,
+    base_key: dict[str, str],
+    revised_key: dict[str, str],
+    variant_id: str,
+) -> bytes:
+    assignment_by_ordinal = {
+        item.paragraph.ordinal: item for item in design.allocation.allocation.assignments
+    }
+    rendered: list[str] = []
+    for paragraph in design.window.paragraphs:
+        assignment = assignment_by_ordinal[paragraph.ordinal]
+        key = (
+            revised_key
+            if variant_id == "rekey" and assignment.stage >= BOUNDARY_STAGE
+            else base_key
         )
-        for source in reference_sources
+        rendered.append(apply_mapping(paragraph.text, key))
+    return serialize_paragraphs(tuple(rendered)).encode("utf-8")
+
+
+def _build_variant(
+    destination: Path,
+    design: BlockDesign,
+    *,
+    variant_id: str,
+    stage_bytes: Mapping[tuple[str, int], bytes],
+    base_key: dict[str, str],
+    revised_key: dict[str, str],
+    reference_sources: tuple[SourceDefinition, ...],
+    changed_symbols_sha256: str,
+) -> BuildVariant:
+    stages: list[EvidenceStage] = []
+    for agent_id in AGENT_IDS:
+        for ordinal in range(1, STAGE_COUNT + 1):
+            relative = (
+                Path("variants")
+                / variant_id
+                / "private"
+                / agent_id
+                / "stages"
+                / stage_filename(ordinal, STAGE_COUNT)
+            )
+            content = stage_bytes[agent_id, ordinal]
+            _write(destination / relative, content)
+            stages.append(
+                EvidenceStage(
+                    agent_id=agent_id,
+                    ordinal=ordinal,
+                    key_version=(1 if variant_id == "rekey" and ordinal >= BOUNDARY_STAGE else 0),
+                    source_path=relative,
+                    token_count=len(_words(content.decode("utf-8"))),
+                    sha256=sha256_hex(content),
+                )
+            )
+    complete_path = Path(f"variants/{variant_id}/complete/ciphertext.txt")
+    complete = _complete_ciphertext(
+        design,
+        base_key=base_key,
+        revised_key=revised_key,
+        variant_id=variant_id,
     )
-    private_roots = {agent_id: Path(f"private/{agent_id}/stages") for agent_id in agent_ids}
-    build_basis = {
-        "schemaVersion": 2,
-        "seed": definition.seed,
-        "source": source_record.to_dict(),
-        "references": [reference.to_dict() for reference in reference_records],
-        "agentIds": list(agent_ids),
-        "stageCount": definition.stage_count,
-        "stageIntervalMs": definition.stage_interval_ms,
-        "rekeys": [transition.to_dict() for transition in transitions],
-        "publicCiphertextSha256": sha256_hex(full_ciphertext.encode("utf-8")),
-        "plaintextSha256": sha256_hex(full_plaintext.encode("utf-8")),
-        "referenceArtifacts": reference_artifacts,
+    complete_record = _write(destination / complete_path, complete)
+    references = _write_references(destination, reference_sources, variant_id)
+    transitions = (
+        ()
+        if variant_id == "stationary"
+        else (
+            RekeyTransition(
+                at_stage=BOUNDARY_STAGE,
+                key_version=1,
+                key_path=Path("oracle/keys/rekey-stage-04.json"),
+                changed_symbols_sha256=changed_symbols_sha256,
+            ),
+        )
+    )
+    basis = {
+        "schemaVersion": 1,
+        "blockId": design.block.block_id,
+        "variantId": variant_id,
+        "allocationId": design.allocation.allocation.allocation_id,
+        "windowSha256": design.window.sha256,
+        "complete": complete_record,
+        "references": references,
         "stages": [stage.to_dict() for stage in stages],
+        "keyTransitions": [transition.to_dict() for transition in transitions],
+    }
+    return BuildVariant(
+        variant_id=variant_id,
+        build_id="build-" + sha256_hex(canonical_json_bytes(basis)),
+        public_ciphertext_path=complete_path,
+        reference_corpus_path=Path(f"variants/{variant_id}/references"),
+        private_stage_roots={
+            agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
+            for agent_id in AGENT_IDS
+        },
+        stages=tuple(stages),
+        key_transitions=transitions,
+    )
+
+
+def _build_into(
+    root: Path,
+    destination: Path,
+    block_id: str,
+) -> PuzzleBuild:
+    catalog = load_block_catalog(root / "experiments/blocks.json")
+    block = catalog.block(block_id)
+    if block.window.is_discovery:
+        raise ValueError(f"Block {block_id} must be discovered and pinned before a normal build.")
+    registry = load_source_registry(root)
+    try:
+        source = registry[block.source_id]
+        reference_sources = tuple(registry[source_id] for source_id in block.references)
+    except KeyError as error:
+        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+
+    design = design_block(_paragraph_units(source), block, discover=False)
+    window_plaintext = serialize_paragraphs(
+        tuple(paragraph.text for paragraph in design.window.paragraphs)
+    )
+    vocabulary = sorted(set(_words(window_plaintext)))
+    base_key = stationary_key(vocabulary, _seed_hex(block.seed, "base-key"))
+    changed_types = design.allocation.design.changed_types
+    controls = tuple(match.control_type for match in design.allocation.design.controls)
+    revised_key = revise_explicit_types(
+        prior_key=base_key,
+        changed_types=changed_types,
+        stable_controls=controls,
+        seed_hex=_seed_hex(block.seed, "rekey-stage-04"),
+    )
+
+    _write(destination / "oracle/keys/base.json", canonical_json_bytes(base_key))
+    _write(
+        destination / "oracle/keys/rekey-stage-04.json",
+        canonical_json_bytes(revised_key),
+    )
+    _write(destination / "oracle/plaintext.txt", window_plaintext.encode("utf-8"))
+
+    allocation_record = _allocation_record(design)
+    allocation_bytes = canonical_json_bytes(allocation_record)
+    _write(destination / "oracle/allocation.json", allocation_bytes)
+
+    oracle_record = _oracle_record(design.allocation.design)
+    oracle_bytes = canonical_json_bytes(oracle_record)
+    _write(destination / "oracle/design.json", oracle_bytes)
+    anchors_sha256 = sha256_hex(canonical_json_bytes(oracle_record["anchors"]))
+    sentinels_sha256 = sha256_hex(canonical_json_bytes(oracle_record["sentinels"]))
+    specialists_sha256 = sha256_hex(canonical_json_bytes(oracle_record["specialists"]))
+    controls_sha256 = sha256_hex(canonical_json_bytes(oracle_record["controls"]))
+    changed_symbols_sha256 = sha256_hex(canonical_json_bytes(list(changed_types)))
+
+    assignments = design.allocation.allocation.assignments
+    stationary_plain, stationary_bytes = _variant_stage_bytes(
+        assignments,
+        base_key=base_key,
+        revised_key=revised_key,
+        variant_id="stationary",
+    )
+    rekey_plain, rekey_bytes = _variant_stage_bytes(
+        assignments,
+        base_key=base_key,
+        revised_key=revised_key,
+        variant_id="rekey",
+    )
+    if stationary_plain != rekey_plain:
+        raise RuntimeError("Paired variants do not share one plaintext allocation.")
+    for (agent_id, ordinal), content in stationary_plain.items():
+        _write(
+            destination / "oracle" / "checker" / agent_id / stage_filename(ordinal, STAGE_COUNT),
+            content,
+        )
+
+    rekey_loss, changed_mass_by_agent = _manipulation_masses(
+        assignments,
+        frozenset(changed_types),
+    )
+    validate_pair(
+        stationary_stage_bytes=stationary_bytes,
+        rekey_stage_bytes=rekey_bytes,
+        boundary_stage=BOUNDARY_STAGE,
+        stationary_old_key_loss=0.0,
+        rekey_old_key_loss=rekey_loss,
+        changed_token_mass_by_agent=changed_mass_by_agent,
+    )
+    manipulation_record = {
+        "schemaVersion": 1,
+        "preBoundaryIdentical": True,
+        "stationaryOldKeyLoss": 0.0,
+        "rekeyOldKeyLoss": rekey_loss,
+        "changedTokenMassByAgent": changed_mass_by_agent,
+    }
+    manipulation_bytes = canonical_json_bytes(manipulation_record)
+    _write(destination / "oracle/manipulation-check.json", manipulation_bytes)
+
+    stationary = _build_variant(
+        destination,
+        design,
+        variant_id="stationary",
+        stage_bytes=stationary_bytes,
+        base_key=base_key,
+        revised_key=revised_key,
+        reference_sources=reference_sources,
+        changed_symbols_sha256=changed_symbols_sha256,
+    )
+    rekey = _build_variant(
+        destination,
+        design,
+        variant_id="rekey",
+        stage_bytes=rekey_bytes,
+        base_key=base_key,
+        revised_key=revised_key,
+        reference_sources=reference_sources,
+        changed_symbols_sha256=changed_symbols_sha256,
+    )
+    allocation_summary = AllocationSummary(
+        allocation_id=design.allocation.allocation.allocation_id,
+        tier=design.allocation.tier.name,
+        metrics=_manifest_metrics(design.allocation),
+        rejected_tiers=tuple(
+            TierRejection(rejection.tier, rejection.reasons)
+            for rejection in design.allocation.rejected_tiers
+        ),
+        path=Path("oracle/allocation.json"),
+        sha256=sha256_hex(allocation_bytes),
+    )
+    oracle_summary = ManifestOracleDesign(
+        path=Path("oracle/design.json"),
+        sha256=sha256_hex(oracle_bytes),
+        anchors_sha256=anchors_sha256,
+        sentinels_sha256=sentinels_sha256,
+        specialists_sha256=specialists_sha256,
+        controls_sha256=controls_sha256,
+    )
+    manipulation = ManipulationCheck(
+        path=Path("oracle/manipulation-check.json"),
+        sha256=sha256_hex(manipulation_bytes),
+        pre_boundary_identical=True,
+        stationary_old_key_loss=0.0,
+        rekey_old_key_loss=rekey_loss,
+        changed_token_mass_by_agent=changed_mass_by_agent,
+    )
+    pair_basis = {
+        "schemaVersion": 3,
+        "blockId": block.block_id,
+        "sourceSha256": source.sha256,
+        "windowSha256": design.window.sha256,
+        "allocationSha256": allocation_summary.sha256,
+        "oracleDesignSha256": oracle_summary.sha256,
+        "manipulationSha256": manipulation.sha256,
+        "stationaryBuildId": stationary.build_id,
+        "rekeyBuildId": rekey.build_id,
     }
     build = PuzzleBuild(
-        build_id="build-" + sha256_hex(canonical_json_bytes(build_basis)),
-        seed=definition.seed,
-        source=source_record,
-        references=reference_records,
-        agent_ids=agent_ids,
-        stage_count=definition.stage_count,
-        stage_interval_ms=definition.stage_interval_ms,
-        rekeys=tuple(transitions),
-        public_ciphertext_path=Path("evaluation/ciphertext.txt"),
-        reference_corpus_path=Path("public/reference"),
-        private_stage_roots=private_roots,
-        oracle_root=Path("oracle"),
-        base_key_path=key_paths[0],
-        stages=tuple(stages),
+        paired_build_id="paired-" + sha256_hex(canonical_json_bytes(pair_basis)),
+        block_id=block.block_id,
+        source=TargetSource(source.source_id, source.sha256),
+        references=tuple(
+            ReferenceSource(reference.source_id, reference.sha256)
+            for reference in reference_sources
+        ),
+        seed=block.seed,
+        window=BuildWindow(
+            design.window.paragraph_start,
+            design.window.paragraph_end,
+            design.window.word_count,
+            design.window.sha256,
+        ),
+        agent_ids=AGENT_IDS,
+        stage_count=STAGE_COUNT,
+        boundary_stage=BOUNDARY_STAGE,
+        allocation=allocation_summary,
+        oracle_design=oracle_summary,
+        base_key_path=Path("oracle/keys/base.json"),
+        manipulation_check=manipulation,
+        stationary=stationary,
+        rekey=rekey,
     )
+    PuzzleBuild.from_dict(build.to_dict())
     _write(destination / "puzzle-build.json", canonical_json_bytes(build.to_dict()))
     return build
 
 
-def build_puzzle(root: Path, output: Path, puzzle: object) -> PuzzleBuild:
+def build_puzzle(root: Path, output: Path, block_id: str) -> PuzzleBuild:
     root = root.resolve()
     output = output.resolve()
-    definition = _decode_definition(puzzle)
-    if output.exists() and any(output.iterdir()):
-        raise FileExistsError(f"Puzzle build output is non-empty: {output}")
-    registry = load_source_registry(root)
-    selected_ids = (definition.target_id, *definition.reference_ids)
-    unknown = tuple(source_id for source_id in selected_ids if source_id not in registry)
-    if unknown:
-        raise ValueError(f"Unknown registered corpus: {unknown[0]}")
-
+    _assert_available_output(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
     try:
-        result = _build_into(root, staging, definition, registry)
-        if output.exists():
-            output.rmdir()
-        os.replace(staging, output)
-        return result
+        build = _build_into(root, staging, block_id)
+        _publish_staging(staging, output)
+        return build
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+
+
+def discover_block(root: Path, output: Path, block_id: str) -> dict[str, Any]:
+    root = root.resolve()
+    output = output.resolve()
+    _assert_available_output(output)
+    catalog = load_block_catalog(root / "experiments/blocks.json")
+    block = catalog.block(block_id)
+    if not block.window.is_discovery:
+        raise ValueError(f"Block {block_id} already has a committed discovery window.")
+    registry = load_source_registry(root)
+    try:
+        source = registry[block.source_id]
+    except KeyError as error:
+        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+    design = design_block(_paragraph_units(source), block, discover=True)
+    record = {
+        "schemaVersion": 1,
+        "blockId": block.block_id,
+        "window": {
+            "paragraphStart": design.window.paragraph_start,
+            "paragraphEnd": design.window.paragraph_end,
+            "wordCount": design.window.word_count,
+            "sha256": design.window.sha256,
+        },
+        "tier": design.allocation.tier.name,
+        "rejectedTiers": [
+            {"tier": rejection.tier, "reasons": list(rejection.reasons)}
+            for rejection in design.allocation.rejected_tiers
+        ],
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
+    try:
+        _write(staging / "discovery.json", canonical_json_bytes(record))
+        _publish_staging(staging, output)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return {
+        "blockId": block.block_id,
+        "discoveryPath": str((output / "discovery.json").resolve()),
+        "window": record["window"],
+        "tier": design.allocation.tier.name,
+    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--block", required=True)
+    parser.add_argument("--discover", choices=("true",))
     args = parser.parse_args()
-    puzzle = json.load(sys.stdin)
-    build = build_puzzle(args.root, args.output, puzzle)
-    print(
-        canonical_json_bytes(
-            {
-                "buildId": build.build_id,
-                "buildPath": str(args.output.resolve()),
-                "agentIds": list(build.agent_ids),
-                "stageCount": build.stage_count,
-            }
-        ).decode()
-    )
+    if args.discover == "true":
+        result = discover_block(args.root, args.output, args.block)
+    else:
+        build = build_puzzle(args.root, args.output, args.block)
+        result = {
+            "buildId": build.rekey.build_id,
+            "buildPath": str(args.output.resolve()),
+            "agentIds": list(build.agent_ids),
+            "stageCount": build.stage_count,
+        }
+    print(canonical_json_bytes(result).decode())
 
 
 if __name__ == "__main__":

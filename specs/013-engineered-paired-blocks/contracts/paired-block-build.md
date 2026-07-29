@@ -31,18 +31,22 @@ The five-entry checked-in catalog at `experiments/blocks.json` uses strict canon
 ```json
 {
   "schemaVersion": 1,
-  "blockId": "calibration-theron-ware",
-  "phase": "calibration",
-  "sourceId": "theron-ware",
-  "seed": 130013,
-  "references": ["middlemarch", "moby-dick", "jane-eyre"],
-  "window": {
-    "paragraphStart": 0,
-    "paragraphEnd": 0,
-    "wordCount": 0,
-    "sha256": ""
-  },
-  "boundaryStage": 4
+  "blocks": [
+    {
+      "blockId": "calibration-theron-ware",
+      "phase": "calibration",
+      "sourceId": "theron-ware",
+      "seed": 130013,
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "window": {
+        "paragraphStart": 0,
+        "paragraphEnd": 0,
+        "wordCount": 0,
+        "sha256": ""
+      },
+      "boundaryStage": 4
+    }
+  ]
 }
 ```
 
@@ -105,7 +109,7 @@ Window starts are tried in source order, capped at 512. For a start, the end is 
 
 For every window, tiers reset in strict, balanced, fallback order. Each region's initial paragraph order is `(-wordCount, SHA256("palimpsest-block:v1:<seed>:<blockId>:<tier>:<region>:<paragraphSha256>"), ordinal)`. A paragraph goes to the cell minimizing `(currentTokens, SHA256("<paragraphRank>:<cell>"), cellIndex)`.
 
-The score tuple is `(hardViolationCount, regionDeviationExcess, stageDeviationExcess, anchorDeficit, sentinelDeficit, specialistDeficit, ownerShareDeficit, soloCoverageExcess, changedMassDeficit, unmatchedControlCount, controlDistanceExcess, oldKeyLossDeficit, assignmentSignature)`. Each step evaluates all same-region moves that keep the source cell nonempty, takes the lexicographically smallest strictly improving move, ties by paragraph ordinal and destination cell, and stops on feasibility, no improvement, or 384 accepted moves.
+Each tier receives one fresh deterministic allocation. The builder evaluates the complete geometry, records stable rejection reason codes when that allocation fails, and proceeds to the next tier. No paragraph-move optimizer is part of the treatment builder.
 
 For types `a` and `b`, frequency distance is `abs(log1p(countA)-log1p(countB))/log1p(maxPostCount)`. Exposure distance is the mean absolute difference of normalized six-component agent-by-region exposure vectors. Context distance is Jaccard distance between immediate normalized-word neighbor sets. Their arithmetic mean is control distance. Changed types are ordered by `(-postCount, word)` and matched by deterministic augmenting paths over controls ordered by `(distance, word)`, using only edges within the tier threshold.
 

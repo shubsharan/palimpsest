@@ -11,11 +11,13 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
 - [Feature 010 specification](specs/010-agent-sandbox-lifecycle/spec.md): attempt-scoped agent sandbox and recovery behavior.
 - [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
+- [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
 - [Feature 011 quickstart](specs/011-configurable-research-runs/quickstart.md): current setup and acceptance flow.
 - [Experiment schema](experiments/schema.json): strict version-1 manifest format.
-- [Baseline experiment](experiments/config.yaml): the current three-agent research condition.
+- [Block catalog](experiments/blocks.json): five pinned paired study blocks.
+- [Baseline experiment](experiments/config.yaml): the current shared-Git re-key run.
 
-Features 011 and 012 provide the configurable research runner and its verification boundary. Features 013 through 015 add engineered paired blocks, four communication/key conditions, and the frozen five-block protocol without adding services, accounts, automated behavioral review, or a prescribed workflow.
+Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs while preserving the existing shared-Git re-key runtime. Feature 014 will add the four communication/key conditions; Feature 015 will add the frozen five-block protocol.
 
 ## Setup
 
@@ -30,27 +32,29 @@ The first bootstrap may use the network. Once the uv cache is populated, local c
 
 ## Configure A Run
 
-Copy `experiments/config.yaml` and edit that one file. Its main sections are:
+Scientific block inputs live in `experiments/blocks.json`. The run configuration in `experiments/config.yaml` selects one block and declares operational settings:
 
-- `puzzle`: registered target and reference corpora, one-based chapter range, seed, agent and stage counts, release interval, and zero or more re-keys;
+- `puzzle`: one block ID and the current arithmetic stage interval;
 - `limits`: per-agent token budget and attempt wall time;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
 - `models`: reusable provider/model profiles and non-secret settings; and
 - `runs`: homogeneous or ordered mixed-model assignments plus repetitions.
 
-Unknown keys and invalid relationships fail before a build or attempt is created. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary; the experiment does not require provider SDK code in the runner and performs no automatic fallback or retry.
+The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Unknown keys and mismatched block identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
 
 ## Run
 
-Build one declared puzzle:
+Build both variants of one pinned block without provider access:
 
 ```bash
 pnpm puzzle:build -- \
-  --config experiments/config.yaml \
+  --block calibration-theron-ware \
   --output artifacts/build
 ```
 
-Run one named condition:
+The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Until Feature 014 introduces canonical condition selection, run and experiment commands use the re-key variant to preserve the existing baseline.
+
+Run one named model assignment:
 
 ```bash
 pnpm puzzle:run -- \
@@ -104,4 +108,4 @@ Generated runs belong under the ignored `artifacts/` directory. Provider-backed 
 
 ## Scope
 
-Palimpsest deterministically constructs and scores configured puzzle conditions. Live model decisions, provider serving behavior, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner does not isolate the value of collaboration, certify belief revision, or provide a hardened public benchmark.
+Palimpsest deterministically constructs paired puzzle blocks and scores selected runs. Feature 013 establishes controlled information geometry, not a behavioral result. Live model decisions, provider serving behavior, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner does not certify collaboration or belief revision or provide a hardened public benchmark.

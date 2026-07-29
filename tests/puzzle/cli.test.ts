@@ -1,28 +1,16 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { buildPuzzle } from "../../src/build.js";
-import type { PuzzleDefinition } from "../../src/config.js";
 import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
-const smallPuzzle: PuzzleDefinition = {
-  target: {
-    corpus: "middlemarch",
-    chapters: { start: 10, end: 15 },
-  },
-  references: ["jane-eyre", "moby-dick"],
-  seed: 17,
-  agentCount: 2,
-  stageCount: 4,
-  stageIntervalMs: 10,
-  rekeys: [],
-};
+const block = "calibration-theron-ware";
 
 interface CommandResult {
   exitCode: number;
@@ -117,6 +105,10 @@ describe("operator CLI contract", () => {
     expect(
       parseFlags([
         "--",
+        "--block",
+        block,
+        "--discover",
+        "true",
         "--config",
         "experiments/config.yaml",
         "--run",
@@ -138,6 +130,8 @@ describe("operator CLI contract", () => {
       ]),
     ).toEqual(
       new Map([
+        ["--block", block],
+        ["--discover", "true"],
         ["--config", "experiments/config.yaml"],
         ["--run", "mixed"],
         ["--output", "attempt"],
@@ -158,7 +152,7 @@ describe("operator CLI contract", () => {
     );
   });
 
-  it("builds from one experiment config and emits one absolute result", async () => {
+  it("builds one requested block and emits one absolute result", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-cli-"));
     const output = join(temporaryRoot, "build");
     const scripts = await packageScripts();
@@ -167,14 +161,7 @@ describe("operator CLI contract", () => {
 
     const result = await execute(
       process.execPath,
-      [
-        tsxCli,
-        ...(command?.slice(1) ?? []),
-        "--config",
-        "experiments/config.yaml",
-        "--output",
-        output,
-      ],
+      [tsxCli, ...(command?.slice(1) ?? []), "--block", block, "--output", output],
       { cwd: root },
     );
 
@@ -187,47 +174,53 @@ describe("operator CLI contract", () => {
     });
   }, 30_000);
 
-  it("rejects an invalid config before creating a build directory", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-config-"));
-    const config = join(temporaryRoot, "invalid.yaml");
+  it("rejects an invalid discovery value before creating a build directory", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-discovery-"));
     const output = join(temporaryRoot, "build");
-    const baseline = await readFile(join(root, "experiments", "config.yaml"), "utf8");
-    await writeFile(config, `${baseline}\nunknownTopLevelKey: true\n`, "utf8");
     const scripts = await packageScripts();
     const command = scripts["puzzle:build"]?.split(/\s+/);
 
     const result = await execute(
       process.execPath,
-      [tsxCli, ...(command?.slice(1) ?? []), "--config", config, "--output", output],
+      [
+        tsxCli,
+        ...(command?.slice(1) ?? []),
+        "--block",
+        block,
+        "--discover",
+        "false",
+        "--output",
+        output,
+      ],
       { cwd: root },
     );
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Experiment configuration is invalid");
+    expect(result.stderr).toContain("--discover must be exactly true");
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rebuilds dynamic geometry byte-identically", async () => {
+  it("rebuilds one pinned block byte-identically", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-determinism-"));
     const firstOutput = join(temporaryRoot, "first");
     const secondOutput = join(temporaryRoot, "second");
     const first = await buildPuzzle({
       root,
       output: firstOutput,
-      puzzle: smallPuzzle,
+      block,
     });
     const second = await buildPuzzle({
       root,
       output: secondOutput,
-      puzzle: smallPuzzle,
+      block,
     });
 
     expect(first).toEqual({
       buildId: expect.stringMatching(/^build-[0-9a-f]{64}$/),
       buildPath: firstOutput,
-      agentIds: ["agent-1", "agent-2"],
-      stageCount: 4,
+      agentIds: ["agent-1", "agent-2", "agent-3"],
+      stageCount: 6,
     });
     expect(second).toEqual({ ...first, buildPath: secondOutput });
 

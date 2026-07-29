@@ -87,12 +87,19 @@ describe("offline behavior-neutral runner", () => {
     );
 
     expect(buildManifest).toMatchObject({
-      schemaVersion: 2,
-      buildId: result.build.buildId,
+      schemaVersion: 3,
+      blockId: "calibration-theron-ware",
       agentIds: result.build.agentIds,
       stageCount: result.build.stageCount,
-      stageIntervalMs: 20,
-      rekeys: [{ atStage: 4, keyVersion: 1, changedTokenMass: 0.2 }],
+      boundaryStage: 4,
+      variants: {
+        stationary: { variantId: "stationary", keyTransitions: [] },
+        rekey: {
+          variantId: "rekey",
+          buildId: result.build.buildId,
+          keyTransitions: [{ atStage: 4, keyVersion: 1 }],
+        },
+      },
     });
     expect(attemptSummary).toMatchObject({
       schemaVersion: 2,
@@ -111,7 +118,7 @@ describe("offline behavior-neutral runner", () => {
       "--released",
       "1",
       "--candidate",
-      join(result.build.buildPath, buildManifest.oracleRoot, "checker", "agent-1", "stage-01.txt"),
+      join(result.build.buildPath, "oracle", "checker", "agent-1", "stage-01.txt"),
     ]);
     expect(checker).toMatchObject({
       matchedWords: expect.any(Number),
@@ -136,9 +143,7 @@ describe("offline behavior-neutral runner", () => {
     expect(
       releases.every((event) => {
         const ordinal = asRecord(event.data).ordinal;
-        return (
-          typeof ordinal === "number" && event.atMs >= (ordinal - 1) * buildManifest.stageIntervalMs
-        );
+        return typeof ordinal === "number" && event.atMs >= (ordinal - 1) * 20;
       }),
     ).toBe(true);
 

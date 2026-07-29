@@ -143,6 +143,7 @@ describe("run coordinator", () => {
         agents,
         tokenBudgetPerAgent: 20,
         wallTimeMs: 2_000,
+        stageIntervalMs: 10,
         sandbox: new FakeCommandSandbox(),
       }),
     ).rejects.toThrow(/preflight receipt is missing or invalid/i);

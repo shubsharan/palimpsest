@@ -39,58 +39,10 @@
     "puzzle": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "target",
-        "references",
-        "seed",
-        "agentCount",
-        "stageCount",
-        "stageIntervalMs",
-        "rekeys"
-      ],
+      "required": ["block", "stageIntervalMs"],
       "properties": {
-        "target": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["corpus", "chapters"],
-          "properties": {
-            "corpus": { "$ref": "#/$defs/identifier" },
-            "chapters": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["start", "end"],
-              "properties": {
-                "start": { "type": "integer", "minimum": 1 },
-                "end": { "type": "integer", "minimum": 1 }
-              }
-            }
-          }
-        },
-        "references": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": { "$ref": "#/$defs/identifier" }
-        },
-        "seed": { "type": "integer" },
-        "agentCount": { "type": "integer", "minimum": 2 },
-        "stageCount": { "type": "integer", "minimum": 1 },
-        "stageIntervalMs": { "type": "integer", "minimum": 1 },
-        "rekeys": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["atStage", "changedTokenMass"],
-            "properties": {
-              "atStage": { "type": "integer", "minimum": 2 },
-              "changedTokenMass": {
-                "type": "number",
-                "exclusiveMinimum": 0,
-                "exclusiveMaximum": 1
-              }
-            }
-          }
-        }
+        "block": { "$ref": "#/$defs/identifier" },
+        "stageIntervalMs": { "type": "integer", "minimum": 1 }
       }
     },
     "limits": {

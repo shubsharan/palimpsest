@@ -14,12 +14,123 @@ import {
   publishExperimentSummary,
 } from "./artifacts.js";
 import { readJsonObject } from "./python.js";
-import { testAttemptSummary, testBuildManifest, testExperimentSummary } from "./test-helpers.js";
+import { testAttemptSummary, testExperimentSummary } from "./test-helpers.js";
 
 const digest = "a".repeat(64);
 
-const buildManifest = testBuildManifest;
 const attemptSummary = testAttemptSummary;
+
+function buildStages(variantId: "stationary" | "rekey"): Record<string, unknown>[] {
+  return ["agent-1", "agent-2", "agent-3"].flatMap((agentId, agentIndex) =>
+    Array.from({ length: 6 }, (_, stageIndex) => {
+      const ordinal = stageIndex + 1;
+      const digestValue =
+        ordinal < 4
+          ? agentIndex * 6 + ordinal
+          : 100 + (variantId === "stationary" ? 0 : 18) + agentIndex * 6 + ordinal;
+      return {
+        agentId,
+        ordinal,
+        keyVersion: variantId === "rekey" && ordinal >= 4 ? 1 : 0,
+        sourcePath: `variants/${variantId}/private/${agentId}/stages/stage-${String(ordinal).padStart(2, "0")}.txt`,
+        tokenCount: 200,
+        sha256: digestValue.toString(16).padStart(64, "0"),
+      };
+    }),
+  );
+}
+
+function buildVariant(variantId: "stationary" | "rekey"): Record<string, unknown> {
+  return {
+    variantId,
+    buildId: `build-${variantId === "stationary" ? "c".repeat(64) : "d".repeat(64)}`,
+    publicCiphertextPath: `variants/${variantId}/complete/ciphertext.txt`,
+    referenceCorpusPath: `variants/${variantId}/references`,
+    privateStageRoots: Object.fromEntries(
+      ["agent-1", "agent-2", "agent-3"].map((agentId) => [
+        agentId,
+        `variants/${variantId}/private/${agentId}/stages`,
+      ]),
+    ),
+    stages: buildStages(variantId),
+    keyTransitions:
+      variantId === "stationary"
+        ? []
+        : [
+            {
+              atStage: 4,
+              keyVersion: 1,
+              keyPath: "oracle/keys/rekey-stage-04.json",
+              changedSymbolsSha256: "b".repeat(64),
+            },
+          ],
+  };
+}
+
+function buildManifest(): Record<string, unknown> {
+  return {
+    schemaVersion: 3,
+    pairedBuildId: `paired-${"e".repeat(64)}`,
+    blockId: "calibration-theron-ware",
+    source: { sourceId: "theron-ware", sha256: "f".repeat(64) },
+    references: [
+      { sourceId: "middlemarch", sha256: "1".repeat(64) },
+      { sourceId: "moby-dick", sha256: "2".repeat(64) },
+      { sourceId: "jane-eyre", sha256: "3".repeat(64) },
+    ],
+    seed: 130013,
+    window: {
+      paragraphStart: 10,
+      paragraphEnd: 80,
+      wordCount: 18_000,
+      sha256: "4".repeat(64),
+    },
+    agentIds: ["agent-1", "agent-2", "agent-3"],
+    stageCount: 6,
+    boundaryStage: 4,
+    allocation: {
+      allocationId: `allocation-${"5".repeat(64)}`,
+      tier: "balanced",
+      metrics: {
+        regionDeviation: 0.05,
+        stageDeviation: 0.15,
+        soloChangedSetCoverage: 0.6,
+        minOwnerShare: 0.61,
+        anchorCount: 12,
+        sentinelCount: 6,
+        specialistCounts: { "agent-1": 3, "agent-2": 3, "agent-3": 3 },
+        minOwnerOccurrencesPerRegion: 2,
+        minSentinelOccurrencesPerAgentRegion: 2,
+        unmatchedControlCount: 0,
+        maxControlDistance: 0.2,
+      },
+      rejectedTiers: [{ tier: "strict", reasons: ["region-deviation", "stage-deviation"] }],
+      path: "oracle/allocation.json",
+      sha256: "6".repeat(64),
+    },
+    oracleDesign: {
+      path: "oracle/design.json",
+      sha256: "7".repeat(64),
+      anchorsSha256: "8".repeat(64),
+      sentinelsSha256: "9".repeat(64),
+      specialistsSha256: digest,
+      controlsSha256: "b".repeat(64),
+    },
+    baseKeyPath: "oracle/keys/base.json",
+    manipulationCheck: {
+      path: "oracle/manipulation-check.json",
+      sha256: "c".repeat(64),
+      preBoundaryIdentical: true,
+      stationaryOldKeyLoss: 0,
+      rekeyOldKeyLoss: 0.2,
+      changedTokenMassByAgent: { "agent-1": 0.2, "agent-2": 0.2, "agent-3": 0.2 },
+    },
+    variants: {
+      stationary: buildVariant("stationary"),
+      rekey: buildVariant("rekey"),
+    },
+  };
+}
 
 function overlapResult(): Record<string, unknown> {
   return {
@@ -71,31 +182,15 @@ describe("stored artifact decoders", () => {
         stageCount: 6,
       }),
     ).toMatchObject({ agentIds: ["agent-1", "agent-2", "agent-3"], stageCount: 6 });
-    expect(decodeBuildManifest(buildManifest()).stages).toHaveLength(18);
+    expect(decodeBuildManifest(buildManifest()).variants.stationary.stages).toHaveLength(18);
+    expect(decodeBuildManifest(buildManifest()).variants.rekey.stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);
     expect(decodeExperimentSummary(testExperimentSummary()).attempts).toHaveLength(1);
     expect(decodeOverlapResult(overlapResult()).findings).toHaveLength(1);
     expect(decodeEvaluationRecord(evaluationRecord()).status).toBe("scored");
   });
 
-  it("accepts dynamic build and attempt geometry", () => {
-    expect(
-      decodeBuildManifest(buildManifest({ agentCount: 2, stageCount: 3, rekeyStages: [] })),
-    ).toMatchObject({
-      agentIds: ["agent-1", "agent-2"],
-      stageCount: 3,
-      rekeys: [],
-    });
-    expect(
-      decodeBuildManifest(buildManifest({ agentCount: 5, stageCount: 7, rekeyStages: [3, 6] })),
-    ).toMatchObject({
-      agentIds: ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"],
-      stageCount: 7,
-      rekeys: [
-        { atStage: 3, keyVersion: 1 },
-        { atStage: 6, keyVersion: 2 },
-      ],
-    });
+  it("keeps attempt geometry dynamic while paired builds stay fixed", () => {
     expect(
       decodeAttemptSummary(
         attemptSummary({
@@ -109,67 +204,93 @@ describe("stored artifact decoders", () => {
     ["non-object root", () => decodeBuildManifest([])],
     [
       "unsupported build version",
-      () => decodeBuildManifest({ ...buildManifest(), schemaVersion: 1 }),
+      () => decodeBuildManifest({ ...buildManifest(), schemaVersion: 2 }),
     ],
     [
       "target duplicated as reference",
       () => {
         const value = buildManifest();
         const references = [...(value.references as Record<string, unknown>[])];
-        references[0] = { ...references[0], sourceId: "middlemarch" };
+        references[0] = { ...references[0], sourceId: "theron-ware" };
         return decodeBuildManifest({ ...value, references });
       },
     ],
     [
-      "unordered rekeys",
-      () => {
-        const value = buildManifest({ stageCount: 6, rekeyStages: [3, 5] });
-        const rekeys = [...(value.rekeys as Record<string, unknown>[])].reverse();
-        return decodeBuildManifest({ ...value, rekeys });
-      },
+      "release timing field",
+      () => decodeBuildManifest({ ...buildManifest(), stageIntervalMs: 20 }),
     ],
     [
-      "wrong build field type",
-      () => decodeBuildManifest({ ...buildManifest(), stageIntervalMs: "20" }),
-    ],
-    [
-      "unsafe build path",
-      () => decodeBuildManifest({ ...buildManifest(), publicCiphertextPath: "../oracle.txt" }),
+      "unsafe oracle path",
+      () => decodeBuildManifest({ ...buildManifest(), baseKeyPath: "../base.json" }),
     ],
     [
       "impossible stage ordinal",
       () => {
         const value = buildManifest();
-        const stages = [...(value.stages as Record<string, unknown>[])];
+        const variants = value.variants as Record<string, Record<string, unknown>>;
+        const rekey = variants.rekey!;
+        const stages = [...(rekey.stages as Record<string, unknown>[])];
         stages[1] = { ...stages[1], ordinal: 3 };
-        return decodeBuildManifest({ ...value, stages });
-      },
-    ],
-    [
-      "impossible stage offset",
-      () => {
-        const value = buildManifest();
-        const stages = [...(value.stages as Record<string, unknown>[])];
-        stages[1] = { ...stages[1], releaseOffsetMs: 999 };
-        return decodeBuildManifest({ ...value, stages });
+        return decodeBuildManifest({
+          ...value,
+          variants: { ...variants, rekey: { ...rekey, stages } },
+        });
       },
     ],
     [
       "invalid stage key version",
       () => {
         const value = buildManifest();
-        const stages = [...(value.stages as Record<string, unknown>[])];
-        stages[0] = { ...stages[0], keyVersion: 1 };
-        return decodeBuildManifest({ ...value, stages });
+        const variants = value.variants as Record<string, Record<string, unknown>>;
+        const stationary = variants.stationary!;
+        const stages = [...(stationary.stages as Record<string, unknown>[])];
+        stages[9] = { ...stages[9], keyVersion: 1 };
+        return decodeBuildManifest({
+          ...value,
+          variants: { ...variants, stationary: { ...stationary, stages } },
+        });
       },
     ],
     [
       "malformed stage digest",
       () => {
         const value = buildManifest();
-        const stages = [...(value.stages as Record<string, unknown>[])];
+        const variants = value.variants as Record<string, Record<string, unknown>>;
+        const stationary = variants.stationary!;
+        const stages = [...(stationary.stages as Record<string, unknown>[])];
         stages[0] = { ...stages[0], sha256: "ABC" };
-        return decodeBuildManifest({ ...value, stages });
+        return decodeBuildManifest({
+          ...value,
+          variants: { ...variants, stationary: { ...stationary, stages } },
+        });
+      },
+    ],
+    [
+      "pre-boundary divergence",
+      () => {
+        const value = buildManifest();
+        const variants = value.variants as Record<string, Record<string, unknown>>;
+        const rekey = variants.rekey!;
+        const stages = [...(rekey.stages as Record<string, unknown>[])];
+        stages[1] = { ...stages[1], sha256: "f".repeat(64) };
+        return decodeBuildManifest({
+          ...value,
+          variants: { ...variants, rekey: { ...rekey, stages } },
+        });
+      },
+    ],
+    [
+      "insufficient changed mass",
+      () => {
+        const value = buildManifest();
+        const manipulation = value.manipulationCheck as Record<string, unknown>;
+        return decodeBuildManifest({
+          ...value,
+          manipulationCheck: {
+            ...manipulation,
+            changedTokenMassByAgent: { "agent-1": 0.14, "agent-2": 0.2, "agent-3": 0.2 },
+          },
+        });
       },
     ],
   ])("rejects a malformed build: %s", (_name, decode) => {

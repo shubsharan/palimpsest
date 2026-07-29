@@ -31,5 +31,6 @@ export async function runConfiguredPuzzleFromFlags(
     agents: createConfiguredRunAgents(config, run),
     tokenBudgetPerAgent: config.limits.tokenBudgetPerAgent,
     wallTimeMs: config.limits.wallTimeMs,
+    stageIntervalMs: config.puzzle.stageIntervalMs,
   });
 }

@@ -1,21 +1,8 @@
 schemaVersion: 1
 
 puzzle:
-  target:
-    corpus: middlemarch
-    chapters:
-      start: 10
-      end: 15
-  references:
-    - jane-eyre
-    - moby-dick
-  seed: 17
-  agentCount: 3
-  stageCount: 6
+  block: calibration-theron-ware
   stageIntervalMs: 120000
-  rekeys:
-    - atStage: 4
-      changedTokenMass: 0.2
 
 limits:
   tokenBudgetPerAgent: 200000

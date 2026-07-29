@@ -32,7 +32,7 @@ As a researcher, I can inspect oracle-only metrics showing that each block conta
 
 1. **Given** a built block, **When** allocation metrics are validated, **Then** every selected constraint passes the recorded tier and no agent exceeds the tier's solo-coverage bound.
 2. **Given** sentinel, specialist, and control sets, **When** exposure is measured, **Then** sentinels are visible to all agents, specialist evidence is owner-weighted, and controls are matched on declared frequency, exposure, and context metrics.
-3. **Given** an agent-visible build, **When** its files and prompts are searched, **Then** no oracle label, key, set membership, optimizer expectation, or manipulation-check result is exposed.
+3. **Given** an agent-visible build, **When** its files and prompts are searched, **Then** no oracle label, key, set membership, builder expectation, or manipulation-check result is exposed.
 
 ---
 

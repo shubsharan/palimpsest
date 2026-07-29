@@ -30,4 +30,4 @@
 ## Notes
 
 - Clarification scan found no material ambiguity requiring user input.
-- Numeric optimizer bounds remain a planning decision and must be declared before implementation.
+- Numeric tier bounds and the window-search cap remain planning decisions and are declared before implementation.

@@ -8,10 +8,10 @@
 
 **Purpose**: Establish immutable study inputs and strict block definitions before implementing selection.
 
-- [ ] T001 Download `pg133.txt`, `pg4313.txt`, `367-h.htm`, `pg11052.txt`, and `pg482.txt` from the exact URLs frozen in `research.md` into `fixtures/corpus/`, then add URL, media type, byte length, SHA-256, title, author, ebook number, and retrieval date to `fixtures/corpus/provenance.json`
-- [ ] T002 Create strict five-entry discovery catalog `experiments/blocks.json` with fixed IDs, phases, sources, target-excluded references, seeds, stage-four boundary, and zero/empty discovery windows
-- [ ] T003 [P] Add plain-text and XHTML canonical paragraph tests covering NFC, entities, whitespace, 20-word filtering, LF serialization, plus five-source provenance tests in `python/tests/puzzle/test_corpus.py`
-- [ ] T004 Implement Gutenberg body paragraph extraction for registered text and XHTML sources in `python/palimpsest/puzzle/corpus.py`
+- [x] T001 Download `pg133.txt`, `pg4313.txt`, `367-h.htm`, `pg11052.txt`, and `pg482.txt` from the exact URLs frozen in `research.md` into `fixtures/corpus/`, then add URL, media type, byte length, SHA-256, title, author, ebook number, and retrieval date to `fixtures/corpus/provenance.json`
+- [x] T002 Create strict five-entry discovery catalog `experiments/blocks.json` with fixed IDs, phases, sources, target-excluded references, seeds, stage-four boundary, and zero/empty discovery windows
+- [x] T003 [P] Add plain-text and XHTML canonical paragraph tests covering NFC, entities, whitespace, 20-word filtering, LF serialization, plus five-source provenance tests in `python/tests/puzzle/test_corpus.py`
+- [x] T004 Implement Gutenberg body paragraph extraction for registered text and XHTML sources in `python/palimpsest/puzzle/corpus.py`
 
 **Checkpoint**: All exact source bytes resolve locally and produce stable ordered natural-prose paragraphs.
 
@@ -19,12 +19,12 @@
 
 **Purpose**: Define deterministic paragraph, tier, allocation, and paired-manifest contracts.
 
-- [ ] T005 [P] Add deterministic block-definition, discovery-state, paragraph-unit, global tier, reference, and metric validation tests in `python/tests/puzzle/test_block.py`
-- [ ] T006 Implement block catalog decoding, paragraph units, frozen tier constants, scoring records, and canonical digests in `python/palimpsest/puzzle/block.py`
-- [ ] T007 [P] Add schema-version-3 paired-manifest round-trip and rejection tests in `python/tests/puzzle/test_manifest.py`
-- [ ] T008 Replace the single-variant build manifest with strict paired-build schema version 3 in `python/palimpsest/puzzle/manifest.py`
-- [ ] T009 [P] Add TypeScript schema-version-3 decoder and path/digest rejection tests in `src/artifacts.test.ts`
-- [ ] T010 Extend `src/artifacts.ts` with strict paired-build, allocation-summary, manipulation-check, and variant decoders
+- [x] T005 [P] Add deterministic block-definition, discovery-state, paragraph-unit, global tier, reference, and metric validation tests in `python/tests/puzzle/test_block.py`
+- [x] T006 Implement block catalog decoding, paragraph units, frozen tier constants, scoring records, and canonical digests in `python/palimpsest/puzzle/block.py`
+- [x] T007 [P] Add schema-version-3 paired-manifest round-trip and rejection tests in `python/tests/puzzle/test_manifest.py`
+- [x] T008 Replace the single-variant build manifest with strict paired-build schema version 3 in `python/palimpsest/puzzle/manifest.py`
+- [x] T009 [P] Add TypeScript schema-version-3 decoder and path/digest rejection tests in `src/artifacts.test.ts`
+- [x] T010 Extend `src/artifacts.ts` with strict paired-build, allocation-summary, manipulation-check, and variant decoders
 
 **Checkpoint**: Python and TypeScript agree on one compact paired-build contract with no release timing.
 
@@ -36,15 +36,15 @@
 
 ### Verification
 
-- [ ] T011 [P] [US1] Add allocation property tests for complete union, nonempty 3x6 cells, internal source order, pre/post separation, balance metrics, deterministic tie-breaking, and bounded iteration in `python/tests/puzzle/test_block.py`
-- [ ] T012 [P] [US1] Add window selection tests for the exact start/end/boundary order, 512-start cap, discovery-only output, full pin revalidation, and explicit infeasibility in `python/tests/puzzle/test_build.py`
+- [x] T011 [P] [US1] Add allocation property tests for complete union, nonempty 3x6 cells, internal source order, pre/post separation, balance metrics, deterministic tie-breaking, and bounded tier probes in `python/tests/puzzle/test_block.py`
+- [x] T012 [P] [US1] Add window selection tests for the exact start/end/boundary order, 512-start cap, discovery-only output, full pin revalidation, and explicit infeasibility in `python/tests/puzzle/test_build.py`
 
 ### Implementation
 
-- [ ] T013 [US1] Implement deterministic first-feasible window scanning and stage-four paragraph partitioning in `python/palimpsest/puzzle/block.py`
-- [ ] T014 [US1] Implement the contract-defined seed hash, initial assignment, score tuple, exhaustive legal-move order, 384-improvement cap, tier resets, rejection reason codes, and lexicographic tie-breaking in `python/palimpsest/puzzle/block.py`
-- [ ] T015 [US1] Replace contiguous `split_text`/`assign_streams` use with paragraph allocation in `python/palimpsest/puzzle/build.py`
-- [ ] T016 [US1] Reconstruct complete evaluation plaintext and ciphertext by source paragraph ordinal rather than agent-major order in `python/palimpsest/puzzle/build.py`
+- [x] T013 [US1] Implement deterministic first-feasible window scanning and stage-four paragraph partitioning in `python/palimpsest/puzzle/block.py`
+- [x] T014 [US1] Implement the contract-defined seed hash, least-loaded-cell assignment, independent tier probes, and stable rejection reason codes in `python/palimpsest/puzzle/block.py`
+- [x] T015 [US1] Replace contiguous `split_text`/`assign_streams` use with paragraph allocation in `python/palimpsest/puzzle/build.py`
+- [x] T016 [US1] Reconstruct complete evaluation plaintext and ciphertext by source paragraph ordinal rather than agent-major order in `python/palimpsest/puzzle/build.py`
 
 **Checkpoint**: A synthetic block builds deterministically with exact paragraph union and an explicit selected tier.
 
@@ -56,16 +56,16 @@
 
 ### Verification
 
-- [ ] T017 [P] [US2] Add tests for 12 stable anchors with all-agent/all-region exposure, six universal sentinels, three specialists per owner, solo changed-set coverage, and 15% post-boundary mass in `python/tests/puzzle/test_block.py`
-- [ ] T018 [P] [US2] Add one-to-one control tests for the exact log-frequency, six-vector exposure, neighbor-Jaccard distance, arithmetic weighting, candidate order, deterministic augmenting paths, and tier thresholds in `python/tests/puzzle/test_block.py`
-- [ ] T019 [P] [US2] Add explicit changed-set bijection and derangement tests in `python/tests/puzzle/test_primitives.py`
+- [x] T017 [P] [US2] Add tests for 12 stable anchors with all-agent/all-region exposure, six universal sentinels, three specialists per owner, solo changed-set coverage, and 15% post-boundary mass in `python/tests/puzzle/test_block.py`
+- [x] T018 [P] [US2] Add one-to-one control tests for the exact log-frequency, six-vector exposure, neighbor-Jaccard distance, arithmetic weighting, candidate order, deterministic augmenting paths, and tier thresholds in `python/tests/puzzle/test_block.py`
+- [x] T019 [P] [US2] Add explicit changed-set bijection and derangement tests in `python/tests/puzzle/test_primitives.py`
 
 ### Implementation
 
-- [ ] T020 [US2] Implement allocation-aware exposure and neighbor-context summaries plus anchor/sentinel/specialist selection in `python/palimpsest/puzzle/block.py`
-- [ ] T021 [US2] Implement deterministic one-to-one stable-control matching with a small augmenting-path matcher in `python/palimpsest/puzzle/block.py`
-- [ ] T022 [US2] Extend `python/palimpsest/puzzle/revision.py` to revise an explicit changed set while preserving a bijection, stable controls, and deterministic derangement
-- [ ] T023 [US2] Write compact allocation/design/manipulation oracle records outside variant-visible trees in `python/palimpsest/puzzle/build.py`
+- [x] T020 [US2] Implement allocation-aware exposure and neighbor-context summaries plus anchor/sentinel/specialist selection in `python/palimpsest/puzzle/block.py`
+- [x] T021 [US2] Implement deterministic one-to-one stable-control matching with a small augmenting-path matcher in `python/palimpsest/puzzle/block.py`
+- [x] T022 [US2] Extend `python/palimpsest/puzzle/revision.py` to revise an explicit changed set while preserving a bijection, stable controls, and deterministic derangement
+- [x] T023 [US2] Write compact allocation/design/manipulation oracle records outside variant-visible trees in `python/palimpsest/puzzle/build.py`
 
 **Checkpoint**: Every feasible allocation yields valid disjoint oracle sets and exact matching evidence without exposing them to agents.
 
@@ -77,26 +77,26 @@
 
 ### Verification
 
-- [ ] T024 [P] [US3] Add paired build tests for shared base identity, pre-boundary byte equality, stationary stability, changed mapping derangement, stable controls, per-agent changed mass, and old-key loss in `python/tests/puzzle/test_build.py`
-- [ ] T025 [P] [US3] Add atomic no-publication tests for infeasible tiers, control failure, pre-boundary divergence, insufficient degradation, and existing output in `python/tests/puzzle/test_build.py`
-- [ ] T026 [P] [US3] Add TypeScript build handoff tests for block selection, paired result decoding, strict configured-block mismatch, fixed interim `rekey` runtime selection, and timing exclusion in `src/build.test.ts`
+- [x] T024 [P] [US3] Add paired build tests for shared base identity, pre-boundary byte equality, stationary stability, changed mapping derangement, stable controls, per-agent changed mass, and old-key loss in `python/tests/puzzle/test_build.py`
+- [x] T025 [P] [US3] Add atomic no-publication tests for infeasible tiers, control failure, pre-boundary divergence, insufficient degradation, and existing output in `python/tests/puzzle/test_build.py`
+- [x] T026 [P] [US3] Add TypeScript build handoff tests for block selection, paired result decoding, strict configured-block mismatch, fixed interim `rekey` runtime selection, and timing exclusion in `src/build.test.ts`
 
 ### Implementation
 
-- [ ] T027 [US3] Refactor `python/palimpsest/puzzle/build.py` to derive and atomically publish stationary and re-key variants from one allocation and base key
-- [ ] T028 [US3] Add paired manipulation validation and schema-version-3 publication in `python/palimpsest/puzzle/build.py`
-- [ ] T029 [US3] Update `src/build.ts`, `src/flags.ts`, and `src/cli.ts` so build requires `--block`, accepts only `--discover true`, loads no experiment config, preserves one-object success output, and validates the paired result
-- [ ] T030 [US3] Make the block catalog authoritative, reduce schema-v1 `puzzle` config to `block` plus `stageIntervalMs`, remove timing from Python build records, derive current offsets in TypeScript, and select the `rekey` variant in `src/config.ts`, `src/run.ts`, `src/experiment.ts`, `src/offline.ts`, and focused tests
+- [x] T027 [US3] Refactor `python/palimpsest/puzzle/build.py` to derive and atomically publish stationary and re-key variants from one allocation and base key
+- [x] T028 [US3] Add paired manipulation validation and schema-version-3 publication in `python/palimpsest/puzzle/build.py`
+- [x] T029 [US3] Update `src/build.ts`, `src/flags.ts`, and `src/cli.ts` so build requires `--block`, accepts only `--discover true`, loads no experiment config, preserves one-object success output, and validates the paired result
+- [x] T030 [US3] Make the block catalog authoritative, reduce schema-v1 `puzzle` config to `block` plus `stageIntervalMs`, remove timing from Python build records, derive current offsets in TypeScript, and select the `rekey` variant in `src/config.ts`, `src/run.ts`, `src/experiment.ts`, `src/offline.ts`, and focused tests
 
 **Checkpoint**: One provider-free command publishes a complete verified pair and existing runtime consumers can select immutable variant stages.
 
 ## Phase 6: Real Blocks And Verification
 
-- [ ] T031 Build all five discovery entries, review first-feasible outputs, and replace zero windows with exact paragraph ranges, word counts, tiers, and window digests in `experiments/blocks.json`
-- [ ] T032 [P] Add five-block deterministic rebuild and oracle-leakage acceptance tests in `python/tests/puzzle/test_build.py`
-- [ ] T033 [P] Update active README, proposal, and architecture descriptions plus `specs/013-engineered-paired-blocks/quickstart.md` to distinguish implemented paired construction from later communication/protocol work
-- [ ] T034 Run focused Python and TypeScript suites, format, `pnpm verify`, and `git diff --check`
-- [ ] T035 Mark all completed Feature 013 tasks, re-run Spec Kit analysis, and commit the verified feature branch before starting Feature 014
+- [x] T031 Build all five discovery entries, review first-feasible outputs, and replace zero windows with exact paragraph ranges, word counts, tiers, and window digests in `experiments/blocks.json`
+- [x] T032 [P] Add five-block deterministic rebuild and oracle-leakage acceptance tests in `python/tests/puzzle/test_build.py`
+- [x] T033 [P] Update active README, proposal, and architecture descriptions plus `specs/013-engineered-paired-blocks/quickstart.md` to distinguish implemented paired construction from later communication/protocol work
+- [x] T034 Run focused Python and TypeScript suites, format, `pnpm verify`, and `git diff --check`
+- [x] T035 Mark all completed Feature 013 tasks, re-run Spec Kit analysis, and commit the verified feature branch before starting Feature 014
 
 ## Dependencies And Parallel Work
 

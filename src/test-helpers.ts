@@ -81,70 +81,103 @@ export function testModelBinding(overrides: Partial<ModelBinding> = {}): ModelBi
   };
 }
 
-export function testBuildManifest(
-  options: {
-    agentCount?: number;
-    stageCount?: number;
-    rekeyStages?: readonly number[];
-  } = {},
-): Record<string, unknown> {
-  const agentIds = generateAgentIds(options.agentCount ?? 3);
-  const stageCount = options.stageCount ?? 6;
-  const rekeyStages = options.rekeyStages ?? [4];
-  const stageIntervalMs = 20;
-  const rekeys = rekeyStages.map((atStage, index) => ({
-    atStage,
-    keyVersion: index + 1,
-    changedTokenMass: 0.2,
-    changedSymbols: ["alpha", "beta"],
-    keyPath: `oracle/keys/key-${String(index + 1).padStart(2, "0")}.json`,
-  }));
-  return {
-    schemaVersion: 2,
-    buildId: `build-${TEST_DIGEST}`,
-    source: {
-      sourceId: "middlemarch",
-      chapters: { start: 10, end: 15 },
-      sha256: TEST_DIGEST,
-    },
-    references: [
-      {
-        sourceId: "jane-eyre",
-        sha256: TEST_DIGEST,
-        path: "public/reference/jane-eyre.txt",
-      },
-      {
-        sourceId: "moby-dick",
-        sha256: TEST_DIGEST,
-        path: "public/reference/moby-dick.txt",
-      },
-    ],
-    seed: 17,
-    agentIds,
-    stageCount,
-    stageIntervalMs,
-    rekeys,
-    publicCiphertextPath: "evaluation/ciphertext.txt",
-    referenceCorpusPath: "public/reference",
+export function testBuildManifest(): Record<string, unknown> {
+  const agentIds = generateAgentIds(3);
+  const variant = (variantId: "stationary" | "rekey") => ({
+    variantId,
+    buildId: `build-${variantId === "stationary" ? "b".repeat(64) : TEST_DIGEST}`,
+    publicCiphertextPath: `variants/${variantId}/complete/ciphertext.txt`,
+    referenceCorpusPath: `variants/${variantId}/references`,
     privateStageRoots: Object.fromEntries(
-      agentIds.map((agentId) => [agentId, `private/${agentId}/stages`]),
+      agentIds.map((agentId) => [agentId, `variants/${variantId}/private/${agentId}/stages`]),
     ),
-    oracleRoot: "oracle",
-    baseKeyPath: "oracle/keys/key-00.json",
-    stages: agentIds.flatMap((agentId) =>
-      Array.from({ length: stageCount }, (_, index) => {
+    stages: agentIds.flatMap((agentId, agentIndex) =>
+      Array.from({ length: 6 }, (_, index) => {
         const ordinal = index + 1;
+        const stageDigest =
+          ordinal < 4
+            ? agentIndex * 6 + ordinal
+            : 100 + (variantId === "stationary" ? 0 : 18) + agentIndex * 6 + ordinal;
         return {
           agentId,
           ordinal,
-          keyVersion: rekeyStages.filter((atStage) => atStage <= ordinal).length,
-          releaseOffsetMs: index * stageIntervalMs,
-          sourcePath: `private/${agentId}/stages/stage-${String(ordinal).padStart(2, "0")}.txt`,
-          tokenCount: 10,
-          sha256: TEST_DIGEST,
+          keyVersion: variantId === "rekey" && ordinal >= 4 ? 1 : 0,
+          sourcePath: `variants/${variantId}/private/${agentId}/stages/stage-${String(ordinal).padStart(2, "0")}.txt`,
+          tokenCount: 200,
+          sha256: stageDigest.toString(16).padStart(64, "0"),
         };
       }),
     ),
+    keyTransitions:
+      variantId === "stationary"
+        ? []
+        : [
+            {
+              atStage: 4,
+              keyVersion: 1,
+              keyPath: "oracle/keys/rekey-stage-04.json",
+              changedSymbolsSha256: "c".repeat(64),
+            },
+          ],
+  });
+  return {
+    schemaVersion: 3,
+    pairedBuildId: `paired-${"d".repeat(64)}`,
+    blockId: "calibration-theron-ware",
+    source: { sourceId: "theron-ware", sha256: TEST_DIGEST },
+    references: [
+      { sourceId: "middlemarch", sha256: "1".repeat(64) },
+      { sourceId: "moby-dick", sha256: "2".repeat(64) },
+      { sourceId: "jane-eyre", sha256: "3".repeat(64) },
+    ],
+    seed: 130013,
+    window: {
+      paragraphStart: 10,
+      paragraphEnd: 80,
+      wordCount: 18_000,
+      sha256: "4".repeat(64),
+    },
+    agentIds,
+    stageCount: 6,
+    boundaryStage: 4,
+    allocation: {
+      allocationId: `allocation-${"5".repeat(64)}`,
+      tier: "balanced",
+      metrics: {
+        regionDeviation: 0.05,
+        stageDeviation: 0.15,
+        soloChangedSetCoverage: 0.6,
+        minOwnerShare: 0.61,
+        anchorCount: 12,
+        sentinelCount: 6,
+        specialistCounts: { "agent-1": 3, "agent-2": 3, "agent-3": 3 },
+        minOwnerOccurrencesPerRegion: 2,
+        minSentinelOccurrencesPerAgentRegion: 2,
+        unmatchedControlCount: 0,
+        maxControlDistance: 0.2,
+      },
+      rejectedTiers: [{ tier: "strict", reasons: ["region-deviation"] }],
+      path: "oracle/allocation.json",
+      sha256: "6".repeat(64),
+    },
+    oracleDesign: {
+      path: "oracle/design.json",
+      sha256: "7".repeat(64),
+      anchorsSha256: "8".repeat(64),
+      sentinelsSha256: "9".repeat(64),
+      specialistsSha256: "a".repeat(64),
+      controlsSha256: "b".repeat(64),
+    },
+    baseKeyPath: "oracle/keys/base.json",
+    manipulationCheck: {
+      path: "oracle/manipulation-check.json",
+      sha256: "c".repeat(64),
+      preBoundaryIdentical: true,
+      stationaryOldKeyLoss: 0,
+      rekeyOldKeyLoss: 0.2,
+      changedTokenMassByAgent: { "agent-1": 0.2, "agent-2": 0.2, "agent-3": 0.2 },
+    },
+    variants: { stationary: variant("stationary"), rekey: variant("rekey") },
   };
 }
 

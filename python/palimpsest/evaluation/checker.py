@@ -39,7 +39,7 @@ def check_reconstruction(
     truth = "\n\n".join(
         (
             build_root
-            / build.oracle_root
+            / "oracle"
             / "checker"
             / agent_id
             / stage_filename(ordinal, build.stage_count)

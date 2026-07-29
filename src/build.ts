@@ -7,7 +7,6 @@ import {
   type BuildManifest,
   type BuildPuzzleResult,
 } from "./artifacts.js";
-import { loadExperimentConfig, type PuzzleDefinition } from "./config.js";
 import { requiredFlag } from "./flags.js";
 import { runProcess } from "./process.js";
 import { readJsonObject, runPythonJson } from "./python.js";
@@ -18,47 +17,39 @@ import { sandboxDockerfileDigest } from "./sandbox/docker.js";
 export interface BuildPuzzleOptions {
   root: string;
   output: string;
-  puzzle: PuzzleDefinition;
+  block: string;
+}
+
+export interface BlockDiscoveryResult {
+  blockId: string;
+  discoveryPath: string;
+  window: {
+    paragraphStart: number;
+    paragraphEnd: number;
+    wordCount: number;
+    sha256: string;
+  };
+  tier: "strict" | "balanced" | "fallback";
 }
 
 export type { BuildPuzzleResult } from "./artifacts.js";
 
-export function assertBuildMatchesPuzzle(
+export function assertBuildMatchesBlock(
   manifest: BuildManifest,
   result: BuildPuzzleResult,
-  puzzle: PuzzleDefinition,
+  block: string,
   output: string,
 ): void {
-  const declaredAgentIds = Array.from(
-    { length: puzzle.agentCount },
-    (_, index) => `agent-${String(index + 1)}`,
-  );
-  const declaredReferenceIds = puzzle.references.join("\0");
   if (
     resolve(result.buildPath) !== resolve(output) ||
-    manifest.buildId !== result.buildId ||
+    manifest.variants.rekey.buildId !== result.buildId ||
+    manifest.blockId !== block ||
     manifest.agentIds.join("\0") !== result.agentIds.join("\0") ||
-    manifest.agentIds.join("\0") !== declaredAgentIds.join("\0") ||
     manifest.stageCount !== result.stageCount ||
-    manifest.stageCount !== puzzle.stageCount ||
-    manifest.stageIntervalMs !== puzzle.stageIntervalMs ||
-    manifest.source.sourceId !== puzzle.target.corpus ||
-    manifest.source.chapters.start !== puzzle.target.chapters.start ||
-    manifest.source.chapters.end !== puzzle.target.chapters.end ||
-    manifest.references.map(({ sourceId }) => sourceId).join("\0") !== declaredReferenceIds ||
-    manifest.seed !== puzzle.seed ||
-    manifest.rekeys.length !== puzzle.rekeys.length ||
-    manifest.rekeys.some((rekey, index) => {
-      const declared = puzzle.rekeys[index];
-      return (
-        declared === undefined ||
-        rekey.atStage !== declared.atStage ||
-        rekey.keyVersion !== index + 1 ||
-        rekey.changedTokenMass !== declared.changedTokenMass
-      );
-    })
+    manifest.agentIds.join("\0") !== "agent-1\0agent-2\0agent-3" ||
+    manifest.stageCount !== 6
   ) {
-    throw new Error("Puzzle build does not match its resolved experiment configuration.");
+    throw new Error("Puzzle build does not match the requested block.");
   }
 }
 
@@ -69,26 +60,90 @@ export async function buildPuzzle(options: BuildPuzzleOptions): Promise<BuildPuz
     await runPythonJson(
       root,
       "palimpsest.puzzle.build",
-      ["--root", root, "--output", output],
+      ["--root", root, "--output", output, "--block", options.block],
       undefined,
-      JSON.stringify(options.puzzle),
     ),
   );
   const manifest = decodeBuildManifest(await readJsonObject(resolve(output, "puzzle-build.json")));
-  assertBuildMatchesPuzzle(manifest, result, options.puzzle, await realpath(output));
+  assertBuildMatchesBlock(manifest, result, options.block, await realpath(output));
   return decodeBuildResult({ ...result, buildPath: output });
+}
+
+function discoveryResult(value: unknown, output: string): BlockDiscoveryResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Block discovery result must be an object.");
+  }
+  const record = value as Record<string, unknown>;
+  const window = record.window;
+  if (typeof window !== "object" || window === null || Array.isArray(window)) {
+    throw new Error("Block discovery result window must be an object.");
+  }
+  const decoded = window as Record<string, unknown>;
+  const tier = record.tier;
+  if (tier !== "strict" && tier !== "balanced" && tier !== "fallback") {
+    throw new Error("Block discovery result tier is unsupported.");
+  }
+  const result: BlockDiscoveryResult = {
+    blockId: requiredResultString(record.blockId, "blockId"),
+    discoveryPath: resolve(requiredResultString(record.discoveryPath, "discoveryPath")),
+    window: {
+      paragraphStart: requiredResultInteger(decoded.paragraphStart, "paragraphStart"),
+      paragraphEnd: requiredResultInteger(decoded.paragraphEnd, "paragraphEnd"),
+      wordCount: requiredResultInteger(decoded.wordCount, "wordCount"),
+      sha256: requiredResultString(decoded.sha256, "sha256"),
+    },
+    tier,
+  };
+  if (result.discoveryPath !== resolve(output, "discovery.json")) {
+    throw new Error("Block discovery result path does not match its output.");
+  }
+  return result;
+}
+
+function requiredResultString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Block discovery result ${name} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function requiredResultInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new Error(`Block discovery result ${name} must be a positive integer.`);
+  }
+  return value as number;
+}
+
+async function discoverBlock(options: BuildPuzzleOptions): Promise<BlockDiscoveryResult> {
+  const root = resolve(options.root);
+  const output = resolve(options.output);
+  return discoveryResult(
+    await runPythonJson(
+      root,
+      "palimpsest.puzzle.build",
+      ["--root", root, "--output", output, "--block", options.block, "--discover", "true"],
+      undefined,
+    ),
+    output,
+  );
 }
 
 export async function buildPuzzleFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
-): Promise<BuildPuzzleResult> {
-  const config = await loadExperimentConfig(requiredFlag(flags, "--config"), { root });
-  return buildPuzzle({
+): Promise<BuildPuzzleResult | BlockDiscoveryResult> {
+  const allowed = new Set(["--block", "--output", "--discover"]);
+  const unexpected = [...flags.keys()].find((flag) => !allowed.has(flag));
+  if (unexpected !== undefined) throw new Error(`Unknown build option ${unexpected}.`);
+  const options = {
     root,
     output: requiredFlag(flags, "--output"),
-    puzzle: config.puzzle,
-  });
+    block: requiredFlag(flags, "--block"),
+  };
+  const discover = flags.get("--discover");
+  if (discover === undefined) return buildPuzzle(options);
+  if (discover !== "true") throw new Error("--discover must be exactly true.");
+  return discoverBlock(options);
 }
 
 async function buildImage(root: string, sourceDigest: string): Promise<void> {

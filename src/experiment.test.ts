@@ -1,10 +1,11 @@
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  decodeBuildManifest,
   publishAttemptSummary,
   type AttemptSummary,
   type BuildManifest,
@@ -19,6 +20,7 @@ import {
 } from "./experiment.js";
 import type { ModelAdapter } from "./model.js";
 import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "./sandbox/contracts.js";
+import { testBuildManifest } from "./test-helpers.js";
 
 const BUILD_ID = `build-${"a".repeat(64)}`;
 const DIGEST = "b".repeat(64);
@@ -38,13 +40,8 @@ function config(): ResolvedExperimentConfig {
   return {
     schemaVersion: 1,
     puzzle: {
-      target: { corpus: "middlemarch", chapters: { start: 10, end: 12 } },
-      references: ["jane-eyre"],
-      seed: 17,
-      agentCount: 2,
-      stageCount: 3,
+      block: "calibration-theron-ware",
       stageIntervalMs: 100,
-      rekeys: [{ atStage: 2, changedTokenMass: 0.2 }],
     },
     limits: { tokenBudgetPerAgent: 1_000, wallTimeMs: 10_000 },
     providers: {
@@ -72,6 +69,7 @@ function config(): ResolvedExperimentConfig {
         agents: [
           { agentId: "agent-1", modelProfile: "one" },
           { agentId: "agent-2", modelProfile: "one" },
+          { agentId: "agent-3", modelProfile: "one" },
         ],
       },
       {
@@ -80,27 +78,10 @@ function config(): ResolvedExperimentConfig {
         agents: [
           { agentId: "agent-1", modelProfile: "one" },
           { agentId: "agent-2", modelProfile: "two" },
+          { agentId: "agent-3", modelProfile: "one" },
         ],
       },
     ],
-    sources: {
-      target: {
-        sourceId: "middlemarch",
-        path: resolve("fixtures/corpus/middlemarch.txt"),
-        format: "gutenberg-text",
-        byteLength: 10,
-        sha256: DIGEST,
-      },
-      references: [
-        {
-          sourceId: "jane-eyre",
-          path: resolve("fixtures/corpus/jane-eyre.txt"),
-          format: "gutenberg-text",
-          byteLength: 10,
-          sha256: DIGEST,
-        },
-      ],
-    },
   };
 }
 
@@ -116,45 +97,16 @@ function buildResult(experimentRoot: string): BuildPuzzleResult {
   return {
     buildId: BUILD_ID,
     buildPath: join(experimentRoot, "build"),
-    agentIds: ["agent-1", "agent-2"],
-    stageCount: 3,
+    agentIds: ["agent-1", "agent-2", "agent-3"],
+    stageCount: 6,
   };
 }
 
 function buildManifest(resolved: ResolvedExperimentConfig): BuildManifest {
-  return {
-    schemaVersion: 2,
-    buildId: BUILD_ID,
-    source: {
-      sourceId: resolved.sources.target.sourceId,
-      chapters: resolved.puzzle.target.chapters,
-      sha256: resolved.sources.target.sha256,
-    },
-    references: resolved.sources.references.map((source) => ({
-      sourceId: source.sourceId,
-      sha256: source.sha256,
-      path: `references/${source.sourceId}.txt`,
-    })),
-    seed: resolved.puzzle.seed,
-    agentIds: ["agent-1", "agent-2"],
-    stageCount: resolved.puzzle.stageCount,
-    stageIntervalMs: resolved.puzzle.stageIntervalMs,
-    rekeys: resolved.puzzle.rekeys.map((rekey, index) => ({
-      ...rekey,
-      keyVersion: index + 1,
-      changedSymbols: ["a"],
-      keyPath: `oracle/key-${String(index + 1)}.json`,
-    })),
-    publicCiphertextPath: "public/ciphertext.txt",
-    referenceCorpusPath: "references",
-    privateStageRoots: {
-      "agent-1": "private/agent-1",
-      "agent-2": "private/agent-2",
-    },
-    oracleRoot: "oracle",
-    baseKeyPath: "oracle/key-0.json",
-    stages: [],
-  };
+  return decodeBuildManifest({
+    ...testBuildManifest(),
+    blockId: resolved.puzzle.block,
+  });
 }
 
 async function publishFixtureAttempt(
@@ -214,12 +166,13 @@ describe("experiment orchestration", () => {
     expect(models).toEqual(["model-one", "model-two"]);
     expect(agents["agent-1"]!.model.profile).toBe("one");
     expect(agents["agent-2"]!.model.profile).toBe("two");
+    expect(agents["agent-3"]!.model.profile).toBe("one");
     expect(() =>
       assertBuildMatchesExperimentConfig(buildManifest(resolved), resolved),
     ).not.toThrow();
     expect(() =>
       assertBuildMatchesExperimentConfig(
-        { ...buildManifest(resolved), seed: resolved.puzzle.seed + 1 },
+        { ...buildManifest(resolved), blockId: "validation-odd-women" },
         resolved,
       ),
     ).toThrow(/does not match/);

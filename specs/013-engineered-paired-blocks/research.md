@@ -22,7 +22,7 @@
 
 ## Decision: First-feasible bounded seeded search
 
-**Rationale**: The scientific choice is reproducible only if search order, caps, scores, tie-breaking, and fallback are explicit. A bounded hill-climb is sufficient for five local blocks and easier to inspect than a general optimizer.
+**Rationale**: The scientific choice is reproducible only if allocation and fallback are explicit. One seeded least-loaded-cell allocation per tier is sufficient for the five local blocks and substantially easier to inspect than paragraph-move search.
 
 **Alternatives considered**:
 
@@ -74,4 +74,4 @@ A provider-free probe over the exact five linked targets found enough prose for 
 
 ## No Remaining Clarifications
 
-The feature description fixes geometry, targets, pairing, provenance, optimizer order, oracle secrecy, and required checks. Numeric tier bounds and search caps are resolved in the plan and contract.
+The feature description fixes geometry, targets, pairing, provenance, allocation order, oracle secrecy, and required checks. Numeric tier bounds and the window cap are resolved in the plan and contract.

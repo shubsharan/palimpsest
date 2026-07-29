@@ -4,6 +4,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from ..serialization import sha256_hex
@@ -29,6 +30,11 @@ ILLUSTRATION_BLOCK = re.compile(
 )
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_BLANK_LINES = re.compile(r"\n(?:[ \t]*\n)+")
+_FIRST_NARRATIVE_HEADING = re.compile(
+    r"^[ \t]*(?:CHAPTER[ \t]+)?(?:I|1)(?:[.:][^\n]*)?[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -96,7 +102,7 @@ def load_source_registry(root: Path) -> dict[str, SourceDefinition]:
         if source_id in registry:
             raise ValueError(f"Corpus provenance contains duplicate sourceId {source_id}.")
         source_format = raw.get("format")
-        if source_format != "gutenberg-text":
+        if source_format not in {"gutenberg-text", "gutenberg-html"}:
             raise ValueError(f"Unsupported source format for {source_id}: {source_format}")
         digest = raw.get("sha256")
         if not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None:
@@ -127,6 +133,88 @@ def strip_gutenberg(value: str) -> str:
     if start is None or end is None or start.end() >= end.start():
         raise ValueError("Project Gutenberg source is missing an ordered START/END envelope.")
     return normalized[start.end() : end.start()].strip()
+
+
+def _canonical_paragraph(value: str) -> str | None:
+    normalized = unicodedata.normalize("NFC", value)
+    collapsed = " ".join(normalized.split())
+    return collapsed if len(word_tokens(collapsed)) >= 20 else None
+
+
+class _GutenbergParagraphParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.paragraphs: list[str] = []
+        self._parts: list[str] | None = None
+        self._heading_parts: list[str] | None = None
+        self._started = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        folded = tag.casefold()
+        if folded == "p" and self._started:
+            self._parts = []
+        elif folded in {"h1", "h2", "h3"}:
+            self._heading_parts = []
+        elif folded == "br" and self._parts is not None:
+            self._parts.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        folded = tag.casefold()
+        if folded in {"h1", "h2", "h3"} and self._heading_parts is not None:
+            heading = " ".join("".join(self._heading_parts).split())
+            if _FIRST_NARRATIVE_HEADING.fullmatch(heading) is not None:
+                self._started = True
+            self._heading_parts = None
+            return
+        if folded != "p" or self._parts is None:
+            return
+        paragraph = _canonical_paragraph("".join(self._parts))
+        if paragraph is not None:
+            self.paragraphs.append(paragraph)
+        self._parts = None
+
+    def handle_data(self, data: str) -> None:
+        if self._parts is not None:
+            self._parts.append(data)
+        if self._heading_parts is not None:
+            self._heading_parts.append(data)
+
+
+def load_paragraphs(source: SourceDefinition) -> tuple[str, ...]:
+    body = strip_gutenberg(source.path.read_text(encoding="utf-8"))
+    if source.source_format == "gutenberg-text":
+        first_heading = next(
+            (
+                match
+                for match in _FIRST_NARRATIVE_HEADING.finditer(body)
+                if re.match(r"\n[ \t]*\n", body[match.end() :]) is not None
+            ),
+            None,
+        )
+        if first_heading is None:
+            raise ValueError(
+                f"Corpus {source.source_id} has no recognizable first narrative heading."
+            )
+        body = body[first_heading.end() :]
+        candidates = _BLANK_LINES.split(body)
+        return tuple(
+            paragraph
+            for candidate in candidates
+            if (paragraph := _canonical_paragraph(candidate)) is not None
+        )
+    if source.source_format == "gutenberg-html":
+        parser = _GutenbergParagraphParser()
+        parser.feed(body)
+        parser.close()
+        return tuple(parser.paragraphs)
+    raise ValueError(f"Unsupported source format: {source.source_format}")
+
+
+def serialize_paragraphs(paragraphs: tuple[str, ...]) -> str:
+    if not paragraphs:
+        return ""
+    return f"{'\n\n'.join(paragraphs)}\n"
 
 
 def _plain_text_chapters(value: str) -> list[Chapter]:

@@ -10,6 +10,10 @@ uv sync --frozen --project python
 
 No provider credential is required.
 
+## Feature Boundary
+
+Feature 013 constructs and verifies both stationary and re-key variants. The current run, experiment, and offline paths select the re-key variant and retain the existing shared-Git runtime. Canonical `CS`, `CR`, `IS`, and `IR` selection belongs to Feature 014; the frozen five-block phase protocol belongs to Feature 015.
+
 ## Discover And Commit Windows
 
 The implementation provides a provider-free discovery mode that writes the first feasible window values for review:
@@ -49,8 +53,12 @@ rg -n 'anchor|sentinel|specialist|control|rekey|stationary|key-' \
 ## Verify
 
 ```bash
-pnpm test:py -- python/tests/puzzle/test_block.py python/tests/puzzle/test_build.py
-pnpm test:ts -- src/build.test.ts src/artifacts.test.ts
+pnpm test:py -- \
+  python/tests/puzzle/test_corpus.py \
+  python/tests/puzzle/test_block.py \
+  python/tests/puzzle/test_build.py \
+  python/tests/puzzle/test_manifest.py
+pnpm test:ts -- src/build.test.ts src/artifacts.test.ts src/config.test.ts
 pnpm verify
 git diff --check
 ```

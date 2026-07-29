@@ -1,7 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { decodeBuildManifest, decodeOverlapResult, type OverlapResult } from "./artifacts.js";
+import {
+  decodeBuildManifest,
+  decodeOverlapResult,
+  selectBuildVariant,
+  type OverlapResult,
+} from "./artifacts.js";
 import {
   absoluteFrom,
   appendTraceEvent,
@@ -182,18 +187,22 @@ export async function observeOverlap(
 ): Promise<OverlapResult> {
   const overlapRoot = join(dirname(result.tracePath), "overlap-input");
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
+  const variant = selectBuildVariant(manifest, "rekey");
+  if (variant.buildId !== result.buildId) {
+    throw new Error("Attempt build identity does not match the selected paired-build variant.");
+  }
   const { committed, scan } = await collectCommittedFiles(
     result.frozen.barePath,
     join(overlapRoot, "git"),
   );
   const privateSources = Object.fromEntries(
-    manifest.stages.map((stage) => [
+    variant.stages.map((stage) => [
       `${stage.agentId}-stage-${stage.ordinal}`,
       absoluteFrom(buildRoot, stage.sourcePath),
     ]),
   );
   const plaintextSources = {
-    complete: join(buildRoot, manifest.oracleRoot, "plaintext.txt"),
+    complete: join(buildRoot, "oracle", "plaintext.txt"),
   };
   const requestPath = join(overlapRoot, "request.json");
   await writeFile(

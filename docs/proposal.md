@@ -2,21 +2,21 @@
 
 ## A configurable collaborative decipherment puzzle
 
-Palimpsest gives three frontier-model agents different private fragments of a word-substitution cipher and asks them to recover as much of the original text as possible. The agents work concurrently and decide for themselves how to solve. Communication availability varies by declared condition: shared conditions expose ordinary peer Git, while isolated conditions preserve team identity without peer visibility.
+Palimpsest gives three frontier-model agents different private fragments of a word-substitution cipher and asks them to recover as much of the original text as possible. The agents work concurrently and decide for themselves how to solve. The current runtime supplies ordinary shared Git; a later feature will vary peer communication while preserving team identity and other inputs.
 
 The project is a local puzzle and an observational research artifact. It is not an enterprise application, a hosted experiment service, a hardened adversarial benchmark, or a prescribed multi-agent workflow.
 
 ## The Puzzle
 
-Every word type in a prepared text is replaced by another word type under a hidden bijection. Punctuation, capitalization patterns, digits, paragraph structure, and chapter boundaries remain visible. The result resembles English at the token level while its vocabulary has been systematically reassigned.
+Every word type in a prepared text is replaced by another word type under a hidden bijection. Punctuation, capitalization patterns, digits, and paragraph structure remain visible. The result resembles English at the token level while its vocabulary has been systematically reassigned.
 
-One experiment manifest selects a target from the checked-in corpus registry, an inclusive one-based chapter range, target-excluded references, a seed, agent and stage counts, a release interval, and zero or more partial re-keys. The same inputs reproduce the same puzzle bytes and build identity.
+Five checked-in block definitions select provenance-pinned targets and references, scientific seeds, and committed natural-prose windows. A deterministic bounded search allocates whole paragraphs across exactly three agents and six stages. Every selected paragraph appears once, and its source order remains recoverable.
 
-The prepared ciphertext is divided into one private contiguous stream per agent. Every stream has the same number of immutable stages, released on a shared wall-clock schedule. Earlier stages remain available exactly as released.
+Each block produces stationary and re-key twins from one paragraph allocation and base key. Their first three stages are byte-identical. The stationary twin keeps its mappings; the re-key twin changes only selected mappings beginning at stage four while matched controls remain stable.
 
-At each configured re-key boundary, a deterministic subset of mappings changes across every stream while the remaining mappings stay valid. Each revision is derived from the immediately preceding key. These transitions are hidden from agents: prompts, stage names, checker results, and their agent-visible Git do not announce them.
+Trusted build records retain shared anchors, universal sentinels, owner-weighted specialists, matched stable controls, allocation metrics, rejected tiers, and manipulation checks. Agent-visible stages contain none of those labels, keys, expectations, or results.
 
-The checked-in baseline retains the original research condition: three agents, six stages, and one partial re-key beginning at stage four. Other manifests can vary those dimensions so long as the corpus can support the requested geometry.
+Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. Feature 013 keeps the current arithmetic schedule and re-key selection for existing runs. Later features will add canonical communication/key conditions and the frozen study schedule without rebuilding block bytes.
 
 ## The Agents
 
@@ -24,15 +24,15 @@ The manifest also declares direct provider connections and named model profiles.
 
 Provider credentials are read only from named environment variables. They are not valid literal configuration values and are excluded from traces, attempt records, experiment summaries, error text, and command sandboxes. The runner does not silently fall back to another provider or retry an attempt.
 
-Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, private evidence allocation, schedule, limits, tools, references, and evaluation boundary. Only channel availability differs between communication-paired prompts.
+Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, schedule, limits, tools, references, and evaluation boundary.
 
-Shared conditions state that the team has a shared Git repository and peer activity. Isolated conditions state that peer communication is unavailable and give each agent an independent Git repository. Both state that the other agents are working concurrently on different private evidence.
+The implemented runtime gives the team one shared Git repository and peer activity. Feature 014 will add isolated conditions with independent usable repositories and no peer visibility while keeping team identity and non-communication inputs equal across paired conditions.
 
-The instruction makes team identity and condition-specific channel availability explicit. It does not reveal the key regime, special word sets, scoring expectations, roles, workflows, required artifacts, or a decoding algorithm.
+Instructions make the team and currently available channel explicit. They do not reveal the key regime, special word sets, scoring expectations, roles, workflows, required artifacts, or a decoding algorithm.
 
-Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; Git appropriate to the communication condition; an aggregate reconstruction checker; and a way to wait for relevant activity. A waiting session may resume when private evidence or visible Git state changes. Other sessions do not synchronize with it.
+Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; ordinary shared Git; an aggregate reconstruction checker; and a way to wait for relevant activity. A waiting session may resume when private evidence or visible Git state changes. Other sessions do not synchronize with it.
 
-Git use remains voluntary and unmetered in every condition. In shared conditions agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, relay raw evidence, or ignore the repository. In isolated conditions agents can use their own Git history but cannot observe peer repositories, evidence, or activity.
+Git use remains voluntary and unmetered. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, relay raw evidence, or ignore the repository.
 
 ## The Run
 
@@ -64,7 +64,7 @@ The selected code runs against the complete ciphertext without the oracle, peer 
 
 An experiment builds its puzzle once, then executes conditions and repetitions sequentially. Sessions inside one attempt remain concurrent. After each durable attempt, an atomically replaced `experiment.json` indexes the resolved non-secret condition and attempt root. A later failure cannot erase earlier attempts.
 
-Attempt records retain the block, condition, communication mode, key regime, protocol identity, requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, all Git histories, frozen work, overlap observations, reviewer selection, execution result, and score. They do not retain complete provider response payloads or credential values.
+Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Current attempt records retain the selected re-key build, requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, Git history, frozen work, overlap observations, reviewer selection, execution result, and score. Condition, communication-mode, and frozen-protocol fields belong to Features 014 and 015. Records do not retain complete provider response payloads or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 

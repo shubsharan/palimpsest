@@ -12,27 +12,15 @@ ROOT = Path(__file__).resolve().parents[3]
 @pytest.fixture(scope="module")
 def build_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
     output = tmp_path_factory.mktemp("checker-build") / "build"
-    build_puzzle(
-        ROOT,
-        output,
-        {
-            "target": {"corpus": "middlemarch", "chapters": {"start": 10, "end": 15}},
-            "references": ["jane-eyre", "moby-dick"],
-            "seed": 17,
-            "agentCount": 5,
-            "stageCount": 4,
-            "stageIntervalMs": 10,
-            "rekeys": [],
-        },
-    )
+    build_puzzle(ROOT, output, "calibration-theron-ware")
     return output
 
 
-def test_checker_uses_dynamic_agent_and_released_prefix(build_root: Path) -> None:
-    truth = (build_root / "oracle/checker/agent-5/stage-01.txt").read_text(encoding="utf-8")
+def test_checker_uses_declared_agent_and_released_prefix(build_root: Path) -> None:
+    truth = (build_root / "oracle/checker/agent-3/stage-01.txt").read_text(encoding="utf-8")
     result = check_reconstruction(
         build_root=build_root,
-        agent_id="agent-5",
+        agent_id="agent-3",
         released_ordinals=(1,),
         candidate=truth,
     )
@@ -41,27 +29,16 @@ def test_checker_uses_dynamic_agent_and_released_prefix(build_root: Path) -> Non
     assert result.accuracy == 1.0
 
 
-def test_checker_matches_dynamic_stage_filename_width(tmp_path: Path) -> None:
-    output = tmp_path / "wide-stage-build"
-    build_puzzle(
-        ROOT,
-        output,
-        {
-            "target": {"corpus": "middlemarch", "chapters": {"start": 10, "end": 15}},
-            "references": ["jane-eyre", "moby-dick"],
-            "seed": 17,
-            "agentCount": 2,
-            "stageCount": 100,
-            "stageIntervalMs": 10,
-            "rekeys": [],
-        },
+def test_checker_matches_complete_six_stage_prefix(build_root: Path) -> None:
+    truth = "\n\n".join(
+        (build_root / f"oracle/checker/agent-1/stage-{ordinal:02d}.txt").read_text(encoding="utf-8")
+        for ordinal in range(1, 7)
     )
-    truth = (output / "oracle/checker/agent-1/stage-001.txt").read_text(encoding="utf-8")
 
     result = check_reconstruction(
-        build_root=output,
+        build_root=build_root,
         agent_id="agent-1",
-        released_ordinals=(1,),
+        released_ordinals=(1, 2, 3, 4, 5, 6),
         candidate=truth,
     )
 
