@@ -85,7 +85,7 @@ oracle/
 ├── allocation.json
 ├── design.json
 ├── manipulation-check.json
-├── checker/<variant>/<agent>/stage-*.txt
+├── checker/<agent>/stage-*.txt
 └── keys/
     ├── base.json
     └── rekey-stage-04.json

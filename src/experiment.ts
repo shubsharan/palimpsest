@@ -229,7 +229,7 @@ function verifyDurableAttempt(
   build: BuildPuzzleResult,
   run: ResolvedRunCondition,
 ): void {
-  if (attempt.buildId !== build.buildId || attempt.buildRoot !== build.buildPath) {
+  if (attempt.buildId !== build.variants.rekey || attempt.buildRoot !== build.buildPath) {
     throw new Error(`Attempt ${attempt.attemptId} does not belong to the experiment build.`);
   }
   if (
@@ -318,7 +318,7 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
     schemaVersion: 1,
     resolvedConfig: config,
     buildRoot: build.buildPath,
-    buildId: build.buildId,
+    buildId: build.variants.rekey,
     attempts: [],
   });
 

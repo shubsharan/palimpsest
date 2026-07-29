@@ -48,7 +48,7 @@ describe("offline behavior-neutral runner", () => {
     expect(isAbsolute(result.run.attemptRoot)).toBe(true);
     expect(result.build.agentIds).toEqual(["agent-1", "agent-2", "agent-3"]);
     expect(result.build.stageCount).toBe(6);
-    expect(result.run.buildId).toBe(result.build.buildId);
+    expect(result.run.buildId).toBe(result.build.variants.rekey);
     expect(result.run.runName).toBe("offline");
     expect(result.run.repetition).toBe(1);
     expect(result.run.sessions).toHaveLength(result.build.agentIds.length);
@@ -96,7 +96,7 @@ describe("offline behavior-neutral runner", () => {
         stationary: { variantId: "stationary", keyTransitions: [] },
         rekey: {
           variantId: "rekey",
-          buildId: result.build.buildId,
+          buildId: result.build.variants.rekey,
           keyTransitions: [{ atStage: 4, keyVersion: 1 }],
         },
       },
@@ -104,7 +104,7 @@ describe("offline behavior-neutral runner", () => {
     expect(attemptSummary).toMatchObject({
       schemaVersion: 2,
       attemptId: result.run.attemptId,
-      buildId: result.build.buildId,
+      buildId: result.build.variants.rekey,
       agentIds: result.build.agentIds,
     });
     expect(overlapArtifact).toEqual(result.run.overlap);

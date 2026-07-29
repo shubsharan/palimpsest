@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -265,6 +266,76 @@ def validate_pair(
         raise ValueError("Every agent must receive the minimum post-boundary changed mass.")
 
 
+@dataclass(frozen=True)
+class PreparedPair:
+    window_plaintext: str
+    base_key: dict[str, str]
+    revised_key: dict[str, str]
+    plaintext_stage_bytes: dict[tuple[str, int], bytes]
+    stationary_stage_bytes: dict[tuple[str, int], bytes]
+    rekey_stage_bytes: dict[tuple[str, int], bytes]
+    manipulation_check: dict[str, Any]
+
+
+def _prepare_pair(design: BlockDesign) -> PreparedPair:
+    window_plaintext = serialize_paragraphs(
+        tuple(paragraph.text for paragraph in design.window.paragraphs)
+    )
+    base_key = stationary_key(
+        sorted(set(_words(window_plaintext))),
+        _seed_hex(design.block.seed, "base-key"),
+    )
+    changed_types = design.allocation.design.changed_types
+    revised_key = revise_explicit_types(
+        prior_key=base_key,
+        changed_types=changed_types,
+        stable_controls=tuple(match.control_type for match in design.allocation.design.controls),
+        seed_hex=_seed_hex(design.block.seed, "rekey-stage-04"),
+    )
+    assignments = design.allocation.allocation.assignments
+    plaintext_stage_bytes, stationary_stage_bytes = _variant_stage_bytes(
+        assignments,
+        base_key=base_key,
+        revised_key=revised_key,
+        variant_id="stationary",
+    )
+    rekey_plaintext, rekey_stage_bytes = _variant_stage_bytes(
+        assignments,
+        base_key=base_key,
+        revised_key=revised_key,
+        variant_id="rekey",
+    )
+    if plaintext_stage_bytes != rekey_plaintext:
+        raise RuntimeError("Paired variants do not share one plaintext allocation.")
+    rekey_loss, changed_mass_by_agent = _manipulation_masses(
+        assignments,
+        frozenset(changed_types),
+    )
+    validate_pair(
+        stationary_stage_bytes=stationary_stage_bytes,
+        rekey_stage_bytes=rekey_stage_bytes,
+        boundary_stage=BOUNDARY_STAGE,
+        stationary_old_key_loss=0.0,
+        rekey_old_key_loss=rekey_loss,
+        changed_token_mass_by_agent=changed_mass_by_agent,
+    )
+    return PreparedPair(
+        window_plaintext=window_plaintext,
+        base_key=base_key,
+        revised_key=revised_key,
+        plaintext_stage_bytes=plaintext_stage_bytes,
+        stationary_stage_bytes=stationary_stage_bytes,
+        rekey_stage_bytes=rekey_stage_bytes,
+        manipulation_check={
+            "schemaVersion": 1,
+            "preBoundaryIdentical": True,
+            "stationaryOldKeyLoss": 0.0,
+            "rekeyOldKeyLoss": rekey_loss,
+            "changedTokenMassByAgent": changed_mass_by_agent,
+        },
+    )
+
+
 def _write_references(
     destination: Path,
     sources: tuple[SourceDefinition, ...],
@@ -404,26 +475,15 @@ def _build_into(
         raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
 
     design = design_block(_paragraph_units(source), block, discover=False)
-    window_plaintext = serialize_paragraphs(
-        tuple(paragraph.text for paragraph in design.window.paragraphs)
-    )
-    vocabulary = sorted(set(_words(window_plaintext)))
-    base_key = stationary_key(vocabulary, _seed_hex(block.seed, "base-key"))
+    pair = _prepare_pair(design)
     changed_types = design.allocation.design.changed_types
-    controls = tuple(match.control_type for match in design.allocation.design.controls)
-    revised_key = revise_explicit_types(
-        prior_key=base_key,
-        changed_types=changed_types,
-        stable_controls=controls,
-        seed_hex=_seed_hex(block.seed, "rekey-stage-04"),
-    )
 
-    _write(destination / "oracle/keys/base.json", canonical_json_bytes(base_key))
+    _write(destination / "oracle/keys/base.json", canonical_json_bytes(pair.base_key))
     _write(
         destination / "oracle/keys/rekey-stage-04.json",
-        canonical_json_bytes(revised_key),
+        canonical_json_bytes(pair.revised_key),
     )
-    _write(destination / "oracle/plaintext.txt", window_plaintext.encode("utf-8"))
+    _write(destination / "oracle/plaintext.txt", pair.window_plaintext.encode("utf-8"))
 
     allocation_record = _allocation_record(design)
     allocation_bytes = canonical_json_bytes(allocation_record)
@@ -438,56 +498,22 @@ def _build_into(
     controls_sha256 = sha256_hex(canonical_json_bytes(oracle_record["controls"]))
     changed_symbols_sha256 = sha256_hex(canonical_json_bytes(list(changed_types)))
 
-    assignments = design.allocation.allocation.assignments
-    stationary_plain, stationary_bytes = _variant_stage_bytes(
-        assignments,
-        base_key=base_key,
-        revised_key=revised_key,
-        variant_id="stationary",
-    )
-    rekey_plain, rekey_bytes = _variant_stage_bytes(
-        assignments,
-        base_key=base_key,
-        revised_key=revised_key,
-        variant_id="rekey",
-    )
-    if stationary_plain != rekey_plain:
-        raise RuntimeError("Paired variants do not share one plaintext allocation.")
-    for (agent_id, ordinal), content in stationary_plain.items():
+    for (agent_id, ordinal), content in pair.plaintext_stage_bytes.items():
         _write(
             destination / "oracle" / "checker" / agent_id / stage_filename(ordinal, STAGE_COUNT),
             content,
         )
 
-    rekey_loss, changed_mass_by_agent = _manipulation_masses(
-        assignments,
-        frozenset(changed_types),
-    )
-    validate_pair(
-        stationary_stage_bytes=stationary_bytes,
-        rekey_stage_bytes=rekey_bytes,
-        boundary_stage=BOUNDARY_STAGE,
-        stationary_old_key_loss=0.0,
-        rekey_old_key_loss=rekey_loss,
-        changed_token_mass_by_agent=changed_mass_by_agent,
-    )
-    manipulation_record = {
-        "schemaVersion": 1,
-        "preBoundaryIdentical": True,
-        "stationaryOldKeyLoss": 0.0,
-        "rekeyOldKeyLoss": rekey_loss,
-        "changedTokenMassByAgent": changed_mass_by_agent,
-    }
-    manipulation_bytes = canonical_json_bytes(manipulation_record)
+    manipulation_bytes = canonical_json_bytes(pair.manipulation_check)
     _write(destination / "oracle/manipulation-check.json", manipulation_bytes)
 
     stationary = _build_variant(
         destination,
         design,
         variant_id="stationary",
-        stage_bytes=stationary_bytes,
-        base_key=base_key,
-        revised_key=revised_key,
+        stage_bytes=pair.stationary_stage_bytes,
+        base_key=pair.base_key,
+        revised_key=pair.revised_key,
         reference_sources=reference_sources,
         changed_symbols_sha256=changed_symbols_sha256,
     )
@@ -495,9 +521,9 @@ def _build_into(
         destination,
         design,
         variant_id="rekey",
-        stage_bytes=rekey_bytes,
-        base_key=base_key,
-        revised_key=revised_key,
+        stage_bytes=pair.rekey_stage_bytes,
+        base_key=pair.base_key,
+        revised_key=pair.revised_key,
         reference_sources=reference_sources,
         changed_symbols_sha256=changed_symbols_sha256,
     )
@@ -525,8 +551,8 @@ def _build_into(
         sha256=sha256_hex(manipulation_bytes),
         pre_boundary_identical=True,
         stationary_old_key_loss=0.0,
-        rekey_old_key_loss=rekey_loss,
-        changed_token_mass_by_agent=changed_mass_by_agent,
+        rekey_old_key_loss=pair.manipulation_check["rekeyOldKeyLoss"],
+        changed_token_mass_by_agent=pair.manipulation_check["changedTokenMassByAgent"],
     )
     pair_basis = {
         "schemaVersion": 3,
@@ -598,6 +624,7 @@ def discover_block(root: Path, output: Path, block_id: str) -> dict[str, Any]:
     except KeyError as error:
         raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
     design = design_block(_paragraph_units(source), block, discover=True)
+    pair = _prepare_pair(design)
     record = {
         "schemaVersion": 1,
         "blockId": block.block_id,
@@ -607,11 +634,8 @@ def discover_block(root: Path, output: Path, block_id: str) -> dict[str, Any]:
             "wordCount": design.window.word_count,
             "sha256": design.window.sha256,
         },
-        "tier": design.allocation.tier.name,
-        "rejectedTiers": [
-            {"tier": rejection.tier, "reasons": list(rejection.reasons)}
-            for rejection in design.allocation.rejected_tiers
-        ],
+        "allocation": _allocation_record(design),
+        "manipulationCheck": pair.manipulation_check,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
@@ -641,10 +665,15 @@ def main() -> None:
     else:
         build = build_puzzle(args.root, args.output, args.block)
         result = {
-            "buildId": build.rekey.build_id,
+            "pairedBuildId": build.paired_build_id,
             "buildPath": str(args.output.resolve()),
+            "blockId": build.block_id,
             "agentIds": list(build.agent_ids),
             "stageCount": build.stage_count,
+            "variants": {
+                "stationary": build.stationary.build_id,
+                "rekey": build.rekey.build_id,
+            },
         }
     print(canonical_json_bytes(result).decode())
 

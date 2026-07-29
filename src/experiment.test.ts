@@ -95,10 +95,15 @@ function adapter(): ModelAdapter {
 
 function buildResult(experimentRoot: string): BuildPuzzleResult {
   return {
-    buildId: BUILD_ID,
+    pairedBuildId: `paired-${"b".repeat(64)}`,
+    blockId: "calibration-theron-ware",
     buildPath: join(experimentRoot, "build"),
     agentIds: ["agent-1", "agent-2", "agent-3"],
     stageCount: 6,
+    variants: {
+      stationary: `build-${"a".repeat(64)}`,
+      rekey: BUILD_ID,
+    },
   };
 }
 
@@ -120,7 +125,7 @@ async function publishFixtureAttempt(
   const summary: AttemptSummary = {
     schemaVersion: 2,
     attemptId,
-    buildId: build.buildId,
+    buildId: build.variants.rekey,
     buildRoot: build.buildPath,
     agentIds,
     tracePath: join(request.output, "trace.jsonl"),

@@ -215,6 +215,8 @@ def test_normal_design_revalidates_the_first_feasible_pin(
 def test_discovery_writes_only_the_first_feasible_record(tmp_path: Path) -> None:
     committed = load_block_catalog(ROOT / "experiments/blocks.json").block(BLOCK_IDS[0])
     assert not committed.window.is_discovery
+    normal_output = tmp_path / "normal-build"
+    build_module.build_puzzle(ROOT, normal_output, committed.block_id)
     root = _copy_fixture_root(
         tmp_path,
         lambda catalog: _zero_window(catalog, committed.block_id),
@@ -226,6 +228,13 @@ def test_discovery_writes_only_the_first_feasible_record(tmp_path: Path) -> None
     assert result is not None
     assert tuple(_files(output)) == (Path("discovery.json"),)
     discovery = _json(output / "discovery.json")
+    assert set(discovery) == {
+        "schemaVersion",
+        "blockId",
+        "window",
+        "allocation",
+        "manipulationCheck",
+    }
     assert discovery["blockId"] == committed.block_id
     assert discovery["window"] == {
         "paragraphStart": committed.window.paragraph_start,
@@ -233,10 +242,32 @@ def test_discovery_writes_only_the_first_feasible_record(tmp_path: Path) -> None
         "wordCount": committed.window.word_count,
         "sha256": committed.window.sha256,
     }
+    assert discovery["allocation"] == _json(normal_output / "oracle/allocation.json")
+    assert discovery["manipulationCheck"] == _json(normal_output / "oracle/manipulation-check.json")
 
     with pytest.raises(ValueError, match="discovered and pinned"):
-        build_module.build_puzzle(root, tmp_path / "normal", committed.block_id)
-    assert not (tmp_path / "normal").exists()
+        build_module.build_puzzle(root, tmp_path / "unpinned", committed.block_id)
+    assert not (tmp_path / "unpinned").exists()
+
+
+def test_discovery_pair_validation_failure_publishes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    block_id = BLOCK_IDS[0]
+    root = _copy_fixture_root(tmp_path, lambda catalog: _zero_window(catalog, block_id))
+    output = tmp_path / "discovery"
+
+    def fail_pair(**kwargs: object) -> None:
+        del kwargs
+        raise ValueError("invalid manipulation")
+
+    monkeypatch.setattr(build_module, "validate_pair", fail_pair)
+
+    with pytest.raises(ValueError, match="invalid manipulation"):
+        build_module.discover_block(root, output, block_id)
+
+    assert not output.exists()
 
 
 def test_normal_build_rejects_a_stale_committed_pin_without_publication(

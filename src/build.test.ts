@@ -15,10 +15,15 @@ const block = "calibration-theron-ware";
 function currentBuild() {
   const manifest = decodeBuildManifest(testBuildManifest());
   const result = decodeBuildResult({
-    buildId: manifest.variants.rekey.buildId,
+    pairedBuildId: manifest.pairedBuildId,
+    blockId: manifest.blockId,
     buildPath: output,
     agentIds: manifest.agentIds,
     stageCount: manifest.stageCount,
+    variants: {
+      stationary: manifest.variants.stationary.buildId,
+      rekey: manifest.variants.rekey.buildId,
+    },
   });
   return { manifest, result };
 }
@@ -37,12 +42,35 @@ const mismatches: readonly [
     },
   ],
   [
-    "selected variant identity",
+    "paired identity",
     {
-      result: { buildId: `build-${"b".repeat(64)}` },
+      result: { pairedBuildId: `paired-${"b".repeat(64)}` },
     },
   ],
-  ["block identity", { block: "validation-odd-women" }],
+  ["reported block identity", { result: { blockId: "validation-odd-women" } }],
+  ["requested block identity", { block: "validation-odd-women" }],
+  [
+    "stationary variant identity",
+    {
+      result: {
+        variants: {
+          stationary: `build-${"a".repeat(64)}`,
+          rekey: `build-${"b".repeat(64)}`,
+        },
+      },
+    },
+  ],
+  [
+    "re-key variant identity",
+    {
+      result: {
+        variants: {
+          stationary: `build-${"b".repeat(64)}`,
+          rekey: `build-${"c".repeat(64)}`,
+        },
+      },
+    },
+  ],
 ];
 
 describe("build handoff validation", () => {
@@ -52,11 +80,23 @@ describe("build handoff validation", () => {
     expect(() => assertBuildMatchesBlock(manifest, result, block, output)).not.toThrow();
   });
 
-  it("reports the rekey variant build ID", () => {
+  it("decodes exactly the paired build result contract", () => {
     const { manifest, result } = currentBuild();
 
-    expect(result.buildId).toBe(manifest.variants.rekey.buildId);
-    expect(result.buildId).not.toBe(manifest.variants.stationary.buildId);
+    expect(result).toEqual({
+      pairedBuildId: manifest.pairedBuildId,
+      blockId: manifest.blockId,
+      buildPath: output,
+      agentIds: ["agent-1", "agent-2", "agent-3"],
+      stageCount: 6,
+      variants: {
+        stationary: manifest.variants.stationary.buildId,
+        rekey: manifest.variants.rekey.buildId,
+      },
+    });
+    expect(() => decodeBuildResult({ ...result, buildId: result.variants.rekey })).toThrow(
+      "Puzzle build result.buildId is unsupported.",
+    );
   });
 
   it("uses the fixed interim rekey variant selection", () => {
@@ -65,7 +105,7 @@ describe("build handoff validation", () => {
 
     expect(selected).toBe(manifest.variants.rekey);
     expect(selected.variantId).toBe("rekey");
-    expect(selected.buildId).toBe(result.buildId);
+    expect(selected.buildId).toBe(result.variants.rekey);
   });
 
   it("rejects stale build schemas before comparing resolved inputs", () => {

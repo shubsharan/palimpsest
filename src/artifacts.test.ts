@@ -176,12 +176,27 @@ describe("stored artifact decoders", () => {
   it("accepts complete current-version records", () => {
     expect(
       decodeBuildResult({
-        buildId: `build-${digest}`,
+        pairedBuildId: `paired-${digest}`,
+        blockId: "calibration-theron-ware",
         buildPath: "/tmp/palimpsest/build",
         agentIds: ["agent-1", "agent-2", "agent-3"],
         stageCount: 6,
+        variants: {
+          stationary: `build-${"a".repeat(64)}`,
+          rekey: `build-${digest}`,
+        },
       }),
-    ).toMatchObject({ agentIds: ["agent-1", "agent-2", "agent-3"], stageCount: 6 });
+    ).toEqual({
+      pairedBuildId: `paired-${digest}`,
+      blockId: "calibration-theron-ware",
+      buildPath: "/tmp/palimpsest/build",
+      agentIds: ["agent-1", "agent-2", "agent-3"],
+      stageCount: 6,
+      variants: {
+        stationary: `build-${"a".repeat(64)}`,
+        rekey: `build-${digest}`,
+      },
+    });
     expect(decodeBuildManifest(buildManifest()).variants.stationary.stages).toHaveLength(18);
     expect(decodeBuildManifest(buildManifest()).variants.rekey.stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);

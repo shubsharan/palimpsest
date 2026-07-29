@@ -27,6 +27,11 @@ pnpm puzzle:build -- \
 
 Discovery writes `discovery.json` only. Run it once for each checked-in block, review the selected tier and manipulation checks, then commit the exact paragraph range, word count, and digest into the matching `experiments/blocks.json` entry. Normal builds repeat the search and reject any pin that is not the first feasible result.
 
+```bash
+jq '{tier: .allocation.tier, metrics: .allocation.metrics, rejectedTiers: .allocation.rejectedTiers, manipulationCheck}' \
+  artifacts/discovery/discovery.json
+```
+
 ## Build A Paired Block
 
 ```bash
