@@ -181,22 +181,9 @@ describe("stored artifact decoders", () => {
         buildPath: "/tmp/palimpsest/build",
         agentIds: ["agent-1", "agent-2", "agent-3"],
         stageCount: 6,
-        variants: {
-          stationary: `build-${"a".repeat(64)}`,
-          rekey: `build-${digest}`,
-        },
+        variants: { stationary: `build-${digest}`, rekey: `build-${"b".repeat(64)}` },
       }),
-    ).toEqual({
-      pairedBuildId: `paired-${digest}`,
-      blockId: "calibration-theron-ware",
-      buildPath: "/tmp/palimpsest/build",
-      agentIds: ["agent-1", "agent-2", "agent-3"],
-      stageCount: 6,
-      variants: {
-        stationary: `build-${"a".repeat(64)}`,
-        rekey: `build-${digest}`,
-      },
-    });
+    ).toMatchObject({ agentIds: ["agent-1", "agent-2", "agent-3"], stageCount: 6 });
     expect(decodeBuildManifest(buildManifest()).variants.stationary.stages).toHaveLength(18);
     expect(decodeBuildManifest(buildManifest()).variants.rekey.stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);
@@ -205,15 +192,41 @@ describe("stored artifact decoders", () => {
     expect(decodeEvaluationRecord(evaluationRecord()).status).toBe("scored");
   });
 
-  it("keeps attempt geometry dynamic while paired builds stay fixed", () => {
-    expect(
-      decodeAttemptSummary(
-        attemptSummary({
-          agentIds: ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"],
-        }),
-      ).agentIds,
-    ).toEqual(["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"]);
+  it("round-trips the complete strict condition-attempt record", () => {
+    const encoded = JSON.parse(JSON.stringify(attemptSummary())) as unknown;
+    const decoded = decodeAttemptSummary(encoded);
+
+    expect(decoded).toEqual(encoded);
+    expect(decoded).toMatchObject({
+      schemaVersion: 3,
+      blockId: "calibration-theron-ware",
+      condition: "CR",
+      communicationMode: "shared",
+      keyRegime: "rekey",
+      variantId: "rekey",
+      releaseOffsetsMs: [0, 300_000, 600_000, 1_200_000, 1_800_000, 2_400_000],
+      cutoffMs: 3_600_000,
+      frozen: {
+        communicationMode: "shared",
+        repositories: [{ repositoryId: "shared" }],
+      },
+    });
   });
+
+  it.each([
+    ["CS", "shared", "stationary", 1],
+    ["CR", "shared", "rekey", 1],
+    ["IS", "isolated", "stationary", 3],
+    ["IR", "isolated", "rekey", 3],
+  ] as const)(
+    "accepts the native frozen topology for %s",
+    (condition, communicationMode, variantId, repositoryCount) => {
+      const attempt = decodeAttemptSummary(attemptSummary({ condition }));
+
+      expect(attempt).toMatchObject({ condition, communicationMode, variantId });
+      expect(attempt.frozen.repositories).toHaveLength(repositoryCount);
+    },
+  );
 
   it.each([
     ["non-object root", () => decodeBuildManifest([])],
@@ -318,16 +331,96 @@ describe("stored artifact decoders", () => {
       () => decodeAttemptSummary({ ...attemptSummary(), schemaVersion: 1 }),
     ],
     [
+      "unsupported attempt field",
+      () => decodeAttemptSummary({ ...attemptSummary(), communicationAvailable: true }),
+    ],
+    [
       "relative build root",
       () => decodeAttemptSummary({ ...attemptSummary(), buildRoot: "build" }),
     ],
     [
-      "noncanonical dynamic agent IDs",
+      "noncanonical agent IDs",
       () =>
         decodeAttemptSummary({
           ...attemptSummary(),
           agentIds: ["agent-1", "agent-3", "agent-2"],
         }),
+    ],
+    [
+      "non-fixed agent geometry",
+      () =>
+        decodeAttemptSummary(
+          attemptSummary({
+            agentIds: ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5"],
+          }),
+        ),
+    ],
+    [
+      "condition and communication mismatch",
+      () => decodeAttemptSummary({ ...attemptSummary(), communicationMode: "isolated" }),
+    ],
+    [
+      "condition and variant mismatch",
+      () => decodeAttemptSummary({ ...attemptSummary(), variantId: "stationary" }),
+    ],
+    [
+      "release schedule drift",
+      () =>
+        decodeAttemptSummary({
+          ...attemptSummary(),
+          releaseOffsetsMs: [0, 300_000, 600_001, 1_200_000, 1_800_000, 2_400_000],
+        }),
+    ],
+    ["cutoff drift", () => decodeAttemptSummary({ ...attemptSummary(), cutoffMs: 3_600_001 })],
+    [
+      "shared topology drift",
+      () => {
+        const value = attemptSummary();
+        const frozen = value.frozen as Record<string, unknown>;
+        const repositories = [...(frozen.repositories as Record<string, unknown>[])];
+        repositories[0] = { ...repositories[0], agentIds: ["agent-1", "agent-2"] };
+        return decodeAttemptSummary({
+          ...value,
+          frozen: { ...frozen, repositories },
+        });
+      },
+    ],
+    [
+      "isolated topology drift",
+      () => {
+        const value = attemptSummary({ condition: "IR" });
+        const frozen = value.frozen as Record<string, unknown>;
+        const workspaces = [...(frozen.workspaces as Record<string, unknown>[])];
+        workspaces[1] = { ...workspaces[1], repositoryId: "agent-1" };
+        return decodeAttemptSummary({
+          ...value,
+          frozen: { ...frozen, workspaces },
+        });
+      },
+    ],
+    [
+      "protocol digest mismatch",
+      () => {
+        const value = attemptSummary();
+        const protocol = value.protocol as Record<string, unknown>;
+        const prompts = [...(protocol.prompts as Record<string, unknown>[])];
+        prompts[0] = { ...prompts[0], prompt: "changed after declaration" };
+        return decodeAttemptSummary({
+          ...value,
+          protocol: { ...protocol, prompts },
+        });
+      },
+    ],
+    [
+      "protocol treatment mismatch",
+      () => {
+        const value = attemptSummary();
+        const protocol = value.protocol as Record<string, unknown>;
+        return decodeAttemptSummary({
+          ...value,
+          protocol: { ...protocol, communicationMode: "isolated" },
+        });
+      },
     ],
     [
       "missing model binding",

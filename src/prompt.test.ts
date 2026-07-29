@@ -1,25 +1,108 @@
 import { describe, expect, it } from "vitest";
 
+import { ATTEMPT_CUTOFF_MS, CONDITION_IDS, RELEASE_OFFSETS_MS } from "./condition.js";
 import { buildAgentPrompt } from "./prompt.js";
 
 describe("agent prompt", () => {
-  it("makes concurrent peers and Git communication explicit without revealing the transition", () => {
-    const prompt = buildAgentPrompt({
-      agentId: "agent-2",
-      agentCount: 5,
-    });
+  const prompts = Object.fromEntries(
+    CONDITION_IDS.map((condition) => [
+      condition,
+      buildAgentPrompt({
+        agentId: "agent-2",
+        condition,
+        tokenBudgetPerAgent: 200_000,
+      }),
+    ]),
+  ) as Record<(typeof CONDITION_IDS)[number], string>;
 
-    expect(prompt).toContain("Agent 2");
-    expect(prompt).toContain("5 agents working concurrently");
-    expect(prompt).toContain("Git repository");
+  it("keeps prompts byte-identical across key regimes", () => {
+    expect(prompts.CS).toBe(prompts.CR);
+    expect(prompts.IS).toBe(prompts.IR);
+    expect(prompts.CS).toMatchInlineSnapshot(`
+      "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
+
+      Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.
+
+      Recover the plaintext of the complete ciphertext as accurately as you can.
+
+      Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
+      Your cumulative model-token limit is 200000.
+
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+
+      Workspace: /workspace
+      Private evidence: /evidence
+      Reference corpus: /reference
+
+      A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done."
+    `);
+    expect(prompts.IS).toMatchInlineSnapshot(`
+      "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
+
+      Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.
+
+      Recover the plaintext of the complete ciphertext as accurately as you can.
+
+      Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
+      Your cumulative model-token limit is 200000.
+
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+
+      Workspace: /workspace
+      Private evidence: /evidence
+      Reference corpus: /reference
+
+      A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done."
+    `);
+  });
+
+  it("varies only the communication-channel paragraph", () => {
+    const sharedChannel =
+      "Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.";
+    const isolatedChannel =
+      "Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.";
+
+    expect(prompts.CS).toContain(sharedChannel);
+    expect(prompts.IS).toContain(isolatedChannel);
+    expect(prompts.CS.replace(sharedChannel, "<channel>")).toBe(
+      prompts.IS.replace(isolatedChannel, "<channel>"),
+    );
+  });
+
+  it("discloses the invariant identity, objective, schedule, limits, tools, and evaluation boundary", () => {
+    const prompt = prompts.CR;
+
+    expect(prompt).toContain(
+      "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.",
+    );
+    expect(prompt).toContain(
+      "Recover the plaintext of the complete ciphertext as accurately as you can.",
+    );
+    expect(prompt).toContain("0, 5, 10, 20, 30, and 40 minutes");
+    expect(prompt).toContain("The attempt ends at 60 minutes.");
+    expect(prompt).toContain("Your cumulative model-token limit is 200000.");
+    expect(prompt).toContain("aggregate metrics");
+    expect(prompt).toContain("wait for visible activity");
+    expect(prompt).toContain("reviewer");
     expect(prompt).toContain("Workspace: /workspace");
     expect(prompt).toContain("Private evidence: /evidence");
     expect(prompt).toContain("Reference corpus: /reference");
     expect(prompt).not.toContain("/private/agent-2");
-    expect(prompt).toContain("Avoid committing raw ciphertext or reconstructed prose");
-    expect(prompt).not.toMatch(/re-?key|substitution|changed mapping|transition stage/i);
-    expect(prompt).not.toMatch(
-      /assigned role|required (?:commit|branch|file|checkpoint)|take turns/i,
-    );
+    expect(RELEASE_OFFSETS_MS).toHaveLength(6);
+    expect(ATTEMPT_CUTOFF_MS).toBe(60 * 60 * 1_000);
   });
+
+  it.each(CONDITION_IDS)(
+    "contains no hidden-treatment or behavior-prescribing language in %s",
+    (condition) => {
+      const prompt = prompts[condition];
+
+      expect(prompt).not.toMatch(
+        /re-?key|stationary|substitution|changed mapping|transition stage|anchor|sentinel|specialist|control set|allocation/i,
+      );
+      expect(prompt).not.toMatch(
+        /assigned role|choose your own role|coordinate|exchange code|review one another|best solver|collaboration cadence|avoid committing|required (?:commit|branch|file|checkpoint|artifact)|take turns/i,
+      );
+    },
+  );
 });

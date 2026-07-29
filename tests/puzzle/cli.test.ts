@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
@@ -113,6 +113,8 @@ describe("operator CLI contract", () => {
         "experiments/config.yaml",
         "--run",
         "mixed",
+        "--condition",
+        "CR",
         "--output",
         "attempt",
         "--build",
@@ -134,6 +136,7 @@ describe("operator CLI contract", () => {
         ["--discover", "true"],
         ["--config", "experiments/config.yaml"],
         ["--run", "mixed"],
+        ["--condition", "CR"],
         ["--output", "attempt"],
         ["--build", "build"],
         ["--attempt", "attempt"],
@@ -206,38 +209,41 @@ describe("operator CLI contract", () => {
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("refuses to run with a non-empty build destination", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-run-build-"));
-    const buildRoot = join(temporaryRoot, "build");
-    const output = join(temporaryRoot, "attempt");
-    const sentinel = join(buildRoot, "stale.txt");
-    await mkdir(buildRoot);
-    await writeFile(sentinel, "stale build\n", "utf8");
+  it("rejects non-canonical condition tokens before creating output", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-condition-"));
+    const output = join(temporaryRoot, "offline");
     const scripts = await packageScripts();
-    const command = scripts["puzzle:run"]?.split(/\s+/);
+    const command = scripts["puzzle:offline"]?.split(/\s+/);
 
     const result = await execute(
       process.execPath,
-      [
-        tsxCli,
-        ...(command?.slice(1) ?? []),
-        "--config",
-        "experiments/config.yaml",
-        "--run",
-        "gpt-only",
-        "--build",
-        buildRoot,
-        "--output",
-        output,
-      ],
-      { cwd: root, env: { ...process.env, OPENAI_API_KEY: "unused-fixture-key" } },
+      [tsxCli, ...(command?.slice(1) ?? []), "--condition", "cr", "--output", output],
+      { cwd: root },
     );
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Puzzle build output is non-empty");
-    expect(await readFile(sentinel, "utf8")).toBe("stale build\n");
+    expect(result.stderr).toContain("Condition must be exactly one of CS, CR, IS, or IR.");
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("requires a workspace for evaluation", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-workspace-"));
+    const scripts = await packageScripts();
+    const command = scripts["puzzle:evaluate"]?.split(/\s+/);
+
+    const result = await execute(
+      process.execPath,
+      [tsxCli, ...(command?.slice(1) ?? []), "--attempt", join(temporaryRoot, "attempt")],
+      { cwd: root },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Reviewer workspace must be provided for evaluation.");
+    await expect(access(join(temporaryRoot, "attempt", "evaluation"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("rebuilds one pinned block byte-identically", async () => {

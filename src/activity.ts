@@ -1,12 +1,9 @@
-import type { AgentId } from "./model.js";
-
 export type ActivityKind = "stage-released" | "git-changed";
 
 export interface ActivityEvent {
   sequence: number;
   kind: ActivityKind;
   occurredAtMs: number;
-  agentId?: AgentId;
   detail: Readonly<Record<string, unknown>>;
 }
 
@@ -19,21 +16,15 @@ export type ActivityWaitResult =
 
 interface ActivityInput {
   kind: ActivityKind;
-  agentId?: AgentId;
   detail: Readonly<Record<string, unknown>>;
   occurredAtMs?: number;
 }
 
 interface Waiter {
-  agentId: AgentId;
   afterSequence: number;
   resolve: (result: ActivityWaitResult) => void;
   signal?: AbortSignal;
   abort?: () => void;
-}
-
-function isVisible(event: ActivityEvent, agentId: AgentId): boolean {
-  return event.kind === "git-changed" || event.agentId === agentId;
 }
 
 export class ActivityBus {
@@ -54,10 +45,8 @@ export class ActivityBus {
     return this.#events;
   }
 
-  visibleAfter(agentId: AgentId, afterSequence: number): ActivityEvent[] {
-    return this.#events.filter(
-      (event) => event.sequence > afterSequence && isVisible(event, agentId),
-    );
+  after(afterSequence: number): ActivityEvent[] {
+    return this.#events.filter((event) => event.sequence > afterSequence);
   }
 
   publish(input: ActivityInput): ActivityEvent {
@@ -70,23 +59,17 @@ export class ActivityBus {
       occurredAtMs: input.occurredAtMs ?? this.#nowMs(),
       detail: input.detail,
     };
-    const event: ActivityEvent =
-      input.agentId === undefined ? common : { ...common, agentId: input.agentId };
-    this.#events.push(event);
+    this.#events.push(common);
     for (const waiter of this.#waiters) {
-      if (event.sequence > waiter.afterSequence && isVisible(event, waiter.agentId)) {
-        this.#resolveWaiter(waiter, event);
+      if (common.sequence > waiter.afterSequence) {
+        this.#resolveWaiter(waiter, common);
       }
     }
-    return event;
+    return common;
   }
 
-  waitForVisible(
-    agentId: AgentId,
-    afterSequence: number,
-    signal?: AbortSignal,
-  ): Promise<ActivityWaitResult> {
-    const existing = this.visibleAfter(agentId, afterSequence)[0];
+  waitFor(afterSequence: number, signal?: AbortSignal): Promise<ActivityWaitResult> {
+    const existing = this.after(afterSequence)[0];
     if (existing) return Promise.resolve(existing);
     if (this.#endedReason !== undefined) {
       return Promise.resolve({ ended: true, reason: this.#endedReason });
@@ -96,9 +79,7 @@ export class ActivityBus {
     }
     return new Promise((resolve) => {
       const waiter: Waiter =
-        signal === undefined
-          ? { agentId, afterSequence, resolve }
-          : { agentId, afterSequence, resolve, signal };
+        signal === undefined ? { afterSequence, resolve } : { afterSequence, resolve, signal };
       if (signal !== undefined) {
         waiter.abort = () => {
           this.#resolveWaiter(waiter, { ended: true, reason: "time-exhausted" });

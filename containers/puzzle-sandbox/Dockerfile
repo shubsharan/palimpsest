@@ -14,9 +14,9 @@ RUN apt-get update \
         grep \
         sed \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /evidence /reference /git/shared.git /input \
+    && mkdir -p /evidence /reference /git/origin.git /input \
     && git config --system --add safe.directory /workspace \
-    && git config --system --add safe.directory /git/shared.git \
+    && git config --system --add safe.directory /git/origin.git \
     && touch /input/ciphertext.txt
 
 WORKDIR /workspace

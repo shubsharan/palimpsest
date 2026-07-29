@@ -46,12 +46,10 @@ export interface ModelProfile {
 
 export interface PuzzleDefinition {
   block: string;
-  stageIntervalMs: number;
 }
 
 export interface ExperimentLimits {
   tokenBudgetPerAgent: number;
-  wallTimeMs: number;
 }
 
 export interface ResolvedAgentBinding {
@@ -251,9 +249,7 @@ function safeInteger(value: unknown, path: string, minimum = 0): number {
 }
 
 function assertSemanticRelationships(config: ExperimentConfig): void {
-  safeInteger(config.puzzle.stageIntervalMs, "puzzle.stageIntervalMs", 1);
   safeInteger(config.limits.tokenBudgetPerAgent, "limits.tokenBudgetPerAgent", 1);
-  safeInteger(config.limits.wallTimeMs, "limits.wallTimeMs", 1);
   for (const [name, model] of Object.entries(config.models)) {
     if (!(model.provider in config.providers)) {
       throw new Error(`models.${name}.provider references unknown provider ${model.provider}.`);
@@ -372,10 +368,7 @@ export async function resolveExperimentConfig(
   }
   return deepFreeze({
     schemaVersion: 1,
-    puzzle: {
-      block: config.puzzle.block,
-      stageIntervalMs: config.puzzle.stageIntervalMs,
-    },
+    puzzle: { block: config.puzzle.block },
     limits: { ...config.limits },
     providers,
     models,

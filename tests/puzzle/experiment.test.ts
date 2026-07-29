@@ -5,16 +5,18 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  decodeAttemptSummary,
+  decodeBuildManifest,
   publishAttemptSummary,
   type AttemptSummary,
   type BuildPuzzleResult,
 } from "../../src/artifacts.js";
+import { hashProtocolSnapshot, resolveCondition } from "../../src/condition.js";
 import { runExperiment, type ExperimentRunRequest } from "../../src/experiment.js";
 import type { ModelAdapter } from "../../src/model.js";
-import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "../../src/sandbox/contracts.js";
+import { testAttemptSummary, testBuildManifest } from "../../src/test-helpers.js";
 
-const BUILD_ID = `build-${"d".repeat(64)}`;
-const DIGEST = "e".repeat(64);
+const BUILD_ID = `build-${"a".repeat(64)}`;
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
@@ -27,21 +29,47 @@ async function fixtureAttempt(
 ): Promise<AttemptSummary> {
   await mkdir(request.output, { recursive: true });
   const agentIds = Object.keys(request.agents).sort() as Array<keyof typeof request.agents>;
-  const summary: AttemptSummary = {
-    schemaVersion: 2,
+  const base = testAttemptSummary({ condition: request.condition });
+  const condition = resolveCondition(request.condition);
+  const protocol = {
+    ...(base.protocol as Record<string, unknown>),
+    buildId: build.variants[condition.variantId],
+    tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+    models: agentIds.map((agentId) => ({
+      agentId,
+      model: request.agents[agentId]!.model,
+    })),
+  };
+  const frozenRoot = join(request.output, "frozen");
+  const summary = decodeAttemptSummary({
+    ...base,
     attemptId: `attempt-${request.runName}-${String(request.repetition)}`,
-    buildId: build.variants.rekey,
+    runName: request.runName,
+    repetition: request.repetition,
+    buildId: build.variants[condition.variantId],
     buildRoot: build.buildPath,
     agentIds,
+    tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+    protocolDigest: hashProtocolSnapshot(protocol),
+    protocol,
     tracePath: join(request.output, "trace.jsonl"),
     traceMetadataPath: join(request.output, "trace.meta.json"),
-    frozenRoot: join(request.output, "frozen"),
-    sandbox: {
-      imageTag: SANDBOX_IMAGE_TAG,
-      imageId: `sha256:${"f".repeat(64)}`,
-      sourceDigest: DIGEST,
-      profileVersion: 1,
-      ...SANDBOX_POLICY,
+    frozen: {
+      root: frozenRoot,
+      communicationMode: condition.communicationMode,
+      repositories:
+        condition.communicationMode === "shared"
+          ? [{ repositoryId: "shared", path: join(frozenRoot, "shared.git"), agentIds }]
+          : agentIds.map((agentId) => ({
+              repositoryId: agentId,
+              path: join(frozenRoot, `${agentId}.git`),
+              agentIds: [agentId],
+            })),
+      workspaces: agentIds.map((agentId) => ({
+        agentId,
+        path: join(frozenRoot, "workspaces", agentId),
+        repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
+      })),
     },
     sessions: agentIds.map((agentId) => ({
       agentId,
@@ -52,7 +80,7 @@ async function fixtureAttempt(
       activityCursor: 0,
       terminationReason: "fixture complete",
     })),
-  };
+  });
   await publishAttemptSummary(request.output, summary);
   return summary;
 }
@@ -64,15 +92,12 @@ describe("puzzle experiment", () => {
     temporaryRoots.push(temporary);
     const experimentRoot = join(temporary, "baseline");
     const build: BuildPuzzleResult = {
-      pairedBuildId: `paired-${"c".repeat(64)}`,
+      pairedBuildId: `paired-${"a".repeat(64)}`,
       blockId: "calibration-theron-ware",
       buildPath: join(experimentRoot, "build"),
       agentIds: ["agent-1", "agent-2", "agent-3"],
       stageCount: 6,
-      variants: {
-        stationary: `build-${"c".repeat(64)}`,
-        rekey: BUILD_ID,
-      },
+      variants: { stationary: BUILD_ID, rekey: BUILD_ID },
     };
     const requestedModels: string[] = [];
     let builds = 0;
@@ -86,6 +111,7 @@ describe("puzzle experiment", () => {
       root,
       configPath: "experiments/config.yaml",
       output: experimentRoot,
+      condition: "CR",
       env: {
         OPENAI_API_KEY: "secret-canary-openai",
         ANTHROPIC_API_KEY: "secret-canary-anthropic",
@@ -101,6 +127,7 @@ describe("puzzle experiment", () => {
           expect(options.output).toBe(build.buildPath);
           return build;
         },
+        readBuildManifest: async () => decodeBuildManifest(testBuildManifest()),
         run: async (request) => {
           const attempt = await fixtureAttempt(request, build);
           return {

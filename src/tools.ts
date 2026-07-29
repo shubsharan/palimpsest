@@ -36,7 +36,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   },
   {
     name: "wait_for_activity",
-    description: "Wait until new private evidence or shared Git activity is available.",
+    description: "Wait until new private evidence or Git activity is available.",
     inputSchema: {
       type: "object",
       properties: { afterSequence: { type: "integer", minimum: 0 } },
@@ -84,7 +84,7 @@ async function resolveCandidate(workspacePath: string, candidatePath: unknown): 
 function activitySummary(event: ActivityEvent): string {
   return event.kind === "stage-released"
     ? "new private evidence is available"
-    : "shared Git activity is available";
+    : "Git activity is available";
 }
 
 export function createAgentTools(options: {
@@ -129,11 +129,7 @@ export function createAgentTools(options: {
           throw new Error("wait_for_activity afterSequence must be a non-negative safe integer.");
         }
         const afterSequence = Math.max(input.afterSequence as number, options.getActivityCursor());
-        const result = await options.activity.waitForVisible(
-          options.agentId,
-          afterSequence,
-          signal,
-        );
+        const result = await options.activity.waitFor(afterSequence, signal);
         if ("ended" in result) return result;
         options.setActivityCursor?.(result.sequence);
         return {

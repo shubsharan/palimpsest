@@ -17,8 +17,8 @@ The five-entry `experiments/blocks.json` catalog owns scientific block inputs. T
 
 ```text
 experiment.yaml
-  puzzle     block and current arithmetic stage interval
-  limits     token budget and wall time
+  puzzle     block
+  limits     token budget
   providers  direct driver and credential environment names
   models     provider model IDs and non-secret settings
   runs       homogeneous or ordered mixed assignments and repetitions
@@ -47,17 +47,17 @@ For fixed registered source bytes, block definition, and builder version, the wi
 
 ## Attempt Runtime
 
-`puzzle:run` selects one named run, constructs its configured block into a fresh `--build` destination, and currently selects the re-key variant before creating the attempt root. It constructs one declared model binding and adapter per agent.
+`puzzle:run` selects one named model assignment and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the configured block matches the paired build, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
-- creates one shared ordinary bare Git repository and one workspace per canonical agent ID;
+- creates one shared bare Git repository or three isolated bare repositories, plus one assigned workspace per canonical agent ID;
 - creates one private evidence directory and independent persistent session per agent;
-- releases equivalent stage ordinals using one monotonic schedule;
+- releases equivalent stage ordinals at 0, 5, 10, 20, 30, and 40 minutes on one monotonic schedule;
 - exposes the same local command, file, Git, checker, and activity-waiting tool surface to every session;
-- enforces provider-reported cumulative input/output token budgets per session and one global wall-time cutoff;
+- enforces provider-reported cumulative input/output token budgets per session and one fixed 60-minute cutoff;
 - records requested model identity, optional actual response identity, usage, tool activity, stage activity, Git changes, and termination;
-- freezes Git and every workspace after all sessions end; and
+- freezes every native Git repository and workspace without merging after all sessions end; and
 - atomically publishes `attempt.json` before optional overlap observation.
 
 Sessions in one attempt run concurrently. They share neither message history nor private evidence. No rounds, roles, checkpoints, mandatory Git behavior, or solver file convention are introduced by configurable experiments.
@@ -98,21 +98,21 @@ Model profiles may pass structurally safe, non-secret provider options. Secret, 
 
 ## Command Sandbox
 
-Model-authored commands run in attempt-scoped Docker sandbox leases rather than directly on the host. The runner creates one lease per configured agent and routes that agent's commands through the same healthy lease. Each lease receives only its writable workspace, currently released private evidence, target-excluded references, shared Git, and private temporary storage. Prepared plaintext, keys, unreleased or peer evidence, checker internals, provider credentials, host-control surfaces, and public networking stay outside.
+Model-authored commands run in attempt-scoped Docker sandbox leases rather than directly on the host. The runner creates one lease per configured agent and routes that agent's commands through the same healthy lease. Each lease receives only its writable workspace, currently released private evidence, target-excluded references, assigned Git origin at `/git/origin.git`, and private temporary storage. In isolated conditions no peer origin is mounted. Prepared plaintext, keys, unreleased or peer evidence, checker internals, provider credentials, host-control surfaces, and public networking stay outside.
 
 Lease creation and every command share bounded deadlines under the attempt's global wall-time cutoff. A nonzero command leaves a healthy lease available; timeout, cancellation, output overflow, or resource termination abandons the lease so the command cannot continue in the background. A later command may receive a replacement lease over the same host-backed workspace, evidence, reference corpus, and Git repository.
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Reviewer-selected evaluation uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, frozen Git, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
+Reviewer-selected evaluation uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, that workspace's assigned frozen Git origin, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
 ## Trace And Artifacts
 
-The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify the selected variant build, agent/stage geometry, run and repetition, and requested model bindings without exposing oracle sets or hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
+The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify the condition, derived treatment, selected variant build, fixed schedule and cutoff, run and repetition, and requested model bindings without exposing oracle sets or hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
 
-`attempt.json` schema version 2 contains the build identity, dynamic agent set, model binding per session, usage, termination, frozen Git/workspaces, trace, sandbox identity, and operational limits. It is the durable evaluation boundary.
+`attempt.json` schema version 3 contains the block, condition, derived treatment, selected build, exact schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory, trace, sandbox identity, and token limit. It is the durable evaluation boundary.
 
 Optional post-freeze overlap observation reports obvious exact or normalized raw text overlap without warning, blocking, invalidating, or rescoring the run. If observation fails, the already published attempt remains evaluatable.
 
@@ -124,15 +124,15 @@ All commands dispatch through `src/cli.ts` and emit one JSON object on success:
 pnpm preflight
 pnpm puzzle:build -- --block calibration-theron-ware --output artifacts/build
 pnpm puzzle:run -- --config experiments/config.yaml --run gpt-only \
-  --build artifacts/build --output artifacts/attempt
+  --condition CR --build artifacts/build --output artifacts/attempt
 pnpm puzzle:experiment -- --config experiments/config.yaml \
-  --output artifacts/experiment
+  --condition CR --output artifacts/experiment
 pnpm puzzle:evaluate -- --attempt artifacts/attempt --workspace agent-1 \
   --command "sh solve.sh" --output-path reconstruction.txt
-pnpm puzzle:offline -- --output artifacts/offline
+pnpm puzzle:offline -- --condition CR --output artifacts/offline
 ```
 
-The offline command composes the same build, dynamic runtime, freeze, overlap, and evaluation path with deterministic fixture adapters and no external model call.
+The offline command composes the same condition-selected build, runtime, native freeze, overlap, and evaluation path with deterministic fixture adapters, a fake monotonic clock, and no external model call.
 
 ## Failure Semantics
 
@@ -144,11 +144,11 @@ The architecture preserves the strongest durable boundary available: publication
 
 ## Verification
 
-The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, strict artifact decoding, concurrent sessions, Git workspaces, stage scheduling, attempt durability, reviewer-selected evaluation, and Docker containment.
+The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, shared visibility, isolated non-observability, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
 
-## Planned Study Conditions
+## Study Conditions And Planned Protocol
 
-Feature 013 provides deterministic paired blocks but preserves the existing shared-Git re-key runtime. Feature 014 will derive canonical `CS`, `CR`, `IS`, and `IR` conditions, add isolated repositories, and retain every repository and workspace in the host record. Feature 015 will add the frozen five-block execution protocol. Neither later feature is implemented by paired construction alone.
+Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 remains planned and will replace the transitional schema-v1 model-assignment manifest with the frozen five-block execution protocol.
 
 Canonical acceptance is:
 

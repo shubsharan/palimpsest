@@ -1,5 +1,5 @@
 import { chmod, cp, mkdir, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { ActivityBus } from "./activity.js";
 import { generateAgentIds, type AgentId } from "./model.js";
@@ -15,11 +15,22 @@ export interface GitCommandResult {
 export interface AgentGitWorkspace {
   agentId: AgentId;
   path: string;
+  repositoryId: GitRepositoryId;
+}
+
+export type GitCommunicationMode = "shared" | "isolated";
+export type GitRepositoryId = "shared" | AgentId;
+
+export interface GitRepository {
+  repositoryId: GitRepositoryId;
+  path: string;
+  agentIds: readonly AgentId[];
 }
 
 export interface GitEnvironment {
   root: string;
-  barePath: string;
+  communicationMode: GitCommunicationMode;
+  repositories: readonly GitRepository[];
   workspaces: readonly AgentGitWorkspace[];
 }
 
@@ -58,26 +69,49 @@ export function runGit(args: readonly string[], cwd?: string): Promise<GitComman
 
 export async function createGitEnvironment(
   root: string,
+  communicationMode: GitCommunicationMode,
   agentIds: readonly AgentId[] = generateAgentIds(3),
 ): Promise<GitEnvironment> {
   if (agentIds.length < 2 || new Set(agentIds).size !== agentIds.length) {
     throw new Error("Git environment requires at least two unique agent IDs.");
   }
-  const barePath = join(root, "shared.git");
-  const workspaceRoot = join(root, "workspaces");
+  const resolvedRoot = resolve(root);
+  const workspaceRoot = join(resolvedRoot, "workspaces");
   await mkdir(workspaceRoot, { recursive: true });
-  await runGit(["init", "--bare", "--initial-branch=main", barePath]);
+  const repositories: GitRepository[] =
+    communicationMode === "shared"
+      ? [
+          {
+            repositoryId: "shared",
+            path: join(resolvedRoot, "shared.git"),
+            agentIds: [...agentIds],
+          },
+        ]
+      : agentIds.map((agentId) => ({
+          repositoryId: agentId,
+          path: join(resolvedRoot, `${agentId}.git`),
+          agentIds: [agentId],
+        }));
+  await Promise.all(
+    repositories.map((repository) =>
+      runGit(["init", "--bare", "--initial-branch=main", repository.path]),
+    ),
+  );
   const workspaces = await Promise.all(
     agentIds.map(async (agentId) => {
+      const repository = repositories.find((candidate) => candidate.agentIds.includes(agentId));
+      if (repository === undefined) {
+        throw new Error(`Git repository assignment is missing for ${agentId}.`);
+      }
       const path = join(workspaceRoot, agentId);
-      await runGit(["clone", barePath, path]);
+      await runGit(["clone", repository.path, path]);
       await runGit(["config", "user.name", `Palimpsest ${agentId}`], path);
       await runGit(["config", "user.email", `${agentId}@palimpsest.invalid`], path);
-      await runGit(["remote", "set-url", "origin", SANDBOX_PATHS.sharedGit], path);
-      return { agentId, path };
+      await runGit(["remote", "set-url", "origin", SANDBOX_PATHS.gitOrigin], path);
+      return { agentId, path, repositoryId: repository.repositoryId };
     }),
   );
-  return { root, barePath, workspaces };
+  return { root: resolvedRoot, communicationMode, repositories, workspaces };
 }
 
 export async function listRemoteRefs(barePath: string): Promise<Record<string, string>> {
@@ -116,30 +150,32 @@ function waitInterval(milliseconds: number, signal: AbortSignal): Promise<void> 
 }
 
 export class GitActivityMonitor {
-  readonly #barePath: string;
-  readonly #activity: ActivityBus;
+  readonly #repository: GitRepository;
+  readonly #activityFor: (agentId: AgentId) => ActivityBus;
   readonly #pollIntervalMs: number;
-  readonly #onChange: ((refs: readonly string[]) => void | Promise<void>) | undefined;
+  readonly #onChange:
+    | ((repositoryId: GitRepositoryId, refs: readonly string[]) => void | Promise<void>)
+    | undefined;
   #running = false;
   #loop: Promise<void> | undefined;
   #stopController: AbortController | undefined;
   #snapshot: Record<string, string> = {};
 
   constructor(options: {
-    barePath: string;
-    activity: ActivityBus;
+    repository: GitRepository;
+    activityFor: (agentId: AgentId) => ActivityBus;
     pollIntervalMs?: number;
-    onChange?: (refs: readonly string[]) => void | Promise<void>;
+    onChange?: (repositoryId: GitRepositoryId, refs: readonly string[]) => void | Promise<void>;
   }) {
-    this.#barePath = options.barePath;
-    this.#activity = options.activity;
+    this.#repository = options.repository;
+    this.#activityFor = options.activityFor;
     this.#pollIntervalMs = options.pollIntervalMs ?? 100;
     this.#onChange = options.onChange;
   }
 
   async start(): Promise<void> {
     if (this.#running) throw new Error("Git activity monitor is already running.");
-    this.#snapshot = await listRemoteRefs(this.#barePath);
+    this.#snapshot = await listRemoteRefs(this.#repository.path);
     this.#running = true;
     this.#stopController = new AbortController();
     this.#loop = this.#poll(this.#stopController.signal);
@@ -152,12 +188,17 @@ export class GitActivityMonitor {
   }
 
   async checkNow(): Promise<readonly string[]> {
-    const next = await listRemoteRefs(this.#barePath);
+    const next = await listRemoteRefs(this.#repository.path);
     const refs = changedRefs(this.#snapshot, next);
     this.#snapshot = next;
     if (refs.length > 0) {
-      this.#activity.publish({ kind: "git-changed", detail: { refs } });
-      await this.#onChange?.(refs);
+      for (const agentId of this.#repository.agentIds) {
+        this.#activityFor(agentId).publish({
+          kind: "git-changed",
+          detail: { repositoryId: this.#repository.repositoryId, refs },
+        });
+      }
+      await this.#onChange?.(this.#repository.repositoryId, refs);
     }
     return refs;
   }
@@ -191,17 +232,32 @@ export async function freezeGitEnvironment(
   environment: GitEnvironment,
   targetRoot: string,
 ): Promise<FrozenGitEnvironment> {
-  const barePath = join(targetRoot, "shared.git");
-  const workspaceRoot = join(targetRoot, "workspaces");
-  await mkdir(targetRoot, { recursive: false });
-  await cp(environment.barePath, barePath, { recursive: true, errorOnExist: true, force: false });
+  const resolvedTargetRoot = resolve(targetRoot);
+  const workspaceRoot = join(resolvedTargetRoot, "workspaces");
+  await mkdir(resolvedTargetRoot, { recursive: false });
+  const repositories = await Promise.all(
+    environment.repositories.map(async (repository) => {
+      const path = join(
+        resolvedTargetRoot,
+        repository.repositoryId === "shared" ? "shared.git" : `${repository.repositoryId}.git`,
+      );
+      await cp(repository.path, path, { recursive: true, errorOnExist: true, force: false });
+      return { ...repository, path };
+    }),
+  );
   const workspaces = await Promise.all(
     environment.workspaces.map(async (workspace) => {
       const path = join(workspaceRoot, workspace.agentId);
       await cp(workspace.path, path, { recursive: true, errorOnExist: true, force: false });
-      return { agentId: workspace.agentId, path };
+      return { ...workspace, path };
     }),
   );
-  await makeReadOnly(targetRoot);
-  return { root: targetRoot, barePath, workspaces, frozen: true };
+  await makeReadOnly(resolvedTargetRoot);
+  return {
+    root: resolvedTargetRoot,
+    communicationMode: environment.communicationMode,
+    repositories,
+    workspaces,
+    frozen: true,
+  };
 }

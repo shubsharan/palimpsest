@@ -2,25 +2,75 @@ import { resolve } from "node:path";
 
 import { decodeBuildResult, decodeEvaluationRecord, decodeOverlapResult } from "./artifacts.js";
 import { buildPuzzle, type BuildPuzzleResult } from "./build.js";
+import { resolveCondition, type ConditionId } from "./condition.js";
 import type { PuzzleDefinition } from "./config.js";
 import { evaluatePuzzle } from "./evaluate.js";
 import { requiredFlag } from "./flags.js";
+import type { MonotonicClock } from "./reveal.js";
 import { createFixtureAgentRuntimes, runPuzzle, type RunPuzzleResult } from "./run.js";
 
-const OFFLINE_PUZZLE: PuzzleDefinition = {
-  block: "calibration-theron-ware",
-  stageIntervalMs: 20,
-};
+const OFFLINE_PUZZLE: PuzzleDefinition = { block: "calibration-theron-ware" };
 
 export interface OfflinePuzzleOptions {
   root: string;
   output: string;
+  condition: ConditionId;
 }
 
 export interface OfflinePuzzleResult {
   build: BuildPuzzleResult;
   run: RunPuzzleResult;
   evaluation: Awaited<ReturnType<typeof evaluatePuzzle>>;
+}
+
+function acceleratedClock(): MonotonicClock {
+  let now = 0;
+  let scheduled = false;
+  const waits = new Set<{
+    deadline: number;
+    resolve: (reached: boolean) => void;
+    signal: AbortSignal;
+    abort: () => void;
+  }>();
+  const scheduleAdvance = () => {
+    if (scheduled || waits.size < 2) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      const live = [...waits].filter((wait) => !wait.signal.aborted);
+      if (live.length < 2) return;
+      now = Math.max(now, Math.min(...live.map((wait) => wait.deadline)));
+      for (const wait of live) {
+        if (wait.deadline <= now) {
+          waits.delete(wait);
+          wait.signal.removeEventListener("abort", wait.abort);
+          wait.resolve(true);
+        }
+      }
+      scheduleAdvance();
+    });
+  };
+  return {
+    nowMs: () => now,
+    waitUntil(deadline, signal) {
+      if (signal.aborted) return Promise.resolve(false);
+      if (deadline <= now) return Promise.resolve(true);
+      return new Promise((resolve) => {
+        const wait = {
+          deadline,
+          resolve,
+          signal,
+          abort: () => {
+            waits.delete(wait);
+            resolve(false);
+          },
+        };
+        waits.add(wait);
+        signal.addEventListener("abort", wait.abort, { once: true });
+        scheduleAdvance();
+      });
+    },
+  };
 }
 
 export async function runOfflinePuzzle(
@@ -39,10 +89,10 @@ export async function runOfflinePuzzle(
     output: resolve(output, "attempt"),
     runName: "offline",
     repetition: 1,
+    condition: options.condition,
     agents: createFixtureAgentRuntimes(build.agentIds, "collaborative-revision"),
     tokenBudgetPerAgent: 100,
-    wallTimeMs: 10_000,
-    stageIntervalMs: OFFLINE_PUZZLE.stageIntervalMs,
+    clock: acceleratedClock(),
   });
   const evaluation = await evaluatePuzzle({
     root,
@@ -66,5 +116,6 @@ export function runOfflinePuzzleFromFlags(
   return runOfflinePuzzle({
     root,
     output: requiredFlag(flags, "--output"),
+    condition: resolveCondition(requiredFlag(flags, "--condition")).id,
   });
 }

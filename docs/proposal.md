@@ -2,7 +2,7 @@
 
 ## A configurable collaborative decipherment puzzle
 
-Palimpsest gives three frontier-model agents different private fragments of a word-substitution cipher and asks them to recover as much of the original text as possible. The agents work concurrently and decide for themselves how to solve. The current runtime supplies ordinary shared Git; a later feature will vary peer communication while preserving team identity and other inputs.
+Palimpsest gives three frontier-model agents different private fragments of a word-substitution cipher and asks them to recover as much of the original text as possible. The agents work concurrently and decide for themselves how to solve. One canonical condition varies peer communication and key regime while preserving team identity and other inputs.
 
 The project is a local puzzle and an observational research artifact. It is not an enterprise application, a hosted experiment service, a hardened adversarial benchmark, or a prescribed multi-agent workflow.
 
@@ -16,7 +16,7 @@ Each block produces stationary and re-key twins from one paragraph allocation an
 
 Trusted build records retain shared anchors, universal sentinels, owner-weighted specialists, matched stable controls, allocation metrics, rejected tiers, and manipulation checks. Agent-visible stages contain none of those labels, keys, expectations, or results.
 
-Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. Feature 013 keeps the current arithmetic schedule and re-key selection for existing runs. Later features will add canonical communication/key conditions and the frozen study schedule without rebuilding block bytes.
+Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. The four-condition runtime releases them at 0, 5, 10, 20, 30, and 40 minutes and ends the attempt at 60 minutes. Feature 015 will freeze the complete study protocol without rebuilding block bytes.
 
 ## The Agents
 
@@ -26,11 +26,11 @@ Provider credentials are read only from named environment variables. They are no
 
 Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, schedule, limits, tools, references, and evaluation boundary.
 
-The implemented runtime gives the team one shared Git repository and peer activity. Feature 014 will add isolated conditions with independent usable repositories and no peer visibility while keeping team identity and non-communication inputs equal across paired conditions.
+Shared conditions give the team one peer-visible Git repository and shared Git activity. Isolated conditions give each agent an independent usable repository and owner-only Git activity. Team identity and every non-communication input remain equal across paired conditions.
 
 Instructions make the team and currently available channel explicit. They do not reveal the key regime, special word sets, scoring expectations, roles, workflows, required artifacts, or a decoding algorithm.
 
-Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; ordinary shared Git; an aggregate reconstruction checker; and a way to wait for relevant activity. A waiting session may resume when private evidence or visible Git state changes. Other sessions do not synchronize with it.
+Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; an assigned ordinary Git origin; an aggregate reconstruction checker; and a way to wait for visible activity. A waiting session may resume when private evidence or condition-visible Git state changes. Other sessions do not synchronize with it.
 
 Git use remains voluntary and unmetered. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, relay raw evidence, or ignore the repository.
 
@@ -64,7 +64,7 @@ The selected code runs against the complete ciphertext without the oracle, peer 
 
 An experiment builds its puzzle once, then executes conditions and repetitions sequentially. Sessions inside one attempt remain concurrent. After each durable attempt, an atomically replaced `experiment.json` indexes the resolved non-secret condition and attempt root. A later failure cannot erase earlier attempts.
 
-Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Current attempt records retain the selected re-key build, requested provider/model binding, optional actual response identity, normalized provider-reported usage, termination, model and tool activity, stage releases, Git history, frozen work, overlap observations, reviewer selection, execution result, and score. Condition, communication-mode, and frozen-protocol fields belong to Features 014 and 015. Records do not retain complete provider response payloads or credential values.
+Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain the condition and derived treatment, selected build, fixed schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, termination, model and tool activity, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Feature 015 will freeze the study-wide protocol. Records do not retain complete provider response payloads or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 

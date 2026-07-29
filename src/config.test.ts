@@ -12,14 +12,8 @@ import {
 function validConfig(): Record<string, unknown> {
   return {
     schemaVersion: 1,
-    puzzle: {
-      block: "calibration-theron-ware",
-      stageIntervalMs: 120_000,
-    },
-    limits: {
-      tokenBudgetPerAgent: 200_000,
-      wallTimeMs: 3_600_000,
-    },
+    puzzle: { block: "calibration-theron-ware" },
+    limits: { tokenBudgetPerAgent: 200_000 },
     providers: {
       openai: { driver: "openai", apiKeyEnv: "RESEARCH_OPENAI_KEY" },
       anthropic: { driver: "anthropic", apiKeyEnv: "RESEARCH_ANTHROPIC_KEY" },
@@ -86,10 +80,7 @@ copy: *shared
       },
     });
 
-    expect(resolved.puzzle).toEqual({
-      block: "calibration-theron-ware",
-      stageIntervalMs: 120_000,
-    });
+    expect(resolved.puzzle).toEqual({ block: "calibration-theron-ware" });
     expect(resolved.runs).toEqual([
       {
         name: "gpt-only",
@@ -155,6 +146,15 @@ copy: *shared
     const config = validConfig();
     change(config);
     await expect(resolveExperimentConfig(config, { root: resolve(".") })).rejects.toThrow(error);
+  });
+
+  it.each([
+    ["puzzle timing", "puzzle", "stageIntervalMs"],
+    ["wall-time drift", "limits", "wallTimeMs"],
+  ])("rejects obsolete %s configuration", (_name, section, field) => {
+    const config = validConfig();
+    (config[section] as Record<string, unknown>)[field] = 1;
+    expect(() => validateExperimentConfig(config)).toThrow(new RegExp(field));
   });
 
   it.each([

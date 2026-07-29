@@ -10,12 +10,13 @@ import {
   type AttemptSummary,
   type OverlapResult,
 } from "../../src/artifacts.js";
+import type { ConditionId } from "../../src/condition.js";
 import { evaluateFrozenAttempt } from "../../src/evaluate.js";
 import { appendTraceEvent } from "../../src/python.js";
 import { finalizeAttempt } from "../../src/run.js";
-import { FakeCommandSandbox } from "../../src/test-helpers.js";
+import { FakeCommandSandbox, testAttemptSummary } from "../../src/test-helpers.js";
 import type { AttemptResult } from "../../src/run.js";
-import type { AgentId, ModelBinding } from "../../src/model.js";
+import type { AgentId } from "../../src/model.js";
 
 const SUCCESS = {
   exitCode: 0,
@@ -36,16 +37,7 @@ const EMPTY_OVERLAP: OverlapResult = {
     skippedNonTextBlobCount: 0,
   },
 };
-const BUILD_ID = `build-${"a".repeat(64)}`;
 const AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
-const MODEL: ModelBinding = {
-  profile: "fixture",
-  provider: "fixture",
-  driver: "openai-compatible",
-  requestedModel: "durability-fixture",
-  settings: {},
-  providerOptions: {},
-};
 
 interface FrozenFixture {
   attemptRoot: string;
@@ -53,18 +45,34 @@ interface FrozenFixture {
   result: AttemptResult;
 }
 
-async function frozenFixture(): Promise<FrozenFixture> {
+async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixture> {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-attempt-durability-"));
   const attemptRoot = join(root, "attempt");
   const buildRoot = join(root, "build");
   const frozenRoot = join(attemptRoot, "frozen");
+  const artifact = decodeAttemptSummary(testAttemptSummary({ condition }));
+  const repositories =
+    artifact.communicationMode === "shared"
+      ? [
+          {
+            repositoryId: "shared" as const,
+            path: join(frozenRoot, "shared.git"),
+            agentIds: AGENT_IDS,
+          },
+        ]
+      : AGENT_IDS.map((agentId) => ({
+          repositoryId: agentId,
+          path: join(frozenRoot, `${agentId}.git`),
+          agentIds: [agentId],
+        }));
   const workspaces = AGENT_IDS.map((agentId) => ({
     agentId,
     path: join(frozenRoot, "workspaces", agentId),
+    repositoryId: artifact.communicationMode === "shared" ? ("shared" as const) : agentId,
   }));
   await Promise.all([
     mkdir(buildRoot),
-    mkdir(join(frozenRoot, "shared.git"), { recursive: true }),
+    ...repositories.map(({ path }) => mkdir(path, { recursive: true })),
     ...workspaces.map(({ path }) => mkdir(path, { recursive: true })),
   ]);
   const tracePath = join(attemptRoot, "trace.jsonl");
@@ -88,24 +96,26 @@ async function frozenFixture(): Promise<FrozenFixture> {
     buildRoot,
     result: {
       attemptId: "attempt-durable",
-      buildId: BUILD_ID,
+      blockId: artifact.blockId,
+      condition: artifact.condition,
+      communicationMode: artifact.communicationMode,
+      keyRegime: artifact.keyRegime,
+      variantId: artifact.variantId,
+      buildId: artifact.buildId,
       buildRoot,
       runName: "durability",
       repetition: 1,
       agentIds: AGENT_IDS,
-      sessions: AGENT_IDS.map((agentId) => ({
-        agentId,
-        model: MODEL,
-        state: "finished" as const,
-        inputTokens: 1,
-        outputTokens: 1,
-        activityCursor: 0,
-        terminationReason: "finished",
-        finalResponse: "done",
-      })),
+      releaseOffsetsMs: artifact.releaseOffsetsMs,
+      cutoffMs: artifact.cutoffMs,
+      tokenBudgetPerAgent: artifact.tokenBudgetPerAgent,
+      protocolDigest: artifact.protocolDigest,
+      protocol: artifact.protocol,
+      sessions: artifact.sessions,
       frozen: {
         root: frozenRoot,
-        barePath: join(frozenRoot, "shared.git"),
+        communicationMode: artifact.communicationMode,
+        repositories,
         workspaces,
         frozen: true,
       },
@@ -137,67 +147,100 @@ async function readSummary(path: string): Promise<AttemptSummary> {
 }
 
 describe("post-freeze attempt durability", () => {
-  it("keeps a frozen attempt evaluatable when optional overlap observation fails", async () => {
-    const fixture = await frozenFixture();
-    const primary = new Error("injected overlap observation failure");
-    let overlapStarted = 0;
+  it.each([
+    ["CR", "shared", 1],
+    ["IR", "isolated", 3],
+  ] as const)(
+    "keeps a frozen %s attempt evaluatable when optional overlap observation fails",
+    async (condition, communicationMode, repositoryCount) => {
+      const fixture = await frozenFixture(condition);
+      const primary = new Error("injected overlap observation failure");
+      let overlapStarted = 0;
 
-    const command = await commandBoundary(
-      finalizeAttempt({
-        attemptRoot: fixture.attemptRoot,
+      const command = await commandBoundary(
+        finalizeAttempt({
+          attemptRoot: fixture.attemptRoot,
+          buildRoot: fixture.buildRoot,
+          result: fixture.result,
+          publishSummary: publishAttemptSummary,
+          observeOverlap: async () => {
+            overlapStarted += 1;
+            const inputRoot = join(fixture.attemptRoot, "overlap-input");
+            await mkdir(inputRoot);
+            await writeFile(join(inputRoot, "request.json"), '{"partial":true}\n', "utf8");
+            throw primary;
+          },
+          appendTrace: appendTraceEvent,
+        }),
+      );
+
+      expect(command).toEqual({
+        exitCode: 1,
+        stdout: "",
+        stderr: "injected overlap observation failure\n",
+      });
+      expect(overlapStarted).toBe(1);
+
+      const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
+      expect(summary).toMatchObject({
+        attemptId: fixture.result.attemptId,
         buildRoot: fixture.buildRoot,
-        result: fixture.result,
-        publishSummary: publishAttemptSummary,
-        observeOverlap: async () => {
-          overlapStarted += 1;
-          const inputRoot = join(fixture.attemptRoot, "overlap-input");
-          await mkdir(inputRoot);
-          await writeFile(join(inputRoot, "request.json"), '{"partial":true}\n', "utf8");
-          throw primary;
+        condition,
+        communicationMode,
+        frozen: {
+          root: fixture.result.frozen.root,
+          communicationMode,
         },
-        appendTrace: appendTraceEvent,
-      }),
-    );
+      });
+      expect(summary.frozen.repositories).toHaveLength(repositoryCount);
+      const selectedWorkspace = summary.frozen.workspaces.find(
+        ({ agentId }) => agentId === "agent-1",
+      );
+      const selectedRepository = summary.frozen.repositories.find(
+        ({ repositoryId }) => repositoryId === selectedWorkspace?.repositoryId,
+      );
+      if (selectedWorkspace === undefined || selectedRepository === undefined) {
+        throw new Error("The durable attempt is missing agent-1's frozen Git assignment.");
+      }
+      await expect(
+        readFile(join(selectedWorkspace.path, "frozen-input.txt"), "utf8"),
+      ).resolves.toBe("still here\n");
+      expect((await stat(selectedRepository.path)).isDirectory()).toBe(true);
+      await expect(readFile(summary.tracePath, "utf8")).resolves.toContain(
+        '"kind":"overlap.failed"',
+      );
+      await expect(stat(join(fixture.attemptRoot, "overlap.json"))).rejects.toThrow();
+      expect(
+        (await readdir(fixture.attemptRoot)).filter((name) => /overlap.*failed/i.test(name)),
+      ).toEqual([]);
 
-    expect(command).toEqual({
-      exitCode: 1,
-      stdout: "",
-      stderr: "injected overlap observation failure\n",
-    });
-    expect(overlapStarted).toBe(1);
-
-    const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
-    expect(summary).toMatchObject({
-      attemptId: fixture.result.attemptId,
-      buildRoot: fixture.buildRoot,
-      frozenRoot: fixture.result.frozen.root,
-    });
-    await expect(
-      readFile(join(summary.frozenRoot, "workspaces", "agent-1", "frozen-input.txt"), "utf8"),
-    ).resolves.toBe("still here\n");
-    expect((await stat(join(summary.frozenRoot, "shared.git"))).isDirectory()).toBe(true);
-    await expect(readFile(summary.tracePath, "utf8")).resolves.toContain('"kind":"overlap.failed"');
-    await expect(stat(join(fixture.attemptRoot, "overlap.json"))).rejects.toThrow();
-    expect(
-      (await readdir(fixture.attemptRoot)).filter((name) => /overlap.*failed/i.test(name)),
-    ).toEqual([]);
-
-    const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-      await writeFile(join(request.workspacePath, request.outputPath), "reconstruction\n", "utf8");
-      return SUCCESS;
-    });
-    const evaluation = await evaluateFrozenAttempt({
-      frozenWorkspacePath: join(summary.frozenRoot, "workspaces", "agent-1"),
-      frozenGitPath: join(summary.frozenRoot, "shared.git"),
-      evaluationRoot: join(fixture.attemptRoot, "evaluation"),
-      ciphertextPath: join(fixture.buildRoot, "ciphertext.txt"),
-      sandbox,
-      selection: { command: "sh solve.sh", outputPath: "reconstruction.txt" },
-      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-    });
-    expect(evaluation).toMatchObject({ status: "scored" });
-  });
+      const sandbox = new FakeCommandSandbox(async (request) => {
+        if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
+        await writeFile(
+          join(request.workspacePath, request.outputPath),
+          "reconstruction\n",
+          "utf8",
+        );
+        return SUCCESS;
+      });
+      const evaluation = await evaluateFrozenAttempt({
+        frozenWorkspacePath: selectedWorkspace.path,
+        frozenGitPath: selectedRepository.path,
+        evaluationRoot: join(fixture.attemptRoot, "evaluation"),
+        ciphertextPath: join(fixture.buildRoot, "ciphertext.txt"),
+        sandbox,
+        selection: { command: "sh solve.sh", outputPath: "reconstruction.txt" },
+        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
+      });
+      expect(evaluation).toMatchObject({ status: "scored" });
+      expect(sandbox.requests).toContainEqual(
+        expect.objectContaining({ gitOriginPath: selectedRepository.path }),
+      );
+      await expect(
+        readFile(join(selectedWorkspace.path, "frozen-input.txt"), "utf8"),
+      ).resolves.toBe("still here\n");
+    },
+  );
 
   it("does not begin overlap or expose a partial summary when attempt publication fails", async () => {
     const fixture = await frozenFixture();

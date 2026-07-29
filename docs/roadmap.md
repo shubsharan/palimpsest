@@ -6,7 +6,7 @@ Features 011 and 012 provide the local provider-neutral runner and its receipt-b
 
 Each feature starts from its completed predecessor and follows the full Spec Kit workflow. A later slice does not begin while its predecessor has material analysis findings or failing checks.
 
-## Feature 013: Engineered Paired Puzzle Blocks
+## Feature 013: Engineered Paired Puzzle Blocks (Implemented)
 
 - Replace contiguous slicing with deterministic paragraph-preserving allocation across three agents and six stages.
 - Select a target window and key boundary deterministically, then use a bounded seeded search across three declared feasibility tiers.
@@ -16,7 +16,7 @@ Each feature starts from its completed predecessor and follows the full Spec Kit
 
 This feature is done when rebuilds are byte-identical, paragraph order and union coverage hold, tier fallback is explicit, pre-boundary twins are identical, and the changed key measurably degrades old-key decoding after the boundary.
 
-## Feature 014: Four Team Conditions
+## Feature 014: Four Team Conditions (Implemented)
 
 - Add canonical `CS`, `CR`, `IS`, and `IR` conditions and derive communication mode and key regime from those identifiers.
 - Keep the agent objective concise and vary only channel availability and the disclosed schedule, limits, tools, references, and evaluation boundary.
@@ -26,7 +26,7 @@ This feature is done when rebuilds are byte-identical, paragraph order and union
 
 This feature is done when shared peer visibility, isolated non-observability, private Git usability, prompt parity, the declared fake-time release schedule, and the 60-minute cutoff pass without prescribing agent behavior.
 
-## Feature 015: Frozen Five-Block Protocol
+## Feature 015: Frozen Five-Block Protocol (Planned)
 
 - Replace schema v1 and its obsolete `runs` shape with one strict schema-v2 YAML manifest for five blocks, one three-model assignment, four conditions, schedules, budgets, providers, order, failure policy, rubric, and total ceilings.
 - Keep `puzzle:build --block`, add `puzzle:run --condition`, and expand `puzzle:experiment --phase calibration|validation` into sequential attempts.

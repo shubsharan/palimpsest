@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { rename, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, posix, win32 } from "node:path";
+import { isAbsolute, posix, relative, sep, win32 } from "node:path";
 
+import {
+  ATTEMPT_CUTOFF_MS,
+  hashProtocolSnapshot,
+  RELEASE_OFFSETS_MS,
+  resolveCondition,
+} from "./condition.js";
 import {
   generateAgentIds,
   isAgentId,
@@ -173,15 +179,74 @@ export interface AttemptSession extends AgentSessionResult {
   model: ModelBinding;
 }
 
+type ResolvedCondition = ReturnType<typeof resolveCondition>;
+
+export interface AttemptProtocolModel {
+  agentId: AgentId;
+  model: ModelBinding;
+}
+
+export interface AttemptProtocolPrompt {
+  agentId: AgentId;
+  prompt: string;
+}
+
+export interface AttemptProtocolSnapshot {
+  schemaVersion: 1;
+  blockId: string;
+  condition: ResolvedCondition["id"];
+  communicationMode: ResolvedCondition["communicationMode"];
+  keyRegime: ResolvedCondition["keyRegime"];
+  variantId: ResolvedCondition["variantId"];
+  buildId: string;
+  releaseOffsetsMs: readonly number[];
+  cutoffMs: number;
+  tokenBudgetPerAgent: number;
+  models: readonly AttemptProtocolModel[];
+  prompts: readonly AttemptProtocolPrompt[];
+  sandbox: SandboxIdentity & SandboxPolicy;
+}
+
+export interface FrozenGitRepository {
+  repositoryId: "shared" | AgentId;
+  path: string;
+  agentIds: readonly AgentId[];
+}
+
+export interface FrozenGitWorkspace {
+  agentId: AgentId;
+  path: string;
+  repositoryId: "shared" | AgentId;
+}
+
+export interface FrozenGitInventory {
+  root: string;
+  communicationMode: ResolvedCondition["communicationMode"];
+  repositories: readonly FrozenGitRepository[];
+  workspaces: readonly FrozenGitWorkspace[];
+}
+
 export interface AttemptSummary {
-  schemaVersion: 2;
+  schemaVersion: 3;
   attemptId: string;
+  runName: string;
+  repetition: number;
+  blockId: string;
+  condition: ResolvedCondition["id"];
+  communicationMode: ResolvedCondition["communicationMode"];
+  keyRegime: ResolvedCondition["keyRegime"];
+  variantId: ResolvedCondition["variantId"];
   buildId: string;
   buildRoot: string;
   agentIds: readonly AgentId[];
+  releaseOffsetsMs: readonly number[];
+  cutoffMs: number;
+  tokenBudgetPerAgent: number;
+  protocolDigest: string;
+  protocol: AttemptProtocolSnapshot;
   tracePath: string;
   traceMetadataPath: string;
-  frozenRoot: string;
+  frozen: FrozenGitInventory;
   sandbox: SandboxIdentity & SandboxPolicy;
   sessions: readonly AttemptSession[];
 }
@@ -247,6 +312,21 @@ function strictObject(
   const record = object(value, name);
   const allowed = new Set(fields);
   const missing = fields.find((field) => !(field in record));
+  if (missing !== undefined) throw new Error(`${name}.${missing} is required.`);
+  const unknown = Object.keys(record).find((field) => !allowed.has(field));
+  if (unknown !== undefined) throw new Error(`${name}.${unknown} is unsupported.`);
+  return record;
+}
+
+function strictObjectWithOptional(
+  value: unknown,
+  name: string,
+  requiredFields: readonly string[],
+  optionalFields: readonly string[],
+): Record<string, unknown> {
+  const record = object(value, name);
+  const allowed = new Set([...requiredFields, ...optionalFields]);
+  const missing = requiredFields.find((field) => !(field in record));
   if (missing !== undefined) throw new Error(`${name}.${missing} is required.`);
   const unknown = Object.keys(record).find((field) => !allowed.has(field));
   if (unknown !== undefined) throw new Error(`${name}.${unknown} is unsupported.`);
@@ -347,6 +427,42 @@ function decodeAgentIds(value: unknown, name: string): readonly AgentId[] {
     throw new Error(`${name} must contain exactly agent-1 through agent-N in order.`);
   }
   return decoded;
+}
+
+const ATTEMPT_AGENT_IDS = generateAgentIds(3);
+
+function decodeAttemptAgentIds(value: unknown, name: string): readonly AgentId[] {
+  const decoded = decodeAgentIds(value, name);
+  if (
+    decoded.length !== ATTEMPT_AGENT_IDS.length ||
+    decoded.some((item, index) => item !== ATTEMPT_AGENT_IDS[index])
+  ) {
+    throw new Error(`${name} must contain exactly agent-1, agent-2, and agent-3 in order.`);
+  }
+  return decoded;
+}
+
+function decodeReleaseOffsets(value: unknown, name: string): readonly number[] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== RELEASE_OFFSETS_MS.length ||
+    value.some((offset, index) => offset !== RELEASE_OFFSETS_MS[index])
+  ) {
+    throw new Error(`${name} must match the fixed condition release schedule.`);
+  }
+  return [...RELEASE_OFFSETS_MS];
+}
+
+function assertNestedPath(root: string, path: string, name: string): void {
+  const difference = relative(root, path);
+  if (
+    difference.length === 0 ||
+    difference === ".." ||
+    difference.startsWith(`..${sep}`) ||
+    isAbsolute(difference)
+  ) {
+    throw new Error(`${name} must remain inside the frozen root.`);
+  }
 }
 
 function providerDriver(value: unknown, name: string): ProviderDriver {
@@ -465,8 +581,7 @@ function decodeBuildId(value: unknown, name: string): string {
 }
 
 export function decodeBuildResult(value: unknown): BuildPuzzleResult {
-  const name = "Puzzle build result";
-  const record = strictObject(value, name, [
+  const record = strictObject(value, "Puzzle build result", [
     "pairedBuildId",
     "blockId",
     "buildPath",
@@ -474,24 +589,25 @@ export function decodeBuildResult(value: unknown): BuildPuzzleResult {
     "stageCount",
     "variants",
   ]);
-  const stageCount = integer(record.stageCount, `${name} stageCount`, 1);
-  if (stageCount !== BUILD_STAGE_COUNT) {
-    throw new Error(`${name} stageCount must be exactly 6.`);
-  }
-  const variants = strictObject(record.variants, `${name} variants`, ["stationary", "rekey"]);
+  const stageCount = integer(record.stageCount, "Puzzle build result stageCount", 1);
+  if (stageCount !== 6) throw new Error("Puzzle build result stageCount must be exactly 6.");
+  const variants = strictObject(record.variants, "Puzzle build result variants", [
+    "stationary",
+    "rekey",
+  ]);
   return {
     pairedBuildId: decodePrefixedDigest(
       record.pairedBuildId,
       PAIRED_BUILD_ID,
-      `${name} pairedBuildId`,
+      "Puzzle build result pairedBuildId",
     ),
-    blockId: identifier(record.blockId, `${name} blockId`),
-    buildPath: absolutePath(record.buildPath, `${name} buildPath`),
-    agentIds: decodeBuildAgentIds(record.agentIds),
-    stageCount,
+    blockId: identifier(record.blockId, "Puzzle build result blockId"),
+    buildPath: absolutePath(record.buildPath, "Puzzle build result buildPath"),
+    agentIds: decodeAgentIds(record.agentIds, "Puzzle build result agentIds"),
+    stageCount: 6,
     variants: {
-      stationary: decodeBuildId(variants.stationary, `${name} variants.stationary`),
-      rekey: decodeBuildId(variants.rekey, `${name} variants.rekey`),
+      stationary: decodeBuildId(variants.stationary, "Puzzle build result variants.stationary"),
+      rekey: decodeBuildId(variants.rekey, "Puzzle build result variants.rekey"),
     },
   };
 }
@@ -1013,36 +1129,75 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
   };
 }
 
+function decodeAttemptModelBinding(value: unknown, name: string): ModelBinding {
+  const record = strictObjectWithOptional(
+    value,
+    name,
+    ["profile", "provider", "driver", "requestedModel", "settings", "providerOptions"],
+    ["actualProvider", "actualModel"],
+  );
+  return decodeModelBinding(record, name);
+}
+
+function declaredModelBinding(model: ModelBinding): ModelBinding {
+  return {
+    profile: model.profile,
+    provider: model.provider,
+    driver: model.driver,
+    requestedModel: model.requestedModel,
+    settings: model.settings,
+    providerOptions: model.providerOptions,
+  };
+}
+
+function sameProtocolValue(left: unknown, right: unknown): boolean {
+  return hashProtocolSnapshot(left) === hashProtocolSnapshot(right);
+}
+
 function decodeSession(value: unknown, index: number, expectedAgentId: AgentId): AttemptSession {
-  const record = object(value, `Attempt session ${String(index + 1)}`);
+  const name = `Attempt session ${String(index + 1)}`;
+  const record = strictObjectWithOptional(
+    value,
+    name,
+    [
+      "agentId",
+      "model",
+      "state",
+      "inputTokens",
+      "outputTokens",
+      "activityCursor",
+      "terminationReason",
+    ],
+    ["finalResponse"],
+  );
   const finalResponse =
     record.finalResponse === undefined
       ? undefined
-      : nonEmptyString(record.finalResponse, `Attempt session ${String(index + 1)} finalResponse`);
-  const decodedAgentId = agentId(record.agentId, `Attempt session ${String(index + 1)} agentId`);
+      : nonEmptyString(record.finalResponse, `${name} finalResponse`);
+  const decodedAgentId = agentId(record.agentId, `${name} agentId`);
   if (decodedAgentId !== expectedAgentId) {
     throw new Error("Attempt sessions must follow the declared agent order.");
   }
   const common = {
     agentId: decodedAgentId,
-    model: decodeModelBinding(record.model, `Attempt session ${String(index + 1)} model`),
-    state: sessionState(record.state, `Attempt session ${String(index + 1)} state`),
-    inputTokens: integer(record.inputTokens, `Attempt session ${String(index + 1)} inputTokens`),
-    outputTokens: integer(record.outputTokens, `Attempt session ${String(index + 1)} outputTokens`),
-    activityCursor: integer(
-      record.activityCursor,
-      `Attempt session ${String(index + 1)} activityCursor`,
-    ),
-    terminationReason: nonEmptyString(
-      record.terminationReason,
-      `Attempt session ${String(index + 1)} terminationReason`,
-    ),
+    model: decodeAttemptModelBinding(record.model, `${name} model`),
+    state: sessionState(record.state, `${name} state`),
+    inputTokens: integer(record.inputTokens, `${name} inputTokens`),
+    outputTokens: integer(record.outputTokens, `${name} outputTokens`),
+    activityCursor: integer(record.activityCursor, `${name} activityCursor`),
+    terminationReason: nonEmptyString(record.terminationReason, `${name} terminationReason`),
   };
   return finalResponse === undefined ? common : { ...common, finalResponse };
 }
 
 function decodeSandbox(value: unknown): SandboxIdentity & SandboxPolicy {
-  const record = object(value, "Attempt sandbox");
+  const record = strictObject(value, "Attempt sandbox", [
+    "imageTag",
+    "imageId",
+    "sourceDigest",
+    "profileVersion",
+    ...Object.keys(SANDBOX_POLICY),
+  ]);
   const imageTag = nonEmptyString(record.imageTag, "Attempt sandbox imageTag");
   if (imageTag !== SANDBOX_IMAGE_TAG) {
     throw new Error(`Attempt sandbox imageTag must be ${SANDBOX_IMAGE_TAG}.`);
@@ -1068,26 +1223,305 @@ function decodeSandbox(value: unknown): SandboxIdentity & SandboxPolicy {
   };
 }
 
+function repositoryId(value: unknown, name: string): "shared" | AgentId {
+  if (value === "shared") return value;
+  return agentId(value, name);
+}
+
+function decodeFrozenGitInventory(
+  value: unknown,
+  communicationMode: ResolvedCondition["communicationMode"],
+  agentIds: readonly AgentId[],
+): FrozenGitInventory {
+  const record = strictObject(value, "Attempt frozen Git", [
+    "root",
+    "communicationMode",
+    "repositories",
+    "workspaces",
+  ]);
+  if (record.communicationMode !== communicationMode) {
+    throw new Error("Attempt frozen Git communication mode must match its condition.");
+  }
+  const root = absolutePath(record.root, "Attempt frozen Git root");
+  const expectedRepositoryIds = communicationMode === "shared" ? (["shared"] as const) : agentIds;
+  if (
+    !Array.isArray(record.repositories) ||
+    record.repositories.length !== expectedRepositoryIds.length
+  ) {
+    throw new Error("Attempt frozen Git repository inventory does not match its condition.");
+  }
+  const repositories = record.repositories.map((item, index): FrozenGitRepository => {
+    const name = `Attempt frozen Git repository ${String(index + 1)}`;
+    const repository = strictObject(item, name, ["repositoryId", "path", "agentIds"]);
+    const decodedRepositoryId = repositoryId(repository.repositoryId, `${name} repositoryId`);
+    if (decodedRepositoryId !== expectedRepositoryIds[index]) {
+      throw new Error("Attempt frozen Git repositories must follow the condition topology.");
+    }
+    const expectedAgents = communicationMode === "shared" ? agentIds : [agentIds[index]!];
+    if (
+      !Array.isArray(repository.agentIds) ||
+      repository.agentIds.length !== expectedAgents.length
+    ) {
+      throw new Error(`${name} agentIds do not match the assigned workspace set.`);
+    }
+    const decodedAgents = repository.agentIds.map((itemAgent, agentIndex) =>
+      agentId(itemAgent, `${name} agentIds[${String(agentIndex)}]`),
+    );
+    if (decodedAgents.some((itemAgent, agentIndex) => itemAgent !== expectedAgents[agentIndex])) {
+      throw new Error(`${name} agentIds do not match the assigned workspace set.`);
+    }
+    const path = absolutePath(repository.path, `${name} path`);
+    assertNestedPath(root, path, `${name} path`);
+    return {
+      repositoryId: decodedRepositoryId,
+      path,
+      agentIds: decodedAgents,
+    };
+  });
+
+  if (!Array.isArray(record.workspaces) || record.workspaces.length !== agentIds.length) {
+    throw new Error("Attempt frozen Git must contain one workspace per agent.");
+  }
+  const workspaces = record.workspaces.map((item, index): FrozenGitWorkspace => {
+    const name = `Attempt frozen Git workspace ${String(index + 1)}`;
+    const workspace = strictObject(item, name, ["agentId", "path", "repositoryId"]);
+    const decodedAgentId = agentId(workspace.agentId, `${name} agentId`);
+    if (decodedAgentId !== agentIds[index]) {
+      throw new Error("Attempt frozen Git workspaces must follow the declared agent order.");
+    }
+    const decodedRepositoryId = repositoryId(workspace.repositoryId, `${name} repositoryId`);
+    const expectedRepositoryId = communicationMode === "shared" ? "shared" : decodedAgentId;
+    if (decodedRepositoryId !== expectedRepositoryId) {
+      throw new Error(`${name} must reference its condition-assigned repository.`);
+    }
+    const path = absolutePath(workspace.path, `${name} path`);
+    assertNestedPath(root, path, `${name} path`);
+    return { agentId: decodedAgentId, path, repositoryId: decodedRepositoryId };
+  });
+  const paths = [...repositories.map(({ path }) => path), ...workspaces.map(({ path }) => path)];
+  if (new Set(paths).size !== paths.length) {
+    throw new Error("Attempt frozen Git repository and workspace paths must be unique.");
+  }
+  return { root, communicationMode, repositories, workspaces };
+}
+
+interface AttemptProtocolExpectations {
+  blockId: string;
+  condition: ResolvedCondition;
+  buildId: string;
+  releaseOffsetsMs: readonly number[];
+  cutoffMs: number;
+  tokenBudgetPerAgent: number;
+  agentIds: readonly AgentId[];
+  sandbox: SandboxIdentity & SandboxPolicy;
+  sessions: readonly AttemptSession[];
+}
+
+function decodeAttemptProtocol(
+  value: unknown,
+  expected: AttemptProtocolExpectations,
+): AttemptProtocolSnapshot {
+  const record = strictObject(value, "Attempt protocol", [
+    "schemaVersion",
+    "blockId",
+    "condition",
+    "communicationMode",
+    "keyRegime",
+    "variantId",
+    "buildId",
+    "releaseOffsetsMs",
+    "cutoffMs",
+    "tokenBudgetPerAgent",
+    "models",
+    "prompts",
+    "sandbox",
+  ]);
+  if (record.schemaVersion !== 1) {
+    throw new Error("Unsupported attempt protocol schema version.");
+  }
+  const condition = resolveCondition(record.condition);
+  const blockId = identifier(record.blockId, "Attempt protocol blockId");
+  const buildId = decodeBuildId(record.buildId, "Attempt protocol buildId");
+  const releaseOffsetsMs = decodeReleaseOffsets(
+    record.releaseOffsetsMs,
+    "Attempt protocol releaseOffsetsMs",
+  );
+  const cutoffMs = integer(record.cutoffMs, "Attempt protocol cutoffMs", 1);
+  const tokenBudgetPerAgent = integer(
+    record.tokenBudgetPerAgent,
+    "Attempt protocol tokenBudgetPerAgent",
+    1,
+  );
+  if (
+    blockId !== expected.blockId ||
+    condition.id !== expected.condition.id ||
+    record.communicationMode !== expected.condition.communicationMode ||
+    record.keyRegime !== expected.condition.keyRegime ||
+    record.variantId !== expected.condition.variantId ||
+    buildId !== expected.buildId ||
+    !sameProtocolValue(releaseOffsetsMs, expected.releaseOffsetsMs) ||
+    cutoffMs !== expected.cutoffMs ||
+    tokenBudgetPerAgent !== expected.tokenBudgetPerAgent
+  ) {
+    throw new Error("Attempt protocol fields must match the declared attempt.");
+  }
+
+  if (!Array.isArray(record.models) || record.models.length !== expected.agentIds.length) {
+    throw new Error("Attempt protocol must contain one model binding per agent.");
+  }
+  const models = record.models.map((item, index): AttemptProtocolModel => {
+    const name = `Attempt protocol model ${String(index + 1)}`;
+    const entry = strictObject(item, name, ["agentId", "model"]);
+    const decodedAgentId = agentId(entry.agentId, `${name} agentId`);
+    if (decodedAgentId !== expected.agentIds[index]) {
+      throw new Error("Attempt protocol models must follow the declared agent order.");
+    }
+    const modelRecord = strictObject(entry.model, `${name} binding`, [
+      "profile",
+      "provider",
+      "driver",
+      "requestedModel",
+      "settings",
+      "providerOptions",
+    ]);
+    const model = decodeModelBinding(modelRecord, `${name} binding`);
+    if (!sameProtocolValue(model, declaredModelBinding(expected.sessions[index]!.model))) {
+      throw new Error(`${name} binding must match its declared session model.`);
+    }
+    return { agentId: decodedAgentId, model };
+  });
+
+  if (!Array.isArray(record.prompts) || record.prompts.length !== expected.agentIds.length) {
+    throw new Error("Attempt protocol must contain one prompt per agent.");
+  }
+  const prompts = record.prompts.map((item, index): AttemptProtocolPrompt => {
+    const name = `Attempt protocol prompt ${String(index + 1)}`;
+    const entry = strictObject(item, name, ["agentId", "prompt"]);
+    const decodedAgentId = agentId(entry.agentId, `${name} agentId`);
+    if (decodedAgentId !== expected.agentIds[index]) {
+      throw new Error("Attempt protocol prompts must follow the declared agent order.");
+    }
+    return {
+      agentId: decodedAgentId,
+      prompt: nonEmptyString(entry.prompt, `${name} prompt`),
+    };
+  });
+  const sandbox = decodeSandbox(record.sandbox);
+  if (!sameProtocolValue(sandbox, expected.sandbox)) {
+    throw new Error("Attempt protocol sandbox must match the declared attempt sandbox.");
+  }
+  return {
+    schemaVersion: 1,
+    blockId,
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
+    buildId,
+    releaseOffsetsMs,
+    cutoffMs,
+    tokenBudgetPerAgent,
+    models,
+    prompts,
+    sandbox,
+  };
+}
+
 export function decodeAttemptSummary(value: unknown): AttemptSummary {
-  const record = object(value, "Attempt summary");
-  if (record.schemaVersion !== 2) throw new Error("Unsupported attempt schema version.");
-  const agentIds = decodeAgentIds(record.agentIds, "Attempt summary agentIds");
+  const record = strictObject(value, "Attempt summary", [
+    "schemaVersion",
+    "attemptId",
+    "runName",
+    "repetition",
+    "blockId",
+    "condition",
+    "communicationMode",
+    "keyRegime",
+    "variantId",
+    "buildId",
+    "buildRoot",
+    "agentIds",
+    "releaseOffsetsMs",
+    "cutoffMs",
+    "tokenBudgetPerAgent",
+    "protocolDigest",
+    "protocol",
+    "tracePath",
+    "traceMetadataPath",
+    "frozen",
+    "sandbox",
+    "sessions",
+  ]);
+  if (record.schemaVersion !== 3) throw new Error("Unsupported attempt schema version.");
+  const agentIds = decodeAttemptAgentIds(record.agentIds, "Attempt summary agentIds");
   if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
   }
   const sessions = record.sessions.map((session, index) =>
     decodeSession(session, index, agentIds[index]!),
   );
+  const condition = resolveCondition(record.condition);
+  if (
+    record.communicationMode !== condition.communicationMode ||
+    record.keyRegime !== condition.keyRegime ||
+    record.variantId !== condition.variantId
+  ) {
+    throw new Error("Attempt treatment fields must be derived from its canonical condition.");
+  }
+  const blockId = identifier(record.blockId, "Attempt summary blockId");
+  const buildId = decodeBuildId(record.buildId, "Attempt summary buildId");
+  const releaseOffsetsMs = decodeReleaseOffsets(
+    record.releaseOffsetsMs,
+    "Attempt summary releaseOffsetsMs",
+  );
+  const cutoffMs = integer(record.cutoffMs, "Attempt summary cutoffMs", 1);
+  if (cutoffMs !== ATTEMPT_CUTOFF_MS) {
+    throw new Error("Attempt summary cutoffMs must match the fixed condition cutoff.");
+  }
+  const tokenBudgetPerAgent = integer(
+    record.tokenBudgetPerAgent,
+    "Attempt summary tokenBudgetPerAgent",
+    1,
+  );
+  const sandbox = decodeSandbox(record.sandbox);
+  const protocol = decodeAttemptProtocol(record.protocol, {
+    blockId,
+    condition,
+    buildId,
+    releaseOffsetsMs,
+    cutoffMs,
+    tokenBudgetPerAgent,
+    agentIds,
+    sandbox,
+    sessions,
+  });
+  const protocolDigest = digest(record.protocolDigest, "Attempt summary protocolDigest");
+  if (hashProtocolSnapshot(protocol) !== protocolDigest) {
+    throw new Error("Attempt summary protocolDigest does not match its protocol snapshot.");
+  }
+  const frozen = decodeFrozenGitInventory(record.frozen, condition.communicationMode, agentIds);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     attemptId: nonEmptyString(record.attemptId, "Attempt summary attemptId"),
-    buildId: decodeBuildId(record.buildId, "Attempt summary buildId"),
+    runName: identifier(record.runName, "Attempt summary runName"),
+    repetition: integer(record.repetition, "Attempt summary repetition", 1),
+    blockId,
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
+    buildId,
     buildRoot: absolutePath(record.buildRoot, "Attempt summary buildRoot"),
     agentIds,
+    releaseOffsetsMs,
+    cutoffMs,
+    tokenBudgetPerAgent,
+    protocolDigest,
+    protocol,
     tracePath: absolutePath(record.tracePath, "Attempt summary tracePath"),
     traceMetadataPath: absolutePath(record.traceMetadataPath, "Attempt summary traceMetadataPath"),
-    frozenRoot: absolutePath(record.frozenRoot, "Attempt summary frozenRoot"),
-    sandbox: decodeSandbox(record.sandbox),
+    frozen,
+    sandbox,
     sessions,
   };
 }

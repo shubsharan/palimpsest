@@ -4,13 +4,24 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { decodeAttemptSummary, publishAttemptSummary } from "./artifacts.js";
-import { FixtureModelAdapter } from "./fixture.js";
-import type { AgentId, ModelAdapter, ModelBinding } from "./model.js";
-import type { PreflightReceipt } from "./preflight.js";
-import { systemMonotonicClock } from "./reveal.js";
 import {
-  finalizeAttempt,
+  ATTEMPT_CUTOFF_MS,
+  CONDITION_IDS,
+  RELEASE_OFFSETS_MS,
+  resolveCondition,
+  type ConditionId,
+} from "./condition.js";
+import { runGit } from "./git.js";
+import type {
+  AgentId,
+  ModelAdapter,
+  ModelBinding,
+  ModelRequest,
+  ModelToolResult,
+} from "./model.js";
+import type { PreflightReceipt } from "./preflight.js";
+import type { MonotonicClock } from "./reveal.js";
+import {
   runAttempt,
   runPuzzle,
   validateAttemptConfig,
@@ -24,15 +35,17 @@ import {
 } from "./sandbox/contracts.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
-const AGENTS = ["agent-1", "agent-2"] as const satisfies readonly AgentId[];
-const BUILD_ID = `build-${"a".repeat(64)}`;
+const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+const STATIONARY_BUILD_ID = `build-${"b".repeat(64)}`;
+const REKEY_BUILD_ID = `build-${"a".repeat(64)}`;
 
-function model(profile: string, requestedModel = profile): ModelBinding {
+function model(index: number, provider = "fixture"): ModelBinding {
+  const profile = `model-${String(index + 1)}`;
   return {
     profile,
-    provider: `${profile}-provider`,
+    provider,
     driver: "openai-compatible",
-    requestedModel,
+    requestedModel: profile,
     settings: {},
     providerOptions: {},
   };
@@ -40,16 +53,56 @@ function model(profile: string, requestedModel = profile): ModelBinding {
 
 function runtimes(
   adapterFor: (agentId: AgentId) => ModelAdapter,
+  provider = "fixture",
 ): Record<AgentId, AgentRuntimeBinding> {
   return Object.fromEntries(
     AGENTS.map((agentId, index) => [
       agentId,
-      {
-        model: model(index === 0 ? "model-a" : "model-b"),
-        adapter: adapterFor(agentId),
-      },
+      { model: model(index, provider), adapter: adapterFor(agentId) },
     ]),
   ) as Record<AgentId, AgentRuntimeBinding>;
+}
+
+class ControlledClock implements MonotonicClock {
+  currentMs = 0;
+  readonly deadlines: number[] = [];
+  readonly #waiters = new Set<{
+    deadlineMs: number;
+    signal: AbortSignal;
+    finish: (reached: boolean) => void;
+  }>();
+
+  nowMs(): number {
+    return this.currentMs;
+  }
+
+  waitUntil(deadlineMs: number, signal: AbortSignal): Promise<boolean> {
+    this.deadlines.push(deadlineMs);
+    if (signal.aborted) return Promise.resolve(false);
+    if (deadlineMs <= this.currentMs) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const waiter = {
+        deadlineMs,
+        signal,
+        finish: (reached: boolean) => {
+          signal.removeEventListener("abort", abort);
+          this.#waiters.delete(waiter);
+          resolve(reached);
+        },
+      };
+      const abort = () => waiter.finish(false);
+      signal.addEventListener("abort", abort, { once: true });
+      this.#waiters.add(waiter);
+    });
+  }
+
+  advanceTo(currentMs: number): void {
+    if (currentMs < this.currentMs) throw new Error("Controlled clock cannot move backwards.");
+    this.currentMs = currentMs;
+    for (const waiter of this.#waiters) {
+      if (waiter.deadlineMs <= currentMs) waiter.finish(true);
+    }
+  }
 }
 
 class StalledLeaseSandbox extends FakeCommandSandbox {
@@ -66,40 +119,54 @@ class StalledLeaseSandbox extends FakeCommandSandbox {
   }
 }
 
-async function fixtureConfig(root: string, wallTimeMs = 2_000): Promise<AttemptConfig> {
-  const stageCount = 3;
+async function waitForCondition(check: () => boolean, message: string): Promise<void> {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error(message);
+}
+
+async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promise<AttemptConfig> {
+  const resolved = resolveCondition(condition);
   const agentStages = Object.fromEntries(
     await Promise.all(
       AGENTS.map(async (agentId) => {
-        await mkdir(join(root, "source", agentId), { recursive: true });
-        const paths = await Promise.all(
-          Array.from({ length: stageCount }, async (_, index) => {
-            const path = join(root, "source", agentId, `stage-${index + 1}.txt`);
-            await writeFile(path, `${agentId}-${index + 1}\n`, { encoding: "utf8", flag: "wx" });
+        const sourceRoot = join(root, "source", agentId);
+        await mkdir(sourceRoot, { recursive: true });
+        const stages = await Promise.all(
+          Array.from({ length: 6 }, async (_, index) => {
+            const ordinal = index + 1;
+            const path = join(sourceRoot, `stage-${String(ordinal).padStart(2, "0")}.txt`);
+            await writeFile(path, `${agentId}-${String(ordinal)}\n`, {
+              encoding: "utf8",
+              flag: "wx",
+            });
             return path;
           }),
         );
-        return [agentId, paths] as const;
+        return [agentId, stages] as const;
       }),
     ),
   ) as Record<AgentId, readonly string[]>;
-  const reference = join(root, "reference");
-  await writeFile(reference, "reference\n", "utf8");
+  const referenceCorpusPath = join(root, "reference");
+  await mkdir(referenceCorpusPath);
+  await writeFile(join(referenceCorpusPath, "reference.txt"), "reference\n", "utf8");
   return {
-    attemptId: "attempt-baseline-001",
-    buildId: BUILD_ID,
+    attemptId: `attempt-${condition.toLowerCase()}-001`,
+    blockId: "calibration-theron-ware",
+    condition,
+    buildId: resolved.variantId === "stationary" ? STATIONARY_BUILD_ID : REKEY_BUILD_ID,
     runName: "baseline",
     repetition: 1,
     artifactRoot: join(root, "attempt"),
     buildRoot: join(root, "build"),
-    referenceCorpusPath: reference,
+    referenceCorpusPath,
     agentIds: AGENTS,
     agentStages,
-    stageCount,
-    rekeyCount: 0,
-    tokenBudgetPerAgent: 20,
-    wallTimeMs,
-    stageIntervalMs: 10,
+    releaseOffsetsMs: RELEASE_OFFSETS_MS,
+    cutoffMs: ATTEMPT_CUTOFF_MS,
+    tokenBudgetPerAgent: 100,
   };
 }
 
@@ -115,43 +182,283 @@ function finishAdapter(finalResponse = "done"): ModelAdapter {
   };
 }
 
-describe("run coordinator", () => {
-  it("rejects provider-backed sessions before output when preflight is missing", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-missing-preflight-"));
-    const output = join(root, "attempt");
-    let opened = false;
-    const agents = runtimes(() => ({
-      openSession() {
-        opened = true;
-        return {
-          respond: async () => ({
-            toolCalls: [],
-            finalResponse: "unexpected",
+function waitingAdapter(): ModelAdapter {
+  return {
+    openSession: () => {
+      let cursor = 1;
+      return {
+        respond: async (request) => {
+          const output = request.toolResults[0]?.output;
+          if (
+            typeof output === "object" &&
+            output !== null &&
+            "sequence" in output &&
+            typeof output.sequence === "number"
+          ) {
+            cursor = output.sequence;
+          }
+          return {
+            toolCalls: [
+              {
+                id: `wait-${String(cursor)}`,
+                name: "wait_for_activity",
+                arguments: { afterSequence: cursor },
+              },
+            ],
             usage: { inputTokens: 1, outputTokens: 1 },
-          }),
-        };
-      },
-    }));
+          };
+        },
+      };
+    },
+  };
+}
 
-    await expect(
-      runPuzzle({
-        root,
-        buildRoot: join(root, "unused-build"),
-        output,
-        runName: "provider",
-        repetition: 1,
-        agents,
-        tokenBudgetPerAgent: 20,
-        wallTimeMs: 2_000,
-        stageIntervalMs: 10,
-        sandbox: new FakeCommandSandbox(),
-      }),
-    ).rejects.toThrow(/preflight receipt is missing or invalid/i);
-    expect(opened).toBe(false);
-    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+function waitOnceAdapter(results: Map<AgentId, unknown>): ModelAdapter {
+  return {
+    openSession: ({ agentId }) => {
+      let waiting = false;
+      return {
+        respond: async (request: ModelRequest) => {
+          if (!waiting) {
+            waiting = true;
+            return {
+              toolCalls: [
+                {
+                  id: `wait-${agentId}`,
+                  name: "wait_for_activity",
+                  arguments: { afterSequence: 1 },
+                },
+              ],
+              usage: { inputTokens: 1, outputTokens: 1 },
+            };
+          }
+          results.set(agentId, request.toolResults[0]?.output);
+          return {
+            toolCalls: [],
+            finalResponse: "activity observed",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+      };
+    },
+  };
+}
+
+async function publishAgentOneRef(config: AttemptConfig): Promise<void> {
+  const workspace = join(config.artifactRoot, "git", "workspaces", "agent-1");
+  const mode = resolveCondition(config.condition).communicationMode;
+  const repository = join(
+    config.artifactRoot,
+    "git",
+    mode === "shared" ? "shared.git" : "agent-1.git",
+  );
+  await runGit(["switch", "--orphan", "activity/agent-one"], workspace);
+  await writeFile(join(workspace, "activity.txt"), "agent one\n", "utf8");
+  await runGit(["add", "activity.txt"], workspace);
+  await runGit(["commit", "-m", "publish activity"], workspace);
+  await runGit(["push", repository, "HEAD:refs/heads/activity/agent-one"], workspace);
+}
+
+function activityOutput(
+  results: Map<AgentId, unknown>,
+  agentId: AgentId,
+): ModelToolResult["output"] {
+  return results.get(agentId);
+}
+
+describe("fixed four-condition run coordinator", () => {
+  it.each(CONDITION_IDS)(
+    "derives the %s treatment and freezes its native repository topology",
+    async (condition) => {
+      const root = await mkdtemp(join(tmpdir(), `palimpsest-run-${condition.toLowerCase()}-`));
+      const config = await fixtureConfig(root, condition);
+      const clock = new ControlledClock();
+      const sandbox = new FakeCommandSandbox();
+      const expected = resolveCondition(condition);
+
+      expect(validateAttemptConfig(config)).toEqual(config);
+      const result = await runAttempt({
+        config,
+        agents: runtimes(() => finishAdapter()),
+        sandbox,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock,
+      });
+
+      expect(result).toMatchObject({
+        blockId: "calibration-theron-ware",
+        condition,
+        communicationMode: expected.communicationMode,
+        keyRegime: expected.keyRegime,
+        variantId: expected.variantId,
+        buildId: config.buildId,
+        releaseOffsetsMs: RELEASE_OFFSETS_MS,
+        cutoffMs: ATTEMPT_CUTOFF_MS,
+        tokenBudgetPerAgent: 100,
+      });
+      expect(result.frozen).toMatchObject({
+        communicationMode: expected.communicationMode,
+        frozen: true,
+      });
+      expect(result.frozen.repositories).toHaveLength(
+        expected.communicationMode === "shared" ? 1 : 3,
+      );
+      expect(result.frozen.workspaces).toHaveLength(3);
+      expect(new Set(sandbox.leases.map(({ gitOriginPath }) => gitOriginPath)).size).toBe(
+        expected.communicationMode === "shared" ? 1 : 3,
+      );
+      expect(sandbox.closedLeases).toBe(3);
+    },
+  );
+
+  it("rejects condition, geometry, and schedule drift before creating an attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-invalid-"));
+    const config = await fixtureConfig(root);
+    const cases: Array<[unknown, RegExp]> = [
+      [{ ...config, condition: "cr" }, /Condition must be exactly/],
+      [{ ...config, agentIds: ["agent-1", "agent-2"] }, /exactly three/i],
+      [
+        {
+          ...config,
+          agentStages: {
+            ...config.agentStages,
+            "agent-3": config.agentStages["agent-3"]!.slice(0, 5),
+          },
+        },
+        /exactly 6 stages/i,
+      ],
+      [{ ...config, releaseOffsetsMs: [0, 1, 2, 3, 4, 5] }, /releaseOffsetsMs|fixed/i],
+      [{ ...config, cutoffMs: ATTEMPT_CUTOFF_MS - 1 }, /cutoffMs|fixed/i],
+      [{ ...config, tokenBudgetPerAgent: 0 }, /tokenBudgetPerAgent/],
+    ];
+
+    for (const [value, message] of cases) {
+      expect(() => validateAttemptConfig(value)).toThrow(message);
+    }
+    expect(config).not.toHaveProperty("maxTurns");
+    expect(config).not.toHaveProperty("maxGitBytes");
+    expect(config).not.toHaveProperty("wallTimeMs");
+    expect(config).not.toHaveProperty("stageIntervalMs");
   });
 
-  it("copies preflight provenance before opening provider-backed model sessions", async () => {
+  it("publishes each first private stage before opening model sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-initial-stage-"));
+    const config = await fixtureConfig(root);
+    const opened: AgentId[] = [];
+    const adapter: ModelAdapter = {
+      async openSession({ agentId }) {
+        const evidence = await readdir(join(config.artifactRoot, "private-evidence", agentId));
+        expect(evidence).toEqual(["stage-01-stage-01.txt"]);
+        opened.push(agentId);
+        return finishAdapter().openSession({ agentId, tools: [] });
+      },
+    };
+
+    const result = await runAttempt({
+      config,
+      agents: runtimes(() => adapter),
+      sandbox: new FakeCommandSandbox(),
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock: new ControlledClock(),
+    });
+
+    expect(opened.sort()).toEqual([...AGENTS]);
+    expect(result.sessions.every(({ state }) => state === "finished")).toBe(true);
+  });
+
+  it.each([
+    ["CR", "shared"],
+    ["IR", "isolated"],
+  ] as const)(
+    "exposes %s Git activity according to the %s topology without hidden sequence gaps",
+    async (condition, communicationMode) => {
+      const root = await mkdtemp(join(tmpdir(), `palimpsest-run-activity-${condition}-`));
+      const config = await fixtureConfig(root, condition);
+      const clock = new ControlledClock();
+      const sandbox = new FakeCommandSandbox();
+      const results = new Map<AgentId, unknown>();
+      const adapter = waitOnceAdapter(results);
+      const attempt = runAttempt({
+        config,
+        agents: runtimes(() => adapter),
+        sandbox,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock,
+        gitPollIntervalMs: 1,
+      });
+
+      await waitForCondition(
+        () => sandbox.leases.length === 3,
+        "Agent leases did not open before Git activity.",
+      );
+      await publishAgentOneRef(config);
+      await waitForCondition(
+        () => results.has("agent-1"),
+        "Agent 1 did not observe its visible Git activity.",
+      );
+
+      if (communicationMode === "shared") {
+        await waitForCondition(
+          () => results.size === 3,
+          "Peers did not observe shared Git activity.",
+        );
+        for (const agentId of AGENTS) {
+          expect(activityOutput(results, agentId)).toMatchObject({
+            sequence: 2,
+            kind: "git-changed",
+          });
+        }
+      } else {
+        expect(results.has("agent-2")).toBe(false);
+        expect(results.has("agent-3")).toBe(false);
+        expect(activityOutput(results, "agent-1")).toMatchObject({
+          sequence: 2,
+          kind: "git-changed",
+        });
+        clock.advanceTo(RELEASE_OFFSETS_MS[1]);
+        await waitForCondition(
+          () => results.size === 3,
+          "Private stage activity did not resume isolated peers.",
+        );
+        for (const agentId of ["agent-2", "agent-3"] as const) {
+          expect(activityOutput(results, agentId)).toMatchObject({
+            sequence: 2,
+            kind: "stage-released",
+          });
+        }
+      }
+
+      const result = await attempt;
+      expect(result.frozen.communicationMode).toBe(communicationMode);
+    },
+  );
+
+  it("stops active sessions at the fixed 60-minute cutoff using monotonic time", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-cutoff-"));
+    const config = await fixtureConfig(root);
+    const clock = new ControlledClock();
+    const sandbox = new FakeCommandSandbox();
+    const attempt = runAttempt({
+      config,
+      agents: runtimes(() => waitingAdapter()),
+      sandbox,
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock,
+    });
+
+    await waitForCondition(
+      () => sandbox.leases.length === 3,
+      "Agent leases did not open before the cutoff.",
+    );
+    clock.advanceTo(ATTEMPT_CUTOFF_MS);
+    const result = await attempt;
+
+    expect(clock.deadlines).toContain(ATTEMPT_CUTOFF_MS);
+    expect(result.sessions.every(({ state }) => state === "time-exhausted")).toBe(true);
+    expect(sandbox.closedLeases).toBe(3);
+  });
+
+  it("copies preflight provenance before opening provider-backed sessions", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-run-preflight-"));
     const config = await fixtureConfig(root);
     const preflight: PreflightReceipt = {
@@ -162,341 +469,160 @@ describe("run coordinator", () => {
       sandbox: new FakeCommandSandbox().identity,
     };
     const adapter: ModelAdapter = {
-      openSession() {
+      openSession: () => ({
+        async respond() {
+          expect(
+            JSON.parse(await readFile(join(config.artifactRoot, "preflight.json"), "utf8")),
+          ).toEqual(preflight);
+          return {
+            toolCalls: [],
+            finalResponse: "ready",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+      }),
+    };
+
+    await runAttempt({
+      config,
+      agents: runtimes(() => adapter, "provider"),
+      sandbox: new FakeCommandSandbox(),
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock: new ControlledClock(),
+      preflight,
+    });
+  });
+
+  it("rejects provider-backed sessions before output when preflight is missing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-missing-preflight-"));
+    const output = join(root, "attempt");
+    let opened = false;
+    const agents = runtimes(
+      () => ({
+        openSession() {
+          opened = true;
+          return finishAdapter().openSession({ agentId: "agent-1", tools: [] });
+        },
+      }),
+      "provider",
+    );
+
+    await expect(
+      runPuzzle({
+        root,
+        buildRoot: join(root, "unused-build"),
+        output,
+        condition: "CR",
+        runName: "provider",
+        repetition: 1,
+        agents,
+        tokenBudgetPerAgent: 100,
+        sandbox: new FakeCommandSandbox(),
+        clock: new ControlledClock(),
+      }),
+    ).rejects.toThrow(/preflight receipt is missing or invalid/i);
+    expect(opened).toBe(false);
+    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("bounds stalled lease setup by the fixed cutoff without a real-time wait", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-lease-cutoff-"));
+    const config = await fixtureConfig(root);
+    const clock = new ControlledClock();
+    const sandbox = new StalledLeaseSandbox();
+    const attempt = runAttempt({
+      config,
+      agents: runtimes(() => waitingAdapter()),
+      sandbox,
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock,
+    });
+
+    await waitForCondition(() => sandbox.leases.length === 3, "Stalled leases were not requested.");
+    clock.advanceTo(ATTEMPT_CUTOFF_MS);
+    await expect(attempt).rejects.toThrow(
+      "Attempt wall-time cutoff expired during agent sandbox setup.",
+    );
+    expect(sandbox.leases.every(({ timeoutMs }) => timeoutMs > 0 && timeoutMs <= 30_000)).toBe(
+      true,
+    );
+  });
+
+  it("closes every opened lease when a later stage cannot be published", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-stage-cleanup-"));
+    const config = await fixtureConfig(root);
+    await rm(config.agentStages["agent-1"]![1]!);
+    const clock = new ControlledClock();
+    const sandbox = new FakeCommandSandbox();
+    const attempt = runAttempt({
+      config,
+      agents: runtimes(() => waitingAdapter()),
+      sandbox,
+      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      clock,
+    });
+
+    await waitForCondition(
+      () => sandbox.leases.length === 3,
+      "Agent leases did not open before stage publication.",
+    );
+    clock.advanceTo(RELEASE_OFFSETS_MS[1]);
+    await Promise.resolve();
+    clock.advanceTo(ATTEMPT_CUTOFF_MS);
+    await expect(attempt).rejects.toThrow();
+    expect(sandbox.closedLeases).toBe(3);
+  });
+
+  it("records provider and command-sandbox failures without losing native frozen work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-session-failures-"));
+    const config = await fixtureConfig(root, "IR");
+    const adapter: ModelAdapter = {
+      openSession({ agentId }) {
+        if (agentId === "agent-1") throw new Error("provider unavailable");
+        let called = false;
         return {
-          async respond() {
-            expect(
-              JSON.parse(await readFile(join(config.artifactRoot, "preflight.json"), "utf8")),
-            ).toEqual(preflight);
+          respond: async () => {
+            if (agentId === "agent-2" && !called) {
+              called = true;
+              return {
+                toolCalls: [{ id: "command", name: "run_command", arguments: { command: "true" } }],
+                usage: { inputTokens: 1, outputTokens: 1 },
+              };
+            }
             return {
               toolCalls: [],
-              finalResponse: "ready",
+              finalResponse: "done",
               usage: { inputTokens: 1, outputTokens: 1 },
             };
           },
         };
       },
     };
-
-    await runAttempt({
-      config,
-      agents: runtimes(() => adapter),
-      sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-      clock: systemMonotonicClock,
-      preflight,
-    });
-  });
-
-  it("accepts dynamic agent and stage geometry without interaction caps", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-config-"));
-    const config = await fixtureConfig(root);
-
-    expect(validateAttemptConfig(config)).toEqual(config);
-    expect(config).not.toHaveProperty("maxTurns");
-    expect(config).not.toHaveProperty("maxGitBytes");
-  });
-
-  it.each([
-    ["tokenBudgetPerAgent", 0, "tokenBudgetPerAgent"],
-    ["wallTimeMs", -1, "wallTimeMs"],
-  ] as const)("rejects invalid %s", async (key, value, message) => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-config-invalid-"));
-    const config = await fixtureConfig(root);
-    expect(() => validateAttemptConfig({ ...config, [key]: value })).toThrow(message);
-  });
-
-  it("rejects mismatched agents and stages", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-config-geometry-"));
-    const config = await fixtureConfig(root);
-    expect(() =>
-      validateAttemptConfig({
-        ...config,
-        agentStages: {
-          ...config.agentStages,
-          "agent-2": config.agentStages["agent-2"]!.slice(0, 2),
-        },
-      }),
-    ).toThrow("exactly 3 stages");
-    expect(() =>
-      validateAttemptConfig({
-        ...config,
-        agentIds: ["agent-1", "agent-3"],
-      }),
-    ).toThrow("agentIds must be ordered canonically");
-  });
-
-  it("runs a mixed-model assignment and records configured bindings in the trace", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-mixed-model-"));
-    const config = await fixtureConfig(root);
-    const openedBy: string[] = [];
-    const agents = runtimes((agentId) => ({
-      openSession: () => {
-        openedBy.push(agentId);
-        return {
-          respond: async () => ({
-            toolCalls: [],
-            finalResponse: `done by ${agentId}`,
-            usage: { inputTokens: 2, outputTokens: 1 },
-            responseIdentity: {
-              actualProvider: `${agentId}-actual-provider`,
-              actualModel: `${agentId}-actual-model`,
-            },
-          }),
-        };
-      },
-    }));
-
-    const sandbox = new FakeCommandSandbox();
-    const result = await runAttempt({
-      config,
-      agents,
-      sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-      clock: systemMonotonicClock,
-    });
-
-    expect(openedBy.sort()).toEqual([...AGENTS]);
-    expect(result.agentIds).toEqual(AGENTS);
-    expect(
-      result.sessions.map(({ agentId, model: binding }) => [agentId, binding.profile]),
-    ).toEqual([
-      ["agent-1", "model-a"],
-      ["agent-2", "model-b"],
-    ]);
-    expect(result.sessions[1]?.model).toMatchObject({
-      actualProvider: "agent-2-actual-provider",
-      actualModel: "agent-2-actual-model",
-    });
-    expect(result.frozen.workspaces.map(({ agentId }) => agentId)).toEqual(AGENTS);
-
-    const trace = (await readFile(result.tracePath, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as { kind: string; data: unknown });
-    expect(trace.find(({ kind }) => kind === "attempt.configured")?.data).toEqual({
-      attemptId: config.attemptId,
-      buildId: BUILD_ID,
-      runName: "baseline",
-      repetition: 1,
-      tokenBudgetPerAgent: 20,
-      wallTimeMs: 2_000,
-      stageIntervalMs: 10,
-      agentCount: 2,
-      stageCount: 3,
-      rekeyCount: 0,
-      models: [
-        { agentId: "agent-1", ...model("model-a") },
-        { agentId: "agent-2", ...model("model-b") },
-      ],
-    });
-    expect(sandbox.leases).toHaveLength(AGENTS.length);
-    expect(sandbox.closedLeases).toBe(AGENTS.length);
-    expect(new Set(sandbox.leases.map((request) => request.profile))).toEqual(new Set(["agent"]));
-  });
-
-  it("publishes first private evidence before opening each model session", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-initial-stage-"));
-    const config = await fixtureConfig(root);
-    const seen = new Map<string, string>();
-    const agents = runtimes(() => ({
-      openSession(context) {
-        return {
-          async respond(request) {
-            const evidenceLine = (request.prompt ?? "")
-              .split("\n")
-              .find((line) => line.startsWith("Private evidence: "));
-            if (!evidenceLine) throw new Error("Prompt omitted private evidence.");
-            seen.set(context.agentId, evidenceLine.slice("Private evidence: ".length));
-            return {
-              toolCalls: [],
-              finalResponse: "ready",
-              usage: { inputTokens: 1, outputTokens: 1 },
-            };
-          },
-        };
-      },
-    }));
-    const result = await runAttempt({
-      config,
-      agents,
-      sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-      clock: systemMonotonicClock,
-    });
-
-    expect([...seen.keys()].sort()).toEqual([...AGENTS]);
-    for (const agentId of AGENTS) {
-      expect(seen.get(agentId)).toBe("/evidence");
-      expect(await readdir(join(config.artifactRoot, "private-evidence", agentId))).toContain(
-        "stage-01-stage-1.txt",
-      );
-    }
-    expect(result.sessions.every((session) => session.state === "finished")).toBe(true);
-  });
-
-  it("ends only active sessions when global wall time expires", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-wall-"));
-    const config = await fixtureConfig(root, 80);
-    const adapter = FixtureModelAdapter.repeatingWait();
-    const result = await runAttempt({
-      config,
-      agents: runtimes(() => adapter),
-      sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-      clock: systemMonotonicClock,
-    });
-    expect(result.sessions.every((session) => session.state === "time-exhausted")).toBe(true);
-  });
-
-  it("bounds initial lease setup by the global wall-time cutoff", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-lease-cutoff-"));
-    const config = await fixtureConfig(root, 250);
-    const sandbox = new StalledLeaseSandbox();
-    const startedAt = performance.now();
-
-    await expect(
-      runAttempt({
-        config,
-        agents: runtimes(() => FixtureModelAdapter.repeatingWait()),
-        sandbox,
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-        clock: systemMonotonicClock,
-      }),
-    ).rejects.toThrow("Attempt wall-time cutoff expired during agent sandbox setup.");
-
-    expect(performance.now() - startedAt).toBeLessThan(2_000);
-    expect(sandbox.leases).toHaveLength(AGENTS.length);
-    expect(
-      sandbox.leases.every(
-        (request) =>
-          request.signal !== undefined &&
-          request.timeoutMs > 0 &&
-          request.timeoutMs <= config.wallTimeMs,
-      ),
-    ).toBe(true);
-  });
-
-  it("closes every lease when stage publication fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-stage-cleanup-"));
-    const config = await fixtureConfig(root, 80);
-    const agentStages = config.agentStages["agent-1"];
-    const missingStage = agentStages?.[1];
-    if (missingStage === undefined) throw new Error("Fixture omitted agent-1 stage 2.");
-    await rm(missingStage);
-    const sandbox = new FakeCommandSandbox();
-
-    await expect(
-      runAttempt({
-        config,
-        agents: runtimes(() => FixtureModelAdapter.repeatingWait()),
-        sandbox,
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-        clock: systemMonotonicClock,
-      }),
-    ).rejects.toThrow();
-
-    expect(sandbox.leases).toHaveLength(AGENTS.length);
-    expect(sandbox.closedLeases).toBe(AGENTS.length);
-  });
-
-  it("freezes and publishes attempt v2 when a provider fails before opening a session", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-provider-failure-"));
-    const config = await fixtureConfig(root);
-    const agents = runtimes((agentId) =>
-      agentId === "agent-1"
-        ? {
-            openSession() {
-              throw new Error("provider unavailable");
-            },
-          }
-        : finishAdapter(),
-    );
-    const result = await runAttempt({
-      config,
-      agents,
-      sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-      clock: systemMonotonicClock,
-    });
-
-    expect(result.sessions[0]).toMatchObject({
-      state: "infrastructure-error",
-      terminationReason: "provider unavailable",
-      model: model("model-a"),
-    });
-    expect(result.frozen.frozen).toBe(true);
-    await expect(
-      finalizeAttempt({
-        attemptRoot: config.artifactRoot,
-        buildRoot: config.buildRoot,
-        result,
-        publishSummary: publishAttemptSummary,
-        observeOverlap: async () => ({
-          findings: [],
-          scan: {
-            reachableObjectCount: 0,
-            reachableBlobReferenceCount: 0,
-            uniqueReachableBlobCount: 0,
-            uniqueTextBlobCount: 0,
-            repeatedTreeReferenceCount: 0,
-            skippedNonTextBlobCount: 0,
-          },
-        }),
-        appendTrace: async () => undefined,
-      }),
-    ).resolves.toEqual({
-      findings: [],
-      scan: {
-        reachableObjectCount: 0,
-        reachableBlobReferenceCount: 0,
-        uniqueReachableBlobCount: 0,
-        uniqueTextBlobCount: 0,
-        repeatedTreeReferenceCount: 0,
-        skippedNonTextBlobCount: 0,
-      },
-    });
-
-    const summary = decodeAttemptSummary(
-      JSON.parse(await readFile(join(config.artifactRoot, "attempt.json"), "utf8")),
-    );
-    expect(summary).toMatchObject({
-      schemaVersion: 2,
-      buildId: BUILD_ID,
-      agentIds: AGENTS,
-    });
-    expect(summary.sessions[0]).toMatchObject({
-      state: "infrastructure-error",
-      model: model("model-a"),
-    });
-  });
-
-  it("classifies command sandbox failures as session infrastructure errors", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-failure-"));
-    const config = await fixtureConfig(root);
-    const adapter = new FixtureModelAdapter({
-      "agent-1": [
-        {
-          toolCalls: [{ id: "command", name: "run_command", arguments: { command: "true" } }],
-          usage: { inputTokens: 1, outputTokens: 1 },
-        },
-      ],
-      "agent-2": [{ toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 } }],
-    });
     const sandbox = new FakeCommandSandbox(async () => {
       throw new SandboxInfrastructureError("Docker daemon unavailable.");
     });
+
     const result = await runAttempt({
       config,
       agents: runtimes(() => adapter),
       sandbox,
       checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
-      clock: systemMonotonicClock,
+      clock: new ControlledClock(),
     });
 
-    expect(result.sessions.find((session) => session.agentId === "agent-1")).toMatchObject({
+    expect(result.sessions.find(({ agentId }) => agentId === "agent-1")).toMatchObject({
+      state: "infrastructure-error",
+      terminationReason: "provider unavailable",
+    });
+    expect(result.sessions.find(({ agentId }) => agentId === "agent-2")).toMatchObject({
       state: "infrastructure-error",
       terminationReason: "Docker daemon unavailable.",
     });
+    expect(result.frozen).toMatchObject({
+      communicationMode: "isolated",
+      frozen: true,
+    });
+    expect(result.frozen.repositories).toHaveLength(3);
+    expect(sandbox.closedLeases).toBe(3);
   });
 });

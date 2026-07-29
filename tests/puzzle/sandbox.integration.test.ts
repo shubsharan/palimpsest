@@ -15,10 +15,12 @@ import {
 } from "../../src/sandbox/contracts.js";
 import { sandboxDockerfileDigest } from "../../src/sandbox/docker.js";
 import { resolveWorkspaceRegularFile } from "../../src/sandbox/workspace.js";
-import { createGitEnvironment, listRemoteRefs } from "../../src/git.js";
+import { createGitEnvironment, listRemoteRefs, type GitCommunicationMode } from "../../src/git.js";
+import type { AgentId } from "../../src/model.js";
 
 const execFileAsync = promisify(execFile);
 const originalApiKey = process.env.OPENAI_API_KEY;
+const AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -46,11 +48,15 @@ async function sandboxContainerCount(labelValue: string): Promise<number> {
   return stdout.trim() === "" ? 0 : stdout.trim().split("\n").length;
 }
 
-async function agentFixture() {
+async function agentFixture(communicationMode: GitCommunicationMode = "shared") {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-integration-"));
-  const git = await createGitEnvironment(join(root, "git"));
+  const git = await createGitEnvironment(join(root, "git"), communicationMode, AGENT_IDS);
   const workspace = git.workspaces[0];
   if (!workspace) throw new Error("Expected agent-1 workspace.");
+  const repository = git.repositories.find(
+    (candidate) => candidate.repositoryId === workspace.repositoryId,
+  );
+  if (!repository) throw new Error("Expected agent-1 repository assignment.");
   const evidence = join(root, "evidence");
   const peerEvidence = join(root, "peer-evidence");
   const oracle = join(root, "oracle");
@@ -67,6 +73,7 @@ async function agentFixture() {
   return {
     root,
     git,
+    repository,
     workspace: workspace.path,
     evidence,
     peerEvidence,
@@ -95,7 +102,7 @@ describe("real Docker command containment", () => {
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
       referenceCorpusPath: fixture.reference,
-      sharedGitPath: fixture.git.barePath,
+      gitOriginPath: fixture.repository.path,
     });
     expect(sandbox.identity).toEqual({
       imageTag: SANDBOX_IMAGE_TAG,
@@ -125,8 +132,44 @@ describe("real Docker command containment", () => {
       timedOut: false,
       outputExceeded: false,
     });
-    expect(await listRemoteRefs(fixture.git.barePath)).toHaveProperty("refs/heads/team/result");
+    expect(await listRemoteRefs(fixture.repository.path)).toHaveProperty("refs/heads/team/result");
     expect(await sandboxContainerCount(sandbox.containerLabelValue)).toBe(1);
+    await lease.close();
+    await assertNoSandboxContainers(sandbox.containerLabelValue);
+  }, 60_000);
+
+  it("mounts only an isolated agent's assigned origin", async () => {
+    const fixture = await agentFixture("isolated");
+    const peerRepositories = fixture.git.repositories.filter(
+      (repository) => repository.repositoryId !== fixture.repository.repositoryId,
+    );
+    const sandbox = await createDockerCommandSandbox();
+    const lease = await sandbox.openAgentLease({
+      profile: "agent",
+      timeoutMs: 30_000,
+      workspacePath: fixture.workspace,
+      evidencePath: fixture.evidence,
+      referenceCorpusPath: fixture.reference,
+      gitOriginPath: fixture.repository.path,
+    });
+    const result = await lease.execute({
+      command: [
+        'test "$(git remote get-url origin)" = /git/origin.git',
+        "printf 'private\\n' > private.txt",
+        "git add private.txt",
+        "git commit -m 'record private result'",
+        "git push origin HEAD:refs/heads/private/result",
+      ].join(" && "),
+      timeoutMs: 30_000,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(await listRemoteRefs(fixture.repository.path)).toHaveProperty(
+      "refs/heads/private/result",
+    );
+    for (const repository of peerRepositories) {
+      expect(await listRemoteRefs(repository.path)).toEqual({});
+    }
     await lease.close();
     await assertNoSandboxContainers(sandbox.containerLabelValue);
   }, 60_000);
@@ -176,7 +219,7 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       ciphertextPath: ciphertext,
-      frozenGitPath: fixture.git.barePath,
+      gitOriginPath: fixture.repository.path,
       outputPath: "reconstruction.txt",
     });
 
@@ -196,7 +239,7 @@ describe("real Docker command containment", () => {
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
       referenceCorpusPath: fixture.reference,
-      sharedGitPath: fixture.git.barePath,
+      gitOriginPath: fixture.repository.path,
     });
 
     await expect(lease.execute({ command: "exit 7", timeoutMs: 10_000 })).resolves.toMatchObject({

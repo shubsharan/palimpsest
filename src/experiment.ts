@@ -4,12 +4,16 @@ import { dirname, join, resolve } from "node:path";
 import {
   decodeAttemptSummary,
   decodeExperimentSummary,
+  decodeBuildManifest,
   publishExperimentSummary,
+  selectBuildVariant,
   type AttemptSummary,
+  type BuildManifest,
   type BuildPuzzleResult,
   type ExperimentSummary,
 } from "./artifacts.js";
 import { buildPuzzle, type BuildPuzzleOptions } from "./build.js";
+import { resolveCondition, type ConditionId } from "./condition.js";
 import {
   loadExperimentConfig,
   type ModelProfile,
@@ -20,6 +24,7 @@ import {
 import { requiredFlag } from "./flags.js";
 import { isAgentId, type AgentId, type ModelAdapter, type ModelBinding } from "./model.js";
 import { createAiSdkModelAdapter, type CreateAiSdkModelAdapterOptions } from "./provider.js";
+import { readJsonObject } from "./python.js";
 import { runPuzzle } from "./run.js";
 
 export interface ExperimentAgent {
@@ -33,10 +38,9 @@ export interface ExperimentRunRequest {
   output: string;
   runName: string;
   repetition: number;
+  condition: ConditionId;
   agents: Readonly<Record<AgentId, ExperimentAgent>>;
   tokenBudgetPerAgent: number;
-  wallTimeMs: number;
-  stageIntervalMs: number;
 }
 
 export interface ExperimentRunResult {
@@ -48,6 +52,7 @@ export interface ExperimentRunResult {
 export interface ExperimentDependencies {
   loadConfig: typeof loadExperimentConfig;
   build: (options: BuildPuzzleOptions) => Promise<BuildPuzzleResult>;
+  readBuildManifest: (buildRoot: string) => Promise<BuildManifest>;
   createAdapter: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter;
   run: (options: ExperimentRunRequest) => Promise<ExperimentRunResult>;
   publishSummary: typeof publishExperimentSummary;
@@ -57,6 +62,7 @@ export interface RunExperimentOptions {
   root: string;
   configPath: string;
   output: string;
+  condition: ConditionId;
   env?: NodeJS.ProcessEnv;
   dependencies?: Partial<ExperimentDependencies>;
 }
@@ -64,6 +70,8 @@ export interface RunExperimentOptions {
 const defaultDependencies: ExperimentDependencies = {
   loadConfig: loadExperimentConfig,
   build: buildPuzzle,
+  readBuildManifest: async (buildRoot) =>
+    decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json"))),
   createAdapter: createAiSdkModelAdapter,
   run: runPuzzle,
   publishSummary: publishExperimentSummary,
@@ -191,6 +199,15 @@ export function createConfiguredRunAgents(
   return agentsFor(run, createAdapters(config, [run], createAdapter, options.env));
 }
 
+export function assertBuildMatchesExperimentConfig(
+  manifest: BuildManifest,
+  config: ResolvedExperimentConfig,
+): void {
+  if (manifest.blockId !== config.puzzle.block) {
+    throw new Error("Puzzle build does not match the resolved experiment configuration.");
+  }
+}
+
 function isMissingFile(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
@@ -216,10 +233,16 @@ async function readDurableAttempt(attemptRoot: string): Promise<AttemptSummary |
 
 function verifyDurableAttempt(
   attempt: AttemptSummary,
-  build: BuildPuzzleResult,
+  buildRoot: string,
+  expectedBuildId: string,
+  condition: ConditionId,
   run: ResolvedRunCondition,
 ): void {
-  if (attempt.buildId !== build.variants.rekey || attempt.buildRoot !== build.buildPath) {
+  if (
+    attempt.condition !== condition ||
+    attempt.buildId !== expectedBuildId ||
+    attempt.buildRoot !== buildRoot
+  ) {
     throw new Error(`Attempt ${attempt.attemptId} does not belong to the experiment build.`);
   }
   if (
@@ -263,12 +286,20 @@ async function publishDurableAttempt(options: {
   attemptRoot: string;
   run: ResolvedRunCondition;
   repetition: number;
-  build: BuildPuzzleResult;
+  buildRoot: string;
+  expectedBuildId: string;
+  condition: ConditionId;
   publishSummary: typeof publishExperimentSummary;
 }): Promise<{ summary: ExperimentSummary; infrastructureError: boolean } | undefined> {
   const attempt = await readDurableAttempt(options.attemptRoot);
   if (attempt === undefined) return undefined;
-  verifyDurableAttempt(attempt, options.build, options.run);
+  verifyDurableAttempt(
+    attempt,
+    options.buildRoot,
+    options.expectedBuildId,
+    options.condition,
+    options.run,
+  );
   const summary = appendAttempt(
     options.summary,
     options.run,
@@ -304,11 +335,17 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
     output: join(experimentRoot, "build"),
     block: config.puzzle.block,
   });
+  const manifest = await deps.readBuildManifest(build.buildPath);
+  assertBuildMatchesExperimentConfig(manifest, config);
+  const selectedVariant = selectBuildVariant(
+    manifest,
+    resolveCondition(options.condition).variantId,
+  );
   let summary = decodeExperimentSummary({
     schemaVersion: 1,
     resolvedConfig: config,
     buildRoot: build.buildPath,
-    buildId: build.variants.rekey,
+    buildId: selectedVariant.buildId,
     attempts: [],
   });
 
@@ -329,10 +366,9 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
           output: attemptRoot,
           runName: run.name,
           repetition,
+          condition: options.condition,
           agents: agentsFor(run, adapters),
           tokenBudgetPerAgent: config.limits.tokenBudgetPerAgent,
-          wallTimeMs: config.limits.wallTimeMs,
-          stageIntervalMs: config.puzzle.stageIntervalMs,
         });
       } catch (error) {
         const durable = await publishDurableAttempt({
@@ -341,7 +377,9 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
           attemptRoot,
           run,
           repetition,
-          build,
+          buildRoot: build.buildPath,
+          expectedBuildId: selectedVariant.buildId,
+          condition: options.condition,
           publishSummary: deps.publishSummary,
         });
         if (durable !== undefined) summary = durable.summary;
@@ -354,7 +392,9 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
         attemptRoot,
         run,
         repetition,
-        build,
+        buildRoot: build.buildPath,
+        expectedBuildId: selectedVariant.buildId,
+        condition: options.condition,
         publishSummary: deps.publishSummary,
       });
       if (durable === undefined) {
@@ -396,6 +436,7 @@ export async function runExperimentFromFlags(
   const summary = await runExperiment({
     root,
     configPath: requiredFlag(flags, "--config"),
+    condition: resolveCondition(requiredFlag(flags, "--condition")).id,
     output,
     ...(dependencies === undefined ? {} : { dependencies }),
   });

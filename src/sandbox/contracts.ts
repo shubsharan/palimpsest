@@ -8,7 +8,7 @@ export const SANDBOX_PATHS = {
   workspace: "/workspace",
   evidence: "/evidence",
   reference: "/reference",
-  sharedGit: "/git/shared.git",
+  gitOrigin: "/git/origin.git",
   ciphertext: "/input/ciphertext.txt",
 } as const;
 
@@ -32,7 +32,7 @@ export interface AgentSandboxLeaseRequest {
   workspacePath: string;
   evidencePath: string;
   referenceCorpusPath: string;
-  sharedGitPath: string;
+  gitOriginPath: string;
   timeoutMs: number;
   signal?: AbortSignal;
 }
@@ -42,14 +42,14 @@ export interface AgentSandboxCommand extends BaseSandboxCommand {
   workspacePath: string;
   evidencePath: string;
   referenceCorpusPath: string;
-  sharedGitPath: string;
+  gitOriginPath: string;
 }
 
 export interface EvaluationSandboxCommand extends BaseSandboxCommand {
   profile: "evaluation";
   workspacePath: string;
   ciphertextPath: string;
-  frozenGitPath: string;
+  gitOriginPath: string;
   outputPath: string;
 }
 
