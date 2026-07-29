@@ -183,7 +183,7 @@ export async function evaluateFrozenAttempt(options: {
       timeoutMs: options.timeoutMs ?? 30_000,
       workspacePath,
       ciphertextPath: options.ciphertextPath,
-      frozenGitPath: options.frozenGitPath,
+      gitOriginPath: options.frozenGitPath,
       outputPath: options.selection.outputPath,
     });
   } catch (error) {
@@ -285,17 +285,33 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   const build = decodeBuildManifest(
     await readJsonObject(join(attempt.buildRoot, "puzzle-build.json")),
   );
-  const variant = selectBuildVariant(build, "rekey");
+  const variant = selectBuildVariant(build, attempt.variantId);
   if (variant.buildId !== attempt.buildId) {
     throw new Error("Attempt build identity does not match the selected paired-build variant.");
+  }
+  const frozenWorkspace = attempt.frozen.workspaces.find(
+    (candidate) => candidate.agentId === workspace,
+  );
+  if (frozenWorkspace === undefined) {
+    throw new Error(`Frozen workspace ${workspace} is missing from attempt ${attempt.attemptId}.`);
+  }
+  const frozenRepository = attempt.frozen.repositories.find(
+    (candidate) => candidate.repositoryId === frozenWorkspace.repositoryId,
+  );
+  if (
+    frozenRepository === undefined ||
+    !frozenRepository.agentIds.includes(workspace) ||
+    frozenWorkspace.path !== join(attempt.frozen.root, "workspaces", workspace)
+  ) {
+    throw new Error(`Frozen Git topology is inconsistent for workspace ${workspace}.`);
   }
   const sandbox = await createDockerCommandSandbox({
     root,
     expectedImageId: attempt.sandbox.imageId,
   });
   await evaluateFrozenAttempt({
-    frozenWorkspacePath: join(attempt.frozenRoot, "workspaces", workspace),
-    frozenGitPath: join(attempt.frozenRoot, "shared.git"),
+    frozenWorkspacePath: frozenWorkspace.path,
+    frozenGitPath: frozenRepository.path,
     evaluationRoot: join(attemptRoot, "evaluation"),
     ciphertextPath: join(attempt.buildRoot, variant.publicCiphertextPath),
     sandbox,

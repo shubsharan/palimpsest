@@ -153,8 +153,8 @@ export async function buildDockerCreateArguments(
         readOnly: true,
       },
       {
-        source: await requireMountSource(request.sharedGitPath, "directory", "shared Git"),
-        target: SANDBOX_PATHS.sharedGit,
+        source: await requireMountSource(request.gitOriginPath, "directory", "Git origin"),
+        target: SANDBOX_PATHS.gitOrigin,
         readOnly: false,
       },
     );
@@ -167,8 +167,8 @@ export async function buildDockerCreateArguments(
         readOnly: true,
       },
       {
-        source: await requireMountSource(request.frozenGitPath, "directory", "frozen Git"),
-        target: SANDBOX_PATHS.sharedGit,
+        source: await requireMountSource(request.gitOriginPath, "directory", "frozen Git origin"),
+        target: SANDBOX_PATHS.gitOrigin,
         readOnly: true,
       },
     );
@@ -260,7 +260,7 @@ export function buildAgentDockerCreateArguments(
       workspacePath: request.workspacePath,
       evidencePath: request.evidencePath,
       referenceCorpusPath: request.referenceCorpusPath,
-      sharedGitPath: request.sharedGitPath,
+      gitOriginPath: request.gitOriginPath,
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     },
     identity,

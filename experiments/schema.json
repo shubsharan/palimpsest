@@ -39,19 +39,17 @@
     "puzzle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["block", "stageIntervalMs"],
+      "required": ["block"],
       "properties": {
-        "block": { "$ref": "#/$defs/identifier" },
-        "stageIntervalMs": { "type": "integer", "minimum": 1 }
+        "block": { "$ref": "#/$defs/identifier" }
       }
     },
     "limits": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tokenBudgetPerAgent", "wallTimeMs"],
+      "required": ["tokenBudgetPerAgent"],
       "properties": {
-        "tokenBudgetPerAgent": { "type": "integer", "minimum": 1 },
-        "wallTimeMs": { "type": "integer", "minimum": 1 }
+        "tokenBudgetPerAgent": { "type": "integer", "minimum": 1 }
       }
     },
     "provider": {

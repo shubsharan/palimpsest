@@ -25,17 +25,28 @@ export const systemMonotonicClock: MonotonicClock = {
 export async function runRevealSchedule(options: {
   clock: MonotonicClock;
   startedAtMs: number;
-  stageIntervalMs: number;
-  stageCount: number;
+  releaseOffsetsMs: readonly number[];
   signal: AbortSignal;
   reveal: (ordinal: number) => Promise<void> | void;
 }): Promise<void> {
-  for (let ordinal = 2; ordinal <= options.stageCount; ordinal += 1) {
+  if (
+    options.releaseOffsetsMs.length < 2 ||
+    options.releaseOffsetsMs[0] !== 0 ||
+    options.releaseOffsetsMs.some(
+      (offset, index) =>
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        (index > 0 && offset <= options.releaseOffsetsMs[index - 1]!),
+    )
+  ) {
+    throw new Error("Release offsets must start at zero and increase as safe integers.");
+  }
+  for (let index = 1; index < options.releaseOffsetsMs.length; index += 1) {
     const reached = await options.clock.waitUntil(
-      options.startedAtMs + (ordinal - 1) * options.stageIntervalMs,
+      options.startedAtMs + options.releaseOffsetsMs[index]!,
       options.signal,
     );
     if (!reached) return;
-    await options.reveal(ordinal);
+    await options.reveal(index + 1);
   }
 }

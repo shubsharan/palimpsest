@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 
 import { decodeBuildManifest } from "./artifacts.js";
+import { resolveCondition } from "./condition.js";
 import { loadExperimentConfig } from "./config.js";
 import { assertBuildMatchesExperimentConfig, createConfiguredRunAgents } from "./experiment.js";
 import { requiredFlag } from "./flags.js";
@@ -13,6 +14,7 @@ export async function runConfiguredPuzzleFromFlags(
 ): Promise<RunPuzzleResult> {
   const configPath = requiredFlag(flags, "--config");
   const runName = requiredFlag(flags, "--run");
+  const condition = resolveCondition(requiredFlag(flags, "--condition")).id;
   const buildRoot = resolve(requiredFlag(flags, "--build"));
   const config = await loadExperimentConfig(configPath, {
     root,
@@ -28,9 +30,8 @@ export async function runConfiguredPuzzleFromFlags(
     output: requiredFlag(flags, "--output"),
     runName,
     repetition: 1,
+    condition,
     agents: createConfiguredRunAgents(config, run),
     tokenBudgetPerAgent: config.limits.tokenBudgetPerAgent,
-    wallTimeMs: config.limits.wallTimeMs,
-    stageIntervalMs: config.puzzle.stageIntervalMs,
   });
 }

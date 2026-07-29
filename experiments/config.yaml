@@ -2,11 +2,9 @@ schemaVersion: 1
 
 puzzle:
   block: calibration-theron-ware
-  stageIntervalMs: 120000
 
 limits:
   tokenBudgetPerAgent: 200000
-  wallTimeMs: 3600000
 
 providers:
   openai:

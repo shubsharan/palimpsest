@@ -12,12 +12,12 @@ async function toolFixture() {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
   const evidence = join(root, "evidence");
-  const sharedGit = join(root, "shared.git");
+  const gitOrigin = join(root, "origin.git");
   const reference = join(root, "reference.txt");
   await Promise.all([
     mkdir(workspace),
     mkdir(evidence),
-    mkdir(sharedGit),
+    mkdir(gitOrigin),
     writeFile(reference, "reference\n"),
   ]);
   const sandbox = new FakeCommandSandbox();
@@ -26,15 +26,16 @@ async function toolFixture() {
     workspacePath: workspace,
     evidencePath: evidence,
     referenceCorpusPath: reference,
-    sharedGitPath: sharedGit,
+    gitOriginPath: gitOrigin,
     timeoutMs: 1_000,
   });
+  const activity = new ActivityBus();
   const checkerRequests: string[] = [];
   const tools = createAgentTools({
     agentId: "agent-1",
     workspacePath: workspace,
     sandbox: lease,
-    activity: new ActivityBus(),
+    activity,
     getActivityCursor: () => 0,
     checker: async ({ candidatePath }) => {
       checkerRequests.push(candidatePath);
@@ -47,7 +48,17 @@ async function toolFixture() {
     },
     getReleasedStages: () => [1],
   });
-  return { root, workspace, evidence, sharedGit, reference, sandbox, checkerRequests, tools };
+  return {
+    root,
+    workspace,
+    evidence,
+    gitOrigin,
+    reference,
+    sandbox,
+    checkerRequests,
+    activity,
+    tools,
+  };
 }
 
 describe("agent tools", () => {
@@ -57,6 +68,20 @@ describe("agent tools", () => {
       "check_reconstruction",
       "wait_for_activity",
     ]);
+    expect(TOOL_DEFINITIONS.find(({ name }) => name === "wait_for_activity")?.description).toBe(
+      "Wait until new private evidence or Git activity is available.",
+    );
+  });
+
+  it("reports Git activity without implying that a peer channel exists", async () => {
+    const { activity, tools } = await toolFixture();
+    activity.publish({ kind: "git-changed", detail: { repositoryId: "agent-1" } });
+
+    await expect(tools.execute("wait_for_activity", { afterSequence: 0 })).resolves.toEqual({
+      sequence: 1,
+      kind: "git-changed",
+      summary: "Git activity is available",
+    });
   });
 
   it("routes commands through the injected sandbox and exposes only aggregate checker output", async () => {
@@ -75,7 +100,7 @@ describe("agent tools", () => {
         workspacePath: fixture.workspace,
         evidencePath: fixture.evidence,
         referenceCorpusPath: fixture.reference,
-        sharedGitPath: fixture.sharedGit,
+        gitOriginPath: fixture.gitOrigin,
       }),
     ]);
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,9 +68,16 @@ describe("sandbox Docker image and arguments", () => {
     const root = await temporaryRoot();
     const workspace = join(root, "workspace");
     const evidence = join(root, "evidence");
-    const sharedGit = join(root, "shared.git");
+    const gitOrigin = join(root, "agent-1.git");
+    const peerGitOrigin = join(root, "agent-2.git");
     const reference = join(root, "reference");
-    await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(sharedGit), mkdir(reference)]);
+    await Promise.all([
+      mkdir(workspace),
+      mkdir(evidence),
+      mkdir(gitOrigin),
+      mkdir(peerGitOrigin),
+      mkdir(reference),
+    ]);
     const args = await buildAgentDockerCreateArguments(
       {
         profile: "agent",
@@ -78,13 +85,15 @@ describe("sandbox Docker image and arguments", () => {
         workspacePath: workspace,
         evidencePath: evidence,
         referenceCorpusPath: reference,
-        sharedGitPath: sharedGit,
+        gitOriginPath: gitOrigin,
       },
       TEST_IDENTITY,
       "palimpsest-agent-test",
       { uid: 501, gid: 20 },
     );
     const joined = args.join("\n");
+    const resolvedGitOrigin = await realpath(gitOrigin);
+    const resolvedPeerGitOrigin = await realpath(peerGitOrigin);
     const environmentStart = args.indexOf("-i") + 1;
     const shellIndex = args.indexOf("/bin/sh");
 
@@ -97,8 +106,10 @@ describe("sandbox Docker image and arguments", () => {
     expect(joined).toContain("target=/workspace");
     expect(joined).toContain("target=/evidence,readonly");
     expect(joined).toContain("target=/reference,readonly");
-    expect(joined).toContain("target=/git/shared.git");
-    expect(joined).not.toContain("target=/git/shared.git,readonly");
+    expect(joined).toContain(`source=${resolvedGitOrigin},target=/git/origin.git`);
+    expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
+    expect(joined).not.toContain(resolvedPeerGitOrigin);
+    expect(joined).not.toContain("target=/git/origin.git,readonly");
     expect(args.slice(environmentStart, shellIndex)).toEqual([
       "HOME=/workspace",
       "LANG=C.UTF-8",
@@ -121,7 +132,7 @@ describe("sandbox Docker image and arguments", () => {
   it("gives evaluation only ciphertext, frozen Git, and a contained output path", async () => {
     const root = await temporaryRoot();
     const workspace = join(root, "workspace");
-    const frozenGit = join(root, "shared.git");
+    const frozenGit = join(root, "agent-1.git");
     const ciphertext = join(root, "ciphertext.txt");
     await Promise.all([mkdir(workspace), mkdir(frozenGit), writeFile(ciphertext, "ciphertext\n")]);
     const args = await buildDockerCreateArguments(
@@ -131,7 +142,7 @@ describe("sandbox Docker image and arguments", () => {
         timeoutMs: 1_000,
         workspacePath: workspace,
         ciphertextPath: ciphertext,
-        frozenGitPath: frozenGit,
+        gitOriginPath: frozenGit,
         outputPath: "out/answer.txt",
       },
       TEST_IDENTITY,
@@ -139,9 +150,11 @@ describe("sandbox Docker image and arguments", () => {
       { uid: 501, gid: 20 },
     );
     const joined = args.join("\n");
+    const resolvedFrozenGit = await realpath(frozenGit);
 
     expect(joined).toContain("target=/input/ciphertext.txt,readonly");
-    expect(joined).toContain("target=/git/shared.git,readonly");
+    expect(joined).toContain(`source=${resolvedFrozenGit},target=/git/origin.git,readonly`);
+    expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
     expect(joined).toContain("PALIMPSEST_CIPHERTEXT=/input/ciphertext.txt");
     expect(joined).toContain("PALIMPSEST_OUTPUT=/workspace/out/answer.txt");
     expect(joined).not.toContain("/evidence");

@@ -7,6 +7,7 @@ import {
   selectBuildVariant,
   type OverlapResult,
 } from "./artifacts.js";
+import type { FrozenGitEnvironment } from "./git.js";
 import {
   absoluteFrom,
   appendTraceEvent,
@@ -180,6 +181,56 @@ export async function collectCommittedFiles(
   };
 }
 
+function emptyScan(): GitOverlapScan {
+  return {
+    reachableObjectCount: 0,
+    reachableBlobReferenceCount: 0,
+    uniqueReachableBlobCount: 0,
+    uniqueTextBlobCount: 0,
+    repeatedTreeReferenceCount: 0,
+    skippedNonTextBlobCount: 0,
+  };
+}
+
+function addScan(left: GitOverlapScan, right: GitOverlapScan): GitOverlapScan {
+  return {
+    reachableObjectCount: left.reachableObjectCount + right.reachableObjectCount,
+    reachableBlobReferenceCount:
+      left.reachableBlobReferenceCount + right.reachableBlobReferenceCount,
+    uniqueReachableBlobCount: left.uniqueReachableBlobCount + right.uniqueReachableBlobCount,
+    uniqueTextBlobCount: left.uniqueTextBlobCount + right.uniqueTextBlobCount,
+    repeatedTreeReferenceCount: left.repeatedTreeReferenceCount + right.repeatedTreeReferenceCount,
+    skippedNonTextBlobCount: left.skippedNonTextBlobCount + right.skippedNonTextBlobCount,
+  };
+}
+
+export async function collectFrozenCommittedFiles(
+  frozen: FrozenGitEnvironment,
+  outputRoot: string,
+): Promise<CommittedFileCollection> {
+  const collections = await Promise.all(
+    frozen.repositories.map(async (repository) => ({
+      repository,
+      collection: await collectCommittedFiles(
+        repository.path,
+        join(outputRoot, repository.repositoryId),
+      ),
+    })),
+  );
+  return {
+    committed: collections.flatMap(({ repository, collection }) =>
+      collection.committed.map((file) => ({
+        ...file,
+        committedPath:
+          frozen.communicationMode === "isolated"
+            ? `${repository.repositoryId}/${file.committedPath}`
+            : file.committedPath,
+      })),
+    ),
+    scan: collections.reduce((scan, { collection }) => addScan(scan, collection.scan), emptyScan()),
+  };
+}
+
 export async function observeOverlap(
   root: string,
   buildRoot: string,
@@ -187,12 +238,12 @@ export async function observeOverlap(
 ): Promise<OverlapResult> {
   const overlapRoot = join(dirname(result.tracePath), "overlap-input");
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  const variant = selectBuildVariant(manifest, "rekey");
+  const variant = selectBuildVariant(manifest, result.variantId);
   if (variant.buildId !== result.buildId) {
     throw new Error("Attempt build identity does not match the selected paired-build variant.");
   }
-  const { committed, scan } = await collectCommittedFiles(
-    result.frozen.barePath,
+  const { committed, scan } = await collectFrozenCommittedFiles(
+    result.frozen,
     join(overlapRoot, "git"),
   );
   const privateSources = Object.fromEntries(

@@ -7,6 +7,12 @@ import {
   type SandboxCommandResult,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
+import {
+  ATTEMPT_CUTOFF_MS,
+  hashProtocolSnapshot,
+  RELEASE_OFFSETS_MS,
+  resolveCondition,
+} from "./condition.js";
 import { generateAgentIds, type AgentId, type ModelBinding } from "./model.js";
 
 export const TEST_SANDBOX_IDENTITY: SandboxIdentity = {
@@ -44,7 +50,7 @@ export class FakeCommandSandbox implements CommandSandbox {
       workspacePath: request.workspacePath,
       evidencePath: request.evidencePath,
       referenceCorpusPath: request.referenceCorpusPath,
-      sharedGitPath: request.sharedGitPath,
+      gitOriginPath: request.gitOriginPath,
     } as const;
     return {
       identity: this.identity,
@@ -184,27 +190,95 @@ export function testBuildManifest(): Record<string, unknown> {
 export function testAttemptSummary(
   options: {
     agentIds?: readonly AgentId[];
+    condition?: "CS" | "CR" | "IS" | "IR";
   } = {},
 ): Record<string, unknown> {
   const agentIds = options.agentIds ?? generateAgentIds(3);
+  const condition = resolveCondition(options.condition ?? "CR");
+  const buildId = `build-${condition.variantId === "stationary" ? "b".repeat(64) : TEST_DIGEST}`;
+  const sandbox = {
+    ...TEST_SANDBOX_IDENTITY,
+    network: "none",
+    cpus: 2,
+    memoryBytes: 2_147_483_648,
+    pids: 256,
+    tmpfsBytes: 268_435_456,
+    maxOutputBytes: 4_194_304,
+  } as const;
+  const models = agentIds.map((agentId) => ({
+    agentId,
+    model: {
+      profile: "fixture-model",
+      provider: "fixture-provider",
+      driver: "openai-compatible",
+      requestedModel: "fixture/model",
+      settings: {},
+      providerOptions: {},
+    },
+  }));
+  const protocol = {
+    schemaVersion: 1,
+    blockId: "calibration-theron-ware",
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
+    buildId,
+    releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
+    cutoffMs: ATTEMPT_CUTOFF_MS,
+    tokenBudgetPerAgent: 200_000,
+    models,
+    prompts: agentIds.map((agentId) => ({
+      agentId,
+      prompt: `Fixture prompt for ${agentId}.`,
+    })),
+    sandbox,
+  };
+  const repositories =
+    condition.communicationMode === "shared"
+      ? [
+          {
+            repositoryId: "shared",
+            path: "/tmp/palimpsest/attempt/frozen/shared.git",
+            agentIds: [...agentIds],
+          },
+        ]
+      : agentIds.map((agentId) => ({
+          repositoryId: agentId,
+          path: `/tmp/palimpsest/attempt/frozen/${agentId}.git`,
+          agentIds: [agentId],
+        }));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     attemptId: "attempt-fixture",
-    buildId: `build-${TEST_DIGEST}`,
+    runName: "fixture",
+    repetition: 1,
+    blockId: "calibration-theron-ware",
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
+    buildId,
     buildRoot: "/tmp/palimpsest/build",
     agentIds,
+    releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
+    cutoffMs: ATTEMPT_CUTOFF_MS,
+    tokenBudgetPerAgent: 200_000,
+    protocolDigest: hashProtocolSnapshot(protocol),
+    protocol,
     tracePath: "/tmp/palimpsest/attempt/trace.jsonl",
     traceMetadataPath: "/tmp/palimpsest/attempt/trace.meta.json",
-    frozenRoot: "/tmp/palimpsest/attempt/frozen",
-    sandbox: {
-      ...TEST_SANDBOX_IDENTITY,
-      network: "none",
-      cpus: 2,
-      memoryBytes: 2_147_483_648,
-      pids: 256,
-      tmpfsBytes: 268_435_456,
-      maxOutputBytes: 4_194_304,
+    frozen: {
+      root: "/tmp/palimpsest/attempt/frozen",
+      communicationMode: condition.communicationMode,
+      repositories,
+      workspaces: agentIds.map((agentId) => ({
+        agentId,
+        path: `/tmp/palimpsest/attempt/frozen/workspaces/${agentId}`,
+        repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
+      })),
     },
+    sandbox,
     sessions: agentIds.map((agentId) => ({
       agentId,
       model: testModelBinding(),

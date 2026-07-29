@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. A checked-in YAML file declares the corpus, puzzle geometry, resource limits, model profiles, and run conditions. Persistent model sessions receive different private evidence over time, share ordinary Git in the current runner, and decide for themselves how to solve and coordinate.
+Palimpsest is a local research runner for a team word-substitution puzzle. A checked-in YAML file declares one block, a token budget, model profiles, and model assignments. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
@@ -12,12 +12,13 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Feature 010 specification](specs/010-agent-sandbox-lifecycle/spec.md): attempt-scoped agent sandbox and recovery behavior.
 - [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
 - [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
+- [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
 - [Feature 011 quickstart](specs/011-configurable-research-runs/quickstart.md): current setup and acceptance flow.
 - [Experiment schema](experiments/schema.json): strict version-1 manifest format.
 - [Block catalog](experiments/blocks.json): five pinned paired study blocks.
-- [Baseline experiment](experiments/config.yaml): the current shared-Git re-key run.
+- [Baseline experiment](experiments/config.yaml): transitional model assignments used until Feature 015 freezes the study manifest.
 
-Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs while preserving the existing shared-Git re-key runtime. Feature 014 will add the four communication/key conditions; Feature 015 will add the frozen five-block protocol.
+Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 remains planned and will freeze the five-block study protocol.
 
 ## Setup
 
@@ -34,8 +35,8 @@ The first bootstrap may use the network. Once the uv cache is populated, local c
 
 Scientific block inputs live in `experiments/blocks.json`. The run configuration in `experiments/config.yaml` selects one block and declares operational settings:
 
-- `puzzle`: one block ID and the current arithmetic stage interval;
-- `limits`: per-agent token budget and attempt wall time;
+- `puzzle`: one block ID;
+- `limits`: one per-agent token budget;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
 - `models`: reusable provider/model profiles and non-secret settings; and
 - `runs`: homogeneous or ordered mixed-model assignments plus repetitions.
@@ -52,7 +53,7 @@ pnpm puzzle:build -- \
   --output artifacts/build
 ```
 
-The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Until Feature 014 introduces canonical condition selection, run and experiment commands use the re-key variant to preserve the existing baseline.
+The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
 
 Run one named model assignment:
 
@@ -60,15 +61,17 @@ Run one named model assignment:
 pnpm puzzle:run -- \
   --config experiments/config.yaml \
   --run gpt-only \
+  --condition CR \
   --build artifacts/build \
   --output artifacts/attempt
 ```
 
-Or build once and run all declared conditions and repetitions sequentially:
+Or build once and run all declared model assignments and repetitions sequentially under one condition:
 
 ```bash
 pnpm puzzle:experiment -- \
   --config experiments/config.yaml \
+  --condition CR \
   --output artifacts/experiment
 ```
 

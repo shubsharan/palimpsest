@@ -113,6 +113,8 @@ describe("operator CLI contract", () => {
         "experiments/config.yaml",
         "--run",
         "mixed",
+        "--condition",
+        "CR",
         "--output",
         "attempt",
         "--build",
@@ -134,6 +136,7 @@ describe("operator CLI contract", () => {
         ["--discover", "true"],
         ["--config", "experiments/config.yaml"],
         ["--run", "mixed"],
+        ["--condition", "CR"],
         ["--output", "attempt"],
         ["--build", "build"],
         ["--attempt", "attempt"],
@@ -198,6 +201,24 @@ describe("operator CLI contract", () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("--discover must be exactly true");
+    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects non-canonical condition tokens before creating output", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-condition-"));
+    const output = join(temporaryRoot, "offline");
+    const scripts = await packageScripts();
+    const command = scripts["puzzle:offline"]?.split(/\s+/);
+
+    const result = await execute(
+      process.execPath,
+      [tsxCli, ...(command?.slice(1) ?? []), "--condition", "cr", "--output", output],
+      { cwd: root },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Condition must be exactly one of CS, CR, IS, or IR.");
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

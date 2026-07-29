@@ -259,7 +259,7 @@ const DEFAULT_DEPENDENCIES: PreflightDependencies = {
   runVerification,
   async runFixture(root, output) {
     const { runOfflinePuzzle } = await import("./offline.js");
-    const result = await runOfflinePuzzle({ root, output });
+    const result = await runOfflinePuzzle({ root, output, condition: "CR" });
     return { status: result.evaluation.status, sandbox: result.run.sandbox };
   },
   async inspectSandbox(root) {

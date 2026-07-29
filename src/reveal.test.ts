@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { RELEASE_OFFSETS_MS } from "./condition.js";
 import { runRevealSchedule, type MonotonicClock } from "./reveal.js";
 
 class ControlledClock implements MonotonicClock {
@@ -23,37 +24,35 @@ class ControlledClock implements MonotonicClock {
 }
 
 describe("reveal schedule", () => {
-  it("releases later stages at monotonic interval boundaries", async () => {
+  it("releases later stages at the exact six declared offsets", async () => {
     const clock = new ControlledClock(115);
     const reveal = vi.fn();
 
     await runRevealSchedule({
       clock,
       startedAtMs: 100,
-      stageIntervalMs: 20,
-      stageCount: 4,
+      releaseOffsetsMs: RELEASE_OFFSETS_MS,
       signal: new AbortController().signal,
       reveal,
     });
 
-    expect(clock.deadlines).toEqual([120, 140, 160]);
-    expect(reveal.mock.calls).toEqual([[2], [3], [4]]);
+    expect(clock.deadlines).toEqual([300_100, 600_100, 1_200_100, 1_800_100, 2_400_100]);
+    expect(reveal.mock.calls).toEqual([[2], [3], [4], [5], [6]]);
   });
 
   it("releases a stage immediately when the monotonic clock is exactly at its boundary", async () => {
-    const clock = new ControlledClock(120);
+    const clock = new ControlledClock(300_100);
     const reveal = vi.fn();
 
     await runRevealSchedule({
       clock,
       startedAtMs: 100,
-      stageIntervalMs: 20,
-      stageCount: 2,
+      releaseOffsetsMs: [0, 300_000],
       signal: new AbortController().signal,
       reveal,
     });
 
-    expect(clock.deadlines).toEqual([120]);
+    expect(clock.deadlines).toEqual([300_100]);
     expect(reveal).toHaveBeenCalledOnce();
     expect(reveal).toHaveBeenCalledWith(2);
   });
@@ -74,13 +73,12 @@ describe("reveal schedule", () => {
     const scheduled = runRevealSchedule({
       clock,
       startedAtMs: 100,
-      stageIntervalMs: 20,
-      stageCount: 3,
+      releaseOffsetsMs: [0, 300_000, 600_000],
       signal: controller.signal,
       reveal,
     });
 
-    expect(requestedDeadline).toBe(120);
+    expect(requestedDeadline).toBe(300_100);
     controller.abort();
     await scheduled;
 
@@ -94,8 +92,7 @@ describe("reveal schedule", () => {
     await runRevealSchedule({
       clock,
       startedAtMs: 100,
-      stageIntervalMs: 20,
-      stageCount: 2,
+      releaseOffsetsMs: [0, 300_000],
       signal: new AbortController().signal,
       reveal: vi.fn(),
     });
@@ -103,4 +100,19 @@ describe("reveal schedule", () => {
     expect(wallClock).not.toHaveBeenCalled();
     wallClock.mockRestore();
   });
+
+  it.each([[[]], [[1]], [[0, 0]], [[0, -1]], [[0, 1.5]]])(
+    "rejects an invalid offset vector %j",
+    async (releaseOffsetsMs) => {
+      await expect(
+        runRevealSchedule({
+          clock: new ControlledClock(0),
+          startedAtMs: 0,
+          releaseOffsetsMs,
+          signal: new AbortController().signal,
+          reveal: vi.fn(),
+        }),
+      ).rejects.toThrow("Release offsets must start at zero and increase as safe integers.");
+    },
+  );
 });

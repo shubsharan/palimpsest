@@ -3,11 +3,19 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { ActivityBus } from "./activity.js";
 import {
+  ATTEMPT_CUTOFF_MS,
+  hashProtocolSnapshot,
+  RELEASE_OFFSETS_MS,
+  resolveCondition,
+  type ConditionId,
+} from "./condition.js";
+import {
   decodeAttemptSummary,
   decodeBuildManifest,
   decodeModelBinding,
   publishAttemptSummary,
   selectBuildVariant,
+  type AttemptProtocolSnapshot,
   type AttemptSummary,
   type OverlapResult,
 } from "./artifacts.js";
@@ -53,6 +61,8 @@ const BUILD_ID = /^build-[a-f0-9]{64}$/;
 
 export interface AttemptConfig {
   attemptId: string;
+  blockId: string;
+  condition: ConditionId;
   buildId: string;
   runName: string;
   repetition: number;
@@ -61,11 +71,9 @@ export interface AttemptConfig {
   referenceCorpusPath: string;
   agentIds: readonly AgentId[];
   agentStages: Readonly<Record<AgentId, readonly string[]>>;
-  stageCount: number;
-  rekeyCount: number;
+  releaseOffsetsMs: readonly number[];
+  cutoffMs: number;
   tokenBudgetPerAgent: number;
-  wallTimeMs: number;
-  stageIntervalMs: number;
 }
 
 export interface AgentRuntimeBinding {
@@ -77,11 +85,21 @@ export type AgentRuntimeMap = Readonly<Record<AgentId, AgentRuntimeBinding>>;
 
 export interface AttemptResult {
   attemptId: string;
+  blockId: string;
+  condition: ConditionId;
+  communicationMode: ReturnType<typeof resolveCondition>["communicationMode"];
+  keyRegime: ReturnType<typeof resolveCondition>["keyRegime"];
+  variantId: ReturnType<typeof resolveCondition>["variantId"];
   buildId: string;
   runName: string;
   repetition: number;
   buildRoot: string;
   agentIds: readonly AgentId[];
+  releaseOffsetsMs: readonly number[];
+  cutoffMs: number;
+  tokenBudgetPerAgent: number;
+  protocolDigest: string;
+  protocol: AttemptProtocolSnapshot;
   sessions: readonly AgentSessionResult[];
   frozen: FrozenGitEnvironment;
   tracePath: string;
@@ -128,14 +146,6 @@ function requirePositiveInteger(record: Record<string, unknown>, key: string): n
   return value as number;
 }
 
-function requireNonNegativeInteger(record: Record<string, unknown>, key: string): number {
-  const value = record[key];
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    throw new Error(`${key} must be a non-negative safe integer.`);
-  }
-  return value as number;
-}
-
 function sameKeys(record: Record<string, unknown>, keys: readonly string[]): boolean {
   return Object.keys(record).length === keys.length && keys.every((key) => key in record);
 }
@@ -147,13 +157,13 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
   const agentIdsValue = value.agentIds;
   if (
     !Array.isArray(agentIdsValue) ||
-    agentIdsValue.length < 2 ||
+    agentIdsValue.length !== 3 ||
     agentIdsValue.some((agentId) => !isAgentId(agentId))
   ) {
-    throw new Error("agentIds must contain at least two canonical agent IDs.");
+    throw new Error("agentIds must contain exactly three canonical agent IDs.");
   }
   const agentIds = [...agentIdsValue] as AgentId[];
-  const expectedAgentIds = generateAgentIds(agentIds.length);
+  const expectedAgentIds = generateAgentIds(3);
   if (agentIds.some((agentId, index) => agentId !== expectedAgentIds[index])) {
     throw new Error("agentIds must be ordered canonically from agent-1 through agent-N.");
   }
@@ -162,16 +172,17 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
   if (!isRecord(stagesValue) || !sameKeys(stagesValue, agentIds)) {
     throw new Error("agentStages must match agentIds exactly.");
   }
-  const stageCount = requirePositiveInteger(value, "stageCount");
   const agentStages = Object.fromEntries(
     agentIds.map((agentId) => {
       const stages = stagesValue[agentId];
       if (
         !Array.isArray(stages) ||
-        stages.length !== stageCount ||
+        stages.length !== RELEASE_OFFSETS_MS.length ||
         stages.some((stage) => typeof stage !== "string" || stage.length === 0)
       ) {
-        throw new Error(`${agentId} must have exactly ${String(stageCount)} stages.`);
+        throw new Error(
+          `${agentId} must have exactly ${String(RELEASE_OFFSETS_MS.length)} stages.`,
+        );
       }
       return [agentId, [...stages] as string[]] as const;
     }),
@@ -181,8 +192,23 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
   if (!BUILD_ID.test(buildId)) {
     throw new Error("buildId must be a build-prefixed SHA-256 digest.");
   }
+  const condition = resolveCondition(value.condition);
+  const releaseOffsetsMs = value.releaseOffsetsMs;
+  if (
+    !Array.isArray(releaseOffsetsMs) ||
+    releaseOffsetsMs.length !== RELEASE_OFFSETS_MS.length ||
+    releaseOffsetsMs.some((offset, index) => offset !== RELEASE_OFFSETS_MS[index])
+  ) {
+    throw new Error("releaseOffsetsMs must match the fixed six-stage release schedule.");
+  }
+  const cutoffMs = requirePositiveInteger(value, "cutoffMs");
+  if (cutoffMs !== ATTEMPT_CUTOFF_MS) {
+    throw new Error("cutoffMs must match the fixed 60-minute attempt cutoff.");
+  }
   return {
     attemptId: requireNonEmptyString(value, "attemptId"),
+    blockId: requireNonEmptyString(value, "blockId"),
+    condition: condition.id,
     buildId,
     runName: requireNonEmptyString(value, "runName"),
     repetition: requirePositiveInteger(value, "repetition"),
@@ -191,11 +217,9 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
     agentIds,
     agentStages,
-    stageCount,
-    rekeyCount: requireNonNegativeInteger(value, "rekeyCount"),
+    releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
+    cutoffMs,
     tokenBudgetPerAgent: requirePositiveInteger(value, "tokenBudgetPerAgent"),
-    wallTimeMs: requirePositiveInteger(value, "wallTimeMs"),
-    stageIntervalMs: requirePositiveInteger(value, "stageIntervalMs"),
   };
 }
 
@@ -228,7 +252,7 @@ async function publishStages(options: {
   config: AttemptConfig;
   evidencePaths: Record<AgentId, string>;
   releasedStages: Record<AgentId, Set<number>>;
-  activity: ActivityBus;
+  activities: Record<AgentId, ActivityBus>;
   observationLog: JsonlObservationLog;
   startedAt: number;
   clock: MonotonicClock;
@@ -237,8 +261,7 @@ async function publishStages(options: {
   await runRevealSchedule({
     clock: options.clock,
     startedAtMs: options.startedAt,
-    stageIntervalMs: options.config.stageIntervalMs,
-    stageCount: options.config.stageCount,
+    releaseOffsetsMs: options.config.releaseOffsetsMs,
     signal: options.signal,
     reveal: (ordinal) => publishStage(options, ordinal),
   });
@@ -262,9 +285,12 @@ async function publishStage(
       );
       await cp(source, destination, { errorOnExist: true, force: false });
       released.add(ordinal);
-      const activity = options.activity.publish({
+      const activityBus = options.activities[agentId];
+      if (activityBus === undefined) {
+        throw new Error(`Missing activity bus for ${agentId}.`);
+      }
+      const activity = activityBus.publish({
         kind: "stage-released",
-        agentId,
         detail: { ordinal, path: destination },
       });
       await options.observationLog.append(
@@ -289,8 +315,11 @@ async function openAgentLeases(options: {
   const settled = await Promise.allSettled(
     options.agentIds.map(async (agentId) => {
       const workspace = options.git.workspaces.find((candidate) => candidate.agentId === agentId);
+      const repository = options.git.repositories.find(
+        (candidate) => candidate.repositoryId === workspace?.repositoryId,
+      );
       const evidencePath = options.evidencePaths[agentId];
-      if (workspace === undefined || evidencePath === undefined) {
+      if (workspace === undefined || repository === undefined || evidencePath === undefined) {
         throw new Error(`Sandbox resources are missing for ${agentId}.`);
       }
       const remainingMs = Math.ceil(options.cutoffAt - options.clock.nowMs());
@@ -304,7 +333,7 @@ async function openAgentLeases(options: {
         workspacePath: workspace.path,
         evidencePath,
         referenceCorpusPath: options.referenceCorpusPath,
-        sharedGitPath: options.git.barePath,
+        gitOriginPath: repository.path,
         timeoutMs: Math.min(30_000, remainingMs),
         signal: options.signal,
       });
@@ -336,12 +365,17 @@ async function openAgentLeases(options: {
 
 export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
   const config = validateAttemptConfig(options.config);
+  const condition = resolveCondition(config.condition);
   const agents = validateAgentRuntimes(options.agents, config.agentIds);
   await mkdir(config.artifactRoot, { recursive: false });
   if (options.preflight) {
     await publishPreflightReceipt(join(config.artifactRoot, "preflight.json"), options.preflight);
   }
-  const git = await createGitEnvironment(join(config.artifactRoot, "git"), config.agentIds);
+  const git = await createGitEnvironment(
+    join(config.artifactRoot, "git"),
+    condition.communicationMode,
+    config.agentIds,
+  );
   const evidencePaths = Object.fromEntries(
     await Promise.all(
       config.agentIds.map(async (agentId) => {
@@ -353,22 +387,57 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   ) as Record<AgentId, string>;
 
   const startedAt = options.clock.nowMs();
-  const cutoffAt = startedAt + config.wallTimeMs;
+  const cutoffAt = startedAt + config.cutoffMs;
   const tracePath = join(config.artifactRoot, "trace.jsonl");
   const observationLog = await JsonlObservationLog.create(tracePath, {
     nowMs: () => options.clock.nowMs() - startedAt,
   });
+  const prompts = Object.fromEntries(
+    config.agentIds.map((agentId) => [
+      agentId,
+      buildAgentPrompt({
+        agentId,
+        condition: config.condition,
+        tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+      }),
+    ]),
+  ) as Record<AgentId, string>;
+  const protocol: AttemptProtocolSnapshot = {
+    schemaVersion: 1,
+    blockId: config.blockId,
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
+    buildId: config.buildId,
+    releaseOffsetsMs: [...config.releaseOffsetsMs],
+    cutoffMs: config.cutoffMs,
+    tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+    models: config.agentIds.map((agentId) => ({
+      agentId,
+      model: agents[agentId]!.model,
+    })),
+    prompts: config.agentIds.map((agentId) => ({
+      agentId,
+      prompt: prompts[agentId]!,
+    })),
+    sandbox: { ...options.sandbox.identity, ...SANDBOX_POLICY },
+  };
+  const protocolDigest = hashProtocolSnapshot(protocol);
   await observationLog.append("attempt.configured", {
     attemptId: config.attemptId,
+    blockId: config.blockId,
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
     buildId: config.buildId,
     runName: config.runName,
     repetition: config.repetition,
+    releaseOffsetsMs: config.releaseOffsetsMs,
+    cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
-    wallTimeMs: config.wallTimeMs,
-    stageIntervalMs: config.stageIntervalMs,
     agentCount: config.agentIds.length,
-    stageCount: config.stageCount,
-    rekeyCount: config.rekeyCount,
     models: config.agentIds.map((agentId) => ({
       agentId,
       ...agents[agentId]!.model,
@@ -385,17 +454,25 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   });
   void wallTime.catch(() => globalController.abort("wall-timer-failed"));
 
-  const activity = new ActivityBus(() => options.clock.nowMs() - startedAt);
-  const monitor = new GitActivityMonitor({
-    barePath: git.barePath,
-    activity,
-    pollIntervalMs: options.gitPollIntervalMs ?? 20,
-    onChange: async (refs) => {
-      await observationLog.append("git.changed", { refs });
-    },
-  });
+  const activities = Object.fromEntries(
+    config.agentIds.map((agentId) => [
+      agentId,
+      new ActivityBus(() => options.clock.nowMs() - startedAt),
+    ]),
+  ) as Record<AgentId, ActivityBus>;
+  const monitors = git.repositories.map(
+    (repository) =>
+      new GitActivityMonitor({
+        repository,
+        activityFor: (agentId) => activities[agentId]!,
+        pollIntervalMs: options.gitPollIntervalMs ?? 20,
+        onChange: async (repositoryId, refs) => {
+          await observationLog.append("git.changed", { repositoryId, refs });
+        },
+      }),
+  );
 
-  let monitorStarted = false;
+  let startedMonitors: readonly GitActivityMonitor[] = [];
   let sandboxLeases: Record<AgentId, AgentSandboxLease> | undefined;
   let stagePublishing: Promise<void> | undefined;
   let sessionPromises: readonly Promise<AgentSessionResult>[] | undefined;
@@ -403,15 +480,17 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   let primaryFailure: { error: unknown } | undefined;
 
   try {
-    await monitor.start();
-    monitorStarted = true;
+    for (const monitor of monitors) {
+      await monitor.start();
+      startedMonitors = [...startedMonitors, monitor];
+    }
 
     const releasedStages = Object.fromEntries(
       config.agentIds.map((agentId) => [agentId, new Set<number>()]),
     ) as Record<AgentId, Set<number>>;
-    await publishStage({ config, evidencePaths, releasedStages, activity, observationLog }, 1);
+    await publishStage({ config, evidencePaths, releasedStages, activities, observationLog }, 1);
     const cursors = Object.fromEntries(
-      config.agentIds.map((agentId) => [agentId, activity.latestSequence]),
+      config.agentIds.map((agentId) => [agentId, activities[agentId]!.latestSequence]),
     ) as Record<AgentId, number>;
     const openedLeases = await openAgentLeases({
       sandbox: options.sandbox,
@@ -434,7 +513,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       config,
       evidencePaths,
       releasedStages,
-      activity,
+      activities,
       observationLog,
       startedAt,
       clock: options.clock,
@@ -459,7 +538,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         agentId,
         workspacePath: workspace.path,
         sandbox: lease,
-        activity,
+        activity: activities[agentId]!,
         checker: options.checker,
         getReleasedStages: () => [...released].sort((left, right) => left - right),
         getActivityCursor: () => cursors[agentId]!,
@@ -470,7 +549,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       return runAgentSession({
         agentId,
         model: runtime.model,
-        prompt: buildAgentPrompt({ agentId, agentCount: config.agentIds.length }),
+        prompt: prompts[agentId]!,
         adapter: runtime.adapter,
         tools,
         tokenBudget: config.tokenBudgetPerAgent,
@@ -495,12 +574,14 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   if (stagePublishing !== undefined) quiesceTasks.push(stagePublishing);
   if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
   const quiesceResults = await Promise.allSettled(quiesceTasks);
-  activity.end(
-    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended",
-  );
+  const activityEndReason =
+    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended";
+  for (const activity of Object.values(activities)) activity.end(activityEndReason);
 
   const releaseTasks: Promise<unknown>[] = [];
-  if (monitorStarted) releaseTasks.push(Promise.resolve().then(() => monitor.stop()));
+  releaseTasks.push(
+    ...startedMonitors.map((monitor) => Promise.resolve().then(() => monitor.stop())),
+  );
   if (sandboxLeases !== undefined) {
     const leasesToClose = sandboxLeases;
     releaseTasks.push(
@@ -554,17 +635,28 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
 
   const frozen = await freezeGitEnvironment(git, join(config.artifactRoot, "frozen"));
   await observationLog.append("attempt.frozen", {
-    repositoryPath: frozen.barePath,
+    communicationMode: frozen.communicationMode,
+    repositories: frozen.repositories,
     workspaces: frozen.workspaces,
   });
   await observationLog.flush();
   return {
     attemptId: config.attemptId,
+    blockId: config.blockId,
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
     buildId: config.buildId,
     runName: config.runName,
     repetition: config.repetition,
     buildRoot: config.buildRoot,
     agentIds: config.agentIds,
+    releaseOffsetsMs: config.releaseOffsetsMs,
+    cutoffMs: config.cutoffMs,
+    tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+    protocolDigest,
+    protocol,
     sessions,
     frozen,
     tracePath,
@@ -579,10 +671,9 @@ export interface RunPuzzleOptions {
   output: string;
   runName: string;
   repetition: number;
+  condition: ConditionId;
   agents: AgentRuntimeMap;
   tokenBudgetPerAgent: number;
-  wallTimeMs: number;
-  stageIntervalMs: number;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
 }
@@ -603,14 +694,31 @@ export interface FinalizeAttemptOptions {
 
 export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<OverlapResult> {
   const summary = decodeAttemptSummary({
-    schemaVersion: 2,
+    schemaVersion: 3,
     attemptId: options.result.attemptId,
+    runName: options.result.runName,
+    repetition: options.result.repetition,
+    blockId: options.result.blockId,
+    condition: options.result.condition,
+    communicationMode: options.result.communicationMode,
+    keyRegime: options.result.keyRegime,
+    variantId: options.result.variantId,
     buildId: options.result.buildId,
     buildRoot: options.buildRoot,
     agentIds: options.result.agentIds,
+    releaseOffsetsMs: options.result.releaseOffsetsMs,
+    cutoffMs: options.result.cutoffMs,
+    tokenBudgetPerAgent: options.result.tokenBudgetPerAgent,
+    protocolDigest: options.result.protocolDigest,
+    protocol: options.result.protocol,
     tracePath: options.result.tracePath,
     traceMetadataPath: options.result.traceMetadataPath,
-    frozenRoot: options.result.frozen.root,
+    frozen: {
+      root: options.result.frozen.root,
+      communicationMode: options.result.frozen.communicationMode,
+      repositories: options.result.frozen.repositories,
+      workspaces: options.result.frozen.workspaces,
+    },
     sandbox: { ...options.result.sandbox, ...SANDBOX_POLICY },
     sessions: options.result.sessions,
   });
@@ -659,7 +767,8 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const preflight = usesProvider ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  const variant = selectBuildVariant(manifest, "rekey");
+  const condition = resolveCondition(options.condition);
+  const variant = selectBuildVariant(manifest, condition.variantId);
   const agentStages = Object.fromEntries(
     manifest.agentIds.map((agentId) => [
       agentId,
@@ -669,9 +778,11 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
         .map((stage) => absoluteFrom(buildRoot, stage.sourcePath)),
     ]),
   ) as Record<AgentId, readonly string[]>;
-  const attemptId = `attempt-${options.runName}-${String(options.repetition).padStart(3, "0")}-${variant.buildId.slice("build-".length, "build-".length + 16)}`;
+  const attemptId = `attempt-${options.runName}-${condition.id.toLowerCase()}-${String(options.repetition).padStart(3, "0")}-${variant.buildId.slice("build-".length, "build-".length + 16)}`;
   const config: AttemptConfig = {
     attemptId,
+    blockId: manifest.blockId,
+    condition: condition.id,
     buildId: variant.buildId,
     runName: options.runName,
     repetition: options.repetition,
@@ -680,11 +791,9 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
     agentIds: manifest.agentIds,
     agentStages,
-    stageCount: manifest.stageCount,
-    rekeyCount: variant.keyTransitions.length,
+    releaseOffsetsMs: RELEASE_OFFSETS_MS,
+    cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: options.tokenBudgetPerAgent,
-    wallTimeMs: options.wallTimeMs,
-    stageIntervalMs: options.stageIntervalMs,
   };
   const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
   if (preflight) assertPreflightSandbox(preflight, sandbox.identity);

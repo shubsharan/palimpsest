@@ -5,12 +5,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  decodeAttemptSummary,
   decodeBuildManifest,
   publishAttemptSummary,
   type AttemptSummary,
   type BuildManifest,
   type BuildPuzzleResult,
 } from "./artifacts.js";
+import { hashProtocolSnapshot, resolveCondition } from "./condition.js";
 import { type ResolvedExperimentConfig } from "./config.js";
 import {
   assertBuildMatchesExperimentConfig,
@@ -19,11 +21,9 @@ import {
   type ExperimentRunRequest,
 } from "./experiment.js";
 import type { ModelAdapter } from "./model.js";
-import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "./sandbox/contracts.js";
-import { testBuildManifest } from "./test-helpers.js";
+import { testAttemptSummary, testBuildManifest } from "./test-helpers.js";
 
 const BUILD_ID = `build-${"a".repeat(64)}`;
-const DIGEST = "b".repeat(64);
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
@@ -39,11 +39,8 @@ async function temporaryRoot(): Promise<string> {
 function config(): ResolvedExperimentConfig {
   return {
     schemaVersion: 1,
-    puzzle: {
-      block: "calibration-theron-ware",
-      stageIntervalMs: 100,
-    },
-    limits: { tokenBudgetPerAgent: 1_000, wallTimeMs: 10_000 },
+    puzzle: { block: "calibration-theron-ware" },
+    limits: { tokenBudgetPerAgent: 1_000 },
     providers: {
       first: { driver: "openai", apiKeyEnv: "RESEARCH_KEY" },
       second: { driver: "anthropic", apiKeyEnv: "SECOND_KEY" },
@@ -117,21 +114,47 @@ async function publishFixtureAttempt(
   await mkdir(request.output, { recursive: true });
   const attemptId = `attempt-${request.runName}-${String(request.repetition)}`;
   const agentIds = Object.keys(request.agents).sort() as Array<keyof typeof request.agents>;
-  const summary: AttemptSummary = {
-    schemaVersion: 2,
+  const base = testAttemptSummary({ condition: request.condition });
+  const condition = resolveCondition(request.condition);
+  const protocol = {
+    ...(base.protocol as Record<string, unknown>),
+    buildId: build.buildId,
+    tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+    models: agentIds.map((agentId) => ({
+      agentId,
+      model: request.agents[agentId]!.model,
+    })),
+  };
+  const frozenRoot = join(request.output, "frozen");
+  const summary = decodeAttemptSummary({
+    ...base,
     attemptId,
+    runName: request.runName,
+    repetition: request.repetition,
     buildId: build.buildId,
     buildRoot: build.buildPath,
     agentIds,
+    tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+    protocolDigest: hashProtocolSnapshot(protocol),
+    protocol,
     tracePath: join(request.output, "trace.jsonl"),
     traceMetadataPath: join(request.output, "trace.meta.json"),
-    frozenRoot: join(request.output, "frozen"),
-    sandbox: {
-      imageTag: SANDBOX_IMAGE_TAG,
-      imageId: `sha256:${"c".repeat(64)}`,
-      sourceDigest: DIGEST,
-      profileVersion: 1,
-      ...SANDBOX_POLICY,
+    frozen: {
+      root: frozenRoot,
+      communicationMode: condition.communicationMode,
+      repositories:
+        condition.communicationMode === "shared"
+          ? [{ repositoryId: "shared", path: join(frozenRoot, "shared.git"), agentIds }]
+          : agentIds.map((agentId) => ({
+              repositoryId: agentId,
+              path: join(frozenRoot, `${agentId}.git`),
+              agentIds: [agentId],
+            })),
+      workspaces: agentIds.map((agentId) => ({
+        agentId,
+        path: join(frozenRoot, "workspaces", agentId),
+        repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
+      })),
     },
     sessions: agentIds.map((agentId, index) => ({
       agentId,
@@ -143,7 +166,7 @@ async function publishFixtureAttempt(
       terminationReason:
         index === 0 && state === "infrastructure-error" ? "fixture failure" : "done",
     })),
-  };
+  });
   await publishAttemptSummary(request.output, summary);
   return summary;
 }
@@ -190,6 +213,7 @@ describe("experiment orchestration", () => {
       root,
       configPath: "fixture.yaml",
       output: experimentRoot,
+      condition: "CR",
       env: {
         RESEARCH_KEY: "secret-canary-openai",
         SECOND_KEY: "secret-canary-anthropic",
@@ -208,6 +232,7 @@ describe("experiment orchestration", () => {
           expect(options.output).toBe(build.buildPath);
           return build;
         },
+        readBuildManifest: async () => buildManifest(resolved),
         run: async (request) => {
           expect(activeAttempt).toBe(false);
           activeAttempt = true;
@@ -255,6 +280,7 @@ describe("experiment orchestration", () => {
         root,
         configPath: "fixture.yaml",
         output: experimentRoot,
+        condition: "CR",
         dependencies: {
           loadConfig: async (_path, options) => {
             if (options?.selectedRun === "beta") throw new Error("SECOND_KEY is missing.");
@@ -265,6 +291,7 @@ describe("experiment orchestration", () => {
             builds += 1;
             return buildResult(experimentRoot);
           },
+          readBuildManifest: async () => buildManifest(resolved),
         },
       }),
     ).rejects.toThrow(/SECOND_KEY/);
@@ -287,10 +314,12 @@ describe("experiment orchestration", () => {
         root,
         configPath: "fixture.yaml",
         output: experimentRoot,
+        condition: "CR",
         dependencies: {
           loadConfig: async () => resolved,
           createAdapter: adapter,
           build: async () => build,
+          readBuildManifest: async () => buildManifest(resolved),
           run: async (request) => {
             calls += 1;
             if (calls === 2) throw new Error("fixture command failed");
@@ -324,10 +353,12 @@ describe("experiment orchestration", () => {
         root,
         configPath: "fixture.yaml",
         output: experimentRoot,
+        condition: "CR",
         dependencies: {
           loadConfig: async () => resolved,
           createAdapter: adapter,
           build: async () => build,
+          readBuildManifest: async () => buildManifest(resolved),
           run: async (request) => {
             calls += 1;
             const attempt = await publishFixtureAttempt(request, build, "infrastructure-error");
@@ -359,10 +390,12 @@ describe("experiment orchestration", () => {
         root,
         configPath: "fixture.yaml",
         output: experimentRoot,
+        condition: "CR",
         dependencies: {
           loadConfig: async () => resolved,
           createAdapter: adapter,
           build: async () => build,
+          readBuildManifest: async () => buildManifest(resolved),
           run: async (request) => {
             await publishFixtureAttempt(request, build);
             throw new Error("overlap command failed");

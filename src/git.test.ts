@@ -12,90 +12,189 @@ import {
   listRemoteRefs,
   runGit,
 } from "./git.js";
+import type { AgentId } from "./model.js";
 
-describe("ordinary shared Git", () => {
+const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+
+function activityMap(): Map<AgentId, ActivityBus> {
+  return new Map(AGENTS.map((agentId) => [agentId, new ActivityBus()]));
+}
+
+describe("condition-assigned ordinary Git", () => {
   it("supports arbitrary branches, commits, pushes, fetches, and an unused clone", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-git-"));
-    const environment = await createGitEnvironment(root);
+    const environment = await createGitEnvironment(root, "shared", AGENTS);
     const [first, second, unused] = environment.workspaces;
     if (!first || !second || !unused) throw new Error("Expected three workspaces.");
+    const repository = environment.repositories[0];
+    if (!repository) throw new Error("Expected one shared repository.");
 
     await runGit(["switch", "--orphan", "ideas/first-rule"], first.path);
     await writeFile(join(first.path, "solver.ts"), "export const attempt = 1;\n", "utf8");
     await runGit(["add", "solver.ts"], first.path);
     await runGit(["commit", "-m", "try a rule"], first.path);
-    await runGit(["push", environment.barePath, "HEAD:refs/heads/ideas/first-rule"], first.path);
+    await runGit(["push", repository.path, "HEAD:refs/heads/ideas/first-rule"], first.path);
 
     await runGit(
       [
         "fetch",
-        environment.barePath,
+        repository.path,
         "refs/heads/ideas/first-rule:refs/remotes/origin/ideas/first-rule",
       ],
       second.path,
     );
-    expect(await listRemoteRefs(environment.barePath)).toHaveProperty(
-      "refs/heads/ideas/first-rule",
-    );
+    expect(await listRemoteRefs(repository.path)).toHaveProperty("refs/heads/ideas/first-rule");
     expect(await readFile(join(first.path, "solver.ts"), "utf8")).toContain("attempt");
     expect((await runGit(["status", "--porcelain"], unused.path)).stdout).toBe("");
     expect((await runGit(["remote", "get-url", "origin"], unused.path)).stdout.trim()).toBe(
-      "/git/shared.git",
+      "/git/origin.git",
     );
-  });
-
-  it("freezes the bare repository and all three workspaces", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-freeze-"));
-    const environment = await createGitEnvironment(join(root, "active"));
-    const frozen = await freezeGitEnvironment(environment, join(root, "frozen"));
-    expect(frozen.workspaces).toHaveLength(3);
-    expect(await listRemoteRefs(frozen.barePath)).toEqual({});
-  });
-
-  it("creates and freezes the declared dynamic workspace set", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-dynamic-git-"));
-    const environment = await createGitEnvironment(join(root, "active"), [
-      "agent-1",
-      "agent-2",
-      "agent-3",
-      "agent-4",
-      "agent-5",
+    expect(environment.repositories).toEqual([
+      expect.objectContaining({ repositoryId: "shared", agentIds: AGENTS }),
     ]);
-    const frozen = await freezeGitEnvironment(environment, join(root, "frozen"));
-
-    expect(environment.workspaces.map(({ agentId }) => agentId)).toEqual([
-      "agent-1",
-      "agent-2",
-      "agent-3",
-      "agent-4",
-      "agent-5",
+    expect(environment.workspaces.map(({ repositoryId }) => repositoryId)).toEqual([
+      "shared",
+      "shared",
+      "shared",
     ]);
-    expect(frozen.workspaces).toHaveLength(5);
   });
 
-  it("publishes peer-visible ref changes as wake activity", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-git-activity-"));
-    const environment = await createGitEnvironment(root);
+  it("gives isolated agents usable origins without peer refs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-isolated-git-"));
+    const environment = await createGitEnvironment(root, "isolated", AGENTS);
     const first = environment.workspaces[0];
-    if (!first) throw new Error("Expected agent-1 workspace.");
-    const activity = new ActivityBus();
+    const second = environment.workspaces[1];
+    const firstRepository = environment.repositories[0];
+    const secondRepository = environment.repositories[1];
+    if (!first || !second || !firstRepository || !secondRepository) {
+      throw new Error("Expected isolated workspaces and repositories.");
+    }
+
+    await runGit(["switch", "--orphan", "private/rule"], first.path);
+    await writeFile(join(first.path, "rule.txt"), "agent one\n", "utf8");
+    await runGit(["add", "rule.txt"], first.path);
+    await runGit(["commit", "-m", "record private rule"], first.path);
+    await runGit(["push", firstRepository.path, "HEAD:refs/heads/private/rule"], first.path);
+
+    expect(await listRemoteRefs(firstRepository.path)).toHaveProperty("refs/heads/private/rule");
+    expect(await listRemoteRefs(secondRepository.path)).toEqual({});
+    expect((await runGit(["remote", "get-url", "origin"], first.path)).stdout.trim()).toBe(
+      "/git/origin.git",
+    );
+    expect((await runGit(["remote", "get-url", "origin"], second.path)).stdout.trim()).toBe(
+      "/git/origin.git",
+    );
+    expect(
+      environment.repositories.map(({ repositoryId, agentIds }) => [repositoryId, agentIds]),
+    ).toEqual(AGENTS.map((agentId) => [agentId, [agentId]]));
+  });
+
+  it("publishes repository changes only to assigned activity streams", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-git-activity-"));
+    const environment = await createGitEnvironment(root, "isolated", AGENTS);
+    const workspace = environment.workspaces[0];
+    const repository = environment.repositories[0];
+    if (!workspace || !repository) throw new Error("Expected agent-1 Git resources.");
+    const activities = activityMap();
     const monitor = new GitActivityMonitor({
-      barePath: environment.barePath,
-      activity,
+      repository,
+      activityFor: (agentId) => activities.get(agentId)!,
       pollIntervalMs: 60_000,
     });
     await monitor.start();
-    const waiting = activity.waitForVisible("agent-3", 0);
-    await runGit(["switch", "--orphan", "rule/revision"], first.path);
-    await writeFile(join(first.path, "rule.txt"), "revision\n", "utf8");
-    await runGit(["add", "rule.txt"], first.path);
-    await runGit(["commit", "-m", "revise rule"], first.path);
-    await runGit(["push", environment.barePath, "HEAD:refs/heads/rule/revision"], first.path);
+    await runGit(["switch", "--orphan", "rule/revision"], workspace.path);
+    await writeFile(join(workspace.path, "rule.txt"), "revision\n", "utf8");
+    await runGit(["add", "rule.txt"], workspace.path);
+    await runGit(["commit", "-m", "revise rule"], workspace.path);
+    await runGit(["push", repository.path, "HEAD:refs/heads/rule/revision"], workspace.path);
     await monitor.checkNow();
-    await expect(waiting).resolves.toMatchObject({
-      kind: "git-changed",
-      detail: { refs: ["refs/heads/rule/revision"] },
-    });
+
+    expect(activities.get("agent-1")?.events).toEqual([
+      expect.objectContaining({
+        sequence: 1,
+        kind: "git-changed",
+        detail: { repositoryId: "agent-1", refs: ["refs/heads/rule/revision"] },
+      }),
+    ]);
+    expect(activities.get("agent-2")?.events).toEqual([]);
+    expect(activities.get("agent-3")?.events).toEqual([]);
     await monitor.stop();
   });
+
+  it("fans one shared repository change out as the first event on every stream", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-shared-git-activity-"));
+    const environment = await createGitEnvironment(root, "shared", AGENTS);
+    const workspace = environment.workspaces[0];
+    const repository = environment.repositories[0];
+    if (!workspace || !repository) throw new Error("Expected shared Git resources.");
+    const activities = activityMap();
+    const monitor = new GitActivityMonitor({
+      repository,
+      activityFor: (agentId) => activities.get(agentId)!,
+      pollIntervalMs: 60_000,
+    });
+    await monitor.start();
+    await runGit(["switch", "--orphan", "rule/revision"], workspace.path);
+    await writeFile(join(workspace.path, "rule.txt"), "revision\n", "utf8");
+    await runGit(["add", "rule.txt"], workspace.path);
+    await runGit(["commit", "-m", "revise rule"], workspace.path);
+    await runGit(["push", repository.path, "HEAD:refs/heads/rule/revision"], workspace.path);
+    await monitor.checkNow();
+
+    for (const activity of activities.values()) {
+      expect(activity.events).toEqual([
+        expect.objectContaining({
+          sequence: 1,
+          kind: "git-changed",
+          detail: { repositoryId: "shared", refs: ["refs/heads/rule/revision"] },
+        }),
+      ]);
+    }
+    await monitor.stop();
+  });
+
+  it.each(["shared", "isolated"] as const)(
+    "freezes the complete %s repository and workspace inventory without merging",
+    async (communicationMode) => {
+      const root = await mkdtemp(join(tmpdir(), `palimpsest-${communicationMode}-freeze-`));
+      const environment = await createGitEnvironment(
+        join(root, "active"),
+        communicationMode,
+        AGENTS,
+      );
+      const workspace = environment.workspaces[0];
+      const activeRepository = environment.repositories[0];
+      if (!workspace || !activeRepository) throw new Error("Expected Git resources to freeze.");
+      await runGit(["switch", "--orphan", "result/agent-1"], workspace.path);
+      await writeFile(join(workspace.path, "result.txt"), "retained result\n", "utf8");
+      await runGit(["add", "result.txt"], workspace.path);
+      await runGit(["commit", "-m", "retain model work"], workspace.path);
+      await runGit(
+        ["push", activeRepository.path, "HEAD:refs/heads/result/agent-1"],
+        workspace.path,
+      );
+
+      const frozen = await freezeGitEnvironment(environment, join(root, "frozen"));
+
+      expect(frozen).toMatchObject({
+        communicationMode,
+        frozen: true,
+        repositories: expect.arrayContaining(
+          environment.repositories.map(({ repositoryId, agentIds }) =>
+            expect.objectContaining({ repositoryId, agentIds }),
+          ),
+        ),
+      });
+      expect(frozen.repositories).toHaveLength(communicationMode === "shared" ? 1 : 3);
+      expect(frozen.workspaces).toHaveLength(3);
+      for (const repository of frozen.repositories) {
+        const refs = await listRemoteRefs(repository.path);
+        if (repository.repositoryId === activeRepository.repositoryId) {
+          expect(refs).toHaveProperty("refs/heads/result/agent-1");
+        } else {
+          expect(refs).toEqual({});
+        }
+      }
+    },
+  );
 });

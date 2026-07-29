@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { decodeAttemptSummary } from "./artifacts.js";
+import { hashProtocolSnapshot } from "./condition.js";
 import type { ModelAdapter, ModelBinding, ModelSession, ModelTurn } from "./model.js";
-import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "./sandbox/contracts.js";
 import { runAgentSession } from "./session.js";
+import { testAttemptSummary } from "./test-helpers.js";
 import type { AgentToolSet } from "./tools.js";
 
 function createTools(): AgentToolSet {
@@ -118,7 +119,7 @@ describe("model session lifecycle", () => {
     );
   });
 
-  it("keeps absent final text absent in strict attempt schema v2", async () => {
+  it("keeps absent final text absent in strict attempt schema v3", async () => {
     const result = await runAgentSession({
       agentId: "agent-1",
       model: binding(),
@@ -136,23 +137,25 @@ describe("model session lifecycle", () => {
     });
 
     expect(result).not.toHaveProperty("finalResponse");
+    const sessions = [
+      result,
+      { ...result, agentId: "agent-2" as const, model: binding("second-model") },
+      { ...result, agentId: "agent-3" as const, model: binding("third-model") },
+    ];
+    const base = testAttemptSummary();
+    const protocol = {
+      ...(base.protocol as Record<string, unknown>),
+      models: sessions.map((session) => ({
+        agentId: session.agentId,
+        model: session.model,
+      })),
+    };
     const summary = decodeAttemptSummary({
-      schemaVersion: 2,
+      ...base,
       attemptId: "attempt-no-text",
-      buildId: `build-${"1".repeat(64)}`,
-      buildRoot: "/tmp/build",
-      agentIds: ["agent-1", "agent-2"],
-      tracePath: "/tmp/attempt/trace.jsonl",
-      traceMetadataPath: "/tmp/attempt/trace.meta.json",
-      frozenRoot: "/tmp/attempt/frozen",
-      sandbox: {
-        imageTag: SANDBOX_IMAGE_TAG,
-        imageId: `sha256:${"1".repeat(64)}`,
-        sourceDigest: "2".repeat(64),
-        profileVersion: 1,
-        ...SANDBOX_POLICY,
-      },
-      sessions: [result, { ...result, agentId: "agent-2", model: binding("second-model") }],
+      protocol,
+      protocolDigest: hashProtocolSnapshot(protocol),
+      sessions,
     });
     expect(summary.sessions[0]).not.toHaveProperty("finalResponse");
   });
