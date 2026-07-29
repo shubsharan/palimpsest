@@ -106,7 +106,7 @@ describe("offline behavior-neutral runner", () => {
           stationary: { variantId: "stationary", keyTransitions: [] },
           rekey: {
             variantId: "rekey",
-            buildId: result.build.variants[condition.variantId],
+            buildId: result.build.variants.rekey,
             keyTransitions: [{ atStage: 4, keyVersion: 1 }],
           },
         },
