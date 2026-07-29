@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, readdir } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
@@ -203,6 +203,40 @@ describe("operator CLI contract", () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("--discover must be exactly true");
+    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses to run with a non-empty build destination", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-run-build-"));
+    const buildRoot = join(temporaryRoot, "build");
+    const output = join(temporaryRoot, "attempt");
+    const sentinel = join(buildRoot, "stale.txt");
+    await mkdir(buildRoot);
+    await writeFile(sentinel, "stale build\n", "utf8");
+    const scripts = await packageScripts();
+    const command = scripts["puzzle:run"]?.split(/\s+/);
+
+    const result = await execute(
+      process.execPath,
+      [
+        tsxCli,
+        ...(command?.slice(1) ?? []),
+        "--config",
+        "experiments/config.yaml",
+        "--run",
+        "gpt-only",
+        "--build",
+        buildRoot,
+        "--output",
+        output,
+      ],
+      { cwd: root, env: { ...process.env, OPENAI_API_KEY: "unused-fixture-key" } },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Puzzle build output is non-empty");
+    expect(await readFile(sentinel, "utf8")).toBe("stale build\n");
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

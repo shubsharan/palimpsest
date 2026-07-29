@@ -4,24 +4,15 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  decodeBuildManifest,
-  publishAttemptSummary,
-  type AttemptSummary,
-  type BuildManifest,
-  type BuildPuzzleResult,
-} from "./artifacts.js";
+import { publishAttemptSummary, type AttemptSummary, type BuildPuzzleResult } from "./artifacts.js";
 import { type ResolvedExperimentConfig } from "./config.js";
 import {
-  assertBuildMatchesExperimentConfig,
   createConfiguredRunAgents,
   runExperiment,
-  type CurrentBuildInputs,
   type ExperimentRunRequest,
 } from "./experiment.js";
 import type { ModelAdapter } from "./model.js";
 import { SANDBOX_IMAGE_TAG, SANDBOX_POLICY } from "./sandbox/contracts.js";
-import { testBuildManifest } from "./test-helpers.js";
 
 const BUILD_ID = `build-${"a".repeat(64)}`;
 const DIGEST = "b".repeat(64);
@@ -108,24 +99,6 @@ function buildResult(experimentRoot: string): BuildPuzzleResult {
   };
 }
 
-function buildManifest(resolved: ResolvedExperimentConfig): BuildManifest {
-  return decodeBuildManifest({
-    ...testBuildManifest(),
-    blockId: resolved.puzzle.block,
-  });
-}
-
-function currentInputs(manifest: BuildManifest): CurrentBuildInputs {
-  return {
-    blockId: manifest.blockId,
-    source: manifest.source,
-    references: manifest.references,
-    seed: manifest.seed,
-    window: manifest.window,
-    boundaryStage: manifest.boundaryStage,
-  };
-}
-
 async function publishFixtureAttempt(
   request: ExperimentRunRequest,
   build: BuildPuzzleResult,
@@ -166,7 +139,7 @@ async function publishFixtureAttempt(
 }
 
 describe("experiment orchestration", () => {
-  it("composes one configured run and accepts a current reusable build", () => {
+  it("composes one configured run", () => {
     const resolved = config();
     const models: string[] = [];
     const agents = createConfiguredRunAgents(resolved, resolved.runs[1]!, {
@@ -184,31 +157,7 @@ describe("experiment orchestration", () => {
     expect(agents["agent-1"]!.model.profile).toBe("one");
     expect(agents["agent-2"]!.model.profile).toBe("two");
     expect(agents["agent-3"]!.model.profile).toBe("one");
-    const manifest = buildManifest(resolved);
-    expect(() =>
-      assertBuildMatchesExperimentConfig(manifest, resolved, currentInputs(manifest)),
-    ).not.toThrow();
   });
-
-  it.each([
-    ["block", { blockId: "validation-odd-women" }],
-    ["source", { source: { sourceId: "theron-ware", sha256: "0".repeat(64) } }],
-    ["references", { references: [{ sourceId: "middlemarch", sha256: "0".repeat(64) }] }],
-    ["seed", { seed: 42 }],
-    ["window", { window: { ...buildManifest(config()).window, sha256: "0".repeat(64) } }],
-  ] satisfies readonly [string, Partial<CurrentBuildInputs>][])(
-    "rejects a reusable build with stale %s inputs",
-    (_name, stale) => {
-      const resolved = config();
-      const manifest = buildManifest(resolved);
-      expect(() =>
-        assertBuildMatchesExperimentConfig(manifest, resolved, {
-          ...currentInputs(manifest),
-          ...stale,
-        }),
-      ).toThrow(/does not match/);
-    },
-  );
 
   it("preflights all runs, builds once, and executes every repetition sequentially", async () => {
     const root = await temporaryRoot();

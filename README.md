@@ -49,18 +49,18 @@ Build both variants of one pinned block without provider access:
 ```bash
 pnpm puzzle:build -- \
   --block calibration-theron-ware \
-  --output artifacts/build
+  --output artifacts/inspection-build
 ```
 
 The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Until Feature 014 introduces canonical condition selection, run and experiment commands use the re-key variant to preserve the existing baseline.
 
-Run one named model assignment:
+Run one named model assignment. The run builds the configured block fresh at `--build`:
 
 ```bash
 pnpm puzzle:run -- \
   --config experiments/config.yaml \
   --run gpt-only \
-  --build artifacts/build \
+  --build artifacts/run-build \
   --output artifacts/attempt
 ```
 

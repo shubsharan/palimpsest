@@ -47,7 +47,7 @@ For fixed registered source bytes, block definition, and builder version, the wi
 
 ## Attempt Runtime
 
-`puzzle:run` selects one named run, checks that the configured block matches the paired build, and currently selects its re-key variant before creating the output root. It constructs one declared model binding and adapter per agent.
+`puzzle:run` selects one named run, constructs its configured block into a fresh `--build` destination, and currently selects the re-key variant before creating the attempt root. It constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
