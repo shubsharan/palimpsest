@@ -17,14 +17,16 @@ It returns a deterministic adjustment record and rejects any immutable drift or 
 
 `prepareStudyDesign({ study, studyRoot, ... })`:
 
-1. refuses an existing or partial study root that cannot be validated;
-2. constructs and validates all five registered paired builds;
-3. reads the rubric and prompt templates;
-4. verifies all twenty primary authorizations fit total ceilings;
-5. exclusively publishes strict `design.json`;
-6. returns the decoded receipt.
+1. requires a clean committed source checkout before construction or receipt validation;
+2. refuses any non-empty study root that has no design receipt;
+3. constructs and validates all five registered paired builds without reusing unreceipted output;
+4. reads the rubric and prompt templates;
+5. verifies all twenty primary authorizations fit total ceilings;
+6. immediately before publication, requires the source to remain clean at the same commit;
+7. exclusively publishes strict `design.json`;
+8. returns the decoded receipt.
 
-No provider credential, adapter, or session is touched before step 5 completes.
+No provider credential, adapter, or session is touched before receipt publication completes. An interrupted unreceipted root is never resumed; the operator must select a new study root.
 
 ## Phase Expansion
 
@@ -54,7 +56,7 @@ Cell IDs and positions are deterministic.
 9. indexes the strict durable attempt and resolves the reservation;
 10. stops nonzero on eligible infrastructure classification, otherwise continues sequentially.
 
-Reinvocation never launches an indexed primary cell.
+Reinvocation never launches an indexed primary cell. A post-publication overlap failure remains in the attempt trace, but the durable non-infrastructure attempt is indexed and the same invocation continues to the next cell.
 
 ## Explicit Replacement
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import {
@@ -32,7 +32,7 @@ import {
 } from "./condition.js";
 import { expandPhase, type ResolvedStudy } from "./config.js";
 import type { AgentId } from "./model.js";
-import { readSourceState } from "./preflight.js";
+import { readSourceState, type SourceState } from "./preflight.js";
 import { buildAgentPrompt, snapshotAgentPromptTemplates, type PromptAgentId } from "./prompt.js";
 import { readJsonObject } from "./python.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
@@ -104,14 +104,14 @@ async function readBuildBinding(buildRoot: string, blockId: string): Promise<Des
 
 export interface StudyDesignDependencies {
   build: (options: BuildPuzzleOptions) => Promise<unknown>;
-  sourceRevision: (root: string) => Promise<string>;
+  sourceState: (root: string) => Promise<SourceState>;
   sandboxIdentity: (root: string) => Promise<SandboxIdentity>;
   now: () => Date;
 }
 
 const defaultDesignDependencies: StudyDesignDependencies = {
   build: buildPuzzle,
-  sourceRevision: async (root) => (await readSourceState(root)).testedCommit,
+  sourceState: readSourceState,
   sandboxIdentity: async (root) => (await createDockerCommandSandbox({ root })).identity,
   now: () => new Date(),
 };
@@ -120,6 +120,32 @@ function designDependencies(
   overrides: Partial<StudyDesignDependencies> | undefined,
 ): StudyDesignDependencies {
   return { ...defaultDesignDependencies, ...overrides };
+}
+
+function requireCleanStudySource(state: SourceState): void {
+  if (!state.sourceClean) {
+    throw new Error("Study design preparation requires a clean committed source checkout.");
+  }
+}
+
+function requireStableStudySource(initial: SourceState, current: SourceState): void {
+  requireCleanStudySource(current);
+  if (current.testedCommit !== initial.testedCommit) {
+    throw new Error("Source revision changed while preparing the study design.");
+  }
+}
+
+async function assertEmptyUnreceiptedStudyRoot(studyRoot: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(studyRoot);
+  } catch (error) {
+    if (isMissingFile(error)) return;
+    throw error;
+  }
+  if (entries.length !== 0) {
+    throw new Error("Study root contains unreceipted artifacts; use a new study root.");
+  }
 }
 
 async function prepareBuilds(options: {
@@ -133,13 +159,11 @@ async function prepareBuilds(options: {
   const bindings: DesignBuildBinding[] = [];
   for (const block of options.study.blocks) {
     const buildRoot = join(buildsRoot, block.blockId);
-    if (!(await exists(buildManifestPath(buildRoot)))) {
-      await options.dependencies.build({
-        root: options.root,
-        output: buildRoot,
-        block: block.blockId,
-      });
-    }
+    await options.dependencies.build({
+      root: options.root,
+      output: buildRoot,
+      block: block.blockId,
+    });
     bindings.push(await readBuildBinding(buildRoot, block.blockId));
   }
   return bindings;
@@ -364,7 +388,11 @@ export async function prepareStudyDesign(
   }
   const receipt = receiptExists ? await readDesignReceipt(studyRoot) : undefined;
   if (receipt !== undefined) assertReceiptDigest(receipt);
-  const sourceRevision = await deps.sourceRevision(root);
+  const initialSource = await deps.sourceState(root);
+  requireCleanStudySource(initialSource);
+  if (receipt === undefined) {
+    await assertEmptyUnreceiptedStudyRoot(studyRoot);
+  }
   const sandbox = await deps.sandboxIdentity(root);
   const builds = receipt
     ? await assertBuildBindings(receipt, studyRoot)
@@ -372,7 +400,7 @@ export async function prepareStudyDesign(
   const expected = createDesignReceiptValue({
     study: options.study,
     builds,
-    sourceRevision,
+    sourceRevision: initialSource.testedCommit,
     sandbox,
     createdAt: receipt?.createdAt ?? deps.now().toISOString(),
     ...(receipt === undefined
@@ -388,6 +416,7 @@ export async function prepareStudyDesign(
     assertDesignIdentity(receipt, expected, options.phase);
     return receipt;
   }
+  requireStableStudySource(initialSource, await deps.sourceState(root));
   await publishDesignReceipt(studyRoot, expected);
   return readDesignReceipt(studyRoot);
 }
@@ -924,7 +953,7 @@ export async function executeStudyPhase(options: ExecuteStudyPhaseOptions): Prom
           `Phase stopped after infrastructure failure in ${durable.attemptId}.`,
         );
       }
-      throw error;
+      return summary;
     }
     const durable = await readAttempt(preview.attemptRoot);
     if (durable === undefined) {

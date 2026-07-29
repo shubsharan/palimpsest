@@ -91,7 +91,7 @@ study/
 
 Before opening a cell's sessions, the runner writes one launch reservation to the phase summary. After immutable `attempt.json` publication, it indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
 
-A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. Successful resume skips every indexed cell. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, or aggregation.
+A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. A post-publication overlap error remains diagnostic: the durable non-infrastructure attempt is indexed and the phase continues sequentially without manual resume. Successful resume skips every indexed cell. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, or aggregation.
 
 ## Provider And Secret Boundary
 

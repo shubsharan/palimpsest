@@ -20,6 +20,7 @@ import { readSourceState } from "../../src/preflight.js";
 import { readJsonObject } from "../../src/python.js";
 import type { RunPuzzleOptions } from "../../src/run.js";
 import { SANDBOX_POLICY } from "../../src/sandbox/contracts.js";
+import { prepareStudyDesign } from "../../src/study.js";
 import {
   FakeCommandSandbox,
   TEST_SANDBOX_IDENTITY,
@@ -168,6 +169,17 @@ describe("frozen five-block study", () => {
     };
     const dependencies = {
       createSandbox: async () => sandbox,
+      prepareDesign: async (options: Parameters<typeof prepareStudyDesign>[0]) =>
+        prepareStudyDesign({
+          ...options,
+          dependencies: {
+            ...options.dependencies,
+            sourceState: async () => ({
+              testedCommit: source.testedCommit,
+              sourceClean: true,
+            }),
+          },
+        }),
       readPreflight: async () => ({
         schemaVersion: 1 as const,
         testedCommit: source.testedCommit,

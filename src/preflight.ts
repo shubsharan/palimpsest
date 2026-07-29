@@ -30,7 +30,7 @@ export interface PreflightReceipt {
   sandbox: SandboxIdentity;
 }
 
-interface SourceState {
+export interface SourceState {
   testedCommit: string;
   sourceClean: boolean;
 }

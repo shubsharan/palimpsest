@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -11,9 +12,11 @@ import {
   readPhaseSummary,
   type AttemptSummary,
 } from "./artifacts.js";
+import type { BuildPuzzleOptions } from "./build.js";
 import { hashProtocolSnapshot, resolveCondition } from "./condition.js";
 import { loadStudyManifest, resolveStudy, type ResolvedStudy } from "./config.js";
 import type { ModelBinding } from "./model.js";
+import type { SourceState } from "./preflight.js";
 import { SANDBOX_POLICY } from "./sandbox/contracts.js";
 import {
   executeStudyPhase,
@@ -21,11 +24,31 @@ import {
   StudyPhaseStoppedError,
   type StudyCellLaunch,
 } from "./study.js";
-import { TEST_SANDBOX_IDENTITY, testAttemptSummary } from "./test-helpers.js";
+import { TEST_SANDBOX_IDENTITY, testAttemptSummary, testBuildManifest } from "./test-helpers.js";
 
 const root = resolve(".");
 const sourceRevision = "1".repeat(40);
 const temporaryRoots: string[] = [];
+
+function cleanSourceState(testedCommit = sourceRevision): SourceState {
+  return { testedCommit, sourceClean: true };
+}
+
+async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
+  const manifest = testBuildManifest();
+  const digest = (suffix: string) =>
+    createHash("sha256").update(`${options.block}:${suffix}`).digest("hex");
+  manifest.blockId = options.block;
+  manifest.pairedBuildId = `paired-${digest("paired")}`;
+  const variants = manifest.variants as Record<"stationary" | "rekey", Record<string, unknown>>;
+  variants.stationary.buildId = `build-${digest("stationary")}`;
+  variants.rekey.buildId = `build-${digest("rekey")}`;
+  await mkdir(options.output, { recursive: true });
+  await writeFile(
+    join(options.output, "puzzle-build.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+}
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true })));
@@ -50,7 +73,7 @@ async function prepareFixture(): Promise<{
     study,
     phase: "calibration",
     dependencies: {
-      sourceRevision: async () => sourceRevision,
+      sourceState: async () => cleanSourceState(),
       sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
       now: () => new Date("2026-07-29T12:00:00.000Z"),
     },
@@ -194,7 +217,7 @@ describe("frozen study state", () => {
       study: adjusted,
       phase: "validation",
       dependencies: {
-        sourceRevision: async () => sourceRevision,
+        sourceState: async () => cleanSourceState(),
         sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
       },
     });
@@ -209,7 +232,7 @@ describe("frozen study state", () => {
         study: await resolveStudy(immutableDrift, root),
         phase: "validation",
         dependencies: {
-          sourceRevision: async () => sourceRevision,
+          sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
         },
       }),
@@ -226,11 +249,168 @@ describe("frozen study state", () => {
         study,
         phase: "calibration",
         dependencies: {
-          sourceRevision: async () => sourceRevision,
+          sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
         },
       }),
     ).rejects.toThrow(/drifted/);
+  }, 60_000);
+
+  it("requires a clean source before touching construction dependencies", async () => {
+    const studyRoot = await temporaryRoot();
+    const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
+    let builds = 0;
+    let sandboxReads = 0;
+
+    await expect(
+      prepareStudyDesign({
+        root,
+        studyRoot,
+        study,
+        phase: "calibration",
+        dependencies: {
+          sourceState: async () => ({ testedCommit: sourceRevision, sourceClean: false }),
+          build: async () => {
+            builds += 1;
+          },
+          sandboxIdentity: async () => {
+            sandboxReads += 1;
+            return TEST_SANDBOX_IDENTITY;
+          },
+        },
+      }),
+    ).rejects.toThrow(/clean committed source checkout/);
+    expect(builds).toBe(0);
+    expect(sandboxReads).toBe(0);
+    await expect(readDesignReceipt(studyRoot)).rejects.toThrow();
+  });
+
+  it("rejects unreceipted study-root residue without reusing builds", async () => {
+    const studyRoot = await temporaryRoot();
+    const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
+    await writeFile(join(studyRoot, "orphaned-build.json"), "{}\n");
+    let builds = 0;
+    let sandboxReads = 0;
+
+    await expect(
+      prepareStudyDesign({
+        root,
+        studyRoot,
+        study,
+        phase: "calibration",
+        dependencies: {
+          sourceState: async () => cleanSourceState(),
+          build: async () => {
+            builds += 1;
+          },
+          sandboxIdentity: async () => {
+            sandboxReads += 1;
+            return TEST_SANDBOX_IDENTITY;
+          },
+        },
+      }),
+    ).rejects.toThrow(/unreceipted artifacts.*new study root/);
+    expect(builds).toBe(0);
+    expect(sandboxReads).toBe(0);
+  });
+
+  it("constructs all five builds and rechecks the source before publishing", async () => {
+    const studyRoot = await temporaryRoot();
+    const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
+    let sourceReads = 0;
+    let builds = 0;
+
+    const receipt = await prepareStudyDesign({
+      root,
+      studyRoot,
+      study,
+      phase: "calibration",
+      dependencies: {
+        sourceState: async () => {
+          sourceReads += 1;
+          return cleanSourceState();
+        },
+        build: async (options) => {
+          builds += 1;
+          await publishFixtureBuild(options);
+        },
+        sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+        now: () => new Date("2026-07-29T12:00:00.000Z"),
+      },
+    });
+
+    expect(sourceReads).toBe(2);
+    expect(builds).toBe(5);
+    expect(receipt.sourceRevision).toBe(sourceRevision);
+    expect(receipt.builds).toHaveLength(5);
+  });
+
+  it.each([
+    [
+      "becomes dirty",
+      { testedCommit: sourceRevision, sourceClean: false },
+      /clean committed source checkout/,
+    ],
+    ["changes commits", cleanSourceState("2".repeat(40)), /source revision changed/i],
+  ] as const)(
+    "does not publish a receipt when the source %s during construction",
+    async (_name, finalSource, expectedError) => {
+      const studyRoot = await temporaryRoot();
+      const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
+      let sourceReads = 0;
+      let builds = 0;
+
+      await expect(
+        prepareStudyDesign({
+          root,
+          studyRoot,
+          study,
+          phase: "calibration",
+          dependencies: {
+            sourceState: async () => {
+              sourceReads += 1;
+              return sourceReads === 1 ? cleanSourceState() : finalSource;
+            },
+            build: async (options) => {
+              builds += 1;
+              await publishFixtureBuild(options);
+            },
+            sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+          },
+        }),
+      ).rejects.toThrow(expectedError);
+      expect(sourceReads).toBe(2);
+      expect(builds).toBe(5);
+      await expect(readDesignReceipt(studyRoot)).rejects.toThrow();
+    },
+  );
+
+  it("continues after a non-infrastructure attempt is durable", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    let launches = 0;
+
+    const phase = await executeStudyPhase({
+      studyRoot,
+      study,
+      receipt,
+      phase: "calibration",
+      dependencies: {
+        beforeLaunch: async () => {},
+        runCell: async (launch) => {
+          launches += 1;
+          await publishLaunchAttempt(launch, study, false);
+          if (launches === 1) {
+            throw new Error("injected optional overlap failure");
+          }
+        },
+      },
+    });
+
+    expect(launches).toBe(4);
+    expect(phase.state).toBe("complete");
+    expect(phase.attempts).toHaveLength(4);
+    expect(phase.reservations.every(({ state }) => state === "resolved")).toBe(true);
+    expect(phase.failure).toBeUndefined();
   }, 60_000);
 
   it("freezes an infrastructure failure and permits only cited replacements within ceilings", async () => {
