@@ -86,13 +86,31 @@ pnpm puzzle:evaluate -- \
 
 The runner does not prescribe a solver file, command, workspace, role, or collaboration pattern.
 
+## Local CI Before Push
+
+Run the same repository commands as the advisory GitHub Actions job before pushing:
+
+```bash
+pnpm ci:local
+```
+
+It installs locked Node and Python dependencies, validates the pinned toolchain, formats, lints, compiles, and builds the agent sandbox. It cannot reproduce GitHub's hosted Ubuntu image or action implementations, but it exercises every repository command that the workflow runs.
+
+To make this automatic for this checkout, install the checked-in pre-push hook once:
+
+```bash
+pnpm hooks:install
+```
+
+The hook runs `pnpm ci:local` and stops a push when it fails. It is local-only and optional; Git hooks can still be bypassed with `git push --no-verify` when that is intentional.
+
 ## Development Check
 
 ```bash
 pnpm check
 ```
 
-The advisory Linux workflow runs this command for pull requests and pushes to `main`, then builds the sandbox image. It catches locked-dependency, formatting, lint, compile, and Dockerfile build failures without running unit suites, real-container behavior tests, or the offline fixture. It is intentionally not a required branch-protection check.
+The advisory Linux workflow runs this command for pull requests and pushes to `main`, then builds the sandbox image. It catches locked-dependency, formatting, lint, compile, and Dockerfile build failures without running unit suites, real-container behavior tests, or the offline fixture. It is intentionally not a required branch-protection check. `pnpm ci:local` provides the same command sequence locally.
 
 ## Research Preflight
 
