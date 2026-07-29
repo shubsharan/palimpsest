@@ -10,6 +10,14 @@ pnpm vitest run src/condition.test.ts src/prompt.test.ts src/reveal.test.ts \
 
 The focused suite uses fixture adapters and fake clocks. It proves exact condition mapping, prompt parity, release offsets, cutoff, shared peer visibility, isolated non-observability, topology freezing, variant-safe overlap, and selected-origin evaluation.
 
+## Build The Local Sandbox
+
+```bash
+pnpm puzzle:sandbox:build
+```
+
+The provider-free runs and full verification suite use this local Docker image but make no provider requests.
+
 ## Run Provider-Free Conditions
 
 ```bash
