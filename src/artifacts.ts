@@ -36,10 +36,15 @@ const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export interface BuildPuzzleResult {
-  buildId: string;
+  pairedBuildId: string;
+  blockId: string;
   buildPath: string;
   agentIds: readonly AgentId[];
-  stageCount: number;
+  stageCount: 6;
+  variants: {
+    stationary: string;
+    rekey: string;
+  };
 }
 
 export interface BuildSource {
@@ -576,12 +581,34 @@ function decodeBuildId(value: unknown, name: string): string {
 }
 
 export function decodeBuildResult(value: unknown): BuildPuzzleResult {
-  const record = object(value, "Puzzle build result");
+  const record = strictObject(value, "Puzzle build result", [
+    "pairedBuildId",
+    "blockId",
+    "buildPath",
+    "agentIds",
+    "stageCount",
+    "variants",
+  ]);
+  const stageCount = integer(record.stageCount, "Puzzle build result stageCount", 1);
+  if (stageCount !== 6) throw new Error("Puzzle build result stageCount must be exactly 6.");
+  const variants = strictObject(record.variants, "Puzzle build result variants", [
+    "stationary",
+    "rekey",
+  ]);
   return {
-    buildId: decodeBuildId(record.buildId, "Puzzle build result buildId"),
+    pairedBuildId: decodePrefixedDigest(
+      record.pairedBuildId,
+      PAIRED_BUILD_ID,
+      "Puzzle build result pairedBuildId",
+    ),
+    blockId: identifier(record.blockId, "Puzzle build result blockId"),
     buildPath: absolutePath(record.buildPath, "Puzzle build result buildPath"),
     agentIds: decodeAgentIds(record.agentIds, "Puzzle build result agentIds"),
-    stageCount: integer(record.stageCount, "Puzzle build result stageCount", 1),
+    stageCount: 6,
+    variants: {
+      stationary: decodeBuildId(variants.stationary, "Puzzle build result variants.stationary"),
+      rekey: decodeBuildId(variants.rekey, "Puzzle build result variants.rekey"),
+    },
   };
 }
 

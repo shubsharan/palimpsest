@@ -107,7 +107,7 @@ One base key encrypts the stationary twin. The re-key twin changes the selected 
 
 ### Authority And Runtime Bridge
 
-`experiments/blocks.json` is the sole authority for target, references, seed, window, geometry, and paired key design. The schema-v1 experiment config stops duplicating those fields; its puzzle section selects only `block` and the current arithmetic `stageIntervalMs`. `puzzle:build --block` loads the catalog without config. `puzzle:run` and `puzzle:experiment` require the paired manifest's `blockId` to equal the configured block and, until Feature 014 derives selection from `CS/CR/IS/IR`, always select the `rekey` variant to preserve the existing baseline. A pure TypeScript `selectBuildVariant` boundary performs that selection and rejects unknown or mismatched variants.
+`experiments/blocks.json` is the sole authority for target, references, seed, window, geometry, and paired key design. The schema-v1 experiment config stops duplicating those fields; its puzzle section selects only `block` and the current arithmetic `stageIntervalMs`. `puzzle:build --block` loads the catalog without config. `puzzle:run` constructs the configured block into a fresh build destination, while `puzzle:experiment` builds once for its sequential attempts. Until Feature 014 derives selection from `CS/CR/IS/IR`, both select the `rekey` variant through the pure `selectBuildVariant` boundary.
 
 ### Artifact Boundary
 

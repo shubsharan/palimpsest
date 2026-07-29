@@ -25,7 +25,7 @@ pnpm puzzle:run -- \
 ```
 
 - Selects one named condition and runs it once.
-- Rejects unknown conditions or build/config mismatch before creating the attempt root.
+- Builds the configured puzzle at `--build` and rejects a non-empty destination before creating the attempt root.
 - Returns at least `attemptId` and absolute `attemptRoot`.
 - The prior `--adapter openai --model ...` path is removed; fixture injection remains internal to offline verification.
 

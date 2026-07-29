@@ -42,8 +42,11 @@ export function assertBuildMatchesBlock(
 ): void {
   if (
     resolve(result.buildPath) !== resolve(output) ||
-    manifest.variants.rekey.buildId !== result.buildId ||
-    manifest.blockId !== block ||
+    manifest.pairedBuildId !== result.pairedBuildId ||
+    manifest.blockId !== result.blockId ||
+    result.blockId !== block ||
+    manifest.variants.stationary.buildId !== result.variants.stationary ||
+    manifest.variants.rekey.buildId !== result.variants.rekey ||
     manifest.agentIds.join("\0") !== result.agentIds.join("\0") ||
     manifest.stageCount !== result.stageCount ||
     manifest.agentIds.join("\0") !== "agent-1\0agent-2\0agent-3" ||

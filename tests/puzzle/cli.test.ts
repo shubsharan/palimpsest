@@ -169,11 +169,16 @@ describe("operator CLI contract", () => {
     );
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(expectOneJsonObject(result.stdout)).toMatchObject({
-      buildId: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+    expect(expectOneJsonObject(result.stdout)).toEqual({
+      pairedBuildId: expect.stringMatching(/^paired-[0-9a-f]{64}$/),
+      blockId: block,
       buildPath: output,
       agentIds: ["agent-1", "agent-2", "agent-3"],
       stageCount: 6,
+      variants: {
+        stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+        rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      },
     });
   }, 30_000);
 
@@ -238,10 +243,15 @@ describe("operator CLI contract", () => {
     });
 
     expect(first).toEqual({
-      buildId: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      pairedBuildId: expect.stringMatching(/^paired-[0-9a-f]{64}$/),
+      blockId: block,
       buildPath: firstOutput,
       agentIds: ["agent-1", "agent-2", "agent-3"],
       stageCount: 6,
+      variants: {
+        stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+        rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      },
     });
     expect(second).toEqual({ ...first, buildPath: secondOutput });
 

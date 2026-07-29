@@ -85,7 +85,7 @@ oracle/
 ├── allocation.json
 ├── design.json
 ├── manipulation-check.json
-├── checker/<variant>/<agent>/stage-*.txt
+├── checker/<agent>/stage-*.txt
 └── keys/
     ├── base.json
     └── rekey-stage-04.json
@@ -115,7 +115,7 @@ For types `a` and `b`, frequency distance is `abs(log1p(countA)-log1p(countB))/l
 
 ## Authority Contract
 
-`experiments/blocks.json` alone owns source, references, seed, window, geometry, and key design. The schema-v1 experiment config selects only `puzzle.block` and `puzzle.stageIntervalMs`; it cannot restate scientific fields. Runtime rejects a paired manifest whose `blockId` differs from the configured block. Build identity excludes timing.
+`experiments/blocks.json` alone owns source, references, seed, window, geometry, and key design. The schema-v1 experiment config selects only `puzzle.block` and `puzzle.stageIntervalMs`; it cannot restate scientific fields. `puzzle:run` constructs the configured block into a fresh build destination, and `puzzle:experiment` builds once for its sequential attempts. Build identity excludes timing.
 
 ## Failure Contract
 

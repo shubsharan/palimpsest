@@ -33,7 +33,7 @@ async function fixtureAttempt(
   const condition = resolveCondition(request.condition);
   const protocol = {
     ...(base.protocol as Record<string, unknown>),
-    buildId: build.buildId,
+    buildId: build.variants[condition.variantId],
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,
     models: agentIds.map((agentId) => ({
       agentId,
@@ -46,7 +46,7 @@ async function fixtureAttempt(
     attemptId: `attempt-${request.runName}-${String(request.repetition)}`,
     runName: request.runName,
     repetition: request.repetition,
-    buildId: build.buildId,
+    buildId: build.variants[condition.variantId],
     buildRoot: build.buildPath,
     agentIds,
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,
@@ -92,10 +92,12 @@ describe("puzzle experiment", () => {
     temporaryRoots.push(temporary);
     const experimentRoot = join(temporary, "baseline");
     const build: BuildPuzzleResult = {
-      buildId: BUILD_ID,
+      pairedBuildId: `paired-${"a".repeat(64)}`,
+      blockId: "calibration-theron-ware",
       buildPath: join(experimentRoot, "build"),
       agentIds: ["agent-1", "agent-2", "agent-3"],
       stageCount: 6,
+      variants: { stationary: BUILD_ID, rekey: BUILD_ID },
     };
     const requestedModels: string[] = [];
     let builds = 0;

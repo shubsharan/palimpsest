@@ -92,10 +92,12 @@ function adapter(): ModelAdapter {
 
 function buildResult(experimentRoot: string): BuildPuzzleResult {
   return {
-    buildId: BUILD_ID,
+    pairedBuildId: `paired-${"a".repeat(64)}`,
+    blockId: "calibration-theron-ware",
     buildPath: join(experimentRoot, "build"),
     agentIds: ["agent-1", "agent-2", "agent-3"],
     stageCount: 6,
+    variants: { stationary: BUILD_ID, rekey: BUILD_ID },
   };
 }
 
@@ -118,7 +120,7 @@ async function publishFixtureAttempt(
   const condition = resolveCondition(request.condition);
   const protocol = {
     ...(base.protocol as Record<string, unknown>),
-    buildId: build.buildId,
+    buildId: build.variants[condition.variantId],
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,
     models: agentIds.map((agentId) => ({
       agentId,
@@ -131,7 +133,7 @@ async function publishFixtureAttempt(
     attemptId,
     runName: request.runName,
     repetition: request.repetition,
-    buildId: build.buildId,
+    buildId: build.variants[condition.variantId],
     buildRoot: build.buildPath,
     agentIds,
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,

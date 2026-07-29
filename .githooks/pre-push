@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -eu
+
+printf '%s\n' 'Running the local CI equivalent before push...'
+pnpm ci:local
