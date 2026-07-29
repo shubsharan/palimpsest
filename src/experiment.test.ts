@@ -193,10 +193,7 @@ describe("experiment orchestration", () => {
   it.each([
     ["block", { blockId: "validation-odd-women" }],
     ["source", { source: { sourceId: "theron-ware", sha256: "0".repeat(64) } }],
-    [
-      "references",
-      { references: [{ sourceId: "middlemarch", sha256: "0".repeat(64) }] },
-    ],
+    ["references", { references: [{ sourceId: "middlemarch", sha256: "0".repeat(64) }] }],
     ["seed", { seed: 42 }],
     ["window", { window: { ...buildManifest(config()).window, sha256: "0".repeat(64) } }],
   ] satisfies readonly [string, Partial<CurrentBuildInputs>][])(
