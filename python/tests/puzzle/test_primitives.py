@@ -5,7 +5,11 @@ from collections import Counter
 
 import pytest
 from palimpsest.puzzle.cipher import stationary_key
-from palimpsest.puzzle.revision import build_revision, build_successive_revision
+from palimpsest.puzzle.revision import (
+    build_revision,
+    build_successive_revision,
+    revise_explicit_types,
+)
 from palimpsest.puzzle.text import (
     canonicalize_capitalization,
     render,
@@ -179,3 +183,69 @@ def test_successive_revision_uses_the_immediately_preceding_key() -> None:
         second.revised_key[word] == first.revised_key[word]
         for word in set(vocabulary) - second_changed
     )
+
+
+def test_explicit_revision_changes_only_declared_types_and_preserves_controls() -> None:
+    vocabulary = [f"word{letter}" for letter in "abcdefghijkl"]
+    base = stationary_key(vocabulary, "44" * 32)
+    changed = ("worda", "wordb", "wordc", "wordd")
+    controls = ("worde", "wordf", "wordg", "wordh")
+    first = revise_explicit_types(
+        prior_key=base,
+        changed_types=changed,
+        stable_controls=controls,
+        seed_hex="55" * 32,
+    )
+    second = revise_explicit_types(
+        prior_key=base,
+        changed_types=tuple(reversed(changed)),
+        stable_controls=tuple(reversed(controls)),
+        seed_hex="55" * 32,
+    )
+
+    assert first == second
+    assert set(first) == set(first.values()) == set(base)
+    assert all(first[word] != base[word] for word in changed)
+    assert all(first[word] == base[word] for word in set(base) - set(changed))
+    assert all(first[word] == base[word] for word in controls)
+
+
+def test_explicit_revision_finds_a_valid_derangement_across_seed_choices() -> None:
+    vocabulary = [f"word{letter}" for letter in "abcdefghijkl"]
+    base = stationary_key(vocabulary, "88" * 32)
+    changed = tuple(vocabulary)
+
+    for seed in range(100):
+        revised = revise_explicit_types(
+            prior_key=base,
+            changed_types=changed,
+            stable_controls=(),
+            seed_hex=f"{seed:064x}",
+        )
+        assert set(revised) == set(revised.values()) == set(base)
+        assert all(revised[word] != base[word] for word in changed)
+        assert all(revised[word] != word for word in changed)
+
+
+@pytest.mark.parametrize(
+    ("changed", "controls", "message"),
+    [
+        (("worda",), (), "at least two"),
+        (("worda", "missing"), (), "unknown changed"),
+        (("worda", "wordb"), ("worda",), "disjoint"),
+        (("worda", "wordb"), ("missing",), "unknown control"),
+    ],
+)
+def test_explicit_revision_rejects_invalid_declared_sets(
+    changed: tuple[str, ...],
+    controls: tuple[str, ...],
+    message: str,
+) -> None:
+    base = stationary_key([f"word{letter}" for letter in "abcdef"], "66" * 32)
+    with pytest.raises(ValueError, match=message):
+        revise_explicit_types(
+            prior_key=base,
+            changed_types=changed,
+            stable_controls=controls,
+            seed_hex="77" * 32,
+        )

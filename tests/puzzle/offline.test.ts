@@ -48,7 +48,7 @@ describe("offline behavior-neutral runner", () => {
     expect(isAbsolute(result.run.attemptRoot)).toBe(true);
     expect(result.build.agentIds).toEqual(["agent-1", "agent-2", "agent-3"]);
     expect(result.build.stageCount).toBe(6);
-    expect(result.run.buildId).toBe(result.build.buildId);
+    expect(result.run.buildId).toBe(result.build.variants.rekey);
     expect(result.run.runName).toBe("offline");
     expect(result.run.repetition).toBe(1);
     expect(result.run.sessions).toHaveLength(result.build.agentIds.length);
@@ -87,17 +87,24 @@ describe("offline behavior-neutral runner", () => {
     );
 
     expect(buildManifest).toMatchObject({
-      schemaVersion: 2,
-      buildId: result.build.buildId,
+      schemaVersion: 3,
+      blockId: "calibration-theron-ware",
       agentIds: result.build.agentIds,
       stageCount: result.build.stageCount,
-      stageIntervalMs: 20,
-      rekeys: [{ atStage: 4, keyVersion: 1, changedTokenMass: 0.2 }],
+      boundaryStage: 4,
+      variants: {
+        stationary: { variantId: "stationary", keyTransitions: [] },
+        rekey: {
+          variantId: "rekey",
+          buildId: result.build.variants.rekey,
+          keyTransitions: [{ atStage: 4, keyVersion: 1 }],
+        },
+      },
     });
     expect(attemptSummary).toMatchObject({
       schemaVersion: 2,
       attemptId: result.run.attemptId,
-      buildId: result.build.buildId,
+      buildId: result.build.variants.rekey,
       agentIds: result.build.agentIds,
     });
     expect(overlapArtifact).toEqual(result.run.overlap);
@@ -111,7 +118,7 @@ describe("offline behavior-neutral runner", () => {
       "--released",
       "1",
       "--candidate",
-      join(result.build.buildPath, buildManifest.oracleRoot, "checker", "agent-1", "stage-01.txt"),
+      join(result.build.buildPath, "oracle", "checker", "agent-1", "stage-01.txt"),
     ]);
     expect(checker).toMatchObject({
       matchedWords: expect.any(Number),
@@ -136,9 +143,7 @@ describe("offline behavior-neutral runner", () => {
     expect(
       releases.every((event) => {
         const ordinal = asRecord(event.data).ordinal;
-        return (
-          typeof ordinal === "number" && event.atMs >= (ordinal - 1) * buildManifest.stageIntervalMs
-        );
+        return typeof ordinal === "number" && event.atMs >= (ordinal - 1) * 20;
       }),
     ).toBe(true);
 

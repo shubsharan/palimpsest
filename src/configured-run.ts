@@ -1,10 +1,9 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
-import { decodeBuildManifest } from "./artifacts.js";
+import { buildPuzzle } from "./build.js";
 import { loadExperimentConfig } from "./config.js";
-import { assertBuildMatchesExperimentConfig, createConfiguredRunAgents } from "./experiment.js";
+import { createConfiguredRunAgents } from "./experiment.js";
 import { requiredFlag } from "./flags.js";
-import { readJsonObject } from "./python.js";
 import { runPuzzle, type RunPuzzleResult } from "./run.js";
 
 export async function runConfiguredPuzzleFromFlags(
@@ -20,16 +19,16 @@ export async function runConfiguredPuzzleFromFlags(
   });
   const run = config.runs.find((candidate) => candidate.name === runName);
   if (run === undefined) throw new Error(`Selected run ${runName} does not exist.`);
-  const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  assertBuildMatchesExperimentConfig(manifest, config);
+  const build = await buildPuzzle({ root, output: buildRoot, block: config.puzzle.block });
   return runPuzzle({
     root,
-    buildRoot,
+    buildRoot: build.buildPath,
     output: requiredFlag(flags, "--output"),
     runName,
     repetition: 1,
     agents: createConfiguredRunAgents(config, run),
     tokenBudgetPerAgent: config.limits.tokenBudgetPerAgent,
     wallTimeMs: config.limits.wallTimeMs,
+    stageIntervalMs: config.puzzle.stageIntervalMs,
   });
 }

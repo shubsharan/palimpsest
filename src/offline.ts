@@ -8,16 +8,8 @@ import { requiredFlag } from "./flags.js";
 import { createFixtureAgentRuntimes, runPuzzle, type RunPuzzleResult } from "./run.js";
 
 const OFFLINE_PUZZLE: PuzzleDefinition = {
-  target: {
-    corpus: "middlemarch",
-    chapters: { start: 10, end: 15 },
-  },
-  references: ["jane-eyre", "moby-dick"],
-  seed: 0,
-  agentCount: 3,
-  stageCount: 6,
+  block: "calibration-theron-ware",
   stageIntervalMs: 20,
-  rekeys: [{ atStage: 4, changedTokenMass: 0.2 }],
 };
 
 export interface OfflinePuzzleOptions {
@@ -39,7 +31,7 @@ export async function runOfflinePuzzle(
   const build = await buildPuzzle({
     root,
     output: resolve(output, "build"),
-    puzzle: OFFLINE_PUZZLE,
+    block: OFFLINE_PUZZLE.block,
   });
   const run = await runPuzzle({
     root,
@@ -50,6 +42,7 @@ export async function runOfflinePuzzle(
     agents: createFixtureAgentRuntimes(build.agentIds, "collaborative-revision"),
     tokenBudgetPerAgent: 100,
     wallTimeMs: 10_000,
+    stageIntervalMs: OFFLINE_PUZZLE.stageIntervalMs,
   });
   const evaluation = await evaluatePuzzle({
     root,

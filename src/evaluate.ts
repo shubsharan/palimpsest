@@ -7,6 +7,7 @@ import {
   decodeAttemptSummary,
   decodeBuildManifest,
   decodeEvaluationRecord,
+  selectBuildVariant,
 } from "./artifacts.js";
 import { isAgentId, type AgentId } from "./model.js";
 import {
@@ -284,6 +285,10 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   const build = decodeBuildManifest(
     await readJsonObject(join(attempt.buildRoot, "puzzle-build.json")),
   );
+  const variant = selectBuildVariant(build, "rekey");
+  if (variant.buildId !== attempt.buildId) {
+    throw new Error("Attempt build identity does not match the selected paired-build variant.");
+  }
   const sandbox = await createDockerCommandSandbox({
     root,
     expectedImageId: attempt.sandbox.imageId,
@@ -292,14 +297,14 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
     frozenWorkspacePath: join(attempt.frozenRoot, "workspaces", workspace),
     frozenGitPath: join(attempt.frozenRoot, "shared.git"),
     evaluationRoot: join(attemptRoot, "evaluation"),
-    ciphertextPath: join(attempt.buildRoot, build.publicCiphertextPath),
+    ciphertextPath: join(attempt.buildRoot, variant.publicCiphertextPath),
     sandbox,
     selection,
     score: async ({ outputPath }) =>
       decodeAggregateScore(
         await runPythonJson(root, "palimpsest.evaluation.score", [
           "--truth",
-          join(attempt.buildRoot, build.oracleRoot, "plaintext.txt"),
+          join(attempt.buildRoot, "oracle", "plaintext.txt"),
           "--candidate",
           outputPath,
         ]),

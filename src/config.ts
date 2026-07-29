@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
 
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { parseDocument } from "yaml";
@@ -47,19 +45,8 @@ export interface ModelProfile {
 }
 
 export interface PuzzleDefinition {
-  target: {
-    corpus: string;
-    chapters: { start: number; end: number };
-  };
-  references: readonly string[];
-  seed: number;
-  agentCount: number;
-  stageCount: number;
+  block: string;
   stageIntervalMs: number;
-  rekeys: readonly {
-    atStage: number;
-    changedTokenMass: number;
-  }[];
 }
 
 export interface ExperimentLimits {
@@ -78,14 +65,6 @@ export interface ResolvedRunCondition {
   agents: readonly ResolvedAgentBinding[];
 }
 
-export interface ResolvedCorpusSource {
-  sourceId: string;
-  path: string;
-  format: "gutenberg-text";
-  byteLength: number;
-  sha256: string;
-}
-
 export interface ResolvedExperimentConfig {
   schemaVersion: 1;
   puzzle: PuzzleDefinition;
@@ -93,10 +72,6 @@ export interface ResolvedExperimentConfig {
   providers: Readonly<Record<string, ProviderConnection>>;
   models: Readonly<Record<string, ModelProfile>>;
   runs: readonly ResolvedRunCondition[];
-  sources: {
-    target: ResolvedCorpusSource;
-    references: readonly ResolvedCorpusSource[];
-  };
 }
 
 interface ExperimentConfig {
@@ -119,11 +94,6 @@ interface ExperimentConfig {
     agents?: string[];
     repetitions?: number;
   }[];
-}
-
-interface CorpusRegistry {
-  schemaVersion: 1;
-  sources: ResolvedCorpusSource[];
 }
 
 export interface ResolveExperimentOptions {
@@ -280,127 +250,10 @@ function safeInteger(value: unknown, path: string, minimum = 0): number {
   return value as number;
 }
 
-function registrySource(value: unknown, index: number): ResolvedCorpusSource {
-  const path = `fixtures/corpus/provenance.json sources[${String(index)}]`;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${path} must be an object.`);
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    typeof record.sourceId !== "string" ||
-    typeof record.path !== "string" ||
-    record.format !== "gutenberg-text" ||
-    typeof record.sha256 !== "string" ||
-    !/^[0-9a-f]{64}$/.test(record.sha256)
-  ) {
-    throw new Error(`${path} has invalid sourceId, path, format, or sha256.`);
-  }
-  return {
-    sourceId: record.sourceId,
-    path: record.path,
-    format: record.format,
-    byteLength: safeInteger(record.byteLength, `${path}.byteLength`, 1),
-    sha256: record.sha256,
-  };
-}
-
-async function loadCorpusRegistry(root: string): Promise<CorpusRegistry> {
-  const path = resolve(root, "fixtures/corpus/provenance.json");
-  let value: unknown;
-  try {
-    value = JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`${path} is not a readable corpus registry: ${detail}`);
-  }
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    (value as { schemaVersion?: unknown }).schemaVersion !== 1 ||
-    !Array.isArray((value as { sources?: unknown }).sources)
-  ) {
-    throw new Error(`${path} must contain corpus registry schema version 1.`);
-  }
-  const sources = (value as { sources: unknown[] }).sources.map(registrySource);
-  const identifiers = new Set<string>();
-  for (const [index, source] of sources.entries()) {
-    if (identifiers.has(source.sourceId)) {
-      throw new Error(`${path} sources[${String(index)}].sourceId must be unique.`);
-    }
-    identifiers.add(source.sourceId);
-  }
-  return { schemaVersion: 1, sources };
-}
-
-function resolveInsideCorpus(root: string, sourcePath: string, path: string): string {
-  const corpusRoot = resolve(root, "fixtures/corpus");
-  const absolute = resolve(root, sourcePath);
-  const local = relative(corpusRoot, absolute);
-  if (
-    local.length === 0 ||
-    local === ".." ||
-    local.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) ||
-    isAbsolute(local)
-  ) {
-    throw new Error(`${path}.path must resolve inside fixtures/corpus.`);
-  }
-  return absolute;
-}
-
-async function verifySource(
-  root: string,
-  source: ResolvedCorpusSource,
-  path: string,
-): Promise<ResolvedCorpusSource> {
-  const absolute = resolveInsideCorpus(root, source.path, path);
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(absolute);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`${path} source file is not readable: ${detail}`);
-  }
-  if (bytes.byteLength !== source.byteLength) {
-    throw new Error(
-      `${path} byte length is ${String(bytes.byteLength)} instead of ${String(source.byteLength)}.`,
-    );
-  }
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  if (digest !== source.sha256) {
-    throw new Error(`${path} digest does not match fixtures/corpus/provenance.json.`);
-  }
-  return { ...source };
-}
-
 function assertSemanticRelationships(config: ExperimentConfig): void {
-  if (!Number.isSafeInteger(config.puzzle.seed)) {
-    throw new Error("puzzle.seed must be a safe integer.");
-  }
-  safeInteger(config.puzzle.agentCount, "puzzle.agentCount", 2);
-  safeInteger(config.puzzle.stageCount, "puzzle.stageCount", 1);
   safeInteger(config.puzzle.stageIntervalMs, "puzzle.stageIntervalMs", 1);
   safeInteger(config.limits.tokenBudgetPerAgent, "limits.tokenBudgetPerAgent", 1);
   safeInteger(config.limits.wallTimeMs, "limits.wallTimeMs", 1);
-  safeInteger(config.puzzle.target.chapters.start, "puzzle.target.chapters.start", 1);
-  safeInteger(config.puzzle.target.chapters.end, "puzzle.target.chapters.end", 1);
-  if (config.puzzle.target.chapters.start > config.puzzle.target.chapters.end) {
-    throw new Error("puzzle.target.chapters start must not exceed end.");
-  }
-  if (config.puzzle.references.includes(config.puzzle.target.corpus)) {
-    throw new Error("puzzle.references must exclude the target corpus.");
-  }
-  let previousStage = 1;
-  for (const [index, rekey] of config.puzzle.rekeys.entries()) {
-    safeInteger(rekey.atStage, `puzzle.rekeys[${String(index)}].atStage`, 2);
-    if (rekey.atStage <= previousStage) {
-      throw new Error(`puzzle.rekeys[${String(index)}].atStage must be strictly ascending.`);
-    }
-    if (rekey.atStage > config.puzzle.stageCount) {
-      throw new Error(`puzzle.rekeys[${String(index)}].atStage must not exceed stageCount.`);
-    }
-    previousStage = rekey.atStage;
-  }
   for (const [name, model] of Object.entries(config.models)) {
     if (!(model.provider in config.providers)) {
       throw new Error(`models.${name}.provider references unknown provider ${model.provider}.`);
@@ -415,8 +268,8 @@ function assertSemanticRelationships(config: ExperimentConfig): void {
     }
     runNames.add(run.name);
     const profiles = run.model === undefined ? run.agents! : [run.model];
-    if (run.agents !== undefined && run.agents.length !== config.puzzle.agentCount) {
-      throw new Error(`runs[${String(index)}].agents must match puzzle.agentCount.`);
+    if (run.agents !== undefined && run.agents.length !== 3) {
+      throw new Error(`runs[${String(index)}].agents must contain exactly three assignments.`);
     }
     for (const profile of profiles) {
       if (!(profile in config.models)) {
@@ -437,12 +290,10 @@ function cloneProvider(provider: ProviderConnection): ProviderConnection {
 }
 
 function resolveRuns(config: ExperimentConfig): ResolvedRunCondition[] {
-  const agentIds = generateAgentIds(config.puzzle.agentCount);
+  const agentIds = generateAgentIds(3);
   return config.runs.map((run) => {
     const profiles =
-      run.model === undefined
-        ? run.agents!
-        : Array.from({ length: config.puzzle.agentCount }, () => run.model!);
+      run.model === undefined ? run.agents! : Array.from({ length: 3 }, () => run.model!);
     return {
       name: run.name,
       repetitions: run.repetitions ?? 1,
@@ -499,32 +350,8 @@ export async function resolveExperimentConfig(
   value: unknown,
   options: ResolveExperimentOptions = {},
 ): Promise<ResolvedExperimentConfig> {
-  const root = resolve(options.root ?? ".");
   const config = validateExperimentConfig(value);
   assertSemanticRelationships(config);
-  const registry = await loadCorpusRegistry(root);
-  const byId = new Map(registry.sources.map((source) => [source.sourceId, source]));
-  const target = byId.get(config.puzzle.target.corpus);
-  if (target === undefined) {
-    throw new Error(
-      `puzzle.target.corpus references unknown corpus ${config.puzzle.target.corpus}.`,
-    );
-  }
-  const references = config.puzzle.references.map((sourceId, index) => {
-    const source = byId.get(sourceId);
-    if (source === undefined) {
-      throw new Error(`puzzle.references[${String(index)}] references unknown corpus ${sourceId}.`);
-    }
-    return source;
-  });
-  const [resolvedTarget, resolvedReferences] = await Promise.all([
-    verifySource(root, target, "puzzle.target.corpus"),
-    Promise.all(
-      references.map((source, index) =>
-        verifySource(root, source, `puzzle.references[${String(index)}]`),
-      ),
-    ),
-  ]);
   const providers = Object.fromEntries(
     Object.entries(config.providers).map(([name, provider]) => [name, cloneProvider(provider)]),
   );
@@ -546,25 +373,13 @@ export async function resolveExperimentConfig(
   return deepFreeze({
     schemaVersion: 1,
     puzzle: {
-      target: {
-        corpus: config.puzzle.target.corpus,
-        chapters: { ...config.puzzle.target.chapters },
-      },
-      references: [...config.puzzle.references],
-      seed: config.puzzle.seed,
-      agentCount: config.puzzle.agentCount,
-      stageCount: config.puzzle.stageCount,
+      block: config.puzzle.block,
       stageIntervalMs: config.puzzle.stageIntervalMs,
-      rekeys: config.puzzle.rekeys.map((rekey) => ({ ...rekey })),
     },
     limits: { ...config.limits },
     providers,
     models,
     runs,
-    sources: {
-      target: resolvedTarget,
-      references: resolvedReferences,
-    },
   });
 }
 

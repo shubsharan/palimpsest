@@ -30,7 +30,7 @@ async function fixtureAttempt(
   const summary: AttemptSummary = {
     schemaVersion: 2,
     attemptId: `attempt-${request.runName}-${String(request.repetition)}`,
-    buildId: build.buildId,
+    buildId: build.variants.rekey,
     buildRoot: build.buildPath,
     agentIds,
     tracePath: join(request.output, "trace.jsonl"),
@@ -64,10 +64,15 @@ describe("puzzle experiment", () => {
     temporaryRoots.push(temporary);
     const experimentRoot = join(temporary, "baseline");
     const build: BuildPuzzleResult = {
-      buildId: BUILD_ID,
+      pairedBuildId: `paired-${"c".repeat(64)}`,
+      blockId: "calibration-theron-ware",
       buildPath: join(experimentRoot, "build"),
       agentIds: ["agent-1", "agent-2", "agent-3"],
       stageCount: 6,
+      variants: {
+        stationary: `build-${"c".repeat(64)}`,
+        rekey: BUILD_ID,
+      },
     };
     const requestedModels: string[] = [];
     let builds = 0;

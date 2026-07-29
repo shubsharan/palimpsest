@@ -13,16 +13,8 @@ function validConfig(): Record<string, unknown> {
   return {
     schemaVersion: 1,
     puzzle: {
-      target: {
-        corpus: "middlemarch",
-        chapters: { start: 10, end: 15 },
-      },
-      references: ["jane-eyre", "moby-dick"],
-      seed: 17,
-      agentCount: 3,
-      stageCount: 6,
+      block: "calibration-theron-ware",
       stageIntervalMs: 120_000,
-      rekeys: [{ atStage: 4, changedTokenMass: 0.2 }],
     },
     limits: {
       tokenBudgetPerAgent: 200_000,
@@ -83,7 +75,7 @@ copy: *shared
     expect(() => validateExperimentConfig(config)).toThrow(/\/unexpected|unexpected/);
   });
 
-  it("resolves sources, defaults, and homogeneous and mixed assignments", async () => {
+  it("resolves the block, defaults, and homogeneous and mixed assignments", async () => {
     const resolved = await resolveExperimentConfig(validConfig(), {
       root: resolve("."),
       selectedRun: "mixed",
@@ -94,11 +86,10 @@ copy: *shared
       },
     });
 
-    expect(resolved.sources.target.sourceId).toBe("middlemarch");
-    expect(resolved.sources.references.map((source) => source.sourceId)).toEqual([
-      "jane-eyre",
-      "moby-dick",
-    ]);
+    expect(resolved.puzzle).toEqual({
+      block: "calibration-theron-ware",
+      stageIntervalMs: 120_000,
+    });
     expect(resolved.runs).toEqual([
       {
         name: "gpt-only",
@@ -130,48 +121,6 @@ copy: *shared
 
   it.each([
     {
-      name: "unknown target corpus",
-      change(config: Record<string, unknown>) {
-        const puzzle = config.puzzle as Record<string, unknown>;
-        puzzle.target = { corpus: "missing", chapters: { start: 1, end: 2 } };
-      },
-      error: /puzzle\.target\.corpus.*missing/i,
-    },
-    {
-      name: "target leaked as a reference",
-      change(config: Record<string, unknown>) {
-        (config.puzzle as Record<string, unknown>).references = ["middlemarch"];
-      },
-      error: /puzzle\.references.*target corpus/i,
-    },
-    {
-      name: "reversed chapter range",
-      change(config: Record<string, unknown>) {
-        ((config.puzzle as Record<string, unknown>).target as Record<string, unknown>).chapters = {
-          start: 15,
-          end: 10,
-        };
-      },
-      error: /chapters.*start.*end/i,
-    },
-    {
-      name: "unordered rekeys",
-      change(config: Record<string, unknown>) {
-        (config.puzzle as Record<string, unknown>).rekeys = [
-          { atStage: 5, changedTokenMass: 0.2 },
-          { atStage: 3, changedTokenMass: 0.2 },
-        ];
-      },
-      error: /rekeys.*strictly ascending/i,
-    },
-    {
-      name: "rekey beyond stage count",
-      change(config: Record<string, unknown>) {
-        (config.puzzle as Record<string, unknown>).rekeys = [{ atStage: 7, changedTokenMass: 0.2 }];
-      },
-      error: /rekeys.*stageCount/i,
-    },
-    {
       name: "unknown provider",
       change(config: Record<string, unknown>) {
         (config.models as Record<string, Record<string, unknown>>).gpt!.provider = "missing";
@@ -190,7 +139,7 @@ copy: *shared
       change(config: Record<string, unknown>) {
         config.runs = [{ name: "broken", agents: ["gpt", "claude"] }];
       },
-      error: /runs\[0\]\.agents.*agentCount/i,
+      error: /runs\[0\]\.agents.*exactly three/i,
     },
     {
       name: "duplicate run names",

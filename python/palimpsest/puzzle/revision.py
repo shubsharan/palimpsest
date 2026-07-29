@@ -5,7 +5,7 @@ import math
 from collections import Counter
 from dataclasses import dataclass
 
-from .cipher import DeterministicStream, derive_seed
+from .cipher import derive_seed
 
 
 @dataclass(frozen=True)
@@ -101,13 +101,41 @@ def _rotate_images(
     seed_hex: str,
 ) -> dict[str, str]:
     ordered = sorted(selected)
-    images = [stationary_key[word] for word in ordered]
-    stream = DeterministicStream(derive_seed(seed_hex, "gate-c:selected-image-cycle"))
-    for index in range(len(images) - 1, 0, -1):
-        other = stream.below(index)
-        images[index], images[other] = images[other], images[index]
+    images = sorted(stationary_key[word] for word in ordered)
+    image_owner: dict[str, str] = {}
+
+    def candidates(word: str) -> list[str]:
+        return sorted(
+            (image for image in images if image != stationary_key[word] and image != word),
+            key=lambda image: _seed_rank(
+                seed_hex,
+                "gate-c:selected-image-matching",
+                f"{word}\0{image}",
+            ),
+        )
+
+    def assign(word: str, seen: set[str]) -> bool:
+        for image in candidates(word):
+            if image in seen:
+                continue
+            seen.add(image)
+            prior_owner = image_owner.get(image)
+            if prior_owner is None or assign(prior_owner, seen):
+                image_owner[image] = word
+                return True
+        return False
+
+    word_order = sorted(
+        ordered,
+        key=lambda word: _seed_rank(seed_hex, "gate-c:selected-image-word-order", word),
+    )
+    for word in word_order:
+        if not assign(word, set()):
+            raise RuntimeError("Selected images have no valid deterministic derangement.")
+
+    selected_mapping = {word: image for image, word in image_owner.items()}
     revised = dict(stationary_key)
-    revised.update(zip(ordered, images, strict=True))
+    revised.update(selected_mapping)
     if set(revised) != set(revised.values()):
         raise RuntimeError("Partial re-keying broke the vocabulary-wide bijection.")
     if any(revised[word] == stationary_key[word] for word in selected):
@@ -115,6 +143,34 @@ def _rotate_images(
     if any(revised[word] == word for word in selected):
         raise RuntimeError("Selected-image cycle created a plaintext identity mapping.")
     return dict(sorted(revised.items()))
+
+
+def revise_explicit_types(
+    *,
+    prior_key: dict[str, str],
+    changed_types: tuple[str, ...],
+    stable_controls: tuple[str, ...],
+    seed_hex: str,
+) -> dict[str, str]:
+    changed = tuple(sorted(set(changed_types)))
+    controls = tuple(sorted(set(stable_controls)))
+    if len(changed) < 2:
+        raise ValueError("Explicit revision requires at least two changed types.")
+    unknown_changed = next((word for word in changed if word not in prior_key), None)
+    if unknown_changed is not None:
+        raise ValueError(f"Explicit revision contains unknown changed type {unknown_changed}.")
+    unknown_control = next((word for word in controls if word not in prior_key), None)
+    if unknown_control is not None:
+        raise ValueError(f"Explicit revision contains unknown control type {unknown_control}.")
+    if set(changed).intersection(controls):
+        raise ValueError("Explicit revision changed types and stable controls must be disjoint.")
+    if set(prior_key) != set(prior_key.values()):
+        raise ValueError("Explicit revision requires a vocabulary-wide bijection.")
+
+    revised = _rotate_images(prior_key, list(changed), seed_hex)
+    if any(revised[word] != prior_key[word] for word in controls):
+        raise RuntimeError("Explicit revision changed a declared stable control.")
+    return revised
 
 
 def build_revision(

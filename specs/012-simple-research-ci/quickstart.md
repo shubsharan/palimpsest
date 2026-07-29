@@ -35,8 +35,6 @@ Run preflight once, then use the existing operator flow without changing the che
 ```bash
 pnpm preflight
 
-pnpm puzzle:build -- --config experiments/config.yaml --output artifacts/build-live
-
 pnpm puzzle:run -- \
   --config experiments/config.yaml \
   --run gpt-only \

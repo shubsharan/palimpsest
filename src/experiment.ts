@@ -6,7 +6,6 @@ import {
   decodeExperimentSummary,
   publishExperimentSummary,
   type AttemptSummary,
-  type BuildManifest,
   type BuildPuzzleResult,
   type ExperimentSummary,
 } from "./artifacts.js";
@@ -19,13 +18,7 @@ import {
   type ResolvedRunCondition,
 } from "./config.js";
 import { requiredFlag } from "./flags.js";
-import {
-  generateAgentIds,
-  isAgentId,
-  type AgentId,
-  type ModelAdapter,
-  type ModelBinding,
-} from "./model.js";
+import { isAgentId, type AgentId, type ModelAdapter, type ModelBinding } from "./model.js";
 import { createAiSdkModelAdapter, type CreateAiSdkModelAdapterOptions } from "./provider.js";
 import { runPuzzle } from "./run.js";
 
@@ -43,6 +36,7 @@ export interface ExperimentRunRequest {
   agents: Readonly<Record<AgentId, ExperimentAgent>>;
   tokenBudgetPerAgent: number;
   wallTimeMs: number;
+  stageIntervalMs: number;
 }
 
 export interface ExperimentRunResult {
@@ -197,48 +191,6 @@ export function createConfiguredRunAgents(
   return agentsFor(run, createAdapters(config, [run], createAdapter, options.env));
 }
 
-export function assertBuildMatchesExperimentConfig(
-  manifest: BuildManifest,
-  config: ResolvedExperimentConfig,
-): void {
-  const expectedAgentIds = generateAgentIds(config.puzzle.agentCount);
-  const referencesMatch =
-    manifest.references.length === config.sources.references.length &&
-    manifest.references.every((reference, index) => {
-      const configured = config.sources.references[index];
-      return (
-        configured !== undefined &&
-        reference.sourceId === configured.sourceId &&
-        reference.sha256 === configured.sha256
-      );
-    });
-  const rekeysMatch =
-    manifest.rekeys.length === config.puzzle.rekeys.length &&
-    manifest.rekeys.every((rekey, index) => {
-      const configured = config.puzzle.rekeys[index];
-      return (
-        configured !== undefined &&
-        rekey.atStage === configured.atStage &&
-        rekey.changedTokenMass === configured.changedTokenMass
-      );
-    });
-  if (
-    manifest.source.sourceId !== config.sources.target.sourceId ||
-    manifest.source.sha256 !== config.sources.target.sha256 ||
-    manifest.source.chapters.start !== config.puzzle.target.chapters.start ||
-    manifest.source.chapters.end !== config.puzzle.target.chapters.end ||
-    !referencesMatch ||
-    manifest.seed !== config.puzzle.seed ||
-    manifest.agentIds.length !== expectedAgentIds.length ||
-    manifest.agentIds.some((agentId, index) => agentId !== expectedAgentIds[index]) ||
-    manifest.stageCount !== config.puzzle.stageCount ||
-    manifest.stageIntervalMs !== config.puzzle.stageIntervalMs ||
-    !rekeysMatch
-  ) {
-    throw new Error("Puzzle build does not match the resolved experiment configuration.");
-  }
-}
-
 function isMissingFile(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
@@ -267,7 +219,7 @@ function verifyDurableAttempt(
   build: BuildPuzzleResult,
   run: ResolvedRunCondition,
 ): void {
-  if (attempt.buildId !== build.buildId || attempt.buildRoot !== build.buildPath) {
+  if (attempt.buildId !== build.variants.rekey || attempt.buildRoot !== build.buildPath) {
     throw new Error(`Attempt ${attempt.attemptId} does not belong to the experiment build.`);
   }
   if (
@@ -350,13 +302,13 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
   const build = await deps.build({
     root,
     output: join(experimentRoot, "build"),
-    puzzle: config.puzzle,
+    block: config.puzzle.block,
   });
   let summary = decodeExperimentSummary({
     schemaVersion: 1,
     resolvedConfig: config,
     buildRoot: build.buildPath,
-    buildId: build.buildId,
+    buildId: build.variants.rekey,
     attempts: [],
   });
 
@@ -380,6 +332,7 @@ export async function runExperiment(options: RunExperimentOptions): Promise<Expe
           agents: agentsFor(run, adapters),
           tokenBudgetPerAgent: config.limits.tokenBudgetPerAgent,
           wallTimeMs: config.limits.wallTimeMs,
+          stageIntervalMs: config.puzzle.stageIntervalMs,
         });
       } catch (error) {
         const durable = await publishDurableAttempt({

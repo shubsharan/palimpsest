@@ -5,7 +5,7 @@
 Palimpsest is one local research runner, not a service platform. Its architecture has four responsibilities:
 
 1. validate one declarative experiment before side effects;
-2. construct a deterministic, variable-geometry puzzle;
+2. construct deterministic paired puzzle blocks;
 3. run provider-neutral concurrent model sessions inside one attempt; and
 4. preserve secret-free attempts for later reviewer-selected evaluation.
 
@@ -13,41 +13,41 @@ One root TypeScript application lives under `src/`. One Python distribution unde
 
 ## Experiment Configuration
 
-The versioned YAML manifest is the operator's source of truth. The checked-in JSON Schema rejects unknown structural keys, while semantic validation resolves corpus, provider, model, and run references before a build or attempt directory is created.
+The five-entry `experiments/blocks.json` catalog owns scientific block inputs. The versioned YAML manifest selects a block and declares operational runtime inputs. Both reject unknown fields before build or attempt side effects.
 
 ```text
 experiment.yaml
-  puzzle     target, references, seed, agents, stages, interval, re-keys
+  puzzle     block and current arithmetic stage interval
   limits     token budget and wall time
   providers  direct driver and credential environment names
   models     provider model IDs and non-secret settings
   runs       homogeneous or ordered mixed assignments and repetitions
 ```
 
-The resolved in-memory configuration materializes defaults, canonical `agent-1` through `agent-N` identities, ordered model bindings, and repetition ordinals. Credential values are resolved only when a live adapter is constructed and never enter this snapshot.
+The block catalog pins target and references, seed, first-feasible prose window, and fixed three-agent/six-stage geometry. The resolved run configuration materializes canonical agent identities, ordered model bindings, and repetition ordinals. Credential values are resolved only when a live adapter is constructed and never enter this snapshot.
 
 The supported direct drivers are OpenAI, Anthropic, Google, and OpenAI-compatible endpoints. The Vercel AI SDK is a narrow turn-level adapter: Palimpsest continues to own session loops, tools, token cutoffs, aborts, artifacts, and failure classification. Provider factories do not add gateway, registry, fallback, or attempt-retry behavior.
 
 ## Deterministic Construction
 
-`puzzle:build` validates the full manifest and passes canonical resolved puzzle JSON to `palimpsest.puzzle.build`. Python:
+`puzzle:build --block` loads one committed catalog entry and invokes `palimpsest.puzzle.build`. Python:
 
 1. resolves target and references through `fixtures/corpus/provenance.json`;
 2. verifies source byte length and SHA-256 before parsing;
-3. extracts the requested one-based inclusive target chapter range while ignoring leading table-of-contents matches;
-4. prepares text and derives a base substitution key from the seed;
-5. divides evidence into the declared number of contiguous agent streams and stages;
-6. derives each configured partial re-key successively from the prior key, using recurring symbols evidenced on both sides of the boundary;
-7. writes immutable private stages, versioned oracle keys, checker truth, the complete ciphertext, and public references; and
-8. publishes strict `puzzle-build.json` schema version 2.
+3. canonicalizes Gutenberg-body blank-line blocks or HTML paragraphs and revalidates the committed first-feasible window;
+4. performs the bounded tiered paragraph allocation and oracle-set selection;
+5. derives one base key plus stationary and stage-four re-key variants;
+6. verifies complete paragraph union, pre-boundary twin identity, stable controls, and old-key degradation;
+7. writes variant stage trees, complete ciphertexts, checker truth, keys, allocation, design, and manipulation records; and
+8. atomically publishes strict `puzzle-build.json` schema version 3.
 
-Construction fails explicitly if a corpus digest, chapter range, path, stage geometry, or re-key request is invalid or infeasible. It does not silently clamp a requested changed-token mass.
+Discovery writes `discovery.json` only. A normal build fails if its committed window is not the deterministic first feasible result, all tiers are infeasible, oracle constraints fail, twins diverge before stage four, or manipulation checks fail.
 
-For fixed registered source bytes and resolved scientific inputs, build identity, stage bytes, keys, checker truth, and complete evaluation input are deterministic.
+For fixed registered source bytes, block definition, and builder version, the window, allocation, keys, both variant stage trees, oracle records, and build identities are deterministic. Release timing is not part of build identity.
 
 ## Attempt Runtime
 
-`puzzle:run` selects one named run from the current manifest and checks that its puzzle definition matches the supplied build before creating the output root. It constructs one declared model binding and adapter per agent.
+`puzzle:run` selects one named run, constructs its configured block into a fresh `--build` destination, and currently selects the re-key variant before creating the attempt root. It constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
@@ -110,7 +110,7 @@ The sandbox protects the local host and oracle. It is not presented as a hardene
 
 ## Trace And Artifacts
 
-The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify the build, dynamic agent/stage/re-key counts, run and repetition, and requested model bindings without exposing hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
+The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify the selected variant build, agent/stage geometry, run and repetition, and requested model bindings without exposing oracle sets or hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
 
 `attempt.json` schema version 2 contains the build identity, dynamic agent set, model binding per session, usage, termination, frozen Git/workspaces, trace, sandbox identity, and operational limits. It is the durable evaluation boundary.
 
@@ -122,7 +122,7 @@ All commands dispatch through `src/cli.ts` and emit one JSON object on success:
 
 ```bash
 pnpm preflight
-pnpm puzzle:build -- --config experiments/config.yaml --output artifacts/build
+pnpm puzzle:build -- --block calibration-theron-ware --output artifacts/build
 pnpm puzzle:run -- --config experiments/config.yaml --run gpt-only \
   --build artifacts/build --output artifacts/attempt
 pnpm puzzle:experiment -- --config experiments/config.yaml \
@@ -144,11 +144,11 @@ The architecture preserves the strongest durable boundary available: publication
 
 ## Verification
 
-The repository verifies strict config decoding, mocked provider turns and credential scrubbing, dynamic 2/3/5-agent puzzle geometry, zero/one/multiple re-keys, concurrent sessions, Git workspaces, stage scheduling, trace and artifact decoding, attempt durability, sequential experiment indexing, reviewer-selected evaluation, and Docker containment.
+The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, strict artifact decoding, concurrent sessions, Git workspaces, stage scheduling, attempt durability, reviewer-selected evaluation, and Docker containment.
 
 ## Planned Study Conditions
 
-Features 013 through 015 will add deterministic paired blocks and canonical `CS`, `CR`, `IS`, and `IR` conditions. Shared conditions will retain one peer-visible Git repository. Isolated conditions will preserve the same team identity and non-treatment inputs while giving each agent an independent usable repository with no peer evidence or activity. The host record will freeze every repository and workspace regardless of agent visibility. These are accepted design constraints, not behavior provided by the current Feature 011 runtime.
+Feature 013 provides deterministic paired blocks but preserves the existing shared-Git re-key runtime. Feature 014 will derive canonical `CS`, `CR`, `IS`, and `IR` conditions, add isolated repositories, and retain every repository and workspace in the host record. Feature 015 will add the frozen five-block execution protocol. Neither later feature is implemented by paired construction alone.
 
 Canonical acceptance is:
 

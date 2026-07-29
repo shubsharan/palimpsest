@@ -24,65 +24,140 @@ import type { AgentSessionResult, SessionState } from "./session.js";
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const BUILD_ID = /^build-[0-9a-f]{64}$/;
+const PAIRED_BUILD_ID = /^paired-[0-9a-f]{64}$/;
+const ALLOCATION_ID = /^allocation-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export interface BuildPuzzleResult {
-  buildId: string;
+  pairedBuildId: string;
+  blockId: string;
   buildPath: string;
   agentIds: readonly AgentId[];
-  stageCount: number;
+  stageCount: 6;
+  variants: {
+    stationary: string;
+    rekey: string;
+  };
 }
 
 export interface BuildSource {
   sourceId: string;
-  chapters: {
-    start: number;
-    end: number;
-  };
   sha256: string;
 }
 
 export interface BuildReference {
   sourceId: string;
   sha256: string;
-  path: string;
 }
 
-export interface BuildRekey {
+export interface BuildWindow {
+  paragraphStart: number;
+  paragraphEnd: number;
+  wordCount: number;
+  sha256: string;
+}
+
+export type AllocationTier = "strict" | "balanced" | "fallback";
+
+export interface TierRejection {
+  tier: AllocationTier;
+  reasons: readonly string[];
+}
+
+export interface AllocationMetrics {
+  regionDeviation: number;
+  stageDeviation: number;
+  soloChangedSetCoverage: number;
+  minOwnerShare: number;
+  anchorCount: number;
+  sentinelCount: number;
+  specialistCounts: Record<AgentId, number>;
+  minOwnerOccurrencesPerRegion: number;
+  minSentinelOccurrencesPerAgentRegion: number;
+  unmatchedControlCount: number;
+  maxControlDistance: number;
+}
+
+export interface AllocationSummary {
+  allocationId: string;
+  tier: AllocationTier;
+  metrics: AllocationMetrics;
+  rejectedTiers: readonly TierRejection[];
+  path: string;
+  sha256: string;
+}
+
+export interface OracleDesign {
+  path: string;
+  sha256: string;
+  anchorsSha256: string;
+  sentinelsSha256: string;
+  specialistsSha256: string;
+  controlsSha256: string;
+}
+
+export interface BuildKeyTransition {
   atStage: number;
   keyVersion: number;
-  changedTokenMass: number;
-  changedSymbols: readonly string[];
   keyPath: string;
+  changedSymbolsSha256: string;
 }
 
 export interface BuildStage {
   agentId: AgentId;
   ordinal: number;
   keyVersion: number;
-  releaseOffsetMs: number;
   sourcePath: string;
   tokenCount: number;
   sha256: string;
 }
 
-export interface BuildManifest {
-  schemaVersion: 2;
+export interface BuildVariant {
+  variantId: "stationary" | "rekey";
   buildId: string;
-  source: BuildSource;
-  references: readonly BuildReference[];
-  seed: number;
-  agentIds: readonly AgentId[];
-  stageCount: number;
-  stageIntervalMs: number;
-  rekeys: readonly BuildRekey[];
   publicCiphertextPath: string;
   referenceCorpusPath: string;
   privateStageRoots: Record<AgentId, string>;
-  oracleRoot: string;
-  baseKeyPath: string;
   stages: readonly BuildStage[];
+  keyTransitions: readonly BuildKeyTransition[];
+}
+
+export interface ManipulationCheck {
+  path: string;
+  sha256: string;
+  preBoundaryIdentical: true;
+  stationaryOldKeyLoss: 0;
+  rekeyOldKeyLoss: number;
+  changedTokenMassByAgent: Record<AgentId, number>;
+}
+
+export interface BuildManifest {
+  schemaVersion: 3;
+  pairedBuildId: string;
+  blockId: string;
+  source: BuildSource;
+  references: readonly BuildReference[];
+  seed: number;
+  window: BuildWindow;
+  agentIds: readonly AgentId[];
+  stageCount: 6;
+  boundaryStage: 4;
+  allocation: AllocationSummary;
+  oracleDesign: OracleDesign;
+  baseKeyPath: string;
+  manipulationCheck: ManipulationCheck;
+  variants: {
+    stationary: BuildVariant;
+    rekey: BuildVariant;
+  };
+}
+
+export function selectBuildVariant(
+  manifest: BuildManifest,
+  variantId: "stationary" | "rekey",
+): BuildVariant {
+  return manifest.variants[variantId];
 }
 
 export interface SandboxPolicy {
@@ -162,6 +237,20 @@ function object(value: unknown, name: string): Record<string, unknown> {
     throw new Error(`${name} must be an object.`);
   }
   return Object.fromEntries(Object.entries(value));
+}
+
+function strictObject(
+  value: unknown,
+  name: string,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const record = object(value, name);
+  const allowed = new Set(fields);
+  const missing = fields.find((field) => !(field in record));
+  if (missing !== undefined) throw new Error(`${name}.${missing} is required.`);
+  const unknown = Object.keys(record).find((field) => !allowed.has(field));
+  if (unknown !== undefined) throw new Error(`${name}.${unknown} is unsupported.`);
+  return record;
 }
 
 function nonEmptyString(value: unknown, name: string): string {
@@ -376,52 +465,112 @@ function decodeBuildId(value: unknown, name: string): string {
 }
 
 export function decodeBuildResult(value: unknown): BuildPuzzleResult {
-  const record = object(value, "Puzzle build result");
+  const name = "Puzzle build result";
+  const record = strictObject(value, name, [
+    "pairedBuildId",
+    "blockId",
+    "buildPath",
+    "agentIds",
+    "stageCount",
+    "variants",
+  ]);
+  const stageCount = integer(record.stageCount, `${name} stageCount`, 1);
+  if (stageCount !== BUILD_STAGE_COUNT) {
+    throw new Error(`${name} stageCount must be exactly 6.`);
+  }
+  const variants = strictObject(record.variants, `${name} variants`, ["stationary", "rekey"]);
   return {
-    buildId: decodeBuildId(record.buildId, "Puzzle build result buildId"),
-    buildPath: absolutePath(record.buildPath, "Puzzle build result buildPath"),
-    agentIds: decodeAgentIds(record.agentIds, "Puzzle build result agentIds"),
-    stageCount: integer(record.stageCount, "Puzzle build result stageCount", 1),
+    pairedBuildId: decodePrefixedDigest(
+      record.pairedBuildId,
+      PAIRED_BUILD_ID,
+      `${name} pairedBuildId`,
+    ),
+    blockId: identifier(record.blockId, `${name} blockId`),
+    buildPath: absolutePath(record.buildPath, `${name} buildPath`),
+    agentIds: decodeBuildAgentIds(record.agentIds),
+    stageCount,
+    variants: {
+      stationary: decodeBuildId(variants.stationary, `${name} variants.stationary`),
+      rekey: decodeBuildId(variants.rekey, `${name} variants.rekey`),
+    },
   };
 }
 
-function decodeAgentPathMap(value: unknown, agentIds: readonly AgentId[]): Record<AgentId, string> {
-  const record = object(value, "Puzzle build privateStageRoots");
-  const keys = Object.keys(record);
-  const declared = new Set(agentIds);
-  if (keys.length !== agentIds.length || keys.some((key) => !declared.has(key as AgentId))) {
-    throw new Error("Puzzle build privateStageRoots must contain exactly the declared agents.");
+const BUILD_AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const;
+const BUILD_STAGE_COUNT = 6;
+const BUILD_BOUNDARY_STAGE = 4;
+const ALLOCATION_TIERS = ["strict", "balanced", "fallback"] as const;
+const TIER_LIMITS = {
+  strict: {
+    minOwnerShare: 0.67,
+    maxSoloCoverage: 0.6,
+    maxRegionDeviation: 0.04,
+    maxStageDeviation: 0.12,
+    maxControlDistance: 0.15,
+    minOwnerOccurrencesPerRegion: 3,
+    minSentinelOccurrencesPerAgentRegion: 3,
+  },
+  balanced: {
+    minOwnerShare: 0.6,
+    maxSoloCoverage: 0.67,
+    maxRegionDeviation: 0.07,
+    maxStageDeviation: 0.18,
+    maxControlDistance: 0.25,
+    minOwnerOccurrencesPerRegion: 2,
+    minSentinelOccurrencesPerAgentRegion: 2,
+  },
+  fallback: {
+    minOwnerShare: 0.55,
+    maxSoloCoverage: 0.75,
+    maxRegionDeviation: 0.1,
+    maxStageDeviation: 0.25,
+    maxControlDistance: 0.4,
+    minOwnerOccurrencesPerRegion: 2,
+    minSentinelOccurrencesPerAgentRegion: 1,
+  },
+} satisfies Record<AllocationTier, Record<string, number>>;
+
+function decodeRatio(value: unknown, name: string, minimum = 0): number {
+  const result = finiteNumber(value, name, minimum, 1);
+  return result;
+}
+
+function decodePrefixedDigest(value: unknown, pattern: RegExp, name: string): string {
+  const result = nonEmptyString(value, name);
+  if (!pattern.test(result)) {
+    throw new Error(`${name} must contain a lowercase SHA-256 digest.`);
   }
-  return Object.fromEntries(
-    agentIds.map((id) => [
-      id,
-      safeRelativePath(record[id], `Puzzle build ${id} private stage root`),
-    ]),
-  ) as Record<AgentId, string>;
+  return result;
+}
+
+function decodeBuildAgentIds(value: unknown): readonly AgentId[] {
+  const decoded = decodeAgentIds(value, "Puzzle build agentIds");
+  if (
+    decoded.length !== BUILD_AGENT_IDS.length ||
+    decoded.some((item, index) => item !== BUILD_AGENT_IDS[index])
+  ) {
+    throw new Error("Puzzle build agentIds must contain exactly three canonical agents.");
+  }
+  return decoded;
 }
 
 function decodeBuildSource(value: unknown): BuildSource {
-  const record = object(value, "Puzzle build source");
-  const chapters = object(record.chapters, "Puzzle build source chapters");
-  const start = integer(chapters.start, "Puzzle build source chapters start", 1);
-  const end = integer(chapters.end, "Puzzle build source chapters end", 1);
-  if (end < start) throw new Error("Puzzle build source chapter end must not precede start.");
+  const record = strictObject(value, "Puzzle build source", ["sourceId", "sha256"]);
   return {
     sourceId: identifier(record.sourceId, "Puzzle build source sourceId"),
-    chapters: { start, end },
     sha256: digest(record.sha256, "Puzzle build source sha256"),
   };
 }
 
 function decodeBuildReferences(value: unknown, sourceId: string): readonly BuildReference[] {
-  if (!Array.isArray(value)) throw new Error("Puzzle build references must be an array.");
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("Puzzle build references must be a non-empty array.");
+  }
   const seen = new Set<string>();
   return value.map((item, index) => {
-    const record = object(item, `Puzzle build reference ${String(index + 1)}`);
-    const referenceId = identifier(
-      record.sourceId,
-      `Puzzle build reference ${String(index + 1)} sourceId`,
-    );
+    const name = `Puzzle build reference ${String(index + 1)}`;
+    const record = strictObject(item, name, ["sourceId", "sha256"]);
+    const referenceId = identifier(record.sourceId, `${name} sourceId`);
     if (referenceId === sourceId) {
       throw new Error("Puzzle build target source cannot also be a reference.");
     }
@@ -429,143 +578,438 @@ function decodeBuildReferences(value: unknown, sourceId: string): readonly Build
     seen.add(referenceId);
     return {
       sourceId: referenceId,
-      sha256: digest(record.sha256, `Puzzle build reference ${String(index + 1)} sha256`),
-      path: safeRelativePath(record.path, `Puzzle build reference ${String(index + 1)} path`),
+      sha256: digest(record.sha256, `${name} sha256`),
     };
   });
 }
 
-function decodeBuildRekeys(value: unknown, stageCount: number): readonly BuildRekey[] {
-  if (!Array.isArray(value)) throw new Error("Puzzle build rekeys must be an array.");
-  let priorStage = 1;
-  return value.map((item, index) => {
-    const record = object(item, `Puzzle build rekey ${String(index + 1)}`);
-    const atStage = integer(record.atStage, `Puzzle build rekey ${String(index + 1)} atStage`, 2);
-    if (atStage > stageCount || atStage <= priorStage) {
-      throw new Error("Puzzle build rekey stages must be unique, ascending, and within the build.");
-    }
-    priorStage = atStage;
-    const keyVersion = integer(
-      record.keyVersion,
-      `Puzzle build rekey ${String(index + 1)} keyVersion`,
-      1,
-    );
-    if (keyVersion !== index + 1) {
-      throw new Error("Puzzle build rekey keyVersion must match its one-based transition order.");
-    }
-    const changedTokenMass = finiteNumber(
-      record.changedTokenMass,
-      `Puzzle build rekey ${String(index + 1)} changedTokenMass`,
-      0,
-      1,
-    );
-    if (changedTokenMass === 0 || changedTokenMass === 1) {
-      throw new Error("Puzzle build rekey changedTokenMass must be strictly between zero and one.");
-    }
-    if (!Array.isArray(record.changedSymbols) || record.changedSymbols.length === 0) {
-      throw new Error("Puzzle build rekey changedSymbols must be a non-empty array.");
-    }
-    const changedSymbols = record.changedSymbols.map((symbol, symbolIndex) =>
-      nonEmptyString(
-        symbol,
-        `Puzzle build rekey ${String(index + 1)} changedSymbols[${String(symbolIndex)}]`,
-      ),
-    );
-    if (
-      new Set(changedSymbols).size !== changedSymbols.length ||
-      changedSymbols.some(
-        (symbol, symbolIndex) => symbolIndex > 0 && changedSymbols[symbolIndex - 1]! >= symbol,
-      )
-    ) {
-      throw new Error("Puzzle build rekey changedSymbols must be unique and sorted.");
-    }
-    return {
-      atStage,
-      keyVersion,
-      changedTokenMass,
-      changedSymbols,
-      keyPath: safeRelativePath(record.keyPath, `Puzzle build rekey ${String(index + 1)} keyPath`),
-    };
-  });
+function decodeBuildWindow(value: unknown): BuildWindow {
+  const name = "Puzzle build window";
+  const record = strictObject(value, name, [
+    "paragraphStart",
+    "paragraphEnd",
+    "wordCount",
+    "sha256",
+  ]);
+  const paragraphStart = integer(record.paragraphStart, `${name} paragraphStart`, 1);
+  const paragraphEnd = integer(record.paragraphEnd, `${name} paragraphEnd`, 1);
+  if (paragraphEnd < paragraphStart) {
+    throw new Error("Puzzle build window paragraph range must be ordered.");
+  }
+  const wordCount = integer(record.wordCount, `${name} wordCount`, 16_000);
+  if (wordCount > 20_000) {
+    throw new Error("Puzzle build window wordCount must not exceed 20000.");
+  }
+  return {
+    paragraphStart,
+    paragraphEnd,
+    wordCount,
+    sha256: digest(record.sha256, `${name} sha256`),
+  };
 }
 
-export function decodeBuildManifest(value: unknown): BuildManifest {
-  const record = object(value, "Puzzle build manifest");
-  if (record.schemaVersion !== 2) {
-    throw new Error("Unsupported puzzle build schema version.");
+function decodeAgentNumberMap(
+  value: unknown,
+  name: string,
+  minimum: number,
+): Record<AgentId, number> {
+  const record = strictObject(value, name, BUILD_AGENT_IDS);
+  return Object.fromEntries(
+    BUILD_AGENT_IDS.map((id) => [id, decodeRatio(record[id], `${name}.${id}`, minimum)]),
+  ) as Record<AgentId, number>;
+}
+
+function decodeAgentCountMap(value: unknown, name: string): Record<AgentId, number> {
+  const record = strictObject(value, name, BUILD_AGENT_IDS);
+  return Object.fromEntries(
+    BUILD_AGENT_IDS.map((id) => [id, integer(record[id], `${name}.${id}`, 3)]),
+  ) as Record<AgentId, number>;
+}
+
+function allocationTier(value: unknown, name: string): AllocationTier {
+  switch (value) {
+    case "strict":
+    case "balanced":
+    case "fallback":
+      return value;
+    default:
+      throw new Error(`${name} contains an unsupported allocation tier.`);
   }
-  const source = decodeBuildSource(record.source);
-  const references = decodeBuildReferences(record.references, source.sourceId);
-  const agentIds = decodeAgentIds(record.agentIds, "Puzzle build agentIds");
-  const stageCount = integer(record.stageCount, "Puzzle build stageCount", 1);
-  const stageIntervalMs = integer(record.stageIntervalMs, "Puzzle build stageIntervalMs", 1);
-  const rekeys = decodeBuildRekeys(record.rekeys, stageCount);
-  if (!Array.isArray(record.stages) || record.stages.length !== agentIds.length * stageCount) {
-    throw new Error("Puzzle build must contain one complete stage stream per declared agent.");
+}
+
+function decodeAllocationMetrics(value: unknown): AllocationMetrics {
+  const name = "Puzzle build allocation metrics";
+  const record = strictObject(value, name, [
+    "regionDeviation",
+    "stageDeviation",
+    "soloChangedSetCoverage",
+    "minOwnerShare",
+    "anchorCount",
+    "sentinelCount",
+    "specialistCounts",
+    "minOwnerOccurrencesPerRegion",
+    "minSentinelOccurrencesPerAgentRegion",
+    "unmatchedControlCount",
+    "maxControlDistance",
+  ]);
+  const unmatchedControlCount = integer(
+    record.unmatchedControlCount,
+    `${name} unmatchedControlCount`,
+  );
+  if (unmatchedControlCount !== 0) {
+    throw new Error("Puzzle build allocation unmatchedControlCount must be zero.");
   }
-  const stages = record.stages.map((rawStage, index): BuildStage => {
-    const stage = object(rawStage, `Puzzle build stage ${String(index + 1)}`);
-    const expectedAgent = agentIds[Math.floor(index / stageCount)];
-    const expectedOrdinal = (index % stageCount) + 1;
-    const decodedAgent = agentId(stage.agentId, `Puzzle build stage ${String(index + 1)} agentId`);
-    const ordinal = integer(stage.ordinal, `Puzzle build stage ${String(index + 1)} ordinal`, 1);
+  return {
+    regionDeviation: decodeRatio(record.regionDeviation, `${name} regionDeviation`),
+    stageDeviation: decodeRatio(record.stageDeviation, `${name} stageDeviation`),
+    soloChangedSetCoverage: decodeRatio(
+      record.soloChangedSetCoverage,
+      `${name} soloChangedSetCoverage`,
+    ),
+    minOwnerShare: decodeRatio(record.minOwnerShare, `${name} minOwnerShare`),
+    anchorCount: integer(record.anchorCount, `${name} anchorCount`, 12),
+    sentinelCount: integer(record.sentinelCount, `${name} sentinelCount`, 6),
+    specialistCounts: decodeAgentCountMap(record.specialistCounts, `${name} specialistCounts`),
+    minOwnerOccurrencesPerRegion: integer(
+      record.minOwnerOccurrencesPerRegion,
+      `${name} minOwnerOccurrencesPerRegion`,
+      1,
+    ),
+    minSentinelOccurrencesPerAgentRegion: integer(
+      record.minSentinelOccurrencesPerAgentRegion,
+      `${name} minSentinelOccurrencesPerAgentRegion`,
+      1,
+    ),
+    unmatchedControlCount,
+    maxControlDistance: decodeRatio(record.maxControlDistance, `${name} maxControlDistance`),
+  };
+}
+
+function decodeAllocationSummary(value: unknown): AllocationSummary {
+  const name = "Puzzle build allocation";
+  const record = strictObject(value, name, [
+    "allocationId",
+    "tier",
+    "metrics",
+    "rejectedTiers",
+    "path",
+    "sha256",
+  ]);
+  const tier = allocationTier(record.tier, `${name} tier`);
+  const metrics = decodeAllocationMetrics(record.metrics);
+  if (!Array.isArray(record.rejectedTiers)) {
+    throw new Error(`${name} rejectedTiers must be an array.`);
+  }
+  const rejectedTiers = record.rejectedTiers.map((item, index): TierRejection => {
+    const rejectionName = `${name} rejected tier ${String(index + 1)}`;
+    const rejection = strictObject(item, rejectionName, ["tier", "reasons"]);
+    if (!Array.isArray(rejection.reasons) || rejection.reasons.length === 0) {
+      throw new Error(`${rejectionName} reasons must be a non-empty array.`);
+    }
+    const reasons = rejection.reasons.map((reason, reasonIndex) =>
+      identifier(reason, `${rejectionName} reasons[${String(reasonIndex)}]`),
+    );
+    if (new Set(reasons).size !== reasons.length) {
+      throw new Error(`${rejectionName} reasons must be unique.`);
+    }
+    return { tier: allocationTier(rejection.tier, `${rejectionName} tier`), reasons };
+  });
+  const expectedRejected = ALLOCATION_TIERS.slice(0, ALLOCATION_TIERS.indexOf(tier));
+  if (
+    rejectedTiers.length !== expectedRejected.length ||
+    rejectedTiers.some((rejection, index) => rejection.tier !== expectedRejected[index])
+  ) {
+    throw new Error("Puzzle build rejected tiers must contain all earlier tiers in order.");
+  }
+  const limits = TIER_LIMITS[tier];
+  if (
+    metrics.minOwnerShare < limits.minOwnerShare ||
+    metrics.soloChangedSetCoverage > limits.maxSoloCoverage ||
+    metrics.regionDeviation > limits.maxRegionDeviation ||
+    metrics.stageDeviation > limits.maxStageDeviation ||
+    metrics.maxControlDistance > limits.maxControlDistance ||
+    metrics.minOwnerOccurrencesPerRegion < limits.minOwnerOccurrencesPerRegion ||
+    metrics.minSentinelOccurrencesPerAgentRegion < limits.minSentinelOccurrencesPerAgentRegion
+  ) {
+    throw new Error(`Puzzle build allocation metrics do not satisfy the ${tier} tier.`);
+  }
+  const path = safeRelativePath(record.path, `${name} path`);
+  if (path !== "oracle/allocation.json") {
+    throw new Error("Puzzle build allocation path must be oracle/allocation.json.");
+  }
+  return {
+    allocationId: decodePrefixedDigest(record.allocationId, ALLOCATION_ID, `${name} allocationId`),
+    tier,
+    metrics,
+    rejectedTiers,
+    path,
+    sha256: digest(record.sha256, `${name} sha256`),
+  };
+}
+
+function decodeOracleDesign(value: unknown): OracleDesign {
+  const name = "Puzzle build oracleDesign";
+  const record = strictObject(value, name, [
+    "path",
+    "sha256",
+    "anchorsSha256",
+    "sentinelsSha256",
+    "specialistsSha256",
+    "controlsSha256",
+  ]);
+  const path = safeRelativePath(record.path, `${name} path`);
+  if (path !== "oracle/design.json") {
+    throw new Error("Puzzle build oracleDesign path must be oracle/design.json.");
+  }
+  return {
+    path,
+    sha256: digest(record.sha256, `${name} sha256`),
+    anchorsSha256: digest(record.anchorsSha256, `${name} anchorsSha256`),
+    sentinelsSha256: digest(record.sentinelsSha256, `${name} sentinelsSha256`),
+    specialistsSha256: digest(record.specialistsSha256, `${name} specialistsSha256`),
+    controlsSha256: digest(record.controlsSha256, `${name} controlsSha256`),
+  };
+}
+
+function decodeManipulationCheck(value: unknown): ManipulationCheck {
+  const name = "Puzzle build manipulationCheck";
+  const record = strictObject(value, name, [
+    "path",
+    "sha256",
+    "preBoundaryIdentical",
+    "stationaryOldKeyLoss",
+    "rekeyOldKeyLoss",
+    "changedTokenMassByAgent",
+  ]);
+  const path = safeRelativePath(record.path, `${name} path`);
+  if (path !== "oracle/manipulation-check.json") {
+    throw new Error("Puzzle build manipulationCheck path must be oracle/manipulation-check.json.");
+  }
+  if (record.preBoundaryIdentical !== true) {
+    throw new Error("Puzzle build manipulationCheck must confirm pre-boundary identity.");
+  }
+  const stationaryOldKeyLoss = decodeRatio(
+    record.stationaryOldKeyLoss,
+    `${name} stationaryOldKeyLoss`,
+  );
+  if (stationaryOldKeyLoss !== 0) {
+    throw new Error("Puzzle build stationary old-key loss must be zero.");
+  }
+  return {
+    path,
+    sha256: digest(record.sha256, `${name} sha256`),
+    preBoundaryIdentical: true,
+    stationaryOldKeyLoss: 0,
+    rekeyOldKeyLoss: decodeRatio(record.rekeyOldKeyLoss, `${name} rekeyOldKeyLoss`, 0.15),
+    changedTokenMassByAgent: decodeAgentNumberMap(
+      record.changedTokenMassByAgent,
+      `${name} changedTokenMassByAgent`,
+      0.15,
+    ),
+  };
+}
+
+function decodeAgentPathMap(
+  value: unknown,
+  variantId: "stationary" | "rekey",
+): Record<AgentId, string> {
+  const name = `Puzzle build ${variantId} privateStageRoots`;
+  const record = strictObject(value, name, BUILD_AGENT_IDS);
+  return Object.fromEntries(
+    BUILD_AGENT_IDS.map((id) => {
+      const path = safeRelativePath(record[id], `${name}.${id}`);
+      const expected = `variants/${variantId}/private/${id}/stages`;
+      if (path !== expected) {
+        throw new Error(`Puzzle build ${variantId} private roots must use its variant tree.`);
+      }
+      return [id, path];
+    }),
+  ) as Record<AgentId, string>;
+}
+
+function decodeBuildKeyTransition(value: unknown, index: number): BuildKeyTransition {
+  const name = `Puzzle build key transition ${String(index + 1)}`;
+  const record = strictObject(value, name, [
+    "atStage",
+    "keyVersion",
+    "keyPath",
+    "changedSymbolsSha256",
+  ]);
+  const atStage = integer(record.atStage, `${name} atStage`, 1);
+  const keyVersion = integer(record.keyVersion, `${name} keyVersion`, 1);
+  const keyPath = safeRelativePath(record.keyPath, `${name} keyPath`);
+  if (
+    atStage !== BUILD_BOUNDARY_STAGE ||
+    keyVersion !== 1 ||
+    keyPath !== "oracle/keys/rekey-stage-04.json"
+  ) {
+    throw new Error("Puzzle build key transition must introduce version 1 at stage 4.");
+  }
+  return {
+    atStage,
+    keyVersion,
+    keyPath,
+    changedSymbolsSha256: digest(record.changedSymbolsSha256, `${name} changedSymbolsSha256`),
+  };
+}
+
+function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rekey"): BuildVariant {
+  const name = `Puzzle build ${expectedVariant} variant`;
+  const record = strictObject(value, name, [
+    "variantId",
+    "buildId",
+    "publicCiphertextPath",
+    "referenceCorpusPath",
+    "privateStageRoots",
+    "stages",
+    "keyTransitions",
+  ]);
+  if (record.variantId !== expectedVariant) {
+    throw new Error(`${name} variantId must be ${expectedVariant}.`);
+  }
+  const prefix = `variants/${expectedVariant}`;
+  const publicCiphertextPath = safeRelativePath(
+    record.publicCiphertextPath,
+    `${name} publicCiphertextPath`,
+  );
+  if (publicCiphertextPath !== `${prefix}/complete/ciphertext.txt`) {
+    throw new Error(`Puzzle build ${expectedVariant} public ciphertext path is invalid.`);
+  }
+  const referenceCorpusPath = safeRelativePath(
+    record.referenceCorpusPath,
+    `${name} referenceCorpusPath`,
+  );
+  if (referenceCorpusPath !== `${prefix}/references`) {
+    throw new Error(`Puzzle build ${expectedVariant} reference corpus path is invalid.`);
+  }
+  if (!Array.isArray(record.stages) || record.stages.length !== 18) {
+    throw new Error(`${name} must contain exactly 18 stages.`);
+  }
+  const stages = record.stages.map((item, index): BuildStage => {
+    const stageName = `${name} stage ${String(index + 1)}`;
+    const stage = strictObject(item, stageName, [
+      "agentId",
+      "ordinal",
+      "keyVersion",
+      "sourcePath",
+      "tokenCount",
+      "sha256",
+    ]);
+    const expectedAgent = BUILD_AGENT_IDS[Math.floor(index / BUILD_STAGE_COUNT)]!;
+    const expectedOrdinal = (index % BUILD_STAGE_COUNT) + 1;
+    const decodedAgent = agentId(stage.agentId, `${stageName} agentId`);
+    const ordinal = integer(stage.ordinal, `${stageName} ordinal`, 1);
     if (decodedAgent !== expectedAgent || ordinal !== expectedOrdinal) {
-      throw new Error("Puzzle build stages must contain ordered stages for every declared agent.");
+      throw new Error(`${name} must contain 18 ordered stages.`);
     }
-    const releaseOffsetMs = integer(
-      stage.releaseOffsetMs,
-      `Puzzle build ${decodedAgent} stage ${String(ordinal)} releaseOffsetMs`,
-    );
-    if (releaseOffsetMs !== (ordinal - 1) * stageIntervalMs) {
-      throw new Error("Puzzle build stage offsets must follow the configured interval.");
-    }
-    const expectedKeyVersion = rekeys.filter((rekey) => rekey.atStage <= ordinal).length;
-    const keyVersion = integer(
-      stage.keyVersion,
-      `Puzzle build ${decodedAgent} stage ${String(ordinal)} keyVersion`,
-    );
+    const keyVersion = integer(stage.keyVersion, `${stageName} keyVersion`);
+    const expectedKeyVersion =
+      expectedVariant === "rekey" && ordinal >= BUILD_BOUNDARY_STAGE ? 1 : 0;
     if (keyVersion !== expectedKeyVersion) {
-      throw new Error("Puzzle build stage keyVersion does not match the rekey schedule.");
+      throw new Error(`${name} stage key version is inconsistent.`);
+    }
+    const sourcePath = safeRelativePath(stage.sourcePath, `${stageName} sourcePath`);
+    const expectedPath = `${prefix}/private/${decodedAgent}/stages/stage-${String(ordinal).padStart(2, "0")}.txt`;
+    if (sourcePath !== expectedPath) {
+      throw new Error(`${name} stage source paths must use its private tree.`);
     }
     return {
       agentId: decodedAgent,
       ordinal,
       keyVersion,
-      releaseOffsetMs,
-      sourcePath: safeRelativePath(
-        stage.sourcePath,
-        `Puzzle build ${decodedAgent} stage ${String(ordinal)} sourcePath`,
-      ),
-      tokenCount: integer(
-        stage.tokenCount,
-        `Puzzle build ${decodedAgent} stage ${String(ordinal)} tokenCount`,
-        1,
-      ),
-      sha256: digest(stage.sha256, `Puzzle build ${decodedAgent} stage ${String(ordinal)} sha256`),
+      sourcePath,
+      tokenCount: integer(stage.tokenCount, `${stageName} tokenCount`, 1),
+      sha256: digest(stage.sha256, `${stageName} sha256`),
     };
   });
+  if (!Array.isArray(record.keyTransitions)) {
+    throw new Error(`${name} keyTransitions must be an array.`);
+  }
+  const keyTransitions = record.keyTransitions.map(decodeBuildKeyTransition);
+  if (expectedVariant === "stationary" && keyTransitions.length !== 0) {
+    throw new Error("Puzzle build stationary keyTransitions must be empty.");
+  }
+  if (expectedVariant === "rekey" && keyTransitions.length !== 1) {
+    throw new Error("Puzzle build rekey must contain one stage-four key transition.");
+  }
   return {
-    schemaVersion: 2,
-    buildId: decodeBuildId(record.buildId, "Puzzle build buildId"),
-    source,
-    references,
-    seed: safeInteger(record.seed, "Puzzle build seed"),
-    agentIds,
-    stageCount,
-    stageIntervalMs,
-    rekeys,
-    publicCiphertextPath: safeRelativePath(
-      record.publicCiphertextPath,
-      "Puzzle build publicCiphertextPath",
-    ),
-    referenceCorpusPath: safeRelativePath(
-      record.referenceCorpusPath,
-      "Puzzle build referenceCorpusPath",
-    ),
-    privateStageRoots: decodeAgentPathMap(record.privateStageRoots, agentIds),
-    oracleRoot: safeRelativePath(record.oracleRoot, "Puzzle build oracleRoot"),
-    baseKeyPath: safeRelativePath(record.baseKeyPath, "Puzzle build baseKeyPath"),
+    variantId: expectedVariant,
+    buildId: decodeBuildId(record.buildId, `${name} buildId`),
+    publicCiphertextPath,
+    referenceCorpusPath,
+    privateStageRoots: decodeAgentPathMap(record.privateStageRoots, expectedVariant),
     stages,
+    keyTransitions,
+  };
+}
+
+export function decodeBuildManifest(value: unknown): BuildManifest {
+  const name = "Puzzle build manifest";
+  const record = strictObject(value, name, [
+    "schemaVersion",
+    "pairedBuildId",
+    "blockId",
+    "source",
+    "references",
+    "seed",
+    "window",
+    "agentIds",
+    "stageCount",
+    "boundaryStage",
+    "allocation",
+    "oracleDesign",
+    "baseKeyPath",
+    "manipulationCheck",
+    "variants",
+  ]);
+  if (record.schemaVersion !== 3) {
+    throw new Error("Unsupported puzzle build schema version.");
+  }
+  const source = decodeBuildSource(record.source);
+  const agentIds = decodeBuildAgentIds(record.agentIds);
+  const stageCount = integer(record.stageCount, `${name} stageCount`, 1);
+  if (stageCount !== BUILD_STAGE_COUNT) {
+    throw new Error("Puzzle build stageCount must be exactly 6.");
+  }
+  const boundaryStage = integer(record.boundaryStage, `${name} boundaryStage`, 1);
+  if (boundaryStage !== BUILD_BOUNDARY_STAGE) {
+    throw new Error("Puzzle build boundaryStage must be exactly 4.");
+  }
+  const baseKeyPath = safeRelativePath(record.baseKeyPath, `${name} baseKeyPath`);
+  if (baseKeyPath !== "oracle/keys/base.json") {
+    throw new Error("Puzzle build baseKeyPath must be oracle/keys/base.json.");
+  }
+  const variants = strictObject(record.variants, `${name} variants`, ["stationary", "rekey"]);
+  const stationary = decodeBuildVariant(variants.stationary, "stationary");
+  const rekey = decodeBuildVariant(variants.rekey, "rekey");
+  if (stationary.buildId === rekey.buildId) {
+    throw new Error("Puzzle build variant build IDs must be distinct.");
+  }
+  stationary.stages.forEach((stage, index) => {
+    if (stage.ordinal < boundaryStage && stage.sha256 !== rekey.stages[index]!.sha256) {
+      throw new Error("Puzzle build pre-boundary stage digests must be identical.");
+    }
+  });
+  return {
+    schemaVersion: 3,
+    pairedBuildId: decodePrefixedDigest(
+      record.pairedBuildId,
+      PAIRED_BUILD_ID,
+      `${name} pairedBuildId`,
+    ),
+    blockId: identifier(record.blockId, `${name} blockId`),
+    source,
+    references: decodeBuildReferences(record.references, source.sourceId),
+    seed: safeInteger(record.seed, `${name} seed`),
+    window: decodeBuildWindow(record.window),
+    agentIds,
+    stageCount: 6,
+    boundaryStage: 4,
+    allocation: decodeAllocationSummary(record.allocation),
+    oracleDesign: decodeOracleDesign(record.oracleDesign),
+    baseKeyPath,
+    manipulationCheck: decodeManipulationCheck(record.manipulationCheck),
+    variants: { stationary, rekey },
   };
 }
 

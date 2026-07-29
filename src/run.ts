@@ -7,6 +7,7 @@ import {
   decodeBuildManifest,
   decodeModelBinding,
   publishAttemptSummary,
+  selectBuildVariant,
   type AttemptSummary,
   type OverlapResult,
 } from "./artifacts.js";
@@ -581,6 +582,7 @@ export interface RunPuzzleOptions {
   agents: AgentRuntimeMap;
   tokenBudgetPerAgent: number;
   wallTimeMs: number;
+  stageIntervalMs: number;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
 }
@@ -657,31 +659,32 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const preflight = usesProvider ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
+  const variant = selectBuildVariant(manifest, "rekey");
   const agentStages = Object.fromEntries(
     manifest.agentIds.map((agentId) => [
       agentId,
-      manifest.stages
+      variant.stages
         .filter((stage) => stage.agentId === agentId)
         .sort((left, right) => left.ordinal - right.ordinal)
         .map((stage) => absoluteFrom(buildRoot, stage.sourcePath)),
     ]),
   ) as Record<AgentId, readonly string[]>;
-  const attemptId = `attempt-${options.runName}-${String(options.repetition).padStart(3, "0")}-${manifest.buildId.slice("build-".length, "build-".length + 16)}`;
+  const attemptId = `attempt-${options.runName}-${String(options.repetition).padStart(3, "0")}-${variant.buildId.slice("build-".length, "build-".length + 16)}`;
   const config: AttemptConfig = {
     attemptId,
-    buildId: manifest.buildId,
+    buildId: variant.buildId,
     runName: options.runName,
     repetition: options.repetition,
     artifactRoot: output,
     buildRoot,
-    referenceCorpusPath: absoluteFrom(buildRoot, manifest.referenceCorpusPath),
+    referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
     agentIds: manifest.agentIds,
     agentStages,
     stageCount: manifest.stageCount,
-    rekeyCount: manifest.rekeys.length,
+    rekeyCount: variant.keyTransitions.length,
     tokenBudgetPerAgent: options.tokenBudgetPerAgent,
     wallTimeMs: options.wallTimeMs,
-    stageIntervalMs: manifest.stageIntervalMs,
+    stageIntervalMs: options.stageIntervalMs,
   };
   const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
   if (preflight) assertPreflightSandbox(preflight, sandbox.identity);
