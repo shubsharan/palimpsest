@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a collaborative word-substitution puzzle. A checked-in YAML file declares the corpus, puzzle geometry, resource limits, model profiles, and run conditions. Persistent model sessions receive different private evidence over time, share ordinary Git, and decide for themselves how to solve and coordinate.
+Palimpsest is a local research runner for a team word-substitution puzzle. A checked-in YAML file declares the corpus, puzzle geometry, resource limits, model profiles, and study conditions. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. Shared conditions expose ordinary peer Git; isolated conditions preserve the same team identity while hiding peer repositories and activity.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
@@ -15,7 +15,7 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Experiment schema](experiments/schema.json): strict version-1 manifest format.
 - [Baseline experiment](experiments/config.yaml): the current three-agent research condition.
 
-Feature 011 defines the configurable research runner, including the attempt-scoped sandbox lifecycle introduced by Feature 010. Feature 012 is authoritative for verification and experiment authorization. Feature 009 remains the implemented behavior-neutral foundation.
+Features 011 and 012 provide the configurable research runner and its verification boundary. Features 013 through 015 add engineered paired blocks, four communication/key conditions, and the frozen five-block protocol without adding services, accounts, automated behavioral review, or a prescribed workflow.
 
 ## Setup
 

@@ -27,8 +27,8 @@
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
 **Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 **Puzzle Contribution**: [agent-visible puzzle behavior this feature enables]
-**Agent Instructions & Tools**: [objective, peer context, tools, and any requested but unenforced behavior]
-**Environmental Constraints**: [evidence visibility and schedule, wall-time/token cutoffs, network and secret boundaries]
+**Agent Instructions & Tools**: [objective, stable team identity, condition-specific communication channel, tools, and any requested but unenforced behavior]
+**Environmental Constraints**: [evidence and peer-activity visibility, schedule, wall-time/token cutoffs, network and secret boundaries]
 **Observable Outcomes**: [scores, traces, Git/checker behavior, and reviewer observations retained]
 **Determinism Claim**: [which puzzle mechanics and scores reproduce, and which model behavior remains stochastic]
 
@@ -40,7 +40,7 @@
 - **Environmental constraints, not workflow**: Visibility, staged evidence, and resource cutoffs are independent of model behavior; no turns, checkpoints, or Git sequence are imposed.
 - **Minimal reproducible mechanics**: Only generation, reveal, checking, scoring, and records needed by the current experiment are structured and deterministic.
 - **Observe outcomes honestly**: Model mistakes, workarounds, checker use, and collaboration choices remain scored observations; infrastructure failures are reported separately.
-- **Voluntary native collaboration**: Agents know peers exist and Git is the shared channel, while Git use and collaboration form remain voluntary and unmetered.
+- **Condition-defined native collaboration**: Team identity and non-treatment inputs are stable; shared conditions expose peer Git and activity, isolated conditions expose only usable private Git, and Git use remains voluntary and unmetered.
 - **Risk-aligned verification**: Development CI is fast and advisory; paid or findings-bearing live experiments use a clean-checkout preflight whose source revision and sandbox identity remain with the attempt artifacts.
 
 ## Project Structure

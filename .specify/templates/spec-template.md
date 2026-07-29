@@ -79,9 +79,9 @@
 
 **Puzzle Behavior**: [State the agent-visible puzzle behavior this feature enables]
 
-**Agent Instructions & Tools**: [State the shared objective, peer context, available tools, and requested but unenforced behavior]
+**Agent Instructions & Tools**: [State the shared objective, stable team identity, condition-specific communication channel, available tools, and requested but unenforced behavior]
 
-**Environmental Constraints**: [State evidence visibility and schedule, wall-time/token cutoffs, network access, secrets, and host-safety boundaries]
+**Environmental Constraints**: [State private evidence and peer-activity visibility, schedule, wall-time/token cutoffs, network access, secrets, and host-safety boundaries]
 
 **Observable Outcomes**: [State which scores, traces, Git/checker behavior, workarounds, and reviewer observations are retained]
 
