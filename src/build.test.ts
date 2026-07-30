@@ -6,7 +6,7 @@ import {
   selectBuildVariant,
   type BuildPuzzleResult,
 } from "./artifacts.js";
-import { assertBuildMatchesBlock } from "./build.js";
+import { assertBuildMatchesBlock, sandboxDockerBuildArguments } from "./build.js";
 import { testBuildManifest } from "./test-helpers.js";
 
 const output = "/tmp/palimpsest/build";
@@ -74,6 +74,20 @@ const mismatches: readonly [
 ];
 
 describe("build handoff validation", () => {
+  it("builds one locally runnable image without an attestation index", () => {
+    const sourceDigest = "d".repeat(64);
+
+    expect(sandboxDockerBuildArguments(sourceDigest)).toEqual([
+      "build",
+      "--provenance=false",
+      "--tag",
+      "palimpsest-puzzle-sandbox:0.1.0",
+      "--build-arg",
+      `PALIMPSEST_SANDBOX_SOURCE_DIGEST=${sourceDigest}`,
+      "containers/puzzle-sandbox",
+    ]);
+  });
+
   it("accepts a current-version build that exactly matches the requested block", () => {
     const { manifest, result } = currentBuild();
 

@@ -149,23 +149,24 @@ export async function buildPuzzleFromFlags(
   return discoverBlock(options);
 }
 
+export function sandboxDockerBuildArguments(sourceDigest: string): readonly string[] {
+  return [
+    "build",
+    "--provenance=false",
+    "--tag",
+    SANDBOX_IMAGE_TAG,
+    "--build-arg",
+    `PALIMPSEST_SANDBOX_SOURCE_DIGEST=${sourceDigest}`,
+    "containers/puzzle-sandbox",
+  ];
+}
+
 async function buildImage(root: string, sourceDigest: string): Promise<void> {
-  const result = await runProcess(
-    "docker",
-    [
-      "build",
-      "--tag",
-      SANDBOX_IMAGE_TAG,
-      "--build-arg",
-      `PALIMPSEST_SANDBOX_SOURCE_DIGEST=${sourceDigest}`,
-      "containers/puzzle-sandbox",
-    ],
-    {
-      cwd: root,
-      env: dockerHostEnvironment(),
-      stdio: "stderr",
-    },
-  );
+  const result = await runProcess("docker", sandboxDockerBuildArguments(sourceDigest), {
+    cwd: root,
+    env: dockerHostEnvironment(),
+    stdio: "stderr",
+  });
   if (result.signal !== null || result.exitCode !== 0) {
     throw new Error(
       `Docker sandbox build failed${result.signal === null ? ` with exit ${String(result.exitCode)}` : ` from ${result.signal}`}.`,
