@@ -1,9 +1,4 @@
-import {
-  ATTEMPT_CUTOFF_MS,
-  RELEASE_OFFSETS_MS,
-  resolveCondition,
-  type ConditionId,
-} from "./condition.js";
+import { ATTEMPT_CUTOFF_MS, resolveCondition, type ConditionId } from "./condition.js";
 import type { AgentId } from "./model.js";
 import { SANDBOX_PATHS } from "./sandbox/contracts.js";
 
@@ -26,11 +21,6 @@ export type AgentPromptTemplateSnapshot = Readonly<
 
 export const TOKEN_BUDGET_PLACEHOLDER = "{{tokenBudgetPerAgent}}";
 
-function formatMinuteOffsets(): string {
-  const minutes = RELEASE_OFFSETS_MS.map((offset) => String(offset / 60_000));
-  return `${minutes.slice(0, -1).join(", ")}, and ${minutes.at(-1)!}`;
-}
-
 function validatePromptAgentId(agentId: AgentId): asserts agentId is PromptAgentId {
   if (!/^agent-[123]$/.test(agentId)) {
     throw new Error("Agent prompt requires exactly agent-1, agent-2, or agent-3.");
@@ -43,7 +33,7 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   const identity = options.agentId.slice("agent-".length);
   const channel =
     condition.communicationMode === "shared"
-      ? "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. A local commit is visible to peers only after you push it to origin; fetch or pull origin to see their work. Git does not count against your model-token budget."
+      ? "Collaborate actively through the team's shared Git repository: commit and push useful discoveries and code, fetch peer work, compare different approaches, challenge assumptions, and integrate the strongest solver improvements. A local commit is visible to peers only after you push it to origin. Git does not count against your model-token budget."
       : "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.";
   return [
     `You are Agent ${identity}, one of 3 agents working concurrently as one team. Each agent receives different private evidence.`,
@@ -54,18 +44,16 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
     "Your team is graded on runnable solver code committed to Git, not on final prose.",
     "A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
     "",
-    `New private evidence is released every ${formatMinuteOffsets()} minutes. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
+    `Additional private evidence may appear during the attempt. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,
     "",
-    "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use Git, or wait for visible activity.",
-    "After waiting, recheck your evidence and Git for new information.",
-    "Keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.",
+    "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use Git, or wait for visible activity. The checker covers only your visible evidence; a perfect score does not prove the complete ciphertext is solved.",
+    "Keep improving and committing the solver until you have verified that it produces a complete plaintext you believe solves the full ciphertext.",
+    "Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.",
     "",
     `Workspace: ${SANDBOX_PATHS.workspace}`,
     `Private evidence: ${SANDBOX_PATHS.evidence}`,
     `Reference corpus: ${SANDBOX_PATHS.reference}`,
-    "",
-    "Return a final response when you are done.",
   ].join("\n");
 }
 
