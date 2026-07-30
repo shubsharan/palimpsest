@@ -14,11 +14,11 @@ blocks:
 
 assignment:
   - agentId: agent-1
-    modelProfileId: mini
+    modelProfileId: sol
   - agentId: agent-2
-    modelProfileId: mini
+    modelProfileId: sol
   - agentId: agent-3
-    modelProfileId: mini
+    modelProfileId: sol
 
 providers:
   openai:
@@ -26,14 +26,14 @@ providers:
     apiKeyEnv: OPENAI_API_KEY
 
 models:
-  mini:
+  sol:
     provider: openai
-    model: gpt-5.4-mini-2026-03-17
+    model: gpt-5.6-sol
     settings:
       maxOutputTokens: 32768
     providerOptions:
       openai:
-        reasoningEffort: low
+        reasoningEffort: medium
         serviceTier: default
         store: false
 
