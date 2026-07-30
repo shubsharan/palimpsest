@@ -97,6 +97,8 @@ When `communication.teamChannel` is `enabled`, shared-condition agents also rece
 
 Final evaluation uses the same complete capture-execute-evaluate-clean operation, records the exact commit before execution, and publishes completion/results only after cleanup. Missing or invalid submissions remain explicit evaluation outcomes; trusted host-process, scorer, sandbox, mount, cleanup, and cancellation failures remain infrastructure failures. The solver writes only to bounded tmpfs; afterward the host extracts the declared regular file into hidden staging and atomically publishes it after validation. The sandbox mounts no frozen repository, agent workspace, evidence, reference corpus, oracle path, or writable host output. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
 
+Each attempt writes an append-only canonical `trace.jsonl` and a live-readable sibling `trace.log`. The text log renders each redacted event with its elapsed time, actor, event type, and indented data; watch it during a run with `tail -F artifacts/attempt/trace.log`. When a trace is reopened, the runner regenerates `trace.log` from `trace.jsonl`.
+
 ## Development Check
 
 ```bash
