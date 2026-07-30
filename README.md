@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes five blocks, a three-model assignment, four conditions, schedules, budgets, order, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
+Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes five blocks, a three-model assignment, four conditions, schedules, budgets, order, communication tooling, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
@@ -14,11 +14,11 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
 - [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
 - [Feature 015 quickstart](specs/015-frozen-five-block-protocol/quickstart.md): frozen calibration, validation, and explicit replacement flow.
-- [Experiment schema](experiments/schema.json): strict version-2 study manifest.
+- [Experiment schema](experiments/schema.json): strict version-3 study manifest.
 - [Block catalog](experiments/blocks.json): five pinned paired study blocks.
 - [Study manifest](experiments/config.yaml): frozen block matrix, assignment, budgets, providers, rubric, and failure policy.
 
-Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 freezes the complete five-block protocol.
+Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 freezes the complete five-block protocol. Feature 016 adds an optional direct team channel without changing the Git grading boundary.
 
 ## Setup
 
@@ -36,6 +36,7 @@ The first bootstrap may use the network. Once the uv cache is populated, local c
 Scientific block inputs live in `experiments/blocks.json`. The strict study manifest in `experiments/config.yaml` declares:
 
 - `blocks`: one calibration and four validation block IDs in fixed order;
+- `communication.teamChannel`: `enabled` for a shared public discussion room or `disabled` for Git-only collaboration;
 - `assignment`: one ordered three-agent model assignment used by every cell;
 - `schedule` and `budgets`: the fixed reveal/cutoff values plus per-attempt and study-wide authorizations;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
@@ -43,7 +44,7 @@ Scientific block inputs live in `experiments/blocks.json`. The strict study mani
 - `orders`: one calibration and four balanced validation condition sequences; and
 - `scoring`, `rubric`, `adjustableFields`, and `failurePolicy`: the declared observation and replacement boundary.
 
-The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Schema version 1, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
+The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
 
 ## Run
 
@@ -92,7 +93,9 @@ pnpm puzzle:evaluate -- \
 
 Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` checks out the exact current `origin/main` commit, runs `python3 solver.py` on the evidence released to that agent, and reports only the commit plus aggregate coverage and accuracy. Local files, unpushed commits, and other branches cannot be checked.
 
-Final evaluation checks out the selected frozen Git origin and runs the same `solver.py` interface against the complete ciphertext. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. The runner prescribes no roles, commit sequence, branch strategy, or collaboration cadence.
+When `communication.teamChannel` is `enabled`, shared-condition agents also receive one attempt-local, append-only public room through `post_team_message` and `read_team_messages`; accepted posts wake peers and are retained in the attempt trace. Isolated agents never receive that room or its activity. Set the field to `disabled` to restore the prior Git-only treatment.
+
+Final evaluation checks out the selected frozen Git origin and runs the same `solver.py` interface against the complete ciphertext. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
 
 ## Development Check
 

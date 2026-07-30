@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ActivityBus } from "./activity.js";
+import { TeamChannel } from "./team-channel.js";
 import { createAgentTools, TOOL_DEFINITIONS } from "./tools.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
@@ -28,6 +29,7 @@ async function toolFixture(
     await writeFile(join(request.workspacePath, root, "reconstruction.txt"), "one two\n", "utf8");
     return SUCCESS;
   },
+  withTeamChannel = false,
 ) {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
@@ -50,12 +52,28 @@ async function toolFixture(
     timeoutMs: 1_000,
   });
   const activity = new ActivityBus();
+  const peerActivities = {
+    "agent-1": activity,
+    "agent-2": new ActivityBus(),
+    "agent-3": new ActivityBus(),
+  };
+  const observedTeamMessages: unknown[] = [];
+  const teamChannel = withTeamChannel
+    ? new TeamChannel({
+        activities: peerActivities,
+        nowMs: () => 50,
+        observe: (message) => {
+          observedTeamMessages.push(message);
+        },
+      })
+    : undefined;
   const checkerRequests: string[] = [];
   const tools = createAgentTools({
     agentId: "agent-1",
     workspacePath: workspace,
     sandbox: lease,
     activity,
+    ...(teamChannel === undefined ? {} : { teamChannel }),
     getActivityCursor: () => 0,
     checker: async ({ candidatePath }) => {
       checkerRequests.push(candidatePath);
@@ -77,6 +95,8 @@ async function toolFixture(
     sandbox,
     checkerRequests,
     activity,
+    peerActivities,
+    observedTeamMessages,
     tools,
   };
 }
@@ -109,6 +129,41 @@ describe("agent tools", () => {
       kind: "git-changed",
       summary: "Git activity is available",
     });
+  });
+
+  it("exposes direct discussion only when the runtime supplies a shared channel", async () => {
+    const disabled = await toolFixture();
+    expect(disabled.tools.definitions.map(({ name }) => name)).not.toContain("post_team_message");
+
+    const enabled = await toolFixture(undefined, true);
+    expect(enabled.tools.definitions.map(({ name }) => name)).toEqual([
+      "run_command",
+      "check_published_solver",
+      "wait_for_activity",
+      "post_team_message",
+      "read_team_messages",
+    ]);
+    expect(
+      enabled.tools.definitions.find(({ name }) => name === "wait_for_activity")?.description,
+    ).toContain("team discussion");
+    await expect(
+      enabled.tools.execute("post_team_message", { message: "Try the repeated-word mapping." }),
+    ).resolves.toMatchObject({
+      sequence: 1,
+      author: "agent-1",
+      message: "Try the repeated-word mapping.",
+    });
+    await expect(
+      enabled.tools.execute("read_team_messages", { afterSequence: 0 }),
+    ).resolves.toMatchObject({
+      messages: [expect.objectContaining({ author: "agent-1" })],
+      nextSequence: 1,
+      hasMore: false,
+    });
+    expect(enabled.observedTeamMessages).toHaveLength(1);
+    expect(enabled.peerActivities["agent-2"].events).toEqual([
+      expect.objectContaining({ kind: "team-message" }),
+    ]);
   });
 
   it("checks only the pushed main solver and exposes its commit with aggregate output", async () => {

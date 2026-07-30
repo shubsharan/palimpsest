@@ -624,6 +624,37 @@ describe("stored artifact decoders", () => {
       },
     ],
     [
+      "unsupported protocol version",
+      () => {
+        const value = attemptSummary();
+        const protocol = value.protocol as Record<string, unknown>;
+        return decodeAttemptSummary({
+          ...value,
+          protocol: { ...protocol, schemaVersion: 1 },
+        });
+      },
+    ],
+    [
+      "missing protocol team-channel mode",
+      () => {
+        const value = attemptSummary();
+        const protocol = value.protocol as Record<string, unknown>;
+        const { teamChannel: _teamChannel, ...withoutTeamChannel } = protocol;
+        return decodeAttemptSummary({ ...value, protocol: withoutTeamChannel });
+      },
+    ],
+    [
+      "invalid protocol team-channel mode",
+      () => {
+        const value = attemptSummary();
+        const protocol = value.protocol as Record<string, unknown>;
+        return decodeAttemptSummary({
+          ...value,
+          protocol: { ...protocol, teamChannel: "sometimes" },
+        });
+      },
+    ],
+    [
       "missing model binding",
       () => {
         const value = attemptSummary();

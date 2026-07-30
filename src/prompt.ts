@@ -1,11 +1,13 @@
 import { ATTEMPT_CUTOFF_MS, resolveCondition, type ConditionId } from "./condition.js";
 import type { AgentId } from "./model.js";
 import { SANDBOX_PATHS } from "./sandbox/contracts.js";
+import type { TeamChannelMode } from "./team-channel.js";
 
 export interface AgentPromptOptions {
   agentId: AgentId;
   condition: ConditionId;
   tokenBudgetPerAgent: number;
+  teamChannel?: TeamChannelMode;
 }
 
 export type PromptAgentId = "agent-1" | "agent-2" | "agent-3";
@@ -13,6 +15,7 @@ export type PromptAgentId = "agent-1" | "agent-2" | "agent-3";
 export interface AgentPromptTemplateOptions {
   agentId: AgentId;
   condition: ConditionId;
+  teamChannel?: TeamChannelMode;
 }
 
 export type AgentPromptTemplateSnapshot = Readonly<
@@ -31,9 +34,12 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   validatePromptAgentId(options.agentId);
   const condition = resolveCondition(options.condition);
   const identity = options.agentId.slice("agent-".length);
+  const teamChannel = options.teamChannel ?? "disabled";
   const channel =
     condition.communicationMode === "shared"
-      ? "Three agents, one team submission: origin/main:solver.py. There are no individual submissions or scores. Collaborate through the team's shared Git repository: publish useful solver changes, inspect peer commits, compare approaches, and integrate the strongest work. A local commit is visible to peers only after you push it. Git does not count against your model-token budget."
+      ? teamChannel === "enabled"
+        ? "Three agents, one team submission: origin/main:solver.py. There are no individual submissions or scores. Direct team discussion is available: use post_team_message and read_team_messages to exchange strategy and ideas. Use the shared Git repository to publish useful solver changes, inspect peer commits, compare approaches, and integrate the strongest work. A local commit is visible to peers only after you push it, and only origin/main:solver.py is graded. Git does not count against your model-token budget."
+        : "Three agents, one team submission: origin/main:solver.py. There are no individual submissions or scores. Collaborate through the team's shared Git repository: publish useful solver changes, inspect peer commits, compare approaches, and integrate the strongest work. A local commit is visible to peers only after you push it. Git does not count against your model-token budget."
       : "Peer communication is unavailable. Your assigned origin is private and no peer can see its commits or score. Publish your strongest solver to origin/main:solver.py so it remains part of the team record. Git does not count against your model-token budget.";
   return [
     `You are Agent ${identity}, one of 3 agents working concurrently as one team. Each agent receives different private evidence.`,
@@ -57,20 +63,25 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   ].join("\n");
 }
 
-function templatesForAgent(agentId: PromptAgentId): Readonly<Record<ConditionId, string>> {
+function templatesForAgent(
+  agentId: PromptAgentId,
+  teamChannel: TeamChannelMode,
+): Readonly<Record<ConditionId, string>> {
   return Object.freeze({
-    CS: buildAgentPromptTemplate({ agentId, condition: "CS" }),
-    CR: buildAgentPromptTemplate({ agentId, condition: "CR" }),
-    IS: buildAgentPromptTemplate({ agentId, condition: "IS" }),
-    IR: buildAgentPromptTemplate({ agentId, condition: "IR" }),
+    CS: buildAgentPromptTemplate({ agentId, condition: "CS", teamChannel }),
+    CR: buildAgentPromptTemplate({ agentId, condition: "CR", teamChannel }),
+    IS: buildAgentPromptTemplate({ agentId, condition: "IS", teamChannel }),
+    IR: buildAgentPromptTemplate({ agentId, condition: "IR", teamChannel }),
   });
 }
 
-export function snapshotAgentPromptTemplates(): AgentPromptTemplateSnapshot {
+export function snapshotAgentPromptTemplates(
+  teamChannel: TeamChannelMode = "disabled",
+): AgentPromptTemplateSnapshot {
   return Object.freeze({
-    "agent-1": templatesForAgent("agent-1"),
-    "agent-2": templatesForAgent("agent-2"),
-    "agent-3": templatesForAgent("agent-3"),
+    "agent-1": templatesForAgent("agent-1", teamChannel),
+    "agent-2": templatesForAgent("agent-2", teamChannel),
+    "agent-3": templatesForAgent("agent-3", teamChannel),
   });
 }
 

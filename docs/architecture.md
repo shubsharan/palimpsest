@@ -50,7 +50,7 @@ For fixed registered source bytes, block definition, and builder version, the wi
 
 ## Attempt Runtime
 
-`puzzle:run` uses the fixed manifest assignment and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the supplied paired build is one of the registered study blocks, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
+`puzzle:run` uses the fixed manifest assignment, its required `communication.teamChannel` mode, and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the supplied paired build is one of the registered study blocks, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
@@ -58,12 +58,13 @@ Within an attempt, TypeScript:
 - creates one private evidence directory and independent persistent session per agent;
 - releases equivalent stage ordinals at 0, 5, 10, 20, 30, and 40 minutes on one monotonic schedule;
 - exposes the same local command, file, Git, checker, and activity-waiting tool surface to every session;
+- when enabled in a shared condition, exposes one attempt-local public append-only room with bounded reads and peer activity; isolated conditions never construct or expose it;
 - enforces provider-reported cumulative input/output token budgets per session and one fixed 60-minute cutoff;
 - records requested model identity, optional actual response identity, usage, tool activity, stage activity, Git changes, and termination;
 - freezes every native Git repository and workspace without merging after all sessions end; and
 - atomically publishes `attempt.json` before optional overlap observation.
 
-Sessions in one attempt run concurrently. They share neither message history nor private evidence. The protocol declares one graded `origin/main:solver.py` interface but introduces no rounds, roles, checkpoints, commit sequence, branch strategy, or merge policy.
+Sessions in one attempt run concurrently. They share no private evidence; enabled shared sessions may explicitly exchange public room messages. The protocol records the declared channel mode and still declares one graded `origin/main:solver.py` interface, with no rounds, roles, checkpoints, commit sequence, branch strategy, messaging requirement, or merge policy.
 
 Missing provider usage or a provider request failure is an infrastructure-error session rather than estimated usage or a model-quality outcome. The attempt is still frozen and published. An experiment indexes that durable attempt and then stops before launching another.
 
@@ -157,11 +158,11 @@ The architecture preserves the strongest local durable boundary available: exclu
 
 ## Verification
 
-The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, shared visibility, isolated non-observability, published-main-only checking, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
+The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, optional public-message ordering and tracing, shared visibility, isolated non-observability, published-main-only checking, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
 
 ## Study Conditions And Frozen Protocol
 
-Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage.
+Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage. Feature 016 adds a manifest-controlled shared discussion room while retaining Git as the only solver publication and grading boundary.
 
 Canonical acceptance is:
 

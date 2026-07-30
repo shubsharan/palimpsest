@@ -93,6 +93,7 @@ describe("offline behavior-neutral runner", () => {
       const attemptSummary = decodeAttemptSummary(
         await readJson(join(result.run.attemptRoot, "attempt.json")),
       );
+      expect(attemptSummary.protocol.teamChannel).toBe("enabled");
       const overlapArtifact = decodeOverlapResult(
         await readJson(join(result.run.attemptRoot, "overlap.json")),
       );

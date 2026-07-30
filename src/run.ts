@@ -57,6 +57,7 @@ import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
+import { TeamChannel, type TeamChannelMode } from "./team-channel.js";
 
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -82,6 +83,7 @@ export interface AttemptConfig {
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
   tokenBudgetPerAgent: number;
+  teamChannel: TeamChannelMode;
 }
 
 export interface AgentRuntimeBinding {
@@ -213,6 +215,10 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     throw new Error("buildId must be a build-prefixed SHA-256 digest.");
   }
   const condition = resolveCondition(value.condition);
+  const teamChannel = value.teamChannel;
+  if (teamChannel !== "enabled" && teamChannel !== "disabled") {
+    throw new Error("teamChannel must be enabled or disabled.");
+  }
   const releaseOffsetsMs = value.releaseOffsetsMs;
   if (
     !Array.isArray(releaseOffsetsMs) ||
@@ -276,6 +282,7 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
     cutoffMs,
     tokenBudgetPerAgent: requirePositiveInteger(value, "tokenBudgetPerAgent"),
+    teamChannel,
   };
 }
 
@@ -455,11 +462,12 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         agentId,
         condition: config.condition,
         tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+        teamChannel: config.teamChannel,
       }),
     ]),
   ) as Record<AgentId, string>;
   const protocol: AttemptProtocolSnapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     blockId: config.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -469,6 +477,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     releaseOffsetsMs: [...config.releaseOffsetsMs],
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+    teamChannel: config.teamChannel,
     models: config.agentIds.map((agentId) => ({
       agentId,
       model: agents[agentId]!.model,
@@ -501,6 +510,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     releaseOffsetsMs: config.releaseOffsetsMs,
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+    teamChannel: config.teamChannel,
     agentCount: config.agentIds.length,
     models: config.agentIds.map((agentId) => ({
       agentId,
@@ -524,6 +534,16 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       new ActivityBus(() => options.clock.nowMs() - startedAt),
     ]),
   ) as Record<AgentId, ActivityBus>;
+  const teamChannel =
+    config.teamChannel === "enabled" && condition.communicationMode === "shared"
+      ? new TeamChannel({
+          activities,
+          nowMs: () => options.clock.nowMs() - startedAt,
+          observe: async (message) => {
+            await observationLog.append("team.message", message);
+          },
+        })
+      : undefined;
   const monitors = git.repositories.map(
     (repository) =>
       new GitActivityMonitor({
@@ -603,6 +623,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         workspacePath: workspace.path,
         sandbox: lease,
         activity: activities[agentId]!,
+        ...(teamChannel === undefined ? {} : { teamChannel }),
         checker: options.checker,
         getReleasedStages: () => [...released].sort((left, right) => left - right),
         getActivityCursor: () => cursors[agentId]!,
@@ -751,6 +772,7 @@ export interface RunPuzzleOptions {
   condition: ConditionId;
   agents: AgentRuntimeMap;
   tokenBudgetPerAgent: number;
+  teamChannel: TeamChannelMode;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
 }
@@ -904,6 +926,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     releaseOffsetsMs: RELEASE_OFFSETS_MS,
     cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: options.tokenBudgetPerAgent,
+    teamChannel: options.teamChannel,
   };
   const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
   if (preflight) assertPreflightSandbox(preflight, sandbox.identity);

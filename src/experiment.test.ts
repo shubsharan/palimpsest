@@ -57,6 +57,7 @@ describe("study experiment orchestration", () => {
   it("checks the clean preflight before constructing any provider adapter", async () => {
     const study = await loadResolvedStudy("experiments/config.yaml", root);
     const events: string[] = [];
+    let observedTeamChannel: string | undefined;
     const sandbox = new FakeCommandSandbox();
 
     const result = await runStudyExperiment({
@@ -82,8 +83,9 @@ describe("study experiment orchestration", () => {
           events.push("adapter");
           return adapter();
         },
-        run: async () => {
+        run: async (request) => {
           events.push("run");
+          observedTeamChannel = request.teamChannel;
         },
         executePhase: async (options) => {
           await options.dependencies.beforeLaunch({
@@ -130,6 +132,7 @@ describe("study experiment orchestration", () => {
     });
 
     expect(events).toEqual(["preflight", "adapter", "adapter", "adapter", "run"]);
+    expect(observedTeamChannel).toBe("enabled");
     expect(result.state).toBe("blocked");
   });
 

@@ -13,6 +13,7 @@ import {
   type ConditionId,
 } from "./condition.js";
 import type { AgentId } from "./model.js";
+import type { TeamChannelMode } from "./team-channel.js";
 
 export type ProviderDriver = "openai" | "anthropic" | "google" | "openai-compatible";
 export type StudyPhase = "calibration" | "validation";
@@ -107,8 +108,13 @@ export interface StudyFailurePolicy {
   eligibleClassification: "session-infrastructure-error";
 }
 
+export interface StudyCommunication {
+  teamChannel: TeamChannelMode;
+}
+
 export interface StudyManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
+  communication: StudyCommunication;
   blocks: StudyBlock[];
   assignment: AgentModelAssignment[];
   providers: Record<string, ProviderConnection>;
@@ -136,7 +142,8 @@ export interface PlannedStudyCell {
 }
 
 export interface ResolvedStudy {
-  schemaVersion: 2;
+  schemaVersion: 3;
+  communication: Readonly<StudyCommunication>;
   blocks: readonly StudyBlock[];
   assignment: readonly AgentModelAssignment[];
   providers: Readonly<Record<string, ProviderConnection>>;
@@ -554,7 +561,8 @@ export async function resolveStudy(
   const validationCells = cellsFor("validation", validationBlocks, manifest.orders.validation);
 
   return deepFreeze({
-    schemaVersion: 2,
+    schemaVersion: 3,
+    communication: { ...manifest.communication },
     blocks: manifest.blocks.map((block) => ({ ...block })),
     assignment: manifest.assignment.map((assignment) => ({ ...assignment })),
     providers: Object.fromEntries(

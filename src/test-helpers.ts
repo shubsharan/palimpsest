@@ -227,7 +227,7 @@ export function testAttemptSummary(
     },
   }));
   const protocol = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     blockId: "calibration-theron-ware",
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -237,6 +237,7 @@ export function testAttemptSummary(
     releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
     cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: 200_000,
+    teamChannel: "disabled",
     models,
     prompts: agentIds.map((agentId) => ({
       agentId,

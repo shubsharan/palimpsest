@@ -142,6 +142,29 @@ describe("agent prompt", () => {
     );
   });
 
+  it("adds direct-discussion guidance only to shared prompts when enabled", () => {
+    const shared = buildAgentPrompt({
+      agentId: "agent-2",
+      condition: "CS",
+      tokenBudgetPerAgent: 200_000,
+      teamChannel: "enabled",
+    });
+    const isolated = buildAgentPrompt({
+      agentId: "agent-2",
+      condition: "IS",
+      tokenBudgetPerAgent: 200_000,
+      teamChannel: "enabled",
+    });
+
+    expect(shared).toContain("use post_team_message and read_team_messages");
+    expect(shared).toContain("only origin/main:solver.py is graded");
+    expect(isolated).not.toContain("post_team_message");
+    expect(isolated).toBe(prompts.IS);
+    expect(snapshotAgentPromptTemplates("enabled")["agent-2"].IS).toBe(
+      snapshotAgentPromptTemplates("disabled")["agent-2"].IS,
+    );
+  });
+
   it("discloses the invariant identity, objective, schedule, limits, tools, and evaluation boundary", () => {
     const prompt = prompts.CR;
 

@@ -73,6 +73,7 @@ async function publishFixtureAttempt(
     variantId: condition.variantId,
     buildId: variant.buildId,
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+    teamChannel: request.teamChannel,
     models: agents,
     prompts: manifest.agentIds.map((agentId) => ({
       agentId,
@@ -80,6 +81,7 @@ async function publishFixtureAttempt(
         agentId,
         condition: condition.id,
         tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+        teamChannel: request.teamChannel,
       }),
     })),
     sandbox: { ...TEST_SANDBOX_IDENTITY, ...SANDBOX_POLICY },

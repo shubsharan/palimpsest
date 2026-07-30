@@ -194,7 +194,7 @@ function promptBindings(
     sha256: string;
   }[];
 } {
-  const snapshots = snapshotAgentPromptTemplates();
+  const snapshots = snapshotAgentPromptTemplates(study.communication.teamChannel);
   const promptTemplates = study.assignment.flatMap(({ agentId }) => {
     const promptAgentId = agentId as PromptAgentId;
     return (
@@ -215,6 +215,7 @@ function promptBindings(
         agentId,
         condition,
         tokenBudgetPerAgent,
+        teamChannel: study.communication.teamChannel,
       });
       return { condition, agentId, prompt, sha256: sha256(prompt) };
     }),
@@ -830,7 +831,7 @@ async function assertAttemptMatchesLaunch(options: {
     };
   });
   const expectedProtocol = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     blockId: options.cell.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -840,6 +841,7 @@ async function assertAttemptMatchesLaunch(options: {
     releaseOffsetsMs: options.study.schedule.releaseOffsetsMs,
     cutoffMs: options.study.schedule.cutoffMs,
     tokenBudgetPerAgent: budgets.tokenBudgetPerAgent,
+    teamChannel: options.study.communication.teamChannel,
     models,
     prompts,
     sandbox: options.receipt.sandbox,

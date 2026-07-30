@@ -1,4 +1,6 @@
-schemaVersion: 2
+schemaVersion: 3
+
+communication: { teamChannel: disabled }
 blocks:
   - { blockId: calibration-theron-ware, phase: calibration }
   - { blockId: validation-odd-women, phase: validation }

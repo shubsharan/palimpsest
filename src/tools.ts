@@ -8,9 +8,15 @@ import {
   type AgentSandboxLease,
   type SandboxCommandResult,
 } from "./sandbox/contracts.js";
+import type { TeamChannel } from "./team-channel.js";
 
 export interface ToolDefinition {
-  name: "run_command" | "check_published_solver" | "wait_for_activity";
+  name:
+    | "run_command"
+    | "check_published_solver"
+    | "wait_for_activity"
+    | "post_team_message"
+    | "read_team_messages";
   description: string;
   inputSchema: Readonly<Record<string, unknown>>;
 }
@@ -42,6 +48,29 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "wait_for_activity",
     description: "Wait until new private evidence or Git activity is available.",
+    inputSchema: {
+      type: "object",
+      properties: { afterSequence: { type: "integer", minimum: 0 } },
+      required: ["afterSequence"],
+      additionalProperties: false,
+    },
+  },
+];
+
+const TEAM_CHANNEL_TOOL_DEFINITIONS: readonly ToolDefinition[] = [
+  {
+    name: "post_team_message",
+    description: "Post a strategy or coordination message to the shared team channel.",
+    inputSchema: {
+      type: "object",
+      properties: { message: { type: "string", minLength: 1, maxLength: 4_000 } },
+      required: ["message"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_team_messages",
+    description: "Read the next page of shared team messages after a message sequence.",
     inputSchema: {
       type: "object",
       properties: { afterSequence: { type: "integer", minimum: 0 } },
@@ -175,9 +204,14 @@ async function checkPublishedSolver(
 }
 
 function activitySummary(event: ActivityEvent): string {
-  return event.kind === "stage-released"
-    ? "new private evidence is available"
-    : "Git activity is available";
+  switch (event.kind) {
+    case "stage-released":
+      return "new private evidence is available";
+    case "git-changed":
+      return "Git activity is available";
+    case "team-message":
+      return "new team discussion is available";
+  }
 }
 
 export function createAgentTools(options: {
@@ -185,14 +219,30 @@ export function createAgentTools(options: {
   workspacePath: string;
   sandbox: AgentSandboxLease;
   activity: ActivityBus;
+  teamChannel?: TeamChannel;
   checker: CheckerHook;
   getReleasedStages: () => readonly number[];
   getActivityCursor: () => number;
   setActivityCursor?: (sequence: number) => void;
   commandTimeoutMs?: number;
 }): AgentToolSet {
+  const definitions =
+    options.teamChannel === undefined
+      ? TOOL_DEFINITIONS
+      : [
+          ...TOOL_DEFINITIONS.map((definition) =>
+            definition.name === "wait_for_activity"
+              ? {
+                  ...definition,
+                  description:
+                    "Wait until new private evidence, Git activity, or team discussion is available.",
+                }
+              : definition,
+          ),
+          ...TEAM_CHANNEL_TOOL_DEFINITIONS,
+        ];
   return {
-    definitions: TOOL_DEFINITIONS,
+    definitions,
     async execute(name, rawInput, signal) {
       const input = requireObject(rawInput);
       if (name === "run_command") {
@@ -237,6 +287,31 @@ export function createAgentTools(options: {
           kind: result.kind,
           summary: activitySummary(result),
         };
+      }
+      if (name === "post_team_message") {
+        if (options.teamChannel === undefined) {
+          throw new Error("Team channel is unavailable in this attempt.");
+        }
+        if (Object.keys(input).some((key) => key !== "message")) {
+          throw new Error("post_team_message accepts only message.");
+        }
+        if (typeof input.message !== "string") {
+          throw new Error("post_team_message requires message text.");
+        }
+        return options.teamChannel.post(options.agentId, input.message);
+      }
+      if (name === "read_team_messages") {
+        if (options.teamChannel === undefined) {
+          throw new Error("Team channel is unavailable in this attempt.");
+        }
+        if (
+          Object.keys(input).some((key) => key !== "afterSequence") ||
+          !Number.isSafeInteger(input.afterSequence) ||
+          (input.afterSequence as number) < 0
+        ) {
+          throw new Error("read_team_messages requires a non-negative afterSequence.");
+        }
+        return options.teamChannel.read(input.afterSequence as number);
       }
       throw new Error(`Unknown agent tool: ${name}`);
     },

@@ -1,4 +1,7 @@
-schemaVersion: 2
+schemaVersion: 3
+
+communication:
+  teamChannel: enabled
 
 blocks:
   - blockId: calibration-theron-ware
