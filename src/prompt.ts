@@ -59,6 +59,7 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
     "",
     "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.",
     "After waiting, recheck your evidence and Git for new information.",
+    "Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.",
     "",
     `Workspace: ${SANDBOX_PATHS.workspace}`,
     `Private evidence: ${SANDBOX_PATHS.evidence}`,

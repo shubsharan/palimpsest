@@ -42,6 +42,7 @@ describe("agent prompt", () => {
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
       After waiting, recheck your evidence and Git for new information.
+      Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
 
       Workspace: /workspace
       Private evidence: /evidence
@@ -63,6 +64,7 @@ describe("agent prompt", () => {
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
       After waiting, recheck your evidence and Git for new information.
+      Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
 
       Workspace: /workspace
       Private evidence: /evidence
@@ -116,6 +118,7 @@ describe("agent prompt", () => {
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
       After waiting, recheck your evidence and Git for new information.
+      Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
 
       Workspace: /workspace
       Private evidence: /evidence
@@ -164,6 +167,9 @@ describe("agent prompt", () => {
     expect(prompt).toContain("$PALIMPSEST_OUTPUT");
     expect(prompt).toContain("work without /evidence or /reference");
     expect(prompt).toContain("After waiting, recheck your evidence and Git");
+    expect(prompt).toContain(
+      "Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.",
+    );
     expect(prompt).toContain("Workspace: /workspace");
     expect(prompt).toContain("Private evidence: /evidence");
     expect(prompt).toContain("Reference corpus: /reference");
