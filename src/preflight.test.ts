@@ -61,7 +61,7 @@ function dependencies(overrides: Partial<PreflightDependencies> = {}): Preflight
     buildSandbox: async () => sandbox,
     runVerification: async () => undefined,
     runFixture: async () => ({ status: "scored", sandbox }),
-    inspectSandbox: async () => sandbox,
+    probeSandbox: async () => sandbox,
     now: () => new Date("2026-07-28T12:00:00.000Z"),
     ...overrides,
   };
@@ -151,14 +151,16 @@ describe("research preflight", () => {
           await chmod(frozen, 0o555);
           return { status: "scored", sandbox };
         },
-        inspectSandbox: async () => {
-          calls.push("inspect");
+        probeSandbox: async (_root, expectedImageId) => {
+          await expect(access(fixtureTemporaryRoot)).rejects.toMatchObject({ code: "ENOENT" });
+          expect(expectedImageId).toBe(sandbox.imageId);
+          calls.push("probe");
           return sandbox;
         },
       }),
     );
 
-    expect(calls).toEqual(["build", "verify", "fixture", "inspect"]);
+    expect(calls).toEqual(["build", "verify", "fixture", "probe"]);
     expect(result).toEqual(
       receipt({
         testedCommit: fixture.testedCommit,
@@ -200,6 +202,14 @@ describe("research preflight", () => {
         runFixture: async (_root, output) => {
           await rm(dirname(output), { recursive: true, force: true });
           return { status: "scored", sandbox };
+        },
+      }),
+    ],
+    [
+      "exact image probe failure",
+      dependencies({
+        probeSandbox: async () => {
+          throw new Error("recorded image cannot create a container");
         },
       }),
     ],

@@ -16,7 +16,11 @@ import { dirname, join, resolve } from "node:path";
 import { buildSandbox } from "./build.js";
 import { runProcess } from "./process.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
-import { SANDBOX_IMAGE_TAG, type SandboxIdentity } from "./sandbox/contracts.js";
+import {
+  SANDBOX_IMAGE_TAG,
+  type AgentSandboxLease,
+  type SandboxIdentity,
+} from "./sandbox/contracts.js";
 
 const GIT_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
@@ -44,7 +48,7 @@ export interface PreflightDependencies {
   buildSandbox: (root: string) => Promise<SandboxIdentity>;
   runVerification: (root: string) => Promise<void>;
   runFixture: (root: string, output: string) => Promise<FixtureResult>;
-  inspectSandbox: (root: string) => Promise<SandboxIdentity>;
+  probeSandbox: (root: string, expectedImageId: string) => Promise<SandboxIdentity>;
   now: () => Date;
 }
 
@@ -262,8 +266,37 @@ const DEFAULT_DEPENDENCIES: PreflightDependencies = {
     const result = await runOfflinePuzzle({ root, output, condition: "CR" });
     return { status: result.evaluation.status, sandbox: result.run.sandbox };
   },
-  async inspectSandbox(root) {
-    return (await createDockerCommandSandbox({ root })).identity;
+  async probeSandbox(root, expectedImageId) {
+    const sandbox = await createDockerCommandSandbox({ root, expectedImageId });
+    const probeRoot = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-probe-"));
+    const workspacePath = join(probeRoot, "workspace");
+    const evidencePath = join(probeRoot, "evidence");
+    const referenceCorpusPath = join(probeRoot, "reference");
+    const gitOriginPath = join(probeRoot, "origin.git");
+    let lease: AgentSandboxLease | undefined;
+    try {
+      await Promise.all([
+        mkdir(workspacePath),
+        mkdir(evidencePath),
+        mkdir(referenceCorpusPath),
+        mkdir(gitOriginPath),
+      ]);
+      lease = await sandbox.openAgentLease({
+        profile: "agent",
+        workspacePath,
+        evidencePath,
+        referenceCorpusPath,
+        gitOriginPath,
+        timeoutMs: 30_000,
+      });
+    } finally {
+      try {
+        await lease?.close();
+      } finally {
+        await rm(probeRoot, { recursive: true, force: true });
+      }
+    }
+    return sandbox.identity;
   },
   now: () => new Date(),
 };
@@ -305,10 +338,13 @@ export async function runPreflight(
     if (sourceAfter.testedCommit !== sourceBefore.testedCommit) {
       throw new Error("Research preflight source commit changed during verification.");
     }
-    assertPreflightSandbox(provisional, await dependencies.inspectSandbox(repositoryRoot));
   } finally {
     await removeTemporaryTree(temporaryRoot);
   }
+  assertPreflightSandbox(
+    provisional,
+    await dependencies.probeSandbox(repositoryRoot, provisional.sandbox.imageId),
+  );
   await publishPreflightReceipt(destination, provisional);
   return provisional;
 }
