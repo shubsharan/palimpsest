@@ -43,7 +43,7 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   const identity = options.agentId.slice("agent-".length);
   const channel =
     condition.communicationMode === "shared"
-      ? "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget."
+      ? "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. A local commit is visible to peers only after you push it to origin; fetch or pull origin to see their work. Git does not count against your model-token budget."
       : "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.";
   return [
     `You are Agent ${identity}, one of 3 agents working concurrently as one team. Each agent receives different private evidence.`,

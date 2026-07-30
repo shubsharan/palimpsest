@@ -9,7 +9,7 @@ import {
 } from "./prompt.js";
 
 const SHARED_CHANNEL =
-  "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget.";
+  "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. A local commit is visible to peers only after you push it to origin; fetch or pull origin to see their work. Git does not count against your model-token budget.";
 const ISOLATED_CHANNEL =
   "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.";
 
@@ -31,7 +31,7 @@ describe("agent prompt", () => {
     expect(prompts.CS).toMatchInlineSnapshot(`
       "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
 
-      Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget.
+      Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. A local commit is visible to peers only after you push it to origin; fetch or pull origin to see their work. Git does not count against your model-token budget.
 
       Recover the plaintext of the complete ciphertext as accurately as you can.
       Your team is graded on runnable solver code committed to Git, not on final prose.
@@ -105,7 +105,7 @@ describe("agent prompt", () => {
     expect(templates["agent-2"].CS).toMatchInlineSnapshot(`
       "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
 
-      Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget.
+      Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. A local commit is visible to peers only after you push it to origin; fetch or pull origin to see their work. Git does not count against your model-token budget.
 
       Recover the plaintext of the complete ciphertext as accurately as you can.
       Your team is graded on runnable solver code committed to Git, not on final prose.
