@@ -25,9 +25,10 @@
 - The canonical command is `python3 solver.py`.
 - The submission root is the working directory.
 - `$PALIMPSEST_CIPHERTEXT` names one read-only assigned ciphertext file.
-- `$PALIMPSEST_OUTPUT` names `reconstruction.txt` inside one fresh writable output directory.
+- `$PALIMPSEST_OUTPUT` names `reconstruction.txt` inside one fresh 16 MiB container tmpfs at `/output`.
+- No writable host path is mounted. After exit, the host extracts only the declared output to hidden staging, validates it, and atomically publishes a valid regular file.
 - No Git origin, agent workspace, private evidence, reference corpus, oracle tree, host sibling, network, secret, or provider credential is exposed.
-- Existing CPU, memory, process, time, output-capture, read-only-root, and bounded temporary-filesystem limits remain in force.
+- Existing CPU, memory, process, time, output-capture, read-only-root, and bounded temporary-filesystem limits remain in force; the output quota applies while solver code is running.
 - Missing main, unavailable submission objects, solver exit, timeout, and invalid output are explicit submission outcomes. Host-process, trusted evaluator, sandbox, mount, cleanup, and cancellation failures propagate as infrastructure failures.
 
 ## Output

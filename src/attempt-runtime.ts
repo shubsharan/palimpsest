@@ -55,7 +55,9 @@ export class AttemptRuntime {
   readonly #observe: AttemptRuntimeObserver;
   readonly #onFatal: ((error: InfrastructureError) => void) | undefined;
   readonly #messages: TeamMessage[] = [];
-  #tail: Promise<void> = Promise.resolve();
+  #traceTail: Promise<void> = Promise.resolve();
+  #closingReason: string | undefined;
+  #closePromise: Promise<void> | undefined;
   #endedReason: string | undefined;
 
   constructor(options: {
@@ -106,64 +108,78 @@ export class AttemptRuntime {
     });
   }
 
-  recordReleasedStage(agentId: AgentId, stage: ReleasedStage): Promise<void> {
-    return this.#enqueue(async () => {
-      this.#assertOpen();
-      const released = this.#releasedFor(agentId);
-      if (stage.ordinal !== released.length + 1) {
-        throw new Error(
-          `Released stages for ${agentId} are not contiguous at ${String(stage.ordinal)}.`,
-        );
-      }
-      const activity = this.#activityFor(agentId);
-      const activitySequence = activity.latestSequence + 1;
-      await this.#commitObservation({
-        kind: "stage.released",
-        data: {
-          ordinal: stage.ordinal,
-          path: stage.visiblePath,
-          activitySequence,
-        },
-        agentId,
-      });
-      released.push(frozenStage(stage));
-      const published = activity.publish({
-        kind: "stage-released",
-        detail: { ordinal: stage.ordinal, path: stage.visiblePath },
-      });
-      if (published.sequence !== activitySequence) {
-        throw new AttemptRuntimeInfrastructureError(
-          "Released-stage activity projection lost sequence consistency.",
-        );
-      }
+  async publishReleasedStage(
+    agentId: AgentId,
+    stage: ReleasedStage,
+    publish: () => void,
+  ): Promise<void> {
+    this.#assertOpen();
+    const released = this.#releasedFor(agentId);
+    if (stage.ordinal !== released.length + 1) {
+      throw new Error(
+        `Released stages for ${agentId} are not contiguous at ${String(stage.ordinal)}.`,
+      );
+    }
+    const activity = this.#activityFor(agentId);
+    const activitySequence = activity.latestSequence + 1;
+    try {
+      publish();
+    } catch (error) {
+      const failure = new AttemptRuntimeInfrastructureError(
+        `Unable to publish stage ${String(stage.ordinal)} for ${agentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+      this.#fail(failure);
+      throw failure;
+    }
+    released.push(frozenStage(stage));
+    const published = activity.publish({
+      kind: "stage-released",
+      detail: { ordinal: stage.ordinal, path: stage.visiblePath },
+    });
+    if (published.sequence !== activitySequence) {
+      const failure = new AttemptRuntimeInfrastructureError(
+        "Released-stage activity projection lost sequence consistency.",
+      );
+      this.#fail(failure);
+      throw failure;
+    }
+    await this.#persistObservation({
+      kind: "stage.released",
+      data: {
+        ordinal: stage.ordinal,
+        path: stage.visiblePath,
+        activitySequence,
+      },
+      agentId,
     });
   }
 
-  recordGitChange(
+  async recordGitChange(
     repositoryId: GitRepositoryId,
     visibleAgentIds: readonly AgentId[],
     refs: readonly string[],
   ): Promise<void> {
-    return this.#enqueue(async () => {
-      this.#assertOpen();
-      if (
-        visibleAgentIds.length === 0 ||
-        new Set(visibleAgentIds).size !== visibleAgentIds.length ||
-        visibleAgentIds.some((agentId) => !this.#agentIds.includes(agentId))
-      ) {
-        throw new Error("Git activity visibility must name unique attempt agents.");
-      }
-      const frozenRefs = Object.freeze([...refs]);
-      await this.#commitObservation({
-        kind: "git.changed",
-        data: { repositoryId, refs: frozenRefs },
+    this.#assertOpen();
+    if (
+      visibleAgentIds.length === 0 ||
+      new Set(visibleAgentIds).size !== visibleAgentIds.length ||
+      visibleAgentIds.some((agentId) => !this.#agentIds.includes(agentId))
+    ) {
+      throw new Error("Git activity visibility must name unique attempt agents.");
+    }
+    const frozenRefs = Object.freeze([...refs]);
+    for (const agentId of visibleAgentIds) {
+      this.#activityFor(agentId).publish({
+        kind: "git-changed",
+        detail: { repositoryId, refs: frozenRefs },
       });
-      for (const agentId of visibleAgentIds) {
-        this.#activityFor(agentId).publish({
-          kind: "git-changed",
-          detail: { repositoryId, refs: frozenRefs },
-        });
-      }
+    }
+    await this.#persistObservation({
+      kind: "git.changed",
+      data: { repositoryId, refs: frozenRefs },
     });
   }
 
@@ -171,14 +187,24 @@ export class AttemptRuntime {
     if (reason.trim().length === 0) {
       return Promise.reject(new Error("Attempt runtime close reason must be non-empty."));
     }
-    return this.#enqueue(() => {
+    if (this.#closePromise !== undefined) return this.#closePromise;
+    if (this.#endedReason !== undefined) return Promise.resolve();
+    this.#closingReason = reason;
+    this.#closePromise = this.#traceTail.then(() => {
       if (this.#endedReason !== undefined) return;
       this.#endedReason = reason;
-      for (const activity of Object.values(this.#activities)) activity.end(reason);
+      for (const activity of Object.values(this.#activities)) {
+        activity.end(reason);
+      }
     });
+    return this.#closePromise;
   }
 
-  #postTeamMessage(author: AgentId, content: string, signal?: AbortSignal): Promise<TeamMessage> {
+  async #postTeamMessage(
+    author: AgentId,
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<TeamMessage> {
     if (typeof content !== "string") {
       return Promise.reject(new Error("Team message must be text."));
     }
@@ -193,30 +219,28 @@ export class AttemptRuntime {
         ),
       );
     }
-    return this.#enqueue(async () => {
-      this.#assertOpen();
-      if (signal?.aborted) throw abortError();
-      const occurredAtMs = this.#nowMs();
-      if (!Number.isFinite(occurredAtMs) || occurredAtMs < 0) {
-        throw new Error("Team message time must be a finite non-negative number.");
-      }
-      const accepted = Object.freeze({
-        sequence: this.#messages.length + 1,
-        author,
-        message,
+    this.#assertOpen();
+    if (signal?.aborted) throw abortError();
+    const occurredAtMs = this.#nowMs();
+    if (!Number.isFinite(occurredAtMs) || occurredAtMs < 0) {
+      throw new Error("Team message time must be a finite non-negative number.");
+    }
+    const accepted = Object.freeze({
+      sequence: this.#messages.length + 1,
+      author,
+      message,
+      occurredAtMs,
+    });
+    this.#messages.push(accepted);
+    for (const activity of Object.values(this.#activities)) {
+      activity.publish({
+        kind: "team-message",
+        detail: { messageSequence: accepted.sequence, author },
         occurredAtMs,
       });
-      await this.#commitObservation({ kind: "team.message", data: accepted });
-      this.#messages.push(accepted);
-      for (const activity of Object.values(this.#activities)) {
-        activity.publish({
-          kind: "team-message",
-          detail: { messageSequence: accepted.sequence, author },
-          occurredAtMs,
-        });
-      }
-      return accepted;
-    });
+    }
+    await this.#persistObservation({ kind: "team.message", data: accepted });
+    return accepted;
   }
 
   #readTeamMessages(afterSequence: number): TeamMessagePage {
@@ -234,29 +258,30 @@ export class AttemptRuntime {
   }
 
   #assertOpen(): void {
-    if (this.#endedReason !== undefined) {
-      throw new Error(
-        `Cannot mutate attempt runtime after the attempt ended: ${this.#endedReason}.`,
-      );
+    const reason = this.#endedReason ?? this.#closingReason;
+    if (reason !== undefined) {
+      throw new Error(`Cannot mutate attempt runtime after the attempt ended: ${reason}.`);
     }
   }
 
-  async #commitObservation(observation: AttemptRuntimeObservation): Promise<void> {
-    try {
-      await this.#observe(observation);
-    } catch (error) {
-      const failure =
-        error instanceof InfrastructureError
-          ? error
-          : new AttemptRuntimeInfrastructureError(
-              `Unable to commit ${observation.kind} to the canonical attempt trace: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-              { cause: error },
-            );
-      this.#fail(failure);
-      throw failure;
-    }
+  #persistObservation(observation: AttemptRuntimeObservation): Promise<void> {
+    const persisted = this.#traceTail
+      .then(() => this.#observe(observation))
+      .catch((error: unknown) => {
+        const failure =
+          error instanceof InfrastructureError
+            ? error
+            : new AttemptRuntimeInfrastructureError(
+                `Unable to persist ${observation.kind} to the canonical attempt trace: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+                { cause: error },
+              );
+        this.#fail(failure);
+        throw failure;
+      });
+    this.#traceTail = persisted;
+    return persisted;
   }
 
   #fail(error: InfrastructureError): void {
@@ -278,14 +303,5 @@ export class AttemptRuntime {
     const released = this.#releasedStages[agentId];
     if (released === undefined) throw new Error(`Unknown attempt agent ${agentId}.`);
     return released;
-  }
-
-  #enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
-    const result = this.#tail.then(operation);
-    this.#tail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
   }
 }

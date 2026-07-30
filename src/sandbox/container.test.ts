@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  SANDBOX_POLICY,
   SandboxInfrastructureError,
   type AgentSandboxLeaseRequest,
   type SandboxIdentity,
+  type SolverSandboxCommand,
 } from "./contracts.js";
 import { dockerHostEnvironment, DockerCommandSandbox } from "./container.js";
 
@@ -23,6 +25,12 @@ interface DockerFixture {
   executable: string;
   log: string;
   request: AgentSandboxLeaseRequest;
+}
+
+interface SolverDockerFixture {
+  executable: string;
+  log: string;
+  request: SolverSandboxCommand;
 }
 
 async function dockerFixture(mode: string): Promise<DockerFixture> {
@@ -82,6 +90,63 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       evidencePath: evidence,
       referenceCorpusPath: reference,
       gitOriginPath: gitOrigin,
+    },
+  };
+}
+
+async function solverDockerFixture(
+  mode: "success" | "directory" | "oversized",
+): Promise<SolverDockerFixture> {
+  const root = await mkdtemp(join(tmpdir(), "palimpsest-solver-container-"));
+  temporaryRoots.push(root);
+  const submission = join(root, "submission");
+  const outputRoot = join(root, "output");
+  const ciphertextPath = join(root, "ciphertext.txt");
+  const log = join(root, "docker.log");
+  const solverExecuted = join(root, "solver-executed");
+  const executable = join(root, "docker");
+  await Promise.all([
+    mkdir(submission),
+    mkdir(outputRoot),
+    writeFile(ciphertextPath, "ciphertext\n"),
+  ]);
+  await writeFile(
+    executable,
+    [
+      "#!/bin/sh",
+      `printf '%s\\n' "$1" >> ${JSON.stringify(log)}`,
+      `mode=${JSON.stringify(mode)}`,
+      `if [ "$1" = "exec" ] && [ ! -e ${JSON.stringify(solverExecuted)} ]; then`,
+      `  touch ${JSON.stringify(solverExecuted)}`,
+      "  exit 0",
+      "fi",
+      'if [ "$1" = "exec" ]; then',
+      '  if [ "$mode" = "directory" ]; then exit 41; fi',
+      '  if [ "$mode" = "oversized" ]; then',
+      `    dd if=/dev/zero bs=${String(SANDBOX_POLICY.solverOutputBytes + 1)} count=1 2>/dev/null`,
+      "    exit 0",
+      "  fi",
+      '  printf "reconstruction\\n"',
+      "  exit 0",
+      "fi",
+      'if [ "$1" = "inspect" ]; then',
+      '  printf \'[{"State":{"Status":"running","ExitCode":0,"OOMKilled":false,"Error":""}}]\'',
+      "fi",
+      "",
+    ].join("\n"),
+    { encoding: "utf8", mode: 0o755 },
+  );
+  return {
+    executable,
+    log,
+    request: {
+      profile: "solver",
+      command: "python3 solver.py",
+      timeoutMs: 1_000,
+      submissionPath: submission,
+      ciphertextPath,
+      outputRoot,
+      outputPath: "reconstruction.txt",
     },
   };
 }
@@ -178,6 +243,56 @@ describe("sandbox container lifecycle", () => {
 
     await lease.close();
     expect((await readFile(fixture.log, "utf8")).trim().split("\n").at(-1)).toBe("rm");
+  });
+
+  it("extracts and atomically publishes only the declared solver output", async () => {
+    const fixture = await solverDockerFixture("success");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+
+    await expect(sandbox.execute(fixture.request)).resolves.toEqual({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+      timedOut: false,
+      outputExceeded: false,
+    });
+    await expect(
+      readFile(join(fixture.request.outputRoot, fixture.request.outputPath), "utf8"),
+    ).resolves.toBe("reconstruction\n");
+    expect((await readFile(fixture.log, "utf8")).trim().split("\n")).toEqual([
+      "create",
+      "start",
+      "exec",
+      "inspect",
+      "exec",
+      "rm",
+    ]);
+  });
+
+  it("rejects non-file solver output without publishing a durable path", async () => {
+    const fixture = await solverDockerFixture("directory");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+
+    await expect(sandbox.execute(fixture.request)).resolves.toMatchObject({
+      exitCode: 0,
+      outputFailure: "Solver output must be a regular file.",
+    });
+    await expect(
+      readFile(join(fixture.request.outputRoot, fixture.request.outputPath), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects solver output one byte beyond the extraction limit", async () => {
+    const fixture = await solverDockerFixture("oversized");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+
+    await expect(sandbox.execute(fixture.request)).resolves.toMatchObject({
+      exitCode: 0,
+      outputFailure: `Solver output exceeds ${String(SANDBOX_POLICY.solverOutputBytes)} bytes.`,
+    });
+    await expect(
+      readFile(join(fixture.request.outputRoot, fixture.request.outputPath), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("classifies invalid lease inspection as infrastructure failure and cleans up", async () => {

@@ -259,6 +259,14 @@ export async function executePublishedSolver(options: {
       error: "Published solver execution failed.",
     };
   }
+  if (execution.outputFailure !== undefined) {
+    return {
+      kind: "submission-error",
+      execution,
+      outputPath: candidatePath,
+      error: execution.outputFailure,
+    };
+  }
 
   let resolved: string;
   try {

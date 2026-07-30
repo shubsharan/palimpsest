@@ -123,6 +123,7 @@ function executionSummary(result: SandboxCommandResult): Readonly<Record<string,
     stderr: result.stderr,
     timedOut: result.timedOut,
     outputExceeded: result.outputExceeded,
+    ...(result.outputFailure === undefined ? {} : { outputFailure: result.outputFailure }),
     ...(result.indeterminate === true ? { indeterminate: true } : {}),
   };
 }

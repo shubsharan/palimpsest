@@ -37,10 +37,10 @@ The activity is visible to every eligible shared agent and to no isolated agent.
 ## State Transitions
 
 1. Attempt declares mode.
-2. One serialized attempt runtime creates private release/activity projections and, for shared/enabled attempts, one empty room.
-3. A stage release, Git change, or eligible post validates and commits once to the canonical trace before the runtime synchronously updates every affected projection.
+2. One attempt runtime creates private release/activity projections and, for shared/enabled attempts, one empty room.
+3. A stage release, Git change, or eligible post validates and synchronously commits every affected live projection, then appends one event to the ordered trace outbox.
 4. Reads return ordered pages without changing room state.
-5. Shutdown waits behind already queued mutations, ends every private activity stream together, and rejects later mutations.
+5. Shutdown rejects later mutation immediately, waits for the trace outbox, and then ends every private activity stream. A trace failure poisons the attempt, so an unprojected live commit cannot become valid evidence.
 
 Agent tools receive only an immutable per-agent handle. Released-stage snapshots are copied and frozen before asynchronous checker work; activity buses, room storage, and runtime mutation methods are never exposed.
 
@@ -61,17 +61,18 @@ Validation: one deadline-bound operation fetches only literal main into a privat
 - `sourcePath`: sealed build-stage source trusted by checker assembly.
 - `visiblePath`: copied agent-visible evidence representation.
 
-Validation: publication appends the record only after the visible copy succeeds. Canonical checker input reads ordered `sourcePath` values only and inserts one newline between newline-terminated stages; it never rescans `visiblePath` directories.
+Validation: the source is copied into host-private staging first. Publication atomically renames it to `visiblePath` and appends the record/activity in one synchronous live commit; trace projection follows through the ordered outbox. Canonical checker input reads ordered `sourcePath` values only and inserts one newline between newline-terminated stages; it never rescans `visiblePath` directories.
 
 ## Solver Execution
 
 - `submission`: captured Published Solver Snapshot identity.
 - `ciphertextPath`: trusted host file containing released or complete ciphertext.
-- `outputRoot`: fresh empty host directory mounted as the only writable durable output.
+- `outputRoot`: fresh empty host directory used only by trusted extraction and never mounted into the solver.
+- `outputScratch`: fresh 16 MiB container tmpfs mounted at `/output`.
 - `execution`: bounded sandbox exit, timeout, overflow, stdout, and stderr fields.
 - `outputPath`: contained canonical reconstruction path when present.
 
-Validation: submission and ciphertext are read-only; Git, agent workspaces, evidence, references, oracle files, and credentials are absent; successful output resolves inside `outputRoot`, is a regular non-empty file, and does not exceed 16 MiB.
+Validation: submission and ciphertext are read-only; Git, agent workspaces, evidence, references, oracle files, credentials, and writable host paths are absent. After exit, only the declared output is copied to hidden host staging. It must be a regular non-empty file no larger than 16 MiB before atomic rename into `outputRoot`.
 
 Execution returns a discriminated success or submission-error outcome only after cleanup. Trusted host-process, evaluator, sandbox, mount, cleanup, and cancellation failures are infrastructure errors and do not become normal solver results.
 

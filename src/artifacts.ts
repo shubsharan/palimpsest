@@ -188,6 +188,7 @@ export interface SandboxPolicy {
   memoryBytes: 2_147_483_648;
   pids: 256;
   tmpfsBytes: 268_435_456;
+  solverOutputBytes: 16_777_216;
   maxOutputBytes: 4_194_304;
 }
 
@@ -2750,6 +2751,10 @@ function decodeExecution(value: unknown): SandboxCommandResult {
   if (typeof record.timedOut !== "boolean" || typeof record.outputExceeded !== "boolean") {
     throw new Error("Evaluation execution flags must be booleans.");
   }
+  const outputFailure =
+    record.outputFailure === undefined
+      ? undefined
+      : nonEmptyString(record.outputFailure, "Evaluation execution outputFailure");
   return {
     exitCode,
     stdout:
@@ -2762,6 +2767,7 @@ function decodeExecution(value: unknown): SandboxCommandResult {
         : nonEmptyString(record.stderr, "Evaluation execution stderr"),
     timedOut: record.timedOut,
     outputExceeded: record.outputExceeded,
+    ...(outputFailure === undefined ? {} : { outputFailure }),
   };
 }
 
@@ -2781,7 +2787,12 @@ export function decodeAggregateScore(value: unknown): AggregateScore {
 }
 
 function executionSucceeded(execution: SandboxCommandResult): boolean {
-  return execution.exitCode === 0 && !execution.timedOut && !execution.outputExceeded;
+  return (
+    execution.exitCode === 0 &&
+    !execution.timedOut &&
+    !execution.outputExceeded &&
+    execution.outputFailure === undefined
+  );
 }
 
 export function decodeEvaluationRecord(value: unknown): EvaluationResult {

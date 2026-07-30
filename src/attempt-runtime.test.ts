@@ -107,16 +107,18 @@ describe("attempt runtime", () => {
       kind: "team-message",
     });
     await expect(agent1.teamChannel!.post("too late")).rejects.toThrow("attempt ended");
-    await expect(runtime.recordReleasedStage("agent-1", stage(1))).rejects.toThrow("attempt ended");
+    await expect(
+      runtime.publishReleasedStage("agent-1", stage(1), () => undefined),
+    ).rejects.toThrow("attempt ended");
   });
 
   it("returns immutable released-stage snapshots across later releases", async () => {
     const { runtime } = fixture({ teamChannelEnabled: false });
     const agent1 = runtime.forAgent("agent-1");
 
-    await runtime.recordReleasedStage("agent-1", stage(1));
+    await runtime.publishReleasedStage("agent-1", stage(1), () => undefined);
     const captured = agent1.captureReleasedStages();
-    await runtime.recordReleasedStage("agent-1", stage(2));
+    await runtime.publishReleasedStage("agent-1", stage(2), () => undefined);
 
     expect(captured.map(({ ordinal }) => ordinal)).toEqual([1]);
     expect(agent1.captureReleasedStages().map(({ ordinal }) => ordinal)).toEqual([1, 2]);
@@ -159,7 +161,43 @@ describe("attempt runtime", () => {
     );
   });
 
-  it("classifies failed canonical observation as infrastructure without partial projections", async () => {
+  it("publishes a stage without waiting behind unrelated trace persistence", async () => {
+    let releaseTrace: (() => void) | undefined;
+    const traceBlocked = new Promise<void>((resolve) => {
+      releaseTrace = resolve;
+    });
+    let traceStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      traceStarted = resolve;
+    });
+    const { runtime } = fixture({
+      observe: async ({ kind }) => {
+        if (kind === "team.message") {
+          traceStarted?.();
+          await traceBlocked;
+        }
+      },
+    });
+    const agent1 = runtime.forAgent("agent-1");
+    const posting = runtime.forAgent("agent-2").teamChannel!.post("trace backlog");
+    await started;
+
+    let visible = false;
+    const publishing = runtime.publishReleasedStage("agent-1", stage(1), () => {
+      visible = true;
+    });
+
+    expect(visible).toBe(true);
+    expect(agent1.captureReleasedStages()).toEqual([stage(1)]);
+    await expect(agent1.waitForActivity(1)).resolves.toMatchObject({
+      sequence: 2,
+      kind: "stage-released",
+    });
+    releaseTrace?.();
+    await expect(Promise.all([posting, publishing])).resolves.toBeDefined();
+  });
+
+  it("poisons the attempt when a live commit cannot be persisted", async () => {
     const fatalErrors: InfrastructureError[] = [];
     const { runtime } = fixture({
       observe: () => {
@@ -175,13 +213,15 @@ describe("attempt runtime", () => {
     await expect(agent1.teamChannel!.post("not accepted")).rejects.toThrow(
       AttemptRuntimeInfrastructureError,
     );
-    expect(agent1.teamChannel!.read(0).messages).toEqual([]);
-    expect(agent1.latestActivitySequence).toBe(0);
-    await expect(agent2.waitForActivity(0)).resolves.toEqual({
+    expect(agent1.teamChannel!.read(0).messages).toHaveLength(1);
+    expect(agent1.latestActivitySequence).toBe(1);
+    await expect(agent2.waitForActivity(1)).resolves.toEqual({
       ended: true,
       reason: "infrastructure-error",
     });
-    await expect(runtime.recordReleasedStage("agent-1", stage(1))).rejects.toThrow("attempt ended");
+    await expect(
+      runtime.publishReleasedStage("agent-1", stage(1), () => undefined),
+    ).rejects.toThrow("attempt ended");
     expect(fatalErrors).toHaveLength(1);
   });
 });

@@ -1,4 +1,5 @@
-import { cp, mkdir } from "node:fs/promises";
+import { renameSync } from "node:fs";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { AttemptRuntime } from "./attempt-runtime.js";
@@ -314,6 +315,7 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
 async function publishStages(options: {
   config: AttemptConfig;
   evidencePaths: Record<AgentId, string>;
+  releaseStagingRoot: string;
   runtime: AttemptRuntime;
   startedAt: number;
   clock: MonotonicClock;
@@ -343,12 +345,23 @@ async function publishStage(
         evidencePath,
         `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
       );
-      await cp(source, destination, { errorOnExist: true, force: false });
-      await options.runtime.recordReleasedStage(agentId, {
-        ordinal,
-        sourcePath: source,
-        visiblePath: destination,
-      });
+      const agentStagingRoot = join(options.releaseStagingRoot, agentId);
+      const staged = join(agentStagingRoot, basename(destination));
+      await mkdir(agentStagingRoot, { recursive: true });
+      await cp(source, staged, { errorOnExist: true, force: false });
+      try {
+        await options.runtime.publishReleasedStage(
+          agentId,
+          {
+            ordinal,
+            sourcePath: source,
+            visiblePath: destination,
+          },
+          () => renameSync(staged, destination),
+        );
+      } finally {
+        await rm(staged, { force: true });
+      }
     }),
   );
 }
@@ -436,6 +449,8 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       }),
     ),
   ) as Record<AgentId, string>;
+  const releaseStagingRoot = join(config.artifactRoot, ".release-staging");
+  await mkdir(releaseStagingRoot);
 
   const startedAt = options.clock.nowMs();
   const cutoffAt = startedAt + config.cutoffMs;
@@ -554,7 +569,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       startedMonitors = [...startedMonitors, monitor];
     }
 
-    await publishStage({ config, evidencePaths, runtime: attemptRuntime }, 1);
+    await publishStage({ config, evidencePaths, releaseStagingRoot, runtime: attemptRuntime }, 1);
     const agentHandles = Object.fromEntries(
       config.agentIds.map((agentId) => [agentId, attemptRuntime.forAgent(agentId)]),
     ) as Record<AgentId, ReturnType<AttemptRuntime["forAgent"]>>;
@@ -581,6 +596,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     stagePublishing = publishStages({
       config,
       evidencePaths,
+      releaseStagingRoot,
       runtime: attemptRuntime,
       startedAt,
       clock: options.clock,
@@ -650,6 +666,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
   const quiesceResults = await Promise.allSettled(quiesceTasks);
   const releaseTasks: Promise<unknown>[] = [];
+  releaseTasks.push(rm(releaseStagingRoot, { recursive: true, force: true }));
   releaseTasks.push(
     ...startedMonitors.map((monitor) => Promise.resolve().then(() => monitor.stop())),
   );

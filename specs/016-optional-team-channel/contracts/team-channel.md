@@ -73,7 +73,7 @@ An accepted post publishes:
 
 ## Attempt Runtime
 
-One serialized attempt runtime owns the room together with released-stage and Git activity projections. An accepted post is appended to the canonical trace before it becomes readable or wakes any peer; after acceptance, every eligible peer receives the projection synchronously. A trace failure accepts nothing, poisons the runtime, aborts the attempt, and ends every activity waiter. Shutdown is ordered after already queued posts and rejects every later mutation. Agent tools receive only an author-bound handle and cannot publish activity or choose message authorship.
+One attempt runtime owns the room together with released-stage and Git activity projections. An accepted post becomes readable and wakes every eligible peer in one synchronous live commit, then enters the same ordered durable trace outbox as stage and Git events. Trace storage latency cannot delay a stage release. A trace failure poisons the runtime, aborts the attempt, and prevents that attempt from becoming valid evidence. Shutdown rejects every later mutation immediately, drains accepted trace projections, and then ends every activity waiter. Agent tools receive only an author-bound handle and cannot publish activity or choose message authorship.
 
 ## Trace
 

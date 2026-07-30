@@ -200,8 +200,8 @@ export class JsonlObservationLog {
 
   append(kind: string, data: unknown, agentId?: AgentId): Promise<ObservationEvent> {
     let written: ObservationEvent | undefined;
+    const observedAtMs = this.#nowMs();
     const operation = this.#pending.then(async () => {
-      const observedAtMs = this.#nowMs();
       if (!Number.isFinite(observedAtMs)) {
         throw new Error("Observation clock returned a non-finite value.");
       }

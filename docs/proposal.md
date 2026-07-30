@@ -38,7 +38,7 @@ Git commands remain model-chosen and unmetered, but only code pushed to the assi
 
 The runner supplies an environment rather than a work plan.
 
-- Evidence stages appear on a fixed monotonic schedule independent of model turns, token use, Git activity, checker calls, or apparent progress.
+- Evidence stages are privately prepared and atomically appear on a fixed monotonic schedule independent of model turns, token use, trace latency, Git activity, checker calls, or apparent progress.
 - Sessions may take as many model responses, tool calls, checker calls, and, when available, collaboration cycles as their cumulative provider-reported token budgets and the attempt wall-time limit permit.
 - An agent's final response ends only that session. Token exhaustion ends only the affected session. The wall-time cutoff stops every active session.
 - There are no rounds, launch barriers, assigned turns, publication slots, required commits, prescribed branches, checkpoints, or submission schemas.
@@ -58,7 +58,7 @@ At the wall-time cutoff, or after all sessions have ended, the runner freezes ev
 
 A reviewer selects the condition-appropriate frozen origin. Palimpsest uses the same fetch-and-materialize transaction, records the captured `refs/heads/main` commit before running the declared `python3 solver.py` interface, and cleans the temporary tree after use; symbolic `HEAD`, later ref changes, other refs, and uncommitted local candidates cannot select or supplement graded code.
 
-The selected code runs read-only against the complete ciphertext with one contained writable output directory and without the frozen repository, oracle, peer evidence, references, provider credentials, host siblings, or public network access. Evaluation reports the exact commit and a deterministic reconstruction score or clear execution status.
+The selected code runs read-only against the complete ciphertext and writes only to bounded container tmpfs, without a writable host bind, frozen repository, oracle, peer evidence, references, provider credentials, host siblings, or public network access. After exit, the host validates one declared file in hidden staging and atomically publishes it for scoring. Evaluation reports the exact commit and a deterministic reconstruction score or clear execution status.
 
 ## Research Records
 

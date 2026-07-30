@@ -4,8 +4,9 @@
 
 ```bash
 pnpm exec vitest run \
-  src/attempt-runtime.test.ts src/published-solver.test.ts src/activity.test.ts src/tools.test.ts \
-  src/prompt.test.ts src/config.test.ts src/artifacts.test.ts src/run.test.ts
+  src/attempt-runtime.test.ts src/trace.test.ts src/published-solver.test.ts \
+  src/sandbox/docker.test.ts src/sandbox/container.test.ts src/activity.test.ts \
+  src/tools.test.ts src/prompt.test.ts src/config.test.ts src/artifacts.test.ts src/run.test.ts
 ```
 
 Verify:
@@ -14,6 +15,7 @@ Verify:
 - disabled and isolated sessions expose no direct channel;
 - accepted posts retain one complete trace event;
 - post-versus-close and release-versus-check races produce one ordered outcome;
+- a blocked message trace append does not delay atomic stage visibility, and a failed projection poisons the attempt;
 - mode changes alter manifest/protocol identities without changing solver grading.
 
 ## Provider-Free Acceptance
@@ -51,12 +53,12 @@ After committing the feature, run `pnpm preflight` before any provider-backed at
 5. While the captured solver is running, force-push `main` to unrelated history and confirm execution still uses the reported commit.
 6. Freeze and evaluate the selected workspace.
 7. Confirm selection identifies the workspace, assigned repository, canonical main ref, and captured commit before solver execution starts, while completion/result records appear only after capture cleanup.
-8. Confirm the solver environment contains no `.git`, `/git`, `/evidence`, `/reference`, workspace parent files, oracle paths, or provider credentials.
+8. Confirm the solver environment contains no `.git`, `/git`, `/evidence`, `/reference`, workspace parent files, oracle paths, provider credentials, or writable host output bind.
 
 Expected result: checker and evaluation run one complete capture-execute-evaluate-clean operation over the exact Git-free main tree regardless of workspace state, later force-pushes, other refs, or symbolic `HEAD`; no result is published before cleanup succeeds.
 
 ## Output Containment
 
-Exercise solvers that produce no output, an empty file, an escaping symlink, a directory, and a file larger than 16 MiB.
+Exercise solvers that produce no output, an empty file, an escaping symlink, a directory, and a file larger than 16 MiB. Also stream output until `/output` reaches its quota and confirm the host durable path remains absent.
 
 Expected result: every invalid candidate is rejected before checking or scoring. A normal contained reconstruction remains scoreable.

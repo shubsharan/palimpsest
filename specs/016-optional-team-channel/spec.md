@@ -87,7 +87,7 @@ An experiment operator can trust that checker feedback and final scoring execute
 
 **Agent Instructions & Tools**: Enabled shared-condition prompts state that agents may use the team channel for strategy and ideas and Git for the graded solver. Agents receive simple post and read tools with no assigned roles, turns, required messages, consensus rule, or coordination cadence. Disabled and isolated sessions receive no direct-message tools. `origin/main:solver.py` remains the sole checkable and gradeable artifact.
 
-**Environmental Constraints**: Every accepted message is visible to all agents in the same enabled shared-condition attempt and to no other attempt. There are no private messages. Isolated conditions expose no peer messages or message activity even when the manifest enables the optional channel. Checker and evaluation execution receive a read-only exported published-main tree, read-only assigned ciphertext, and one writable output directory; no agent workspace, Git repository, private evidence, reference corpus, or oracle path is mounted. Existing evidence, Git topology, network, secret, schedule, token, and wall-time boundaries otherwise remain unchanged.
+**Environmental Constraints**: Every accepted message is visible to all agents in the same enabled shared-condition attempt and to no other attempt. There are no private messages. Isolated conditions expose no peer messages or message activity even when the manifest enables the optional channel. Checker and evaluation execution receive a read-only exported published-main tree, read-only assigned ciphertext, and bounded container-only output scratch; no writable host path, agent workspace, Git repository, private evidence, reference corpus, or oracle path is mounted. Existing evidence, Git topology, network, secret, schedule, token, and wall-time boundaries otherwise remain unchanged.
 
 **Observable Outcomes**: Durable traces retain the declared channel mode, accepted message sequence, author, content, time, reads, tool failures, wake activity, Git/checker behavior, captured published ref and commit, model responses, usage, and termination. Choosing not to post, ignoring messages, duplicating discussion in Git, disagreement, and unsuccessful coordination remain model outcomes.
 
@@ -116,13 +116,15 @@ An experiment operator can trust that checker feedback and final scoring execute
 - **FR-013**: The feature MUST NOT add private messages, external services, accounts, databases, automated summaries, moderators, required responses, roles, rounds, or post-hoc merging.
 - **FR-014**: Checking and final evaluation MUST fetch only the selected origin's literal `refs/heads/main` into a private local ref without consulting symbolic `HEAD`, then materialize that pinned commit before publishing its identity.
 - **FR-015**: One complete host operation MUST capture, materialize, execute, and evaluate the published solver outside every live agent workspace without Git metadata, keep the tree stable across later ref changes, remove all temporary state, and only then return an outcome for publication.
-- **FR-016**: Published solver execution MUST occur in a fresh sandbox exposing only the read-only submission tree, read-only assigned ciphertext, a writable output directory, and the standard bounded temporary filesystem.
+- **FR-016**: Published solver execution MUST occur in a fresh sandbox exposing only the read-only submission tree, read-only assigned ciphertext, bounded container-only output scratch, and the standard bounded temporary filesystem; it MUST receive no writable host bind.
 - **FR-017**: The checker MUST assemble the caller's released ciphertext from ordered trusted release records outside the agent sandbox, insert exactly one newline between newline-terminated stages, and MUST NOT rescan agent-visible directories or expose private reference or unreleased evidence to the solver.
 - **FR-018**: Checker feedback and final evaluation records MUST identify the exact captured published commit; final evaluation provenance MUST also identify the reviewer-selected workspace, assigned repository, and `refs/heads/main`.
 - **FR-019**: Scoring MUST accept only a non-empty, size-bounded regular output file whose resolved path remains inside the dedicated output directory.
 - **FR-020**: The immutable study scoring declaration MUST name the selected-workspace published-main snapshot boundary rather than reviewer-selected commands or output paths.
 - **FR-021**: Missing or invalid submissions MUST remain explicit submission outcomes, while trusted host-process, sandbox, mount, cleanup, and cancellation failures MUST propagate through infrastructure classification.
-- **FR-022**: One attempt-scoped owner MUST serialize accepted stage releases, Git changes, team messages, and shutdown; agent tools MUST receive only immutable per-agent views, and no accepted mutation may appear in only a subset of the canonical trace, message room, released-stage view, or eligible activity streams.
+- **FR-022**: One attempt-scoped owner MUST synchronously commit accepted stage releases, Git changes, and team messages to every affected live view, serialize their canonical trace projection in the same order, reject mutations after shutdown begins, and poison the attempt if any committed event cannot be durably projected.
+- **FR-023**: Stage bytes MUST be prepared outside agent-visible mounts and atomically renamed into evidence during the live release commit, so treatment traffic cannot delay scheduled visibility behind trace I/O.
+- **FR-024**: After solver exit, the trusted host MUST extract only the declared output into hidden staging, reject missing, empty, non-regular, or oversized output, and atomically publish only a valid file.
 
 ### Key Entities
 
@@ -145,6 +147,8 @@ An experiment operator can trust that checker feedback and final scoring execute
 - **SC-007**: Adversarial provider-free probes show zero successful reads of unpublished workspace state, non-main refs, Git metadata, private evidence, reference material, or oracle paths during checking and evaluation.
 - **SC-008**: Every successful checker and final score identifies exactly one 40-character commit captured from the selected origin's `refs/heads/main`.
 - **SC-009**: All escaping or non-regular output probes are rejected before the scorer is called.
+- **SC-010**: A blocked team-message or Git trace append does not delay an otherwise due stage release, and any later trace failure invalidates the attempt rather than publishing a valid record.
+- **SC-011**: A solver that streams output cannot consume more than the declared output-scratch quota and leaves no invalid durable host output.
 
 ## Assumptions
 

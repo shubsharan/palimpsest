@@ -213,6 +213,7 @@ export function testAttemptSummary(
     memoryBytes: 2_147_483_648,
     pids: 256,
     tmpfsBytes: 268_435_456,
+    solverOutputBytes: 16_777_216,
     maxOutputBytes: 4_194_304,
   } as const;
   const models = agentIds.map((agentId) => ({

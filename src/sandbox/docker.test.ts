@@ -16,6 +16,7 @@ import {
   buildAgentDockerCreateArguments,
   buildDockerCreateArguments,
   buildDockerExecArguments,
+  buildSolverDockerExecArguments,
   validateSandboxImageInspection,
 } from "./docker.js";
 
@@ -129,33 +130,38 @@ describe("sandbox Docker image and arguments", () => {
     expect(execArgs.at(-1)).toBe("git status");
   });
 
-  it("gives solver execution only a read-only submission, ciphertext, and output root", async () => {
+  it("gives solver execution read-only inputs and bounded container-only output", async () => {
     const root = await temporaryRoot();
     const submission = join(root, "submission");
     const output = join(root, "output");
     const ciphertext = join(root, "ciphertext.txt");
     await Promise.all([mkdir(submission), mkdir(output), writeFile(ciphertext, "ciphertext\n")]);
+    const request = {
+      profile: "solver" as const,
+      command: "sh solve.sh",
+      timeoutMs: 1_000,
+      submissionPath: submission,
+      ciphertextPath: ciphertext,
+      outputRoot: output,
+      outputPath: "out/answer.txt",
+    };
     const args = await buildDockerCreateArguments(
-      {
-        profile: "solver",
-        command: "sh solve.sh",
-        timeoutMs: 1_000,
-        submissionPath: submission,
-        ciphertextPath: ciphertext,
-        outputRoot: output,
-        outputPath: "out/answer.txt",
-      },
+      request,
       TEST_IDENTITY,
       "palimpsest-solver-test",
       { uid: 501, gid: 20 },
     );
     const joined = args.join("\n");
     const resolvedSubmission = await realpath(submission);
-    const resolvedOutput = await realpath(output);
 
     expect(joined).toContain(`source=${resolvedSubmission},target=/submission,readonly`);
     expect(joined).toContain("target=/input/ciphertext.txt,readonly");
-    expect(joined).toContain(`source=${resolvedOutput},target=/output`);
+    expect(joined).toContain(
+      `/output:rw,nosuid,nodev,noexec,mode=1777,nr_inodes=256,size=${String(
+        SANDBOX_POLICY.solverOutputBytes,
+      )}`,
+    );
+    expect(joined).not.toContain(`source=${output}`);
     expect(joined).toContain("PALIMPSEST_CIPHERTEXT=/input/ciphertext.txt");
     expect(joined).toContain("PALIMPSEST_OUTPUT=/output/out/answer.txt");
     expect(joined).toContain("--workdir\n/submission");
@@ -163,5 +169,13 @@ describe("sandbox Docker image and arguments", () => {
     expect(joined).not.toContain("/git");
     expect(joined).not.toContain("/evidence");
     expect(joined).not.toContain("/reference");
+    expect(args.at(-1)).toBe("while :; do sleep 3600; done");
+
+    const execArgs = buildSolverDockerExecArguments(request, "palimpsest-solver-test", {
+      uid: 501,
+      gid: 20,
+    });
+    expect(execArgs).toContain("PALIMPSEST_OUTPUT=/output/out/answer.txt");
+    expect(execArgs.at(-1)).toBe("sh solve.sh");
   });
 });

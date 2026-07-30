@@ -50,11 +50,11 @@
 
 ## Single-Owner Attempt Runtime
 
-**Decision**: Put accepted stage releases, Git changes, team messages, per-agent activity projections, and shutdown behind one serialized `AttemptRuntime`. Tools receive immutable per-agent handles; they cannot mutate buses, rooms, or release arrays directly.
+**Decision**: Put accepted stage releases, Git changes, team messages, per-agent activity projections, and shutdown behind one `AttemptRuntime`. Each operation makes one synchronous live commit across every affected in-memory view, then enters one ordered durable trace outbox. Tools receive immutable per-agent handles; they cannot mutate buses, rooms, or release arrays directly.
 
-**Rationale**: The previous split ownership made correctness depend on caller timing: a close could race a post, a checker could observe a release array changing across an `await`, and trace/activity/message projections could drift. One owner validates and durably observes each mutation before synchronously updating every in-memory projection, orders shutdown after already queued work, and poisons the whole runtime if its canonical trace cannot accept an event.
+**Rationale**: The previous split ownership made correctness depend on caller timing, while using trace I/O as the runtime lock made scheduled evidence visibility depend on unrelated message and Git traffic. JavaScript synchronous execution supplies the live atomic commit; the outbox preserves identical trace order without delaying treatment state. Shutdown rejects new commits immediately and drains the outbox. A trace failure poisons the attempt, so only a fully projected attempt can become valid research evidence.
 
-**Alternatives considered**: Additional guards in each caller were rejected because they preserve multiple authorities and new interleavings. A database, event broker, replay engine, or actor service was rejected because one local serialized promise tail provides the required ordering at attempt scale.
+**Alternatives considered**: Additional guards in each caller were rejected because they preserve multiple authorities and new interleavings. Making the trace append the live commit was rejected because storage latency then changes treatment timing. A database, event broker, replay engine, or actor service was rejected because one in-process owner and one promise-tail outbox provide the required ordering at attempt scale.
 
 ## Published Code As A Complete Operation
 
@@ -66,19 +66,19 @@
 
 ## Ordered Released Input
 
-**Decision**: Stage publication creates ordered records containing ordinal, sealed build source, and visible copied path. Checker ciphertext reads only those source records and inserts one newline between already newline-terminated stages; Python checker truth uses the identical geometry.
+**Decision**: Stage publication first copies each sealed source into host-private staging on the evidence filesystem. The runtime atomically renames that file into the agent-visible evidence directory while committing the ordered release record and activity. Checker ciphertext reads only those records and inserts one newline between already newline-terminated stages; Python checker truth uses the identical geometry.
 
-**Rationale**: The release event, not an agent-writable directory scan, is the authority for what is visible. One canonical separator rule retains the intended blank paragraph boundary without accumulating extra newlines.
+**Rationale**: Private preparation prevents partial files; same-filesystem rename makes visibility atomic; and the runtime commit keeps visible bytes, the released-stage view, and activity aligned without waiting behind trace persistence. The release event, not an agent-writable directory scan, remains the authority for checking. One canonical separator rule retains the intended blank paragraph boundary without accumulating extra newlines.
 
-**Alternatives considered**: Rescanning evidence filenames was rejected because visible directories are not the release authority and name matching creates ambiguity. Concatenating bytes without a separator and joining with two newlines were rejected because both change cross-stage paragraph geometry.
+**Alternatives considered**: Copying directly into evidence was rejected because partial or uncommitted bytes become visible. Rescanning evidence filenames was rejected because visible directories are not the release authority and name matching creates ambiguity. Concatenating bytes without a separator and joining with two newlines were rejected because both change cross-stage paragraph geometry.
 
 ## One Short-Lived Solver Execution Profile
 
-**Decision**: Both checking and evaluation use one host-owned runner and the existing short-lived Docker sandbox implementation. The container receives a read-only submission tree, read-only ciphertext, one writable output directory, read-only root filesystem, bounded `/tmp`, no network, and no Git, evidence, reference, workspace-parent, oracle, or credential mounts.
+**Decision**: Both checking and evaluation use one host-owned runner and the existing short-lived Docker sandbox implementation. The container receives a read-only submission tree, read-only ciphertext, a 16 MiB `/output` tmpfs, read-only root filesystem, bounded `/tmp`, no network, and no Git, evidence, reference, workspace-parent, oracle, credential, or writable host mounts. After exit, the host copies only the declared path to hidden staging, validates it, and atomically renames a valid file into durable output.
 
-**Rationale**: Checker and evaluation differ only in ciphertext scope and scoring hook. One execution primitive prevents their visibility and output rules from drifting.
+**Rationale**: The tmpfs quota bounds hostile or accidental writes while they occur. Hidden extraction and atomic rename ensure unvalidated bytes never occupy the durable output path. Checker and evaluation differ only in ciphertext scope and scoring hook, so one execution primitive prevents their visibility and output rules from drifting.
 
-**Alternatives considered**: The persistent agent lease was rejected because it intentionally exposes private evidence, reference material, Git, and the live workspace. A separate grader image or service was rejected because the existing puzzle sandbox already contains the required runtime and limits.
+**Alternatives considered**: A writable host bind plus post-run `stat` was rejected because it lets untrusted code consume host storage before validation. The persistent agent lease was rejected because it intentionally exposes private evidence, reference material, Git, and the live workspace. A separate grader image or service was rejected because the existing puzzle sandbox already contains the required runtime and limits.
 
 ## Exact Commit And Honest Boundary Identity
 

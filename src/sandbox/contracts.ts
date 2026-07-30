@@ -20,6 +20,7 @@ export const SANDBOX_POLICY = {
   memoryBytes: 2_147_483_648,
   pids: 256,
   tmpfsBytes: 268_435_456,
+  solverOutputBytes: 16_777_216,
   maxOutputBytes: 4_194_304,
 } as const;
 
@@ -63,6 +64,7 @@ export interface SandboxCommandResult {
   stderr: string;
   timedOut: boolean;
   outputExceeded: boolean;
+  outputFailure?: string;
   indeterminate?: true;
   sandboxGeneration?: number;
 }

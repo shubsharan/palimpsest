@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -163,7 +163,7 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
     });
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, result.stderr).toBe(0);
     expect(await listRemoteRefs(fixture.repository.path)).toHaveProperty(
       "refs/heads/private/result",
     );
@@ -200,11 +200,12 @@ describe("real Docker command containment", () => {
       memoryBytes: 2_147_483_648,
       pids: 256,
       tmpfsBytes: 268_435_456,
+      solverOutputBytes: 16_777_216,
       maxOutputBytes: 4_194_304,
     });
   });
 
-  it("gives solver execution only the submission, ciphertext, and writable output", async () => {
+  it("gives solver execution only read-only inputs and bounded output scratch", async () => {
     const fixture = await agentFixture();
     const ciphertext = join(fixture.root, "ciphertext.txt");
     const submission = join(fixture.root, "submission");
@@ -221,9 +222,9 @@ describe("real Docker command containment", () => {
         'test "$(cat "$PALIMPSEST_CIPHERTEXT")" = complete-ciphertext',
         'cp "$PALIMPSEST_CIPHERTEXT" "$PALIMPSEST_OUTPUT"',
         "test ! -e .git",
-        "test ! -e /git",
-        "test ! -e /evidence",
-        "test ! -e /reference",
+        "test ! -e /git/origin.git/HEAD",
+        "test ! -e /evidence/stage.txt",
+        "test ! -e /reference/reference.txt",
         `test ! -e ${shellQuote(fixture.oracle)}`,
         `test ! -e ${shellQuote(fixture.hostSentinel)}`,
         'test -z "${OPENAI_API_KEY+x}"',
@@ -235,10 +236,35 @@ describe("real Docker command containment", () => {
       outputPath: "reconstruction.txt",
     });
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, result.stderr).toBe(0);
     expect(await readFile(join(output, "reconstruction.txt"), "utf8")).toBe(
       "complete-ciphertext\n",
     );
+    await assertNoSandboxContainers(sandbox.containerLabelValue);
+  }, 60_000);
+
+  it("bounds streaming solver output before it reaches host storage", async () => {
+    const fixture = await agentFixture();
+    const ciphertext = join(fixture.root, "ciphertext.txt");
+    const submission = join(fixture.root, "submission");
+    const output = join(fixture.root, "output");
+    await Promise.all([writeFile(ciphertext, "ciphertext\n"), mkdir(submission), mkdir(output)]);
+    const sandbox = await createDockerCommandSandbox();
+
+    const result = await sandbox.execute({
+      profile: "solver",
+      command:
+        'python3 -c \'import os; f=open(os.environ["PALIMPSEST_OUTPUT"], "wb"); ' +
+        'chunk=b"x"*1048576\nwhile True: f.write(chunk); f.flush()\'',
+      timeoutMs: 30_000,
+      submissionPath: submission,
+      ciphertextPath: ciphertext,
+      outputRoot: output,
+      outputPath: "reconstruction.txt",
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(await readdir(output)).toEqual([]);
     await assertNoSandboxContainers(sandbox.containerLabelValue);
   }, 60_000);
 

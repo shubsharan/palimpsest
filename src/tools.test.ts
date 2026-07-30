@@ -65,8 +65,8 @@ async function toolFixture(
       if (kind === "team.message") observedTeamMessages.push(data);
     },
   });
-  await runtime.recordReleasedStage("agent-1", releasedStages[0]);
-  await runtime.recordReleasedStage("agent-1", releasedStages[1]);
+  await runtime.publishReleasedStage("agent-1", releasedStages[0], () => undefined);
+  await runtime.publishReleasedStage("agent-1", releasedStages[1], () => undefined);
   await runGit(["init", "--bare", "--initial-branch=main", gitOrigin]);
   const seed = join(root, "seed");
   await runGit(["clone", gitOrigin, seed]);
@@ -307,7 +307,11 @@ describe("agent tools", () => {
         writeFile(sourcePath, "five six\n"),
         writeFile(visiblePath, "five six\n"),
       ]);
-      await runtime.recordReleasedStage("agent-1", { ordinal: 3, sourcePath, visiblePath });
+      await runtime.publishReleasedStage(
+        "agent-1",
+        { ordinal: 3, sourcePath, visiblePath },
+        () => undefined,
+      );
     });
 
     await expect(fixture.tools.execute("check_published_solver", {})).resolves.toMatchObject({

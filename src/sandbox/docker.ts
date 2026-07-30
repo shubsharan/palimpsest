@@ -15,6 +15,7 @@ import {
   type BaseSandboxCommand,
   type SandboxCommand,
   type SandboxIdentity,
+  type SolverSandboxCommand,
   validateSandboxCommand,
 } from "./contracts.js";
 import { validateRelativeWorkspacePath } from "./workspace.js";
@@ -171,11 +172,6 @@ export async function buildDockerCreateArguments(
         target: SANDBOX_PATHS.ciphertext,
         readOnly: true,
       },
-      {
-        source: await requireMountSource(request.outputRoot, "directory", "output"),
-        target: SANDBOX_PATHS.output,
-        readOnly: false,
-      },
     );
     environment.unshift("HOME=/tmp");
     environment.push(
@@ -206,6 +202,14 @@ export async function buildDockerCreateArguments(
     String(SANDBOX_POLICY.cpus),
     "--tmpfs",
     `/tmp:rw,nosuid,nodev,size=${String(SANDBOX_POLICY.tmpfsBytes)}`,
+    ...(request.profile === "solver"
+      ? [
+          "--tmpfs",
+          `${SANDBOX_PATHS.output}:rw,nosuid,nodev,noexec,mode=1777,nr_inodes=256,size=${String(
+            SANDBOX_POLICY.solverOutputBytes,
+          )}`,
+        ]
+      : []),
     "--user",
     `${String(user.uid)}:${String(user.gid)}`,
   ];
@@ -221,7 +225,7 @@ export async function buildDockerCreateArguments(
     ...environment,
     "/bin/sh",
     "-lc",
-    request.command,
+    request.profile === "solver" ? "while :; do sleep 3600; done" : request.command,
   );
   return args;
 }
@@ -246,6 +250,34 @@ export function buildDockerExecArguments(
     "LC_ALL=C.UTF-8",
     "TMPDIR=/tmp",
     "GIT_TERMINAL_PROMPT=0",
+    "/bin/sh",
+    "-lc",
+    request.command,
+  ];
+}
+
+export function buildSolverDockerExecArguments(
+  request: SolverSandboxCommand,
+  containerName: string,
+  user: { uid: number; gid: number },
+): string[] {
+  validateSandboxCommand(request);
+  validateRelativeWorkspacePath(request.outputPath, "Reviewer outputPath");
+  return [
+    "exec",
+    "--workdir",
+    SANDBOX_PATHS.submission,
+    "--user",
+    `${String(user.uid)}:${String(user.gid)}`,
+    containerName,
+    "/usr/bin/env",
+    "-i",
+    "HOME=/tmp",
+    "LANG=C.UTF-8",
+    "LC_ALL=C.UTF-8",
+    "TMPDIR=/tmp",
+    `PALIMPSEST_CIPHERTEXT=${SANDBOX_PATHS.ciphertext}`,
+    `PALIMPSEST_OUTPUT=${posix.join(SANDBOX_PATHS.output, request.outputPath)}`,
     "/bin/sh",
     "-lc",
     request.command,

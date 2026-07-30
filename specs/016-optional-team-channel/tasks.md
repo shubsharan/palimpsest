@@ -87,7 +87,7 @@
 - [x] T033 Replace evidence rescanning with ordered `ReleasedStage` records and canonical released-input assembly in `src/run.ts`, `src/tools.ts`, and `python/palimpsest/evaluation/checker.py`
 - [x] T034 Route checker and evaluation through the captured snapshot and preserve typed submission versus infrastructure outcomes in `src/tools.ts` and `src/evaluate.ts`
 - [x] T035 Update Feature 016 contracts and design artifacts for fetch-and-materialize capture before identity publication
-- [ ] T036 Run focused TypeScript tests, provider-free suites, Python tests, `pnpm verify`, and `git diff --check`
+- [x] T036 Run focused TypeScript tests, provider-free suites, Python tests, `pnpm verify`, and `git diff --check`
 
 ## Phase 10: Single-Owner Runtime And Complete Solver Transaction
 
@@ -97,9 +97,17 @@
 - [x] T040 Replace the public snapshot callback with one complete `runPublishedSolver` operation that captures, executes, evaluates, cleans, and only then returns a typed outcome in `src/published-solver.ts`
 - [x] T041 Publish checker and evaluation results only after `runPublishedSolver` succeeds, and classify rejected trusted evaluation hooks as infrastructure failures in `src/tools.ts` and `src/evaluate.ts`
 - [x] T042 Update Feature 016 plan, research, data model, contracts, and quickstart for single-owner attempt state and cleanup-before-publication
-- [ ] T043 Run focused TypeScript tests, provider-free suites, Python tests, `pnpm verify`, and `git diff --check`
+- [x] T043 Run focused TypeScript tests, provider-free suites, Python tests, `pnpm verify`, and `git diff --check`
 
-Verification note (2026-07-30): focused TypeScript tests, 31 non-failing Vitest files, all 93 Python tests, formatting, lint, type-check, and `git diff --check` pass. T043 remains open because Docker agent `docker create` exceeds the 30-second infrastructure deadline in all four offline cells and the real-container sandbox suite.
+Verification note (2026-07-30): all 33 Vitest files and 406 TypeScript tests, all 93 Python tests, the real-container output-quota probe, formatting, lint, type-check, and `git diff --check` pass.
+
+## Phase 11: Atomic Publication Boundaries
+
+- [x] T044 [P] Add adversarial trace-backlog stage-release and solver-output extraction tests in `src/attempt-runtime.test.ts`, `src/sandbox/docker.test.ts`, and `src/sandbox/container.test.ts`
+- [x] T045 Replace trace-I/O locking with synchronous live commits plus one ordered durable trace projection, and atomically rename privately prepared stages in `src/attempt-runtime.ts` and `src/run.ts`
+- [x] T046 Replace the solver's writable host output bind with bounded container tmpfs and validated atomic host extraction in `src/sandbox/contracts.ts`, `src/sandbox/docker.ts`, `src/sandbox/container.ts`, and `src/published-solver.ts`
+- [x] T047 Update Feature 016 design artifacts and repository documentation for live-authority and bounded-publication invariants
+- [x] T048 Run focused TypeScript tests, provider-free suites, Python tests, `pnpm verify`, and `git diff --check`
 
 ## Dependencies And Execution Order
 
@@ -117,6 +125,8 @@ Verification note (2026-07-30): focused TypeScript tests, 31 non-failing Vitest 
 - T037 specifies the ownership and lifecycle invariants before T038-T041.
 - T038-T039 establish immutable attempt views before T040-T041 consume them.
 - T042 documents the implemented boundaries; T043 verifies the complete remediation.
+- T044 specifies the publication boundaries before T045-T046 implementation.
+- T045 and T046 are independent root-boundary changes; T047-T048 document and verify them together.
 
 ## Parallel Opportunities
 
@@ -128,6 +138,7 @@ Verification note (2026-07-30): focused TypeScript tests, 31 non-failing Vitest 
 - T026 can split checker, evaluator, and durability probes across separate test files.
 - T031 can split capture, checker, evaluator, and durability probes across independent test files.
 - T037 can split attempt-runtime and published-solver invariant tests.
+- T045 and T046 can proceed independently after T044.
 
 ## Implementation Strategy
 
@@ -138,3 +149,5 @@ The remediation slice first fixes the shared published-solver contract with adve
 The immutable transaction slice captures literal `refs/heads/main` into one private local ref, materializes that pinned object before publishing its identity, and supplies it only inside a callback. Released input is assembled from ordered host-owned stage records, and only agent submission failures become normal checker or evaluation results.
 
 The single-owner remediation replaces that callback and all live attempt-state getters. One small serialized attempt runtime commits treatment-state trace events before synchronously updating private projections, returns copied released-stage snapshots, and closes only after queued publications and Git monitoring quiesce. One complete published-solver operation owns capture through cleanup, returns only after cleanup succeeds, and leaves durable result publication to its caller.
+
+The atomic-publication slice makes the runtime's synchronous in-memory commit the live authority and serializes only its durable trace projection, so treatment traffic cannot delay scheduled evidence visibility. Stage bytes are prepared outside agent mounts and atomically renamed during that commit; a trace failure poisons the whole attempt. Solver bytes remain in bounded container tmpfs until the stopped container yields one declared regular file to hidden host staging, where validation precedes atomic durable publication.
