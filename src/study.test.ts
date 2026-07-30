@@ -28,6 +28,7 @@ import {
   type StudyCellLaunch,
 } from "./study.js";
 import { TEST_SANDBOX_IDENTITY, testAttemptSummary, testBuildManifest } from "./test-helpers.js";
+import { JsonlObservationLog } from "./trace.js";
 
 const root = resolve(".");
 const sourceRevision = "1".repeat(40);
@@ -265,6 +266,12 @@ async function publishLaunchAttempt(
       ...(infrastructureFailure && index === 0 ? {} : { finalResponse: "fixture complete" }),
     })),
   });
+  const trace = await JsonlObservationLog.create(summary.tracePath, {
+    startedAtMs: 0,
+    nowMs: () => 0,
+  });
+  await trace.append("attempt.frozen", { fixture: true });
+  await trace.flush();
   await publishAttemptSummary(launch.attemptRoot, summary);
   return summary;
 }
@@ -672,6 +679,67 @@ describe("frozen study state", () => {
         },
       }),
     ).rejects.toThrow(/missing its durable attempt\.json/);
+  }, 60_000);
+
+  it("requires canonical, structurally valid traces when reloading indexed attempts", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    const phase = await executeStudyPhase({
+      studyRoot,
+      study,
+      receipt,
+      phase: "calibration",
+      dependencies: {
+        beforeLaunch: async () => {},
+        runCell: async (launch) => {
+          await publishLaunchAttempt(launch, study, false);
+        },
+      },
+    });
+    const firstAttempt = phase.attempts[0];
+    if (firstAttempt === undefined) {
+      throw new Error("Fixture phase did not publish a durable attempt.");
+    }
+    const attemptPath = join(firstAttempt.attemptRoot, "attempt.json");
+    const tracePath = join(firstAttempt.attemptRoot, "trace.jsonl");
+    const traceMetadataPath = join(firstAttempt.attemptRoot, "trace.meta.json");
+    const [attemptSource, traceSource, traceMetadataSource] = await Promise.all([
+      readFile(attemptPath, "utf8"),
+      readFile(tracePath, "utf8"),
+      readFile(traceMetadataPath, "utf8"),
+    ]);
+    const reload = () =>
+      initializeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+      });
+
+    await rm(tracePath);
+    await expect(reload()).rejects.toThrow(/trace is missing or invalid/i);
+    await writeFile(tracePath, traceSource);
+
+    await rm(traceMetadataPath);
+    await expect(reload()).rejects.toThrow(/trace is missing or invalid/i);
+    await writeFile(traceMetadataPath, traceMetadataSource);
+
+    await writeFile(
+      tracePath,
+      `${JSON.stringify({ sequence: 2, atMs: 0, kind: "tampered", data: {} })}\n`,
+    );
+    await expect(reload()).rejects.toThrow(/sequence 2 instead of 1/i);
+    await writeFile(tracePath, traceSource);
+
+    const redirected = JSON.parse(attemptSource) as Record<string, unknown>;
+    redirected.tracePath = join(studyRoot, "other-trace.jsonl");
+    redirected.traceMetadataPath = join(studyRoot, "trace.meta.json");
+    await writeFile(attemptPath, `${JSON.stringify(redirected)}\n`);
+    await expect(reload()).rejects.toThrow(/canonical trace files/i);
+    await writeFile(attemptPath, attemptSource);
+
+    const trace = await JsonlObservationLog.open(tracePath);
+    await trace.append("overlap.observed", { findings: [] });
+    await expect(reload()).resolves.toMatchObject({ state: "complete" });
   }, 60_000);
 
   it("revalidates the complete protocol and frozen tree of indexed attempts", async () => {

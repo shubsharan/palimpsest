@@ -43,6 +43,7 @@ import { readJsonObject } from "./python.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import { SANDBOX_POLICY, type SandboxIdentity } from "./sandbox/contracts.js";
 import { sealTree, verifyTree } from "./seal.js";
+import { JsonlObservationLog } from "./trace.js";
 
 const AGENT_COUNT = 3;
 const CALIBRATION_CELL_COUNT = 4;
@@ -755,6 +756,24 @@ function reserveLaunch(options: {
   };
 }
 
+async function assertAttemptTrace(attempt: AttemptSummary, attemptRoot: string): Promise<void> {
+  const root = resolve(attemptRoot);
+  const tracePath = join(root, "trace.jsonl");
+  const traceMetadataPath = join(root, "trace.meta.json");
+  if (
+    resolve(attempt.tracePath) !== tracePath ||
+    resolve(attempt.traceMetadataPath) !== traceMetadataPath
+  ) {
+    throw new Error(`Attempt ${attempt.attemptId} does not reference its canonical trace files.`);
+  }
+  try {
+    await JsonlObservationLog.open(tracePath);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Attempt ${attempt.attemptId} trace is missing or invalid: ${detail}`);
+  }
+}
+
 async function assertAttemptMatchesLaunch(options: {
   attempt: AttemptSummary;
   attemptRoot: string;
@@ -854,6 +873,7 @@ async function assertAttemptMatchesLaunch(options: {
   if (resolve(options.attemptRoot) === options.cell.buildRoot) {
     throw new Error("Attempt root cannot overlap its receipt-bound build root.");
   }
+  await assertAttemptTrace(attempt, options.attemptRoot);
   await verifyTree(
     attempt.frozen.root,
     attempt.frozen.treeSeal,

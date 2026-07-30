@@ -60,7 +60,7 @@ Cell IDs and positions are deterministic.
 13. stops nonzero on eligible infrastructure classification, otherwise continues sequentially;
 14. removes the phase lock after normal completion or handled failure.
 
-Reinvocation never launches an indexed primary cell. Reloading an indexed attempt revalidates its complete receipt-bound protocol plus its selected-build and frozen-tree seals. A post-publication overlap failure remains in the attempt trace, but the durable non-infrastructure attempt is indexed and the same invocation continues to the next cell.
+Reinvocation never launches an indexed primary cell. Reloading an indexed attempt revalidates its complete receipt-bound protocol, selected-build and frozen-tree seals, canonical trace paths, trace metadata, and complete current trace structure. The trace remains mutable supporting evidence so valid overlap and evaluation events can append after attempt publication; coherent rewriting by the trusted operator is out of scope. A post-publication overlap failure remains in the attempt trace, but the durable non-infrastructure attempt is indexed and the same invocation continues to the next cell.
 
 A competing or abandoned phase lock rejects execution before preflight, reservation, adapter construction, or provider work. The runner does not inspect, steal, expire, or recover locks; an abandoned lock requires a new study root.
 

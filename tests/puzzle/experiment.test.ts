@@ -28,6 +28,7 @@ import {
   TEST_SANDBOX_IDENTITY,
   testAttemptSummary,
 } from "../../src/test-helpers.js";
+import { JsonlObservationLog } from "../../src/trace.js";
 
 const root = resolve(".");
 const temporaryRoots: string[] = [];
@@ -158,6 +159,12 @@ async function publishFixtureAttempt(
       ...(infrastructureFailure && index === 0 ? {} : { finalResponse: "fixture complete" }),
     })),
   });
+  const trace = await JsonlObservationLog.create(summary.tracePath, {
+    startedAtMs: 0,
+    nowMs: () => 0,
+  });
+  await trace.append("attempt.frozen", { fixture: true });
+  await trace.flush();
   await publishAttemptSummary(request.output, summary);
   return summary;
 }

@@ -133,6 +133,15 @@
 
 ---
 
+## Phase 9: Bounded Trace Reload Validation
+
+**Purpose**: Detect missing, redirected, or malformed supporting traces without adding immutable-prefix bookkeeping or changing artifact schemas.
+
+- [x] T043 Require canonical attempt-root trace paths and validate complete current trace metadata and JSONL structure whenever a study attempt is accepted
+- [x] T044 Cover missing, malformed, redirected, and valid post-publication trace tails and reconcile the Feature 015 contract
+
+---
+
 ## Dependencies And Execution Order
 
 - Setup precedes Foundational Contracts.
