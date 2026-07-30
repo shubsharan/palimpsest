@@ -142,6 +142,57 @@ async function assertBuildArtifacts(buildRoot: string, blockId: string, manifest
       }
     }),
   );
+  await Promise.all(
+    [manifest.variants.stationary, manifest.variants.rekey].map(async (variant) => {
+      const ciphertext = await readFile(buildArtifactPath(buildRoot, variant.publicCiphertextPath));
+      const expectedReferenceNames = manifest.references
+        .map(({ sourceId }) => `${sourceId}-reference.txt`)
+        .sort();
+      const referenceRoot = buildArtifactPath(buildRoot, variant.referenceCorpusPath);
+      const referenceEntries = await readdir(referenceRoot, { withFileTypes: true });
+      const actualReferenceNames = referenceEntries.map(({ name }) => name).sort();
+      if (
+        referenceEntries.some((entry) => !entry.isFile()) ||
+        !sameValue(actualReferenceNames, expectedReferenceNames)
+      ) {
+        throw new Error(
+          `Receipt-bound build ${blockId} ${variant.variantId} reference artifact set has drifted.`,
+        );
+      }
+      const references = await Promise.all(
+        manifest.references.map(async (reference) => {
+          const path = `${variant.referenceCorpusPath}/${reference.sourceId}-reference.txt`;
+          const bytes = await readFile(buildArtifactPath(buildRoot, path));
+          return {
+            sourceId: reference.sourceId,
+            sourceSha256: reference.sha256,
+            path,
+            byteLength: bytes.byteLength,
+            sha256: sha256(bytes),
+          };
+        }),
+      );
+      const buildId = `build-${hashProtocolSnapshot({
+        schemaVersion: 1,
+        blockId: manifest.blockId,
+        variantId: variant.variantId,
+        allocationId: manifest.allocation.allocationId,
+        windowSha256: manifest.window.sha256,
+        complete: {
+          byteLength: ciphertext.byteLength,
+          sha256: sha256(ciphertext),
+        },
+        references,
+        stages: variant.stages,
+        keyTransitions: variant.keyTransitions,
+      })}`;
+      if (buildId !== variant.buildId) {
+        throw new Error(
+          `Receipt-bound build ${blockId} ${variant.variantId} consumed artifact set has drifted.`,
+        );
+      }
+    }),
+  );
 }
 
 export interface StudyDesignDependencies {

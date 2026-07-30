@@ -43,8 +43,6 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
   manifest.blockId = options.block;
   manifest.pairedBuildId = `paired-${digest("paired")}`;
   const variants = manifest.variants as Record<"stationary" | "rekey", Record<string, unknown>>;
-  variants.stationary.buildId = `build-${digest("stationary")}`;
-  variants.rekey.buildId = `build-${digest("rekey")}`;
   await mkdir(options.output, { recursive: true });
   const writeArtifact = async (path: string, content: string): Promise<string> => {
     await mkdir(dirname(join(options.output, path)), { recursive: true });
@@ -61,11 +59,40 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
     `manipulation:${options.block}\n`,
   );
   for (const variant of Object.values(variants)) {
+    const ciphertext = `ciphertext:${options.block}:${String(variant.variantId)}\n`;
+    await writeArtifact(String(variant.publicCiphertextPath), ciphertext);
+    const references = await Promise.all(
+      (manifest.references as Array<Record<string, unknown>>).map(async (reference) => {
+        const path = `${String(variant.referenceCorpusPath)}/${String(reference.sourceId)}-reference.txt`;
+        const content = `reference:${options.block}:${String(reference.sourceId)}\n`;
+        return {
+          sourceId: reference.sourceId,
+          sourceSha256: reference.sha256,
+          path,
+          byteLength: Buffer.byteLength(content),
+          sha256: await writeArtifact(path, content),
+        };
+      }),
+    );
     const stages = variant.stages as Array<Record<string, unknown>>;
     for (const stage of stages) {
       const content = `stage:${options.block}:${String(stage.agentId)}:${String(stage.ordinal)}\n`;
       stage.sha256 = await writeArtifact(String(stage.sourcePath), content);
     }
+    variant.buildId = `build-${hashProtocolSnapshot({
+      schemaVersion: 1,
+      blockId: manifest.blockId,
+      variantId: variant.variantId,
+      allocationId: allocation.allocationId,
+      windowSha256: (manifest.window as Record<string, unknown>).sha256,
+      complete: {
+        byteLength: Buffer.byteLength(ciphertext),
+        sha256: digestBytes(ciphertext),
+      },
+      references,
+      stages,
+      keyTransitions: variant.keyTransitions,
+    })}`;
   }
   await writeFile(
     join(options.output, "puzzle-build.json"),
@@ -300,6 +327,34 @@ describe("frozen study state", () => {
       }),
     ).rejects.toThrow(/artifact .*drifted/);
   }, 60_000);
+
+  it.each(["public ciphertext", "reference corpus"] as const)(
+    "rejects receipt-bound %s byte drift",
+    async (artifact) => {
+      const { studyRoot, study, receipt } = await prepareFixture();
+      const binding = receipt.builds[0]!;
+      const variant = binding.manifest.variants.stationary;
+      const path =
+        artifact === "public ciphertext"
+          ? variant.publicCiphertextPath
+          : `${variant.referenceCorpusPath}/${binding.manifest.references[0]!.sourceId}-reference.txt`;
+      await writeFile(join(studyRoot, "builds", binding.blockId, path), `tampered ${artifact}\n`);
+
+      await expect(
+        prepareStudyDesign({
+          root,
+          studyRoot,
+          study,
+          phase: "validation",
+          dependencies: {
+            sourceState: async () => cleanSourceState(),
+            sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+          },
+        }),
+      ).rejects.toThrow(/consumed artifact set .*drifted/);
+    },
+    60_000,
+  );
 
   it("recomputes the receipt baseline manifest digest during validation", async () => {
     const { studyRoot, study } = await prepareFixture();
