@@ -17,6 +17,7 @@ import { hashProtocolSnapshot, resolveCondition } from "./condition.js";
 import { loadStudyManifest, resolveStudy, type ResolvedStudy } from "./config.js";
 import type { ModelBinding } from "./model.js";
 import type { SourceState } from "./preflight.js";
+import { buildAgentPrompt } from "./prompt.js";
 import { SANDBOX_POLICY } from "./sandbox/contracts.js";
 import {
   executeStudyPhase,
@@ -181,6 +182,14 @@ async function publishLaunchAttempt(
     buildId: launch.cell.buildId,
     tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
     models: protocolModels,
+    prompts: study.assignment.map(({ agentId }) => ({
+      agentId,
+      prompt: buildAgentPrompt({
+        agentId,
+        condition: condition.id,
+        tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
+      }),
+    })),
     sandbox: { ...TEST_SANDBOX_IDENTITY, ...SANDBOX_POLICY },
   };
   const frozenRoot = join(launch.attemptRoot, "frozen");
@@ -577,6 +586,106 @@ describe("frozen study state", () => {
         },
       }),
     ).rejects.toThrow(/missing its durable attempt\.json/);
+  }, 60_000);
+
+  it("revalidates the complete receipt-bound protocol of indexed attempts", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    const phase = await executeStudyPhase({
+      studyRoot,
+      study,
+      receipt,
+      phase: "calibration",
+      dependencies: {
+        beforeLaunch: async () => {},
+        runCell: async (launch) => {
+          await publishLaunchAttempt(launch, study, false);
+        },
+      },
+    });
+    const firstAttempt = phase.attempts[0];
+    if (firstAttempt === undefined) {
+      throw new Error("Fixture phase did not publish a durable attempt.");
+    }
+    const attemptPath = join(firstAttempt.attemptRoot, "attempt.json");
+    const original = await readFile(attemptPath, "utf8");
+    const mutations = [
+      (attempt: Record<string, unknown>) => {
+        const sessions = attempt.sessions as Array<Record<string, unknown>>;
+        const sessionModel = sessions[0]!.model as Record<string, unknown>;
+        sessionModel.requestedModel = "tampered/model";
+        const protocol = attempt.protocol as Record<string, unknown>;
+        const models = protocol.models as Array<Record<string, unknown>>;
+        const protocolModel = models[0]!.model as Record<string, unknown>;
+        protocolModel.requestedModel = "tampered/model";
+      },
+      (attempt: Record<string, unknown>) => {
+        const protocol = attempt.protocol as Record<string, unknown>;
+        const prompts = protocol.prompts as Array<Record<string, unknown>>;
+        prompts[0]!.prompt = "tampered prompt";
+      },
+      (attempt: Record<string, unknown>) => {
+        const imageId = `sha256:${"e".repeat(64)}`;
+        (attempt.sandbox as Record<string, unknown>).imageId = imageId;
+        const protocol = attempt.protocol as Record<string, unknown>;
+        (protocol.sandbox as Record<string, unknown>).imageId = imageId;
+      },
+    ];
+    for (const mutate of mutations) {
+      const attempt = JSON.parse(original) as Record<string, unknown>;
+      mutate(attempt);
+      attempt.protocolDigest = hashProtocolSnapshot(attempt.protocol);
+      await writeFile(attemptPath, `${JSON.stringify(attempt, null, 2)}\n`);
+      await expect(
+        initializeStudyPhase({
+          studyRoot,
+          study,
+          receipt,
+          phase: "calibration",
+        }),
+      ).rejects.toThrow(/does not match the frozen study protocol/);
+    }
+  }, 60_000);
+
+  it("revalidates selected build bytes before reserving each launch", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    let launches = 0;
+
+    await expect(
+      executeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+        dependencies: {
+          beforeLaunch: async () => {},
+          runCell: async (launch) => {
+            launches += 1;
+            await publishLaunchAttempt(launch, study, false);
+            if (launches === 1) {
+              const nextCell = study.calibrationCells[1]!;
+              const binding = receipt.builds.find(
+                (candidate) => candidate.blockId === nextCell.blockId,
+              )!;
+              const variant = binding.manifest.variants.rekey;
+              const reference = binding.manifest.references[0]!;
+              await writeFile(
+                join(
+                  binding.buildRoot,
+                  variant.referenceCorpusPath,
+                  `${reference.sourceId}-reference.txt`,
+                ),
+                "tampered between launches\n",
+              );
+            }
+          },
+        },
+      }),
+    ).rejects.toThrow(/consumed artifact set .*drifted/);
+
+    expect(launches).toBe(1);
+    const phase = await readPhaseSummary(studyRoot, "calibration");
+    expect(phase.reservations).toHaveLength(1);
+    expect(phase.reservations[0]?.state).toBe("resolved");
   }, 60_000);
 
   it("freezes an infrastructure failure and permits only cited replacements within ceilings", async () => {

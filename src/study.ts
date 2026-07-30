@@ -34,7 +34,12 @@ import {
 import { expandPhase, type ResolvedStudy } from "./config.js";
 import type { AgentId } from "./model.js";
 import { readSourceState, type SourceState } from "./preflight.js";
-import { buildAgentPrompt, snapshotAgentPromptTemplates, type PromptAgentId } from "./prompt.js";
+import {
+  buildAgentPrompt,
+  snapshotAgentPromptTemplates,
+  TOKEN_BUDGET_PLACEHOLDER,
+  type PromptAgentId,
+} from "./prompt.js";
 import { readJsonObject } from "./python.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import { SANDBOX_POLICY, type SandboxIdentity } from "./sandbox/contracts.js";
@@ -465,6 +470,25 @@ async function assertBuildBindings(
   return bindings;
 }
 
+async function assertCellBuildBinding(receipt: DesignReceipt, cell: PlannedCell): Promise<void> {
+  const expected = receipt.builds.find((binding) => binding.blockId === cell.blockId);
+  if (
+    expected === undefined ||
+    resolve(expected.buildRoot) !== cell.buildRoot ||
+    selectBuildVariant(expected.manifest, resolveCondition(cell.condition).variantId).buildId !==
+      cell.buildId
+  ) {
+    throw new Error(`Study cell ${cell.cellId} does not match its receipt-bound build.`);
+  }
+  const actual = await readBuildBinding(cell.buildRoot, cell.blockId);
+  if (
+    actual.buildManifestDigest !== expected.buildManifestDigest ||
+    !sameValue(actual.manifest, expected.manifest)
+  ) {
+    throw new Error(`Receipt-bound build ${cell.blockId} has drifted before launch.`);
+  }
+}
+
 function assertDesignIdentity(
   actual: DesignReceipt,
   expected: DesignReceipt,
@@ -836,6 +860,60 @@ function assertAttemptMatchesLaunch(options: {
 }): void {
   const attempt = options.attempt;
   const budgets = options.budgets ?? options.study.budgets;
+  const condition = resolveCondition(options.cell.condition);
+  const models = options.study.assignment.map((assignment) => {
+    const profile = options.study.models[assignment.modelProfileId];
+    if (profile === undefined) {
+      throw new Error(`Study model profile ${assignment.modelProfileId} is missing.`);
+    }
+    const provider = options.study.providers[profile.provider];
+    if (provider === undefined) {
+      throw new Error(`Study provider ${profile.provider} is missing.`);
+    }
+    return {
+      agentId: assignment.agentId,
+      model: {
+        profile: assignment.modelProfileId,
+        provider: profile.provider,
+        driver: provider.driver,
+        requestedModel: profile.model,
+        settings: profile.settings,
+        providerOptions: profile.providerOptions,
+      },
+    };
+  });
+  const prompts = options.study.assignment.map(({ agentId }) => {
+    const template = options.receipt.promptTemplates.find(
+      (candidate) =>
+        candidate.agentId === agentId &&
+        candidate.communicationMode === condition.communicationMode,
+    );
+    if (template === undefined || template.template.split(TOKEN_BUDGET_PLACEHOLDER).length !== 2) {
+      throw new Error(`Receipt prompt template for ${agentId} is invalid.`);
+    }
+    return {
+      agentId,
+      prompt: template.template.replace(
+        TOKEN_BUDGET_PLACEHOLDER,
+        String(budgets.tokenBudgetPerAgent),
+      ),
+    };
+  });
+  const expectedProtocol = {
+    schemaVersion: 1,
+    blockId: options.cell.blockId,
+    condition: condition.id,
+    communicationMode: condition.communicationMode,
+    keyRegime: condition.keyRegime,
+    variantId: condition.variantId,
+    buildId: options.cell.buildId,
+    releaseOffsetsMs: options.study.schedule.releaseOffsetsMs,
+    cutoffMs: options.study.schedule.cutoffMs,
+    tokenBudgetPerAgent: budgets.tokenBudgetPerAgent,
+    models,
+    prompts,
+    sandbox: options.receipt.sandbox,
+  };
   if (
     attempt.studyPhase === "standalone" ||
     attempt.attemptId !== options.attemptId ||
@@ -853,17 +931,8 @@ function assertAttemptMatchesLaunch(options: {
   ) {
     throw new Error(`Attempt ${attempt.attemptId} does not match its reserved study cell.`);
   }
-  if (
-    attempt.sessions.some((session, index) => {
-      const assignment = options.study.assignment[index];
-      return (
-        assignment === undefined ||
-        session.agentId !== assignment.agentId ||
-        session.model.profile !== assignment.modelProfileId
-      );
-    })
-  ) {
-    throw new Error(`Attempt ${attempt.attemptId} does not use the frozen model assignment.`);
+  if (!sameValue(attempt.protocol, expectedProtocol)) {
+    throw new Error(`Attempt ${attempt.attemptId} does not match the frozen study protocol.`);
   }
   if (resolve(options.attemptRoot) === options.cell.buildRoot) {
     throw new Error("Attempt root cannot overlap its receipt-bound build root.");
@@ -1104,6 +1173,7 @@ export async function executeStudyPhase(options: ExecuteStudyPhaseOptions): Prom
       ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
     };
     await deps.beforeLaunch(preview);
+    await assertCellBuildBinding(options.receipt, cell);
     const reserved = reserveLaunch({
       summary,
       cell,

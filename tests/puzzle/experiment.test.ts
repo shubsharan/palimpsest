@@ -17,6 +17,7 @@ import { hashProtocolSnapshot, resolveCondition } from "../../src/condition.js";
 import { runStudyExperiment } from "../../src/experiment.js";
 import type { ModelAdapter } from "../../src/model.js";
 import { readSourceState } from "../../src/preflight.js";
+import { buildAgentPrompt } from "../../src/prompt.js";
 import { readJsonObject } from "../../src/python.js";
 import type { RunPuzzleOptions } from "../../src/run.js";
 import { SANDBOX_POLICY } from "../../src/sandbox/contracts.js";
@@ -71,6 +72,14 @@ async function publishFixtureAttempt(
     buildId: variant.buildId,
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,
     models: agents,
+    prompts: manifest.agentIds.map((agentId) => ({
+      agentId,
+      prompt: buildAgentPrompt({
+        agentId,
+        condition: condition.id,
+        tokenBudgetPerAgent: request.tokenBudgetPerAgent,
+      }),
+    })),
     sandbox: { ...TEST_SANDBOX_IDENTITY, ...SANDBOX_POLICY },
   };
   const attemptId = request.attemptId;
