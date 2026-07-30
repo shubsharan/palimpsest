@@ -37,12 +37,12 @@ describe("agent prompt", () => {
       Your team is graded on runnable solver code committed to Git, not on final prose.
       A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
 
-      Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
+      New private evidence is released every 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
       Your cumulative model-token limit is 200000.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use Git, or wait for visible activity.
       After waiting, recheck your evidence and Git for new information.
-      Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
+      Keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
 
       Workspace: /workspace
       Private evidence: /evidence
@@ -59,12 +59,12 @@ describe("agent prompt", () => {
       Your team is graded on runnable solver code committed to Git, not on final prose.
       A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
 
-      Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
+      New private evidence is released every 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
       Your cumulative model-token limit is 200000.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use Git, or wait for visible activity.
       After waiting, recheck your evidence and Git for new information.
-      Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
+      Keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
 
       Workspace: /workspace
       Private evidence: /evidence
@@ -113,12 +113,12 @@ describe("agent prompt", () => {
       Your team is graded on runnable solver code committed to Git, not on final prose.
       A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
 
-      Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
+      New private evidence is released every 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
       Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use Git, or wait for visible activity.
       After waiting, recheck your evidence and Git for new information.
-      Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
+      Keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.
 
       Workspace: /workspace
       Private evidence: /evidence
@@ -168,7 +168,7 @@ describe("agent prompt", () => {
     expect(prompt).toContain("work without /evidence or /reference");
     expect(prompt).toContain("After waiting, recheck your evidence and Git");
     expect(prompt).toContain(
-      "Do not finish early: keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.",
+      "Keep improving the committed solver and rechecking available evidence and Git until the complete ciphertext is solved or the attempt ends.",
     );
     expect(prompt).toContain("Workspace: /workspace");
     expect(prompt).toContain("Private evidence: /evidence");
