@@ -43,25 +43,28 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   const identity = options.agentId.slice("agent-".length);
   const channel =
     condition.communicationMode === "shared"
-      ? "Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget."
-      : "Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.";
+      ? "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget."
+      : "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.";
   return [
     `You are Agent ${identity}, one of 3 agents working concurrently as one team. Each agent receives different private evidence.`,
     "",
     channel,
     "",
     "Recover the plaintext of the complete ciphertext as accurately as you can.",
+    "Your team is graded on runnable solver code committed to Git, not on final prose.",
+    "A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
     "",
     `Private evidence is released at ${formatMinuteOffsets()} minutes. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,
     "",
     "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.",
+    "After waiting, recheck your evidence and Git for new information.",
     "",
     `Workspace: ${SANDBOX_PATHS.workspace}`,
     `Private evidence: ${SANDBOX_PATHS.evidence}`,
     `Reference corpus: ${SANDBOX_PATHS.reference}`,
     "",
-    "A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done.",
+    "Return a final response when you are done.",
   ].join("\n");
 }
 

@@ -9,9 +9,9 @@ import {
 } from "./prompt.js";
 
 const SHARED_CHANNEL =
-  "Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.";
+  "Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget.";
 const ISOLATED_CHANNEL =
-  "Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.";
+  "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.";
 
 describe("agent prompt", () => {
   const prompts = Object.fromEntries(
@@ -31,38 +31,44 @@ describe("agent prompt", () => {
     expect(prompts.CS).toMatchInlineSnapshot(`
       "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
 
-      Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.
+      Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget.
 
       Recover the plaintext of the complete ciphertext as accurately as you can.
+      Your team is graded on runnable solver code committed to Git, not on final prose.
+      A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
 
       Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
       Your cumulative model-token limit is 200000.
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+      After waiting, recheck your evidence and Git for new information.
 
       Workspace: /workspace
       Private evidence: /evidence
       Reference corpus: /reference
 
-      A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done."
+      Return a final response when you are done."
     `);
     expect(prompts.IS).toMatchInlineSnapshot(`
       "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
 
-      Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.
+      Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.
 
       Recover the plaintext of the complete ciphertext as accurately as you can.
+      Your team is graded on runnable solver code committed to Git, not on final prose.
+      A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
 
       Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
       Your cumulative model-token limit is 200000.
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+      After waiting, recheck your evidence and Git for new information.
 
       Workspace: /workspace
       Private evidence: /evidence
       Reference corpus: /reference
 
-      A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done."
+      Return a final response when you are done."
     `);
   });
 
@@ -99,20 +105,23 @@ describe("agent prompt", () => {
     expect(templates["agent-2"].CS).toMatchInlineSnapshot(`
       "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
 
-      Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.
+      Collaborate through the team's shared Git repository: inspect peer commits, share useful discoveries and code, and integrate improvements. Git does not count against your model-token budget.
 
       Recover the plaintext of the complete ciphertext as accurately as you can.
+      Your team is graded on runnable solver code committed to Git, not on final prose.
+      A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
 
       Private evidence is released at 0, 5, 10, 20, 30, and 40 minutes. The attempt ends at 60 minutes.
       Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use ordinary Git, or wait for visible activity.
+      After waiting, recheck your evidence and Git for new information.
 
       Workspace: /workspace
       Private evidence: /evidence
       Reference corpus: /reference
 
-      A reviewer may later select a command and output path from one frozen workspace for evaluation. Return a final response when you are done."
+      Return a final response when you are done."
     `);
   });
 
@@ -150,7 +159,11 @@ describe("agent prompt", () => {
     expect(prompt).toContain("Your cumulative model-token limit is 200000.");
     expect(prompt).toContain("aggregate metrics");
     expect(prompt).toContain("wait for visible activity");
-    expect(prompt).toContain("reviewer");
+    expect(prompt).toContain("runnable solver code committed to Git");
+    expect(prompt).toContain("$PALIMPSEST_CIPHERTEXT");
+    expect(prompt).toContain("$PALIMPSEST_OUTPUT");
+    expect(prompt).toContain("work without /evidence or /reference");
+    expect(prompt).toContain("After waiting, recheck your evidence and Git");
     expect(prompt).toContain("Workspace: /workspace");
     expect(prompt).toContain("Private evidence: /evidence");
     expect(prompt).toContain("Reference corpus: /reference");
@@ -160,7 +173,7 @@ describe("agent prompt", () => {
   });
 
   it.each(CONDITION_IDS)(
-    "contains no hidden-treatment or behavior-prescribing language in %s",
+    "contains no hidden-treatment or fixed-workflow language in %s",
     (condition) => {
       const prompt = prompts[condition];
 
@@ -168,7 +181,7 @@ describe("agent prompt", () => {
         /re-?key|stationary|substitution|changed mapping|transition stage|anchor|sentinel|specialist|control set|allocation/i,
       );
       expect(prompt).not.toMatch(
-        /assigned role|choose your own role|coordinate|exchange code|review one another|best solver|collaboration cadence|avoid committing|required (?:commit|branch|file|checkpoint|artifact)|take turns/i,
+        /assigned role|choose your own role|best solver|collaboration cadence|required (?:branch|file|checkpoint)|take turns|commit sequence/i,
       );
     },
   );
