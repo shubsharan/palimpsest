@@ -1,4 +1,5 @@
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { GitCommandError, runGitCommand } from "./git.js";
@@ -17,6 +18,24 @@ export interface PublishedMainSnapshot {
   commit: string;
   snapshotPath: string;
 }
+
+export type PublishedSolverIdentity = Pick<PublishedMainSnapshot, "ref" | "commit">;
+
+export type PublishedSolverOutcome<T> =
+  | {
+      kind: "succeeded";
+      identity: PublishedSolverIdentity;
+      execution: SandboxCommandResult;
+      outputPath: string;
+      value: T;
+    }
+  | {
+      kind: "submission-error";
+      identity: PublishedSolverIdentity;
+      execution: SandboxCommandResult;
+      outputPath: string;
+      error: string;
+    };
 
 export type PublishedSolverExecution =
   | {
@@ -38,6 +57,18 @@ export class PublishedSolverSubmissionError extends Error {
 export class PublishedSolverInfrastructureError extends InfrastructureError {
   override readonly name = "PublishedSolverInfrastructureError";
   override readonly component = "published-solver";
+}
+
+async function trustedOperation<T>(label: string, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof InfrastructureError || error instanceof DOMException) throw error;
+    throw new PublishedSolverInfrastructureError(
+      `${label}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 function gitOptions(options: { cwd?: string; signal?: AbortSignal; deadline: number }): {
@@ -65,7 +96,7 @@ async function removeSnapshot(path: string): Promise<void> {
   }
 }
 
-export async function withPublishedMainSnapshot<T>(
+async function withPublishedMainSnapshot<T>(
   options: {
     repositoryPath: string;
     snapshotPath: string;
@@ -269,4 +300,105 @@ export async function executePublishedSolver(options: {
     };
   }
   return { kind: "succeeded", execution, outputPath: resolved };
+}
+
+export async function runPublishedSolver<T>(options: {
+  repositoryPath: string;
+  ciphertextPath: string;
+  outputRoot: string;
+  sandbox: CommandSandbox;
+  deadline: number;
+  command?: string;
+  outputPath?: string;
+  signal?: AbortSignal;
+  onCaptured?: (identity: PublishedSolverIdentity) => void | Promise<void>;
+  evaluate: (input: {
+    identity: PublishedSolverIdentity;
+    execution: SandboxCommandResult;
+    outputPath: string;
+  }) => Promise<T>;
+}): Promise<PublishedSolverOutcome<T>> {
+  const scratchRoot = await trustedOperation("Unable to create published-solver scratch root", () =>
+    mkdtemp(join(tmpdir(), "palimpsest-published-solver-")),
+  );
+  const snapshotPath = join(scratchRoot, "submission");
+  let outcome: PublishedSolverOutcome<T> | undefined;
+  let operationFailure: { error: unknown } | undefined;
+  try {
+    outcome = await withPublishedMainSnapshot(
+      {
+        repositoryPath: options.repositoryPath,
+        snapshotPath,
+        deadline: options.deadline,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      },
+      async (snapshot) => {
+        const identity = { ref: snapshot.ref, commit: snapshot.commit };
+        if (options.onCaptured !== undefined) {
+          await trustedOperation("Unable to publish captured solver identity", () =>
+            Promise.resolve(options.onCaptured!(identity)),
+          );
+        }
+        const published = await executePublishedSolver({
+          snapshot,
+          ciphertextPath: options.ciphertextPath,
+          outputRoot: options.outputRoot,
+          sandbox: options.sandbox,
+          timeoutMs: Math.max(1, Math.ceil(options.deadline - performance.now())),
+          ...(options.command === undefined ? {} : { command: options.command }),
+          ...(options.outputPath === undefined ? {} : { outputPath: options.outputPath }),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
+        if (published.kind === "submission-error") {
+          return {
+            kind: "submission-error",
+            identity,
+            execution: published.execution,
+            outputPath: published.outputPath,
+            error: published.error,
+          };
+        }
+        const value = await trustedOperation("Trusted published-solver evaluation failed", () =>
+          options.evaluate({
+            identity,
+            execution: published.execution,
+            outputPath: published.outputPath,
+          }),
+        );
+        return {
+          kind: "succeeded",
+          identity,
+          execution: published.execution,
+          outputPath: published.outputPath,
+          value,
+        };
+      },
+    );
+  } catch (error) {
+    operationFailure = { error };
+  }
+  try {
+    await rm(scratchRoot, { recursive: true, force: true });
+  } catch (error) {
+    const cause =
+      operationFailure === undefined
+        ? error
+        : new AggregateError(
+            [operationFailure.error, error],
+            "Published-solver operation and scratch cleanup both failed.",
+          );
+    throw new PublishedSolverInfrastructureError(
+      `Unable to clean published-solver scratch root: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause },
+    );
+  }
+  if (operationFailure !== undefined) throw operationFailure.error;
+  if (outcome === undefined) {
+    throw new PublishedSolverInfrastructureError(
+      "Published-solver transaction completed without an outcome.",
+    );
+  }
+  return outcome;
 }

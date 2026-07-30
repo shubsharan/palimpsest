@@ -1,7 +1,7 @@
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { ActivityBus } from "./activity.js";
+import { AttemptRuntime } from "./attempt-runtime.js";
 import {
   ATTEMPT_CUTOFF_MS,
   hashProtocolSnapshot,
@@ -45,7 +45,6 @@ import {
 import { buildAgentPrompt } from "./prompt.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
-import type { ReleasedStage } from "./released-stage.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import {
   SANDBOX_POLICY,
@@ -58,7 +57,7 @@ import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
-import { TeamChannel, type TeamChannelMode } from "./team-channel.js";
+import type { TeamChannelMode } from "./team-channel.js";
 
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -315,9 +314,7 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
 async function publishStages(options: {
   config: AttemptConfig;
   evidencePaths: Record<AgentId, string>;
-  releasedStages: Record<AgentId, ReleasedStage[]>;
-  activities: Record<AgentId, ActivityBus>;
-  observationLog: JsonlObservationLog;
+  runtime: AttemptRuntime;
   startedAt: number;
   clock: MonotonicClock;
   signal: AbortSignal;
@@ -339,8 +336,7 @@ async function publishStage(
     options.config.agentIds.map(async (agentId) => {
       const source = options.config.agentStages[agentId]?.[ordinal - 1];
       const evidencePath = options.evidencePaths[agentId];
-      const released = options.releasedStages[agentId];
-      if (source === undefined || evidencePath === undefined || released === undefined) {
+      if (source === undefined || evidencePath === undefined) {
         throw new Error(`Missing ${agentId} stage ${String(ordinal)}.`);
       }
       const destination = join(
@@ -348,23 +344,11 @@ async function publishStage(
         `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
       );
       await cp(source, destination, { errorOnExist: true, force: false });
-      if (released.length + 1 !== ordinal) {
-        throw new Error(`Released stages for ${agentId} are not contiguous at ${String(ordinal)}.`);
-      }
-      released.push({ ordinal, sourcePath: source, visiblePath: destination });
-      const activityBus = options.activities[agentId];
-      if (activityBus === undefined) {
-        throw new Error(`Missing activity bus for ${agentId}.`);
-      }
-      const activity = activityBus.publish({
-        kind: "stage-released",
-        detail: { ordinal, path: destination },
+      await options.runtime.recordReleasedStage(agentId, {
+        ordinal,
+        sourcePath: source,
+        visiblePath: destination,
       });
-      await options.observationLog.append(
-        "stage.released",
-        { ordinal, path: destination, activitySequence: activity.sequence },
-        agentId,
-      );
     }),
   );
 }
@@ -532,30 +516,27 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   });
   void wallTime.catch(() => globalController.abort("wall-timer-failed"));
 
-  const activities = Object.fromEntries(
-    config.agentIds.map((agentId) => [
-      agentId,
-      new ActivityBus(() => options.clock.nowMs() - startedAt),
-    ]),
-  ) as Record<AgentId, ActivityBus>;
-  const teamChannel =
-    config.teamChannel === "enabled" && condition.communicationMode === "shared"
-      ? new TeamChannel({
-          activities,
-          nowMs: () => options.clock.nowMs() - startedAt,
-          observe: async (message) => {
-            await observationLog.append("team.message", message);
-          },
-        })
-      : undefined;
+  const attemptRuntime = new AttemptRuntime({
+    agentIds: config.agentIds,
+    teamChannelEnabled:
+      config.teamChannel === "enabled" && condition.communicationMode === "shared",
+    nowMs: () => options.clock.nowMs() - startedAt,
+    observe: async ({ kind, data, agentId }) => {
+      await observationLog.append(kind, data, agentId);
+    },
+    onFatal: () => {
+      globalController.abort("attempt-runtime-failed");
+    },
+  });
   const monitors = git.repositories.map(
     (repository) =>
       new GitActivityMonitor({
         repository,
-        activityFor: (agentId) => activities[agentId]!,
         pollIntervalMs: options.gitPollIntervalMs ?? 20,
-        onChange: async (repositoryId, refs) => {
-          await observationLog.append("git.changed", { repositoryId, refs });
+        onChange: (repositoryId, agentIds, refs) =>
+          attemptRuntime.recordGitChange(repositoryId, agentIds, refs),
+        onError: () => {
+          globalController.abort("git-monitor-failed");
         },
       }),
   );
@@ -573,12 +554,12 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       startedMonitors = [...startedMonitors, monitor];
     }
 
-    const releasedStages = Object.fromEntries(
-      config.agentIds.map((agentId) => [agentId, []]),
-    ) as Record<AgentId, ReleasedStage[]>;
-    await publishStage({ config, evidencePaths, releasedStages, activities, observationLog }, 1);
+    await publishStage({ config, evidencePaths, runtime: attemptRuntime }, 1);
+    const agentHandles = Object.fromEntries(
+      config.agentIds.map((agentId) => [agentId, attemptRuntime.forAgent(agentId)]),
+    ) as Record<AgentId, ReturnType<AttemptRuntime["forAgent"]>>;
     const cursors = Object.fromEntries(
-      config.agentIds.map((agentId) => [agentId, activities[agentId]!.latestSequence]),
+      config.agentIds.map((agentId) => [agentId, agentHandles[agentId]!.latestActivitySequence]),
     ) as Record<AgentId, number>;
     const openedLeases = await openAgentLeases({
       sandbox: options.sandbox,
@@ -600,14 +581,14 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     stagePublishing = publishStages({
       config,
       evidencePaths,
-      releasedStages,
-      activities,
-      observationLog,
+      runtime: attemptRuntime,
       startedAt,
       clock: options.clock,
       signal: scheduleController.signal,
     });
-    void stagePublishing.catch(() => {});
+    void stagePublishing.catch(() => {
+      globalController.abort("stage-publication-failed");
+    });
 
     sessionPromises = config.agentIds.map((agentId) => {
       const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
@@ -615,14 +596,14 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         (candidate) => candidate.repositoryId === workspace?.repositoryId,
       );
       const evidencePath = evidencePaths[agentId];
-      const released = releasedStages[agentId];
+      const attempt = agentHandles[agentId];
       const runtime = agents[agentId];
       const lease = openedLeases[agentId];
       if (
         workspace === undefined ||
         repository === undefined ||
         evidencePath === undefined ||
-        released === undefined ||
+        attempt === undefined ||
         runtime === undefined ||
         lease === undefined
       ) {
@@ -633,10 +614,8 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         sandbox: lease,
         solverSandbox: options.sandbox,
         repositoryPath: repository.path,
-        activity: activities[agentId]!,
-        ...(teamChannel === undefined ? {} : { teamChannel }),
+        attempt,
         checker: options.checker,
-        getReleasedStages: () => released,
         getActivityCursor: () => cursors[agentId]!,
         setActivityCursor: (sequence) => {
           cursors[agentId] = sequence;
@@ -670,10 +649,6 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   if (stagePublishing !== undefined) quiesceTasks.push(stagePublishing);
   if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
   const quiesceResults = await Promise.allSettled(quiesceTasks);
-  const activityEndReason =
-    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended";
-  for (const activity of Object.values(activities)) activity.end(activityEndReason);
-
   const releaseTasks: Promise<unknown>[] = [];
   releaseTasks.push(
     ...startedMonitors.map((monitor) => Promise.resolve().then(() => monitor.stop())),
@@ -691,8 +666,11 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     );
   }
   const releaseResults = await Promise.allSettled(releaseTasks);
-  const cleanupFailures = [...quiesceResults, ...releaseResults].flatMap((result) =>
-    result.status === "rejected" ? [result.reason] : [],
+  const activityEndReason =
+    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended";
+  const runtimeCloseResults = await Promise.allSettled([attemptRuntime.close(activityEndReason)]);
+  const cleanupFailures = [...quiesceResults, ...releaseResults, ...runtimeCloseResults].flatMap(
+    (result) => (result.status === "rejected" ? [result.reason] : []),
   );
   const distinctCleanupFailures = cleanupFailures.filter(
     (error, index) => error !== primaryFailure?.error && cleanupFailures.indexOf(error) === index,

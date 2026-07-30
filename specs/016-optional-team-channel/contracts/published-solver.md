@@ -3,7 +3,7 @@
 ## Submission Selection
 
 - The caller or reviewer selects one condition-assigned repository through a canonical agent workspace.
-- One callback-scoped host transaction initializes a fresh temporary repository, fetches only literal `refs/heads/main` into a private local ref, resolves that pinned ref, checks it out, removes Git metadata, and only then exposes the resulting 40-character commit and snapshot path to its callback.
+- One complete host operation initializes a fresh temporary repository, fetches only literal `refs/heads/main` into a private local ref, resolves that pinned ref, checks it out, removes Git metadata, executes and evaluates the solver, removes the snapshot, and only then returns the resulting 40-character commit and typed outcome.
 - Symbolic `HEAD`, worktree state, remote-tracking refs, tags, and other branches never select submitted code.
 - Capture and solver execution share one abort signal and absolute deadline. A later branch update or unrelated force-push cannot change the already materialized snapshot.
 
@@ -12,7 +12,7 @@
 - The complete captured commit tree is exported into a new host-owned temporary root outside all agent workspaces.
 - The exported tree contains no Git metadata and is mounted read-only.
 - A missing or invalid main commit fails explicitly before submitted code executes.
-- The snapshot exists only for the callback and is removed when the callback completes or fails.
+- The snapshot never escapes the operation and is removed whether capture, execution, trusted evaluation, or cleanup succeeds or fails.
 
 ## Released Checker Input
 
@@ -28,7 +28,7 @@
 - `$PALIMPSEST_OUTPUT` names `reconstruction.txt` inside one fresh writable output directory.
 - No Git origin, agent workspace, private evidence, reference corpus, oracle tree, host sibling, network, secret, or provider credential is exposed.
 - Existing CPU, memory, process, time, output-capture, read-only-root, and bounded temporary-filesystem limits remain in force.
-- Missing main, unavailable submission objects, solver exit, timeout, and invalid output are explicit submission outcomes. Host-process, sandbox, mount, cleanup, and cancellation failures propagate as infrastructure failures.
+- Missing main, unavailable submission objects, solver exit, timeout, and invalid output are explicit submission outcomes. Host-process, trusted evaluator, sandbox, mount, cleanup, and cancellation failures propagate as infrastructure failures.
 
 ## Output
 
@@ -39,5 +39,5 @@
 
 ## Records
 
-- Checker feedback includes the captured commit and aggregate visible-evidence metrics or an explicit failure.
-- Final evaluation selection/result records include reviewer workspace, assigned repository, `refs/heads/main`, captured commit, canonical command/output, execution result, and score or explicit failure.
+- Checker feedback includes the captured commit and aggregate visible-evidence metrics or an explicit failure, and is returned only after capture cleanup.
+- Final evaluation selection records may durably bind captured provenance before execution; completion and result records are published only after solver execution, trusted scoring, and capture cleanup. They include reviewer workspace, assigned repository, `refs/heads/main`, captured commit, canonical command/output, execution result, and score or explicit submission failure.

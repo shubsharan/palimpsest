@@ -37,10 +37,12 @@ The activity is visible to every eligible shared agent and to no isolated agent.
 ## State Transitions
 
 1. Attempt declares mode.
-2. Shared/enabled runtime creates one empty room; other attempts create none.
-3. An eligible post validates, receives the next sequence, becomes readable, emits trace and activity.
+2. One serialized attempt runtime creates private release/activity projections and, for shared/enabled attempts, one empty room.
+3. A stage release, Git change, or eligible post validates and commits once to the canonical trace before the runtime synchronously updates every affected projection.
 4. Reads return ordered pages without changing room state.
-5. Attempt termination prevents further model tool calls; the frozen trace remains authoritative.
+5. Shutdown waits behind already queued mutations, ends every private activity stream together, and rejects later mutations.
+
+Agent tools receive only an immutable per-agent handle. Released-stage snapshots are copied and frozen before asynchronous checker work; activity buses, room storage, and runtime mutation methods are never exposed.
 
 ## Published Solver Snapshot
 
@@ -51,7 +53,7 @@ Represents the exact submitted code used by checker feedback or final evaluation
 - `commit`: resolved 40-character commit object identity.
 - `root`: host-created temporary directory containing the complete exported commit tree and no Git metadata.
 
-Validation: one deadline-bound transaction fetches only literal main into a private ref and materializes it before publishing `commit`; the exported root remains outside all agent workspaces and exists only for the callback; execution continues to use the captured tree if main advances or is force-pushed.
+Validation: one deadline-bound operation fetches only literal main into a private ref and materializes it before publishing `commit`; the exported root remains outside all agent workspaces and never escapes the operation; execution continues to use the captured tree if main advances or is force-pushed. The operation executes, validates, evaluates, removes all temporary state, and only then returns a typed outcome.
 
 ## Released Stage
 
@@ -71,7 +73,7 @@ Validation: publication appends the record only after the visible copy succeeds.
 
 Validation: submission and ciphertext are read-only; Git, agent workspaces, evidence, references, oracle files, and credentials are absent; successful output resolves inside `outputRoot`, is a regular non-empty file, and does not exceed 16 MiB.
 
-Execution returns a discriminated success or submission-error outcome. Trusted host-process, sandbox, mount, cleanup, and cancellation failures are infrastructure errors and do not become normal solver results.
+Execution returns a discriminated success or submission-error outcome only after cleanup. Trusted host-process, evaluator, sandbox, mount, cleanup, and cancellation failures are infrastructure errors and do not become normal solver results.
 
 ## Evaluation Submission Selection
 

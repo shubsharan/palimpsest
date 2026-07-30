@@ -1,7 +1,6 @@
 import { chmod, cp, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { ActivityBus } from "./activity.js";
 import { generateAgentIds, type AgentId } from "./model.js";
 import { runProcess } from "./process.js";
 import { InfrastructureError, SANDBOX_PATHS } from "./sandbox/contracts.js";
@@ -241,11 +240,15 @@ function waitInterval(milliseconds: number, signal: AbortSignal): Promise<void> 
 
 export class GitActivityMonitor {
   readonly #repository: GitRepository;
-  readonly #activityFor: (agentId: AgentId) => ActivityBus;
   readonly #pollIntervalMs: number;
   readonly #onChange:
-    | ((repositoryId: GitRepositoryId, refs: readonly string[]) => void | Promise<void>)
+    | ((
+        repositoryId: GitRepositoryId,
+        agentIds: readonly AgentId[],
+        refs: readonly string[],
+      ) => void | Promise<void>)
     | undefined;
+  readonly #onError: ((error: unknown) => void | Promise<void>) | undefined;
   #running = false;
   #loop: Promise<void> | undefined;
   #stopController: AbortController | undefined;
@@ -253,14 +256,18 @@ export class GitActivityMonitor {
 
   constructor(options: {
     repository: GitRepository;
-    activityFor: (agentId: AgentId) => ActivityBus;
     pollIntervalMs?: number;
-    onChange?: (repositoryId: GitRepositoryId, refs: readonly string[]) => void | Promise<void>;
+    onChange?: (
+      repositoryId: GitRepositoryId,
+      agentIds: readonly AgentId[],
+      refs: readonly string[],
+    ) => void | Promise<void>;
+    onError?: (error: unknown) => void | Promise<void>;
   }) {
     this.#repository = options.repository;
-    this.#activityFor = options.activityFor;
     this.#pollIntervalMs = options.pollIntervalMs ?? 100;
     this.#onChange = options.onChange;
+    this.#onError = options.onError;
   }
 
   async start(): Promise<void> {
@@ -269,6 +276,7 @@ export class GitActivityMonitor {
     this.#running = true;
     this.#stopController = new AbortController();
     this.#loop = this.#poll(this.#stopController.signal);
+    void this.#loop.catch(() => {});
   }
 
   async stop(): Promise<void> {
@@ -280,24 +288,24 @@ export class GitActivityMonitor {
   async checkNow(): Promise<readonly string[]> {
     const next = await listRemoteRefs(this.#repository.path);
     const refs = changedRefs(this.#snapshot, next);
-    this.#snapshot = next;
     if (refs.length > 0) {
-      for (const agentId of this.#repository.agentIds) {
-        this.#activityFor(agentId).publish({
-          kind: "git-changed",
-          detail: { repositoryId: this.#repository.repositoryId, refs },
-        });
-      }
-      await this.#onChange?.(this.#repository.repositoryId, refs);
+      await this.#onChange?.(this.#repository.repositoryId, this.#repository.agentIds, refs);
     }
+    this.#snapshot = next;
     return refs;
   }
 
   async #poll(signal: AbortSignal): Promise<void> {
-    while (this.#running) {
-      await waitInterval(this.#pollIntervalMs, signal);
-      if (!this.#running) break;
-      await this.checkNow();
+    try {
+      while (this.#running) {
+        await waitInterval(this.#pollIntervalMs, signal);
+        if (!this.#running) break;
+        await this.checkNow();
+      }
+    } catch (error) {
+      this.#running = false;
+      await this.#onError?.(error);
+      throw error;
     }
   }
 }

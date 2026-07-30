@@ -9,8 +9,9 @@ import {
   executePublishedSolver,
   MAX_SOLVER_OUTPUT_BYTES,
   PUBLISHED_MAIN_REF,
+  PublishedSolverInfrastructureError,
   PublishedSolverSubmissionError,
-  withPublishedMainSnapshot,
+  runPublishedSolver,
 } from "./published-solver.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
@@ -66,10 +67,13 @@ afterEach(async () => {
 });
 
 describe("published solver snapshots", () => {
-  it("exports the exact main commit without Git metadata or alternate branch files", async () => {
+  it("runs the exact main commit and returns only after removing its Git-free snapshot", async () => {
     const root = await temporaryRoot();
     const repository = join(root, "origin.git");
+    const ciphertextPath = join(root, "ciphertext.txt");
+    const outputRoot = join(root, "output");
     await runGit(["init", "--bare", "--initial-branch=main", repository]);
+    await Promise.all([writeFile(ciphertextPath, "ciphertext\n"), mkdir(outputRoot)]);
     const mainCommit = await publish(repository, "main", {
       "solver.py": "from helper import answer\n",
       "helper.py": "answer = 'main'\n",
@@ -79,72 +83,113 @@ describe("published solver snapshots", () => {
       "alternate-only.txt": "must not be exported\n",
     });
     await runGit(["symbolic-ref", "HEAD", "refs/heads/alternate"], repository);
+    let submissionPath = "";
+    const captured: unknown[] = [];
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      submissionPath = request.submissionPath;
+      await expect(readFile(join(submissionPath, "helper.py"), "utf8")).resolves.toBe(
+        "answer = 'main'\n",
+      );
+      await expect(access(join(submissionPath, "alternate-only.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(access(join(submissionPath, ".git"))).rejects.toMatchObject({ code: "ENOENT" });
+      await writeFile(join(request.outputRoot, request.outputPath), "answer\n");
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        outputExceeded: false,
+      };
+    });
 
-    const snapshot = join(root, "snapshot");
-    await withPublishedMainSnapshot(
-      {
-        repositoryPath: repository,
-        snapshotPath: snapshot,
-        deadline: performance.now() + 5_000,
+    const outcome = await runPublishedSolver({
+      repositoryPath: repository,
+      ciphertextPath,
+      outputRoot,
+      sandbox,
+      deadline: performance.now() + 5_000,
+      onCaptured: (identity) => {
+        captured.push(identity);
       },
-      async (captured) => {
-        expect(captured).toEqual({
-          ref: PUBLISHED_MAIN_REF,
-          commit: mainCommit,
-          snapshotPath: snapshot,
-        });
-        await expect(readFile(join(snapshot, "helper.py"), "utf8")).resolves.toBe(
-          "answer = 'main'\n",
-        );
-        await expect(access(join(snapshot, "alternate-only.txt"))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
-        await expect(access(join(snapshot, ".git"))).rejects.toMatchObject({ code: "ENOENT" });
-      },
-    );
-    await expect(access(snapshot)).rejects.toMatchObject({ code: "ENOENT" });
+      evaluate: async ({ outputPath }) => readFile(outputPath, "utf8"),
+    });
+
+    expect(outcome).toEqual({
+      kind: "succeeded",
+      identity: { ref: PUBLISHED_MAIN_REF, commit: mainCommit },
+      execution: expect.objectContaining({ exitCode: 0 }),
+      outputPath: join(outputRoot, "reconstruction.txt"),
+      value: "answer\n",
+    });
+    expect(captured).toEqual([{ ref: PUBLISHED_MAIN_REF, commit: mainCommit }]);
+    await expect(access(submissionPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps the materialized commit stable after an unrelated force-push", async () => {
     const root = await temporaryRoot();
     const repository = join(root, "origin.git");
+    const ciphertextPath = join(root, "ciphertext.txt");
+    const outputRoot = join(root, "output");
     await runGit(["init", "--bare", "--initial-branch=main", repository]);
+    await Promise.all([writeFile(ciphertextPath, "ciphertext\n"), mkdir(outputRoot)]);
     const firstCommit = await publish(repository, "main", { "solver.py": "print('first')\n" });
+    let submittedSolver = "";
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      const replacement = await forcePublishUnrelatedMain(repository, {
+        "solver.py": "print('replacement')\n",
+      });
+      expect(replacement).not.toBe(firstCommit);
+      submittedSolver = await readFile(join(request.submissionPath, "solver.py"), "utf8");
+      await writeFile(join(request.outputRoot, request.outputPath), "answer\n");
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        outputExceeded: false,
+      };
+    });
 
-    const snapshot = join(root, "snapshot");
-    await withPublishedMainSnapshot(
-      {
-        repositoryPath: repository,
-        snapshotPath: snapshot,
-        deadline: performance.now() + 5_000,
-      },
-      async (captured) => {
-        expect(captured.commit).toBe(firstCommit);
-        const replacement = await forcePublishUnrelatedMain(repository, {
-          "solver.py": "print('replacement')\n",
-        });
-        expect(replacement).not.toBe(firstCommit);
-        await expect(readFile(join(snapshot, "solver.py"), "utf8")).resolves.toBe(
-          "print('first')\n",
-        );
-      },
-    );
+    const outcome = await runPublishedSolver({
+      repositoryPath: repository,
+      ciphertextPath,
+      outputRoot,
+      sandbox,
+      deadline: performance.now() + 5_000,
+      evaluate: async () => "scored",
+    });
+
+    expect(outcome).toMatchObject({
+      kind: "succeeded",
+      identity: { commit: firstCommit },
+      value: "scored",
+    });
+    expect(submittedSolver).toBe("print('first')\n");
   });
 
   it("rejects a repository without a published main commit", async () => {
     const root = await temporaryRoot();
     const repository = join(root, "origin.git");
+    const outputRoot = join(root, "output");
+    const ciphertextPath = join(root, "ciphertext.txt");
     await runGit(["init", "--bare", "--initial-branch=main", repository]);
+    await Promise.all([mkdir(outputRoot), writeFile(ciphertextPath, "ciphertext\n")]);
 
     await expect(
-      withPublishedMainSnapshot(
-        {
-          repositoryPath: repository,
-          snapshotPath: join(root, "snapshot"),
-          deadline: performance.now() + 5_000,
-        },
-        async () => undefined,
-      ),
+      runPublishedSolver({
+        repositoryPath: repository,
+        ciphertextPath,
+        outputRoot,
+        sandbox: new FakeCommandSandbox(async () => {
+          throw new Error("Sandbox must not run.");
+        }),
+        deadline: performance.now() + 5_000,
+        evaluate: async () => "unreachable",
+      }),
     ).rejects.toEqual(
       expect.objectContaining<Partial<PublishedSolverSubmissionError>>({
         name: "PublishedSolverSubmissionError",
@@ -156,27 +201,66 @@ describe("published solver snapshots", () => {
   it("cancels capture without invoking the callback or retaining a snapshot", async () => {
     const root = await temporaryRoot();
     const repository = join(root, "origin.git");
-    const snapshot = join(root, "snapshot");
+    const outputRoot = join(root, "output");
+    const ciphertextPath = join(root, "ciphertext.txt");
     await runGit(["init", "--bare", "--initial-branch=main", repository]);
+    await Promise.all([mkdir(outputRoot), writeFile(ciphertextPath, "ciphertext\n")]);
     const controller = new AbortController();
     controller.abort();
     let invoked = false;
 
     await expect(
-      withPublishedMainSnapshot(
-        {
-          repositoryPath: repository,
-          snapshotPath: snapshot,
-          deadline: performance.now() + 5_000,
-          signal: controller.signal,
-        },
-        async () => {
+      runPublishedSolver({
+        repositoryPath: repository,
+        ciphertextPath,
+        outputRoot,
+        sandbox: new FakeCommandSandbox(async () => {
           invoked = true;
-        },
-      ),
+          throw new Error("Sandbox must not run.");
+        }),
+        deadline: performance.now() + 5_000,
+        signal: controller.signal,
+        evaluate: async () => "unreachable",
+      }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(invoked).toBe(false);
-    await expect(access(snapshot)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("classifies trusted evaluator rejection as infrastructure and completes cleanup first", async () => {
+    const root = await temporaryRoot();
+    const repository = join(root, "origin.git");
+    const outputRoot = join(root, "output");
+    const ciphertextPath = join(root, "ciphertext.txt");
+    await runGit(["init", "--bare", "--initial-branch=main", repository]);
+    await Promise.all([mkdir(outputRoot), writeFile(ciphertextPath, "ciphertext\n")]);
+    await publish(repository, "main", { "solver.py": "print('solver')\n" });
+    let submissionPath = "";
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      submissionPath = request.submissionPath;
+      await writeFile(join(request.outputRoot, request.outputPath), "answer\n");
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        outputExceeded: false,
+      };
+    });
+
+    await expect(
+      runPublishedSolver({
+        repositoryPath: repository,
+        ciphertextPath,
+        outputRoot,
+        sandbox,
+        deadline: performance.now() + 5_000,
+        evaluate: async () => {
+          throw new Error("checker crashed");
+        },
+      }),
+    ).rejects.toThrow(PublishedSolverInfrastructureError);
+    await expect(access(submissionPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each(["missing", "empty", "directory", "escaping-symlink", "oversized"] as const)(

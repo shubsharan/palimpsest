@@ -71,6 +71,10 @@ An accepted post publishes:
 
 `wait_for_activity` summarizes this as new team discussion being available. The activity sequence and message sequence are distinct cursors.
 
+## Attempt Runtime
+
+One serialized attempt runtime owns the room together with released-stage and Git activity projections. An accepted post is appended to the canonical trace before it becomes readable or wakes any peer; after acceptance, every eligible peer receives the projection synchronously. A trace failure accepts nothing, poisons the runtime, aborts the attempt, and ends every activity waiter. Shutdown is ordered after already queued posts and rejects every later mutation. Agent tools receive only an author-bound handle and cannot publish activity or choose message authorship.
+
 ## Trace
 
 Each accepted post appears once:

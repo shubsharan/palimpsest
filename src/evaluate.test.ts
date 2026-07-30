@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { decodeEvaluationRecord } from "./artifacts.js";
 import { resolveCondition, type ConditionId } from "./condition.js";
 import {
   evaluateFrozenAttempt,
@@ -16,7 +15,7 @@ import {
   SOLVER_OUTPUT_PATH,
 } from "./evaluate.js";
 import { runGit } from "./git.js";
-import { PUBLISHED_MAIN_REF } from "./published-solver.js";
+import { PUBLISHED_MAIN_REF, PublishedSolverInfrastructureError } from "./published-solver.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import { SandboxInfrastructureError, type SandboxCommandResult } from "./sandbox/contracts.js";
 import { sealTree, type TreeSeal } from "./seal.js";
@@ -421,7 +420,7 @@ describe("frozen attempt evaluation", () => {
     });
   });
 
-  it("converts malformed scorer output into a valid execution-error record", async () => {
+  it("classifies malformed trusted scorer output as infrastructure without a result record", async () => {
     const fixture = await evaluationFixture();
     const evaluationRoot = join(fixture.root, "evaluation");
     const sandbox = new FakeCommandSandbox(async (request) => {
@@ -430,23 +429,21 @@ describe("frozen attempt evaluation", () => {
       return SUCCESS;
     });
 
-    const result = await evaluateFrozenAttempt({
-      ...fixture,
-      evaluationRoot,
-      selection: selectionFor(fixture),
-      sandbox,
-      score: async () => ({ accuracy: 1 }) as never,
+    await expect(
+      evaluateFrozenAttempt({
+        ...fixture,
+        evaluationRoot,
+        selection: selectionFor(fixture),
+        sandbox,
+        score: async () => ({ accuracy: 1 }) as never,
+      }),
+    ).rejects.toThrow(PublishedSolverInfrastructureError);
+    await expect(readFile(join(evaluationRoot, "selection.json"), "utf8")).resolves.toContain(
+      fixture.published.commit,
+    );
+    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
-
-    expect(result).toMatchObject({
-      status: "execution-error",
-      error: expect.stringContaining("totalWords"),
-    });
-    expect(
-      decodeEvaluationRecord(
-        JSON.parse(await readFile(join(evaluationRoot, "result.json"), "utf8")),
-      ),
-    ).toEqual(result);
   });
 
   it("rejects an evaluator output symlink that escapes the workspace", async () => {

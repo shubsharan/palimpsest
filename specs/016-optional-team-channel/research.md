@@ -48,13 +48,21 @@
 
 **Alternatives considered**: An optional field or implicit disabled default was rejected because old and new tests would be ambiguous. Compatibility decoding was rejected by the project's greenfield contract policy.
 
-## Published Code As An Immutable Capture Transaction
+## Single-Owner Attempt Runtime
 
-**Decision**: Initialize one fresh host-owned temporary repository, fetch only literal `refs/heads/main` into a private ref, resolve and check out that pinned object, remove Git metadata, and expose `{ ref, commit, snapshotPath }` only inside one deadline-bound callback. Checker and evaluation both execute through this transaction.
+**Decision**: Put accepted stage releases, Git changes, team messages, per-agent activity projections, and shutdown behind one serialized `AttemptRuntime`. Tools receive immutable per-agent handles; they cannot mutate buses, rooms, or release arrays directly.
 
-**Rationale**: Materializing before identity publication eliminates the mutable-ref interval. A clone inside an agent workspace can observe unpublished siblings, while a later clone of a bare repository can lose a force-pushed object or follow mutable symbolic `HEAD`. The callback makes the already materialized tree and recorded identity one indivisible capability.
+**Rationale**: The previous split ownership made correctness depend on caller timing: a close could race a post, a checker could observe a release array changing across an `await`, and trace/activity/message projections could drift. One owner validates and durably observes each mutation before synchronously updating every in-memory projection, orders shutdown after already queued work, and poisons the whole runtime if its canonical trace cannot accept an event.
 
-**Alternatives considered**: More path guards around the in-workspace checker were rejected because the live agent filesystem would remain inside the grading boundary. Resolve-then-clone and `--branch main` were rejected because selection and materialization remain separate mutable operations. A mirror, daemon, database, or permanent duplicate submission tree was rejected because the short-lived callback and sealed frozen repository already provide the required execution and durable provenance boundaries.
+**Alternatives considered**: Additional guards in each caller were rejected because they preserve multiple authorities and new interleavings. A database, event broker, replay engine, or actor service was rejected because one local serialized promise tail provides the required ordering at attempt scale.
+
+## Published Code As A Complete Operation
+
+**Decision**: `runPublishedSolver` owns the full deadline-bound operation: initialize a fresh host-owned temporary repository, fetch only literal `refs/heads/main`, resolve and check out that pinned object, remove Git metadata, execute the solver, validate and evaluate its output, clean every temporary capture, and only then return a typed identity/outcome. Checker and final evaluation publish results only after this return.
+
+**Rationale**: Materializing before identity publication eliminates the mutable-ref interval. Owning execution, trusted evaluation, and cleanup as well prevents callers from retaining a temporary path, publishing success before cleanup, or converting a trusted evaluator failure into a model submission outcome.
+
+**Alternatives considered**: More path guards around the in-workspace checker were rejected because the live agent filesystem would remain inside the grading boundary. A public callback or returned snapshot handle was rejected because cleanup and publication ordering would remain caller obligations. A mirror, daemon, database, or permanent duplicate submission tree was rejected because the short-lived complete operation and sealed frozen repository already provide the required execution and durable provenance boundaries.
 
 ## Ordered Released Input
 

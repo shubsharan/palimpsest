@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ActivityBus } from "./activity.js";
 import {
   createGitEnvironment,
   freezeGitEnvironment,
@@ -16,10 +15,6 @@ import {
 import type { AgentId } from "./model.js";
 
 const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
-
-function activityMap(): Map<AgentId, ActivityBus> {
-  return new Map(AGENTS.map((agentId) => [agentId, new ActivityBus()]));
-}
 
 describe("condition-assigned ordinary Git", () => {
   it("supports arbitrary branches, commits, pushes, fetches, and an unused clone", async () => {
@@ -103,10 +98,12 @@ describe("condition-assigned ordinary Git", () => {
     const workspace = environment.workspaces[0];
     const repository = environment.repositories[0];
     if (!workspace || !repository) throw new Error("Expected agent-1 Git resources.");
-    const activities = activityMap();
+    const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
-      activityFor: (agentId) => activities.get(agentId)!,
+      onChange: (repositoryId, agentIds, refs) => {
+        changes.push({ repositoryId, agentIds, refs });
+      },
       pollIntervalMs: 60_000,
     });
     await monitor.start();
@@ -117,15 +114,13 @@ describe("condition-assigned ordinary Git", () => {
     await runGit(["push", repository.path, "HEAD:refs/heads/rule/revision"], workspace.path);
     await monitor.checkNow();
 
-    expect(activities.get("agent-1")?.events).toEqual([
-      expect.objectContaining({
-        sequence: 1,
-        kind: "git-changed",
-        detail: { repositoryId: "agent-1", refs: ["refs/heads/rule/revision"] },
-      }),
+    expect(changes).toEqual([
+      {
+        repositoryId: "agent-1",
+        agentIds: ["agent-1"],
+        refs: ["refs/heads/rule/revision"],
+      },
     ]);
-    expect(activities.get("agent-2")?.events).toEqual([]);
-    expect(activities.get("agent-3")?.events).toEqual([]);
     await monitor.stop();
   });
 
@@ -135,10 +130,12 @@ describe("condition-assigned ordinary Git", () => {
     const workspace = environment.workspaces[0];
     const repository = environment.repositories[0];
     if (!workspace || !repository) throw new Error("Expected shared Git resources.");
-    const activities = activityMap();
+    const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
-      activityFor: (agentId) => activities.get(agentId)!,
+      onChange: (repositoryId, agentIds, refs) => {
+        changes.push({ repositoryId, agentIds, refs });
+      },
       pollIntervalMs: 60_000,
     });
     await monitor.start();
@@ -149,15 +146,43 @@ describe("condition-assigned ordinary Git", () => {
     await runGit(["push", repository.path, "HEAD:refs/heads/rule/revision"], workspace.path);
     await monitor.checkNow();
 
-    for (const activity of activities.values()) {
-      expect(activity.events).toEqual([
-        expect.objectContaining({
-          sequence: 1,
-          kind: "git-changed",
-          detail: { repositoryId: "shared", refs: ["refs/heads/rule/revision"] },
-        }),
-      ]);
-    }
+    expect(changes).toEqual([
+      {
+        repositoryId: "shared",
+        agentIds: AGENTS,
+        refs: ["refs/heads/rule/revision"],
+      },
+    ]);
+    await monitor.stop();
+  });
+
+  it("does not consume a ref change when its canonical observer rejects it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-git-retry-"));
+    const environment = await createGitEnvironment(root, "isolated", AGENTS);
+    const workspace = environment.workspaces[0];
+    const repository = environment.repositories[0];
+    if (!workspace || !repository) throw new Error("Expected agent-1 Git resources.");
+    let available = false;
+    let attempts = 0;
+    const monitor = new GitActivityMonitor({
+      repository,
+      pollIntervalMs: 60_000,
+      onChange: () => {
+        attempts += 1;
+        if (!available) throw new Error("trace unavailable");
+      },
+    });
+    await monitor.start();
+    await runGit(["switch", "--orphan", "rule/retry"], workspace.path);
+    await writeFile(join(workspace.path, "rule.txt"), "retry\n", "utf8");
+    await runGit(["add", "rule.txt"], workspace.path);
+    await runGit(["commit", "-m", "retry rule observation"], workspace.path);
+    await runGit(["push", repository.path, "HEAD:refs/heads/rule/retry"], workspace.path);
+
+    await expect(monitor.checkNow()).rejects.toThrow("trace unavailable");
+    available = true;
+    await expect(monitor.checkNow()).resolves.toEqual(["refs/heads/rule/retry"]);
+    expect(attempts).toBe(2);
     await monitor.stop();
   });
 

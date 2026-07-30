@@ -2,21 +2,21 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ActivityBus, type ActivityEvent } from "./activity.js";
+import type { ActivityEvent } from "./activity.js";
+import type { AgentAttemptHandle } from "./attempt-runtime.js";
 import type { AgentId } from "./model.js";
 import {
   type AgentSandboxLease,
   type CommandSandbox,
+  InfrastructureError,
   type SandboxCommandResult,
 } from "./sandbox/contracts.js";
 import {
-  executePublishedSolver,
   PublishedSolverInfrastructureError,
   PublishedSolverSubmissionError,
-  withPublishedMainSnapshot,
+  runPublishedSolver,
 } from "./published-solver.js";
 import { type ReleasedStage, writeCanonicalReleasedCiphertext } from "./released-stage.js";
-import type { TeamChannel } from "./team-channel.js";
 
 export interface ToolDefinition {
   name:
@@ -138,54 +138,63 @@ async function checkPublishedSolver(
   releasedStages: readonly ReleasedStage[],
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const checkRoot = await mkdtemp(join(tmpdir(), "palimpsest-published-check-"));
-  const snapshotPath = join(checkRoot, "submission");
+  let checkRoot: string;
+  try {
+    checkRoot = await mkdtemp(join(tmpdir(), "palimpsest-published-check-"));
+  } catch (error) {
+    throw new PublishedSolverInfrastructureError(
+      `Unable to create published-solver check root: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
+  }
   const outputRoot = join(checkRoot, "output");
   const ciphertextPath = join(checkRoot, "ciphertext.txt");
   const deadline = performance.now() + options.commandTimeoutMs;
   let outcome: unknown;
   let operationFailure: { error: unknown } | undefined;
   try {
-    outcome = await withPublishedMainSnapshot(
-      {
-        repositoryPath: options.repositoryPath,
-        snapshotPath,
-        deadline,
-        ...(signal === undefined ? {} : { signal }),
-      },
-      async (snapshot) => {
-        await mkdir(outputRoot);
-        await writeCanonicalReleasedCiphertext(releasedStages, ciphertextPath);
-        const result = await executePublishedSolver({
-          snapshot,
-          ciphertextPath,
-          outputRoot,
-          sandbox: options.solverSandbox,
-          timeoutMs: Math.max(1, Math.ceil(deadline - performance.now())),
-          ...(signal === undefined ? {} : { signal }),
-        });
-        if (result.kind === "submission-error") {
-          return {
-            commit: snapshot.commit,
-            error: result.error,
-            execution: executionSummary(result.execution),
-          };
-        }
-        const stageOrdinals = releasedStages.map(({ ordinal }) => ordinal);
-        const score = await options.checker({
+    await mkdir(outputRoot);
+    await writeCanonicalReleasedCiphertext(releasedStages, ciphertextPath);
+    const published = await runPublishedSolver({
+      repositoryPath: options.repositoryPath,
+      ciphertextPath,
+      outputRoot,
+      sandbox: options.solverSandbox,
+      deadline,
+      ...(signal === undefined ? {} : { signal }),
+      evaluate: ({ outputPath }) =>
+        options.checker({
           agentId: options.agentId,
-          candidatePath: result.outputPath,
-          releasedStages: stageOrdinals,
+          candidatePath: outputPath,
+          releasedStages: releasedStages.map(({ ordinal }) => ordinal),
           ...(signal === undefined ? {} : { signal }),
-        });
-        return { commit: snapshot.commit, ...score };
-      },
-    );
+        }),
+    });
+    outcome =
+      published.kind === "succeeded"
+        ? { commit: published.identity.commit, ...published.value }
+        : {
+            commit: published.identity.commit,
+            error: published.error,
+            execution: executionSummary(published.execution),
+          };
   } catch (error) {
     if (error instanceof PublishedSolverSubmissionError) {
       outcome = { error: error.message };
     } else {
-      operationFailure = { error };
+      operationFailure = {
+        error:
+          error instanceof InfrastructureError || error instanceof DOMException
+            ? error
+            : new PublishedSolverInfrastructureError(
+                `Trusted published-solver check failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+                { cause: error },
+              ),
+      };
     }
   }
   try {
@@ -225,16 +234,14 @@ export function createAgentTools(options: {
   sandbox: AgentSandboxLease;
   solverSandbox: CommandSandbox;
   repositoryPath: string;
-  activity: ActivityBus;
-  teamChannel?: TeamChannel;
+  attempt: AgentAttemptHandle;
   checker: CheckerHook;
-  getReleasedStages: () => readonly ReleasedStage[];
   getActivityCursor: () => number;
   setActivityCursor?: (sequence: number) => void;
   commandTimeoutMs?: number;
 }): AgentToolSet {
   const definitions =
-    options.teamChannel === undefined
+    options.attempt.teamChannel === undefined
       ? TOOL_DEFINITIONS
       : [
           ...TOOL_DEFINITIONS.map((definition) =>
@@ -277,7 +284,7 @@ export function createAgentTools(options: {
             checker: options.checker,
             commandTimeoutMs: options.commandTimeoutMs ?? 30_000,
           },
-          options.getReleasedStages(),
+          options.attempt.captureReleasedStages(),
           signal,
         );
       }
@@ -286,7 +293,7 @@ export function createAgentTools(options: {
           throw new Error("wait_for_activity afterSequence must be a non-negative safe integer.");
         }
         const afterSequence = Math.max(input.afterSequence as number, options.getActivityCursor());
-        const result = await options.activity.waitFor(afterSequence, signal);
+        const result = await options.attempt.waitForActivity(afterSequence, signal);
         if ("ended" in result) return result;
         options.setActivityCursor?.(result.sequence);
         return {
@@ -296,7 +303,7 @@ export function createAgentTools(options: {
         };
       }
       if (name === "post_team_message") {
-        if (options.teamChannel === undefined) {
+        if (options.attempt.teamChannel === undefined) {
           throw new Error("Team channel is unavailable in this attempt.");
         }
         if (Object.keys(input).some((key) => key !== "message")) {
@@ -305,10 +312,10 @@ export function createAgentTools(options: {
         if (typeof input.message !== "string") {
           throw new Error("post_team_message requires message text.");
         }
-        return options.teamChannel.post(options.agentId, input.message);
+        return options.attempt.teamChannel.post(input.message, signal);
       }
       if (name === "read_team_messages") {
-        if (options.teamChannel === undefined) {
+        if (options.attempt.teamChannel === undefined) {
           throw new Error("Team channel is unavailable in this attempt.");
         }
         if (
@@ -318,7 +325,7 @@ export function createAgentTools(options: {
         ) {
           throw new Error("read_team_messages requires a non-negative afterSequence.");
         }
-        return options.teamChannel.read(input.afterSequence as number);
+        return options.attempt.teamChannel.read(input.afterSequence as number);
       }
       throw new Error(`Unknown agent tool: ${name}`);
     },

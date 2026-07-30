@@ -115,13 +115,14 @@ An experiment operator can trust that checker feedback and final scoring execute
 - **FR-012**: The feature MUST preserve the existing cipher inputs, private evidence allocation, release schedule, Git topology, solver scaffold, checker, evaluation interface, token budget, cutoff, sandbox, and provider behavior.
 - **FR-013**: The feature MUST NOT add private messages, external services, accounts, databases, automated summaries, moderators, required responses, roles, rounds, or post-hoc merging.
 - **FR-014**: Checking and final evaluation MUST fetch only the selected origin's literal `refs/heads/main` into a private local ref without consulting symbolic `HEAD`, then materialize that pinned commit before publishing its identity.
-- **FR-015**: One callback-scoped capture MUST expose the materialized commit tree outside every live agent workspace without Git metadata, keep it stable across later ref changes, and remove it after use.
+- **FR-015**: One complete host operation MUST capture, materialize, execute, and evaluate the published solver outside every live agent workspace without Git metadata, keep the tree stable across later ref changes, remove all temporary state, and only then return an outcome for publication.
 - **FR-016**: Published solver execution MUST occur in a fresh sandbox exposing only the read-only submission tree, read-only assigned ciphertext, a writable output directory, and the standard bounded temporary filesystem.
 - **FR-017**: The checker MUST assemble the caller's released ciphertext from ordered trusted release records outside the agent sandbox, insert exactly one newline between newline-terminated stages, and MUST NOT rescan agent-visible directories or expose private reference or unreleased evidence to the solver.
 - **FR-018**: Checker feedback and final evaluation records MUST identify the exact captured published commit; final evaluation provenance MUST also identify the reviewer-selected workspace, assigned repository, and `refs/heads/main`.
 - **FR-019**: Scoring MUST accept only a non-empty, size-bounded regular output file whose resolved path remains inside the dedicated output directory.
 - **FR-020**: The immutable study scoring declaration MUST name the selected-workspace published-main snapshot boundary rather than reviewer-selected commands or output paths.
 - **FR-021**: Missing or invalid submissions MUST remain explicit submission outcomes, while trusted host-process, sandbox, mount, cleanup, and cancellation failures MUST propagate through infrastructure classification.
+- **FR-022**: One attempt-scoped owner MUST serialize accepted stage releases, Git changes, team messages, and shutdown; agent tools MUST receive only immutable per-agent views, and no accepted mutation may appear in only a subset of the canonical trace, message room, released-stage view, or eligible activity streams.
 
 ### Key Entities
 

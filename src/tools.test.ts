@@ -4,11 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ActivityBus } from "./activity.js";
+import { AttemptRuntime } from "./attempt-runtime.js";
 import { runGit } from "./git.js";
+import { PublishedSolverInfrastructureError } from "./published-solver.js";
 import { SandboxInfrastructureError } from "./sandbox/contracts.js";
-import { TeamChannel } from "./team-channel.js";
-import { createAgentTools, TOOL_DEFINITIONS } from "./tools.js";
+import { createAgentTools, type CheckerHook, TOOL_DEFINITIONS } from "./tools.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
 const SUCCESS = {
@@ -22,6 +22,8 @@ const SUCCESS = {
 async function toolFixture(
   execute?: ConstructorParameters<typeof FakeCommandSandbox>[0],
   withTeamChannel = false,
+  duringSolver?: (runtime: AttemptRuntime) => void | Promise<void>,
+  checker?: CheckerHook,
 ) {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
@@ -54,6 +56,17 @@ async function toolFixture(
     writeFile(releasedStages[1].visiblePath, "tampered visible stage\n"),
     writeFile(join(evidence, "stage-01-decoy.txt"), "decoy\n"),
   ]);
+  const observedTeamMessages: unknown[] = [];
+  const runtime = new AttemptRuntime({
+    agentIds: ["agent-1", "agent-2", "agent-3"],
+    teamChannelEnabled: withTeamChannel,
+    nowMs: () => 50,
+    observe: ({ kind, data }) => {
+      if (kind === "team.message") observedTeamMessages.push(data);
+    },
+  });
+  await runtime.recordReleasedStage("agent-1", releasedStages[0]);
+  await runtime.recordReleasedStage("agent-1", releasedStages[1]);
   await runGit(["init", "--bare", "--initial-branch=main", gitOrigin]);
   const seed = join(root, "seed");
   await runGit(["clone", gitOrigin, seed]);
@@ -68,6 +81,7 @@ async function toolFixture(
   const sandbox = new FakeCommandSandbox(async (request) => {
     if (request.profile === "solver") {
       capturedCiphertexts.push(await readFile(request.ciphertextPath, "utf8"));
+      await duringSolver?.(runtime);
     }
     if (execute !== undefined) return execute(request);
     if (request.profile === "agent") return SUCCESS;
@@ -82,41 +96,30 @@ async function toolFixture(
     gitOriginPath: gitOrigin,
     timeoutMs: 1_000,
   });
-  const activity = new ActivityBus();
-  const peerActivities = {
-    "agent-1": activity,
-    "agent-2": new ActivityBus(),
-    "agent-3": new ActivityBus(),
-  };
-  const observedTeamMessages: unknown[] = [];
-  const teamChannel = withTeamChannel
-    ? new TeamChannel({
-        activities: peerActivities,
-        nowMs: () => 50,
-        observe: (message) => {
-          observedTeamMessages.push(message);
-        },
-      })
-    : undefined;
   const checkerRequests: string[] = [];
+  const attempt = runtime.forAgent("agent-1");
+  let activityCursor = attempt.latestActivitySequence;
   const tools = createAgentTools({
     agentId: "agent-1",
     sandbox: lease,
     solverSandbox: sandbox,
     repositoryPath: gitOrigin,
-    activity,
-    ...(teamChannel === undefined ? {} : { teamChannel }),
-    getActivityCursor: () => 0,
-    checker: async ({ candidatePath }) => {
-      checkerRequests.push(candidatePath);
-      return {
-        matchedWords: 1,
-        totalWords: 2,
-        coverage: 1,
-        accuracy: 0.5,
-      };
+    attempt,
+    getActivityCursor: () => activityCursor,
+    setActivityCursor: (sequence) => {
+      activityCursor = sequence;
     },
-    getReleasedStages: () => releasedStages,
+    checker:
+      checker ??
+      (async ({ candidatePath }) => {
+        checkerRequests.push(candidatePath);
+        return {
+          matchedWords: 1,
+          totalWords: 2,
+          coverage: 1,
+          accuracy: 0.5,
+        };
+      }),
   });
   return {
     root,
@@ -128,8 +131,8 @@ async function toolFixture(
     sandbox,
     capturedCiphertexts,
     checkerRequests,
-    activity,
-    peerActivities,
+    source,
+    runtime,
     observedTeamMessages,
     tools,
   };
@@ -155,11 +158,11 @@ describe("agent tools", () => {
   });
 
   it("reports Git activity without implying that a peer channel exists", async () => {
-    const { activity, tools } = await toolFixture();
-    activity.publish({ kind: "git-changed", detail: { repositoryId: "agent-1" } });
+    const { runtime, tools } = await toolFixture();
+    await runtime.recordGitChange("agent-1", ["agent-1"], ["refs/heads/main"]);
 
     await expect(tools.execute("wait_for_activity", { afterSequence: 0 })).resolves.toEqual({
-      sequence: 1,
+      sequence: 3,
       kind: "git-changed",
       summary: "Git activity is available",
     });
@@ -195,9 +198,9 @@ describe("agent tools", () => {
       hasMore: false,
     });
     expect(enabled.observedTeamMessages).toHaveLength(1);
-    expect(enabled.peerActivities["agent-2"].events).toEqual([
-      expect.objectContaining({ kind: "team-message" }),
-    ]);
+    await expect(enabled.runtime.forAgent("agent-2").waitForActivity(0)).resolves.toMatchObject({
+      kind: "team-message",
+    });
   });
 
   it("checks only the pushed main solver and exposes its commit with aggregate output", async () => {
@@ -294,5 +297,33 @@ describe("agent tools", () => {
       SandboxInfrastructureError,
     );
     expect(fixture.checkerRequests).toEqual([]);
+  });
+
+  it("checks one immutable evidence snapshot when another stage is released during execution", async () => {
+    const fixture = await toolFixture(undefined, false, async (runtime) => {
+      const sourcePath = join(fixture.source, "stage-03.txt");
+      const visiblePath = join(fixture.evidence, "stage-03-visible.txt");
+      await Promise.all([
+        writeFile(sourcePath, "five six\n"),
+        writeFile(visiblePath, "five six\n"),
+      ]);
+      await runtime.recordReleasedStage("agent-1", { ordinal: 3, sourcePath, visiblePath });
+    });
+
+    await expect(fixture.tools.execute("check_published_solver", {})).resolves.toMatchObject({
+      commit: fixture.commit,
+      accuracy: 0.5,
+    });
+    expect(fixture.capturedCiphertexts).toEqual(["one two\n\nthree four\n"]);
+  });
+
+  it("classifies trusted checker failures as infrastructure", async () => {
+    const fixture = await toolFixture(undefined, false, undefined, async () => {
+      throw new Error("checker unavailable");
+    });
+
+    await expect(fixture.tools.execute("check_published_solver", {})).rejects.toThrow(
+      PublishedSolverInfrastructureError,
+    );
   });
 });
