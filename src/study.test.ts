@@ -299,7 +299,7 @@ describe("frozen study state", () => {
     expect(reused.designDigest).toBe(receipt.designDigest);
 
     const immutableDrift = await loadStudyManifest("experiments/config.yaml");
-    immutableDrift.models.mini!.model = "different-model";
+    immutableDrift.models.sol!.model = "different-model";
     await expect(
       prepareStudyDesign({
         root,

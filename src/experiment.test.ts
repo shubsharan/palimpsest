@@ -44,13 +44,13 @@ describe("study experiment orchestration", () => {
     });
 
     expect(models).toEqual([
-      "gpt-5.4-mini-2026-03-17",
-      "gpt-5.4-mini-2026-03-17",
-      "gpt-5.4-mini-2026-03-17",
+      "gpt-5.6-sol",
+      "gpt-5.6-sol",
+      "gpt-5.6-sol",
     ]);
-    expect(agents["agent-1"]!.model.profile).toBe("mini");
-    expect(agents["agent-2"]!.model.profile).toBe("mini");
-    expect(agents["agent-3"]!.model.profile).toBe("mini");
+    expect(agents["agent-1"]!.model.profile).toBe("sol");
+    expect(agents["agent-2"]!.model.profile).toBe("sol");
+    expect(agents["agent-3"]!.model.profile).toBe("sol");
     const manifest = decodeBuildManifest(testBuildManifest());
     expect(() => assertBuildMatchesStudy(manifest, study)).not.toThrow();
     expect(() =>
