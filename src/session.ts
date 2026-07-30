@@ -185,6 +185,7 @@ export async function runAgentSession(options: {
       cumulativeUsage: { inputTokens, outputTokens },
       responseIdentity: turn.responseIdentity,
       toolCalls: turn.toolCalls.map((call) => ({ id: call.id, name: call.name })),
+      reasoningSummary: turn.reasoningSummary,
       finalResponse: turn.finalResponse,
     });
 

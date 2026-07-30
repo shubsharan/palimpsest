@@ -285,6 +285,7 @@ export class AiSdkModelAdapter implements ModelAdapter {
           pending = nextPending;
           started = true;
           const actualProvider = languageModelProvider(this.#model);
+          const reasoningSummary = result.finalStep.reasoningText;
           const common = {
             toolCalls,
             usage,
@@ -292,6 +293,7 @@ export class AiSdkModelAdapter implements ModelAdapter {
               ...(actualProvider === undefined ? {} : { actualProvider }),
               actualModel: result.response.modelId,
             },
+            ...(reasoningSummary === undefined ? {} : { reasoningSummary }),
           };
           return result.text.length === 0 ? common : { ...common, finalResponse: result.text };
         } catch (error) {

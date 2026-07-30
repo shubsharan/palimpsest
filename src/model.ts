@@ -80,6 +80,7 @@ export interface ModelToolResult {
 
 export interface ModelTurn {
   toolCalls: readonly ModelToolCall[];
+  reasoningSummary?: string;
   finalResponse?: string;
   usage: TokenUsage;
   responseIdentity?: ModelResponseIdentity;

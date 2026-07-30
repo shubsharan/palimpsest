@@ -43,6 +43,10 @@ describe("AI SDK provider", () => {
         {
           content: [
             {
+              type: "reasoning",
+              text: "Inspect the repository before changing it.",
+            },
+            {
               type: "tool-call",
               toolCallId: "call-1",
               toolName: "run_command",
@@ -88,6 +92,7 @@ describe("AI SDK provider", () => {
         actualProvider: "mock-provider",
         actualModel: "served-model",
       },
+      reasoningSummary: "Inspect the repository before changing it.",
     });
     await expect(
       session.respond({

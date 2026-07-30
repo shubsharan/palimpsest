@@ -38,6 +38,7 @@ describe("model session lifecycle", () => {
     const turns: ModelTurn[] = [
       {
         toolCalls: [{ id: "call-1", name: "wait_for_activity", arguments: { afterSequence: 0 } }],
+        reasoningSummary: "I should inspect new activity before proceeding.",
         usage: {
           inputTokens: 3,
           outputTokens: 2,
@@ -114,6 +115,7 @@ describe("model session lifecycle", () => {
           actualProvider: "compatible-cloud",
           actualModel: "routed-model-2026-07",
         },
+        reasoningSummary: "I should inspect new activity before proceeding.",
       }),
       "agent-1",
     );

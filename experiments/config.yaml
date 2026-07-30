@@ -37,6 +37,7 @@ models:
     providerOptions:
       openai:
         reasoningEffort: medium
+        reasoningSummary: detailed
         serviceTier: default
         store: false
 
