@@ -1,4 +1,4 @@
-import { chmod, cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
 
 import {
@@ -9,9 +9,11 @@ import {
   decodeEvaluationRecord,
   selectBuildVariant,
 } from "./artifacts.js";
+import { runGit } from "./git.js";
 import { isAgentId, type AgentId } from "./model.js";
 import {
   type CommandSandbox,
+  SANDBOX_PATHS,
   SandboxInfrastructureError,
   type SandboxCommandResult,
   WorkspaceFileError,
@@ -71,23 +73,6 @@ function resolveOutputPath(workspacePath: string, outputPath: string): string {
   return resolved;
 }
 
-async function makeWritable(path: string): Promise<void> {
-  const entries = await readdir(path, { withFileTypes: true });
-  await Promise.all(
-    entries.map(async (entry) => {
-      const child = join(path, entry.name);
-      if (entry.isDirectory()) {
-        await makeWritable(child);
-      } else if (!entry.isSymbolicLink()) {
-        const metadata = await lstat(child);
-        await chmod(child, metadata.mode | 0o200);
-      }
-    }),
-  );
-  const metadata = await lstat(path);
-  await chmod(path, metadata.mode | 0o700);
-}
-
 function withSelection(
   status: EvaluationStatus,
   selection: EvaluationSelection | undefined,
@@ -133,7 +118,6 @@ function validateReviewerSelection(selection: EvaluationSelection | undefined): 
 }
 
 export async function evaluateFrozenAttempt(options: {
-  frozenWorkspacePath: string;
   frozenGitPath: string;
   evaluationRoot: string;
   ciphertextPath: string;
@@ -158,12 +142,8 @@ export async function evaluateFrozenAttempt(options: {
   let outputPath: string;
   const workspacePath = join(options.evaluationRoot, "workspace");
   try {
-    await cp(options.frozenWorkspacePath, workspacePath, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-    });
-    await makeWritable(workspacePath);
+    await runGit(["clone", "--no-local", options.frozenGitPath, workspacePath]);
+    await runGit(["remote", "set-url", "origin", SANDBOX_PATHS.gitOrigin], workspacePath);
     outputPath = resolveOutputPath(workspacePath, options.selection.outputPath);
     await resolveWorkspacePath(workspacePath, options.selection.outputPath, "Reviewer outputPath");
   } catch (error) {
@@ -318,7 +298,6 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
     expectedImageId: attempt.sandbox.imageId,
   });
   await evaluateFrozenAttempt({
-    frozenWorkspacePath: frozenWorkspace.path,
     frozenGitPath: frozenRepository.path,
     evaluationRoot: join(attemptRoot, "evaluation"),
     ciphertextPath: join(attempt.buildRoot, variant.publicCiphertextPath),

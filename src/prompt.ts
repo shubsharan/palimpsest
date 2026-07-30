@@ -34,15 +34,15 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   const channel =
     condition.communicationMode === "shared"
       ? "Collaborate actively through the team's shared Git repository: commit and push useful discoveries and code, fetch peer work, compare different approaches, challenge assumptions, and integrate the strongest solver improvements. A local commit is visible to peers only after you push it to origin. Git does not count against your model-token budget."
-      : "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Git does not count against your model-token budget.";
+      : "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Commit and push runnable solver work to your private origin so it can be graded. Git does not count against your model-token budget.";
   return [
     `You are Agent ${identity}, one of 3 agents working concurrently as one team. Each agent receives different private evidence.`,
     "",
     channel,
     "",
     "Recover the plaintext of the complete ciphertext as accurately as you can.",
-    "Your team is graded on runnable solver code committed to Git, not on final prose.",
-    "A reviewer will run selected code from one frozen workspace against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
+    "Your team is graded only on runnable solver code committed and pushed to origin. Final prose, uncommitted files, and unpushed commits do not count.",
+    "A reviewer will check out a published repository after the attempt and run selected code against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
     "",
     `Additional private evidence may appear during the attempt. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,

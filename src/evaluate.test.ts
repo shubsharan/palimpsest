@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeEvaluationRecord } from "./artifacts.js";
 import { resolveCondition, type ConditionId } from "./condition.js";
 import { evaluateFrozenAttempt, evaluatePuzzle } from "./evaluate.js";
+import { runGit } from "./git.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import type { SandboxCommandResult } from "./sandbox/contracts.js";
 import { sealTree, type TreeSeal } from "./seal.js";
@@ -33,15 +34,29 @@ const SUCCESS: SandboxCommandResult = {
 
 async function evaluationFixture() {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-"));
-  const frozenWorkspacePath = join(root, "frozen-workspace");
   const frozenGitPath = join(root, "frozen-shared.git");
   const ciphertextPath = join(root, "ciphertext.txt");
   await Promise.all([
-    mkdir(frozenWorkspacePath),
-    mkdir(frozenGitPath),
+    runGit(["init", "--bare", "--initial-branch=main", frozenGitPath]),
     writeFile(ciphertextPath, "ciphertext\n"),
   ]);
-  return { root, frozenWorkspacePath, frozenGitPath, ciphertextPath };
+  return { root, frozenGitPath, ciphertextPath };
+}
+
+async function publishFile(
+  repositoryPath: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  const seedRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-seed-"));
+  const checkout = join(seedRoot, "checkout");
+  await runGit(["clone", repositoryPath, checkout]);
+  await runGit(["config", "user.name", "Palimpsest Test"], checkout);
+  await runGit(["config", "user.email", "test@palimpsest.invalid"], checkout);
+  await writeFile(join(checkout, relativePath), content, "utf8");
+  await runGit(["add", relativePath], checkout);
+  await runGit(["commit", "-m", `Publish ${relativePath}`], checkout);
+  await runGit(["push", "origin", "main"], checkout);
 }
 
 async function conditionAttemptFixture(conditionId: ConditionId) {
@@ -86,7 +101,9 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
     mkdir(attemptRoot, { recursive: true }),
     mkdir(join(buildRoot, "oracle"), { recursive: true }),
     mkdir(join(buildRoot, "variants", condition.variantId, "complete"), { recursive: true }),
-    ...frozen.repositories.map((repository) => mkdir(repository.path, { recursive: true })),
+    ...frozen.repositories.map((repository) =>
+      runGit(["init", "--bare", "--initial-branch=main", repository.path]),
+    ),
     ...frozen.workspaces.map((workspace) => mkdir(workspace.path, { recursive: true })),
   ]);
   await Promise.all([
@@ -106,7 +123,9 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
     ...frozen.workspaces.map((workspace) =>
       writeFile(join(workspace.path, `${workspace.agentId}.txt`), `${workspace.agentId}\n`, "utf8"),
     ),
+    writeFile(join(selectedWorkspace.path, "local-only.txt"), "must not be graded\n", "utf8"),
   ]);
+  await publishFile(selectedRepository.path, "agent-2.txt", "agent-2\n");
   attempt.buildTreeSeal = await sealTree(buildRoot);
   frozen.treeSeal = await sealTree(frozenRoot);
   await writeFile(join(attemptRoot, "attempt.json"), `${JSON.stringify(attempt)}\n`, "utf8");
@@ -227,10 +246,10 @@ describe("frozen attempt evaluation", () => {
 
   it("records selection before sandbox execution and preserves the score", async () => {
     const fixture = await evaluationFixture();
-    await writeFile(
-      join(fixture.frozenWorkspacePath, "solver.sh"),
+    await publishFile(
+      fixture.frozenGitPath,
+      "solver.sh",
       "printf 'answer' > \"$PALIMPSEST_OUTPUT\"\n",
-      { encoding: "utf8", mode: 0o755 },
     );
     const kinds: string[] = [];
     const sandbox = new FakeCommandSandbox(async (request) => {
@@ -376,7 +395,7 @@ describe("condition attempt evaluation", () => {
     ["CR", "shared"],
     ["IR", "isolated"],
   ] as const)(
-    "pairs the selected workspace with its assigned origin in %s",
+    "checks out the selected workspace's published origin in %s",
     async (conditionId, communicationMode) => {
       const fixture = await conditionAttemptFixture(conditionId);
       const sandbox = new FakeCommandSandbox(async (request) => {
@@ -385,6 +404,9 @@ describe("condition attempt evaluation", () => {
           "agent-2\n",
         );
         await expect(access(join(request.workspacePath, "agent-1.txt"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await expect(access(join(request.workspacePath, "local-only.txt"))).rejects.toMatchObject({
           code: "ENOENT",
         });
         await writeFile(join(request.workspacePath, request.outputPath), "selected plaintext\n");

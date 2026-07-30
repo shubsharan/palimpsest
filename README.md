@@ -82,7 +82,7 @@ pnpm puzzle:experiment -- \
 
 Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, then indexes only strict durable attempts in its `phase.json`. A frozen `session-infrastructure-error` stops the phase; one explicit `--replace <attempt-id>` command may append a cited replacement. Nothing retries automatically.
 
-After inspecting a frozen attempt, the researcher explicitly chooses what to evaluate:
+After inspecting a frozen attempt, the researcher selects an agent identity, its assigned published Git repository, and the command to evaluate:
 
 ```bash
 pnpm puzzle:evaluate -- \
@@ -92,7 +92,7 @@ pnpm puzzle:evaluate -- \
   --output-path reconstruction.txt
 ```
 
-The runner does not prescribe a solver file, command, workspace, role, or collaboration pattern.
+Evaluation checks out the selected frozen Git origin, so uncommitted files and unpushed commits do not count. Shared-condition agents all map to the team origin; isolated-condition agents map to their own private origins. The runner does not prescribe a solver file, command, role, or collaboration pattern.
 
 ## Development Check
 

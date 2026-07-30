@@ -12,6 +12,7 @@ import {
 } from "../../src/artifacts.js";
 import type { ConditionId } from "../../src/condition.js";
 import { evaluateFrozenAttempt } from "../../src/evaluate.js";
+import { runGit } from "../../src/git.js";
 import { appendTraceEvent } from "../../src/python.js";
 import { finalizeAttempt } from "../../src/run.js";
 import { sealTree } from "../../src/seal.js";
@@ -73,7 +74,7 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
   }));
   await Promise.all([
     mkdir(buildRoot),
-    ...repositories.map(({ path }) => mkdir(path, { recursive: true })),
+    ...repositories.map(({ path }) => runGit(["init", "--bare", "--initial-branch=main", path])),
     ...workspaces.map(({ path }) => mkdir(path, { recursive: true })),
   ]);
   const tracePath = join(attemptRoot, "trace.jsonl");
@@ -235,7 +236,6 @@ describe("post-freeze attempt durability", () => {
         return SUCCESS;
       });
       const evaluation = await evaluateFrozenAttempt({
-        frozenWorkspacePath: selectedWorkspace.path,
         frozenGitPath: selectedRepository.path,
         evaluationRoot: join(fixture.attemptRoot, "evaluation"),
         ciphertextPath: join(fixture.buildRoot, "ciphertext.txt"),
