@@ -89,7 +89,7 @@ study/
         attempt.json
 ```
 
-Immediately before opening a cell's sessions, the runner reverifies the selected receipt-bound build tree and writes one launch reservation to the phase summary. After immutable `attempt.json` publication, it indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
+Before phase initialization, the runner exclusively creates one empty phase-execution lock and holds it for the complete invocation. A competing or abandoned lock fails before preflight, reservation, adapter construction, or provider work; there is no heartbeat, lock stealing, or stale-process recovery. Immediately before opening a cell's sessions, the runner reverifies the selected receipt-bound build tree and writes one launch reservation to the phase summary. After the sessions and Git freeze complete, it reverifies the selected build and only then publishes immutable `attempt.json`, indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
 
 A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. A post-publication overlap error remains diagnostic: the durable non-infrastructure attempt is indexed and the phase continues sequentially without manual resume. Successful resume skips every indexed cell. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, or aggregation.
 
@@ -152,7 +152,7 @@ The offline command composes the same condition-selected build, runtime, native 
 
 Configuration, build, adapter construction, provider execution, sandbox, Git, trace, artifact publication, overlap, and evaluation failures remain explicit infrastructure outcomes. Only a frozen session-infrastructure classification is replacement-eligible. Model mistakes, tool errors, repeated checking, raw sharing, no Git use, unusual coordination, and voluntary early completion remain observable model outcomes.
 
-The architecture preserves the strongest local durable boundary available: exclusive design-receipt publication before sessions, whole-tree sealing and launch-time verification, launch reservation before provider work, complete attempt publication before optional observation, and atomic phase indexing after each durable attempt.
+The architecture preserves the strongest local durable boundary available: exclusive design-receipt publication before sessions, one local phase writer, whole-tree verification before launch and attempt publication, launch reservation before provider work, complete attempt publication before optional observation, and atomic phase indexing after each durable attempt.
 
 `pnpm preflight` is the authorization boundary for provider-backed work. It requires a clean committed checkout, rebuilds the sandbox, runs full verification plus a fresh offline fixture, and writes `artifacts/preflight.json` only on success. A provider-backed attempt must match that receipt before model sessions begin and copies it into the attempt root first.
 

@@ -45,20 +45,24 @@ Cell IDs and positions are deterministic.
 
 `executeStudyPhase(options)`:
 
-1. validates the receipt, complete build-tree bindings, phase prerequisites, and current manifest;
-2. reads or initializes strict `phase.json`;
-3. rejects an unresolved reservation or unremediated eligible failure;
-4. selects the next unstarted cell;
-5. verifies remaining token and monetary authorization;
-6. verifies provider preflight when adapters are not injected;
-7. reverifies the selected complete build-tree seal immediately before launch;
-8. writes a launch reservation;
-9. executes exactly one attempt with three concurrent sessions;
-10. seals the selected build and complete frozen Git/workspace roots into the durable attempt;
-11. indexes the strict durable attempt and resolves the reservation;
-12. stops nonzero on eligible infrastructure classification, otherwise continues sequentially.
+1. exclusively creates `<study-root>/<phase>/.execution.lock` before phase initialization and holds it for the invocation;
+2. validates the receipt, complete build-tree bindings, phase prerequisites, and current manifest;
+3. reads or initializes strict `phase.json`;
+4. rejects an unresolved reservation or unremediated eligible failure;
+5. selects the next unstarted cell;
+6. verifies remaining token and monetary authorization;
+7. verifies provider preflight when adapters are not injected;
+8. reverifies the selected complete build-tree seal immediately before launch;
+9. writes a launch reservation;
+10. executes exactly one attempt with three concurrent sessions;
+11. reverifies the selected build, seals the complete frozen Git/workspace root, and durably publishes the attempt;
+12. indexes the strict durable attempt and resolves the reservation;
+13. stops nonzero on eligible infrastructure classification, otherwise continues sequentially;
+14. removes the phase lock after normal completion or handled failure.
 
 Reinvocation never launches an indexed primary cell. Reloading an indexed attempt revalidates its complete receipt-bound protocol plus its selected-build and frozen-tree seals. A post-publication overlap failure remains in the attempt trace, but the durable non-infrastructure attempt is indexed and the same invocation continues to the next cell.
+
+A competing or abandoned phase lock rejects execution before preflight, reservation, adapter construction, or provider work. The runner does not inspect, steal, expire, or recover locks; an abandoned lock requires a new study root.
 
 ## Explicit Replacement
 

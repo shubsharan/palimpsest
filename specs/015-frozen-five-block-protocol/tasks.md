@@ -123,6 +123,16 @@
 
 ---
 
+## Phase 8: Minimal Study Integrity Fixes
+
+**Purpose**: Close the final publication and single-writer gaps without adding recovery machinery or new schemas.
+
+- [x] T040 Add failing final build-verification and concurrent/stale phase-lock regressions in `tests/puzzle/attempt-durability.test.ts` and `src/study.test.ts`
+- [x] T041 Reverify the build immediately before attempt publication and hold one exclusive phase lock for each coordinator invocation
+- [x] T042 Reconcile the Feature 015 contract and run focused plus full repository verification
+
+---
+
 ## Dependencies And Execution Order
 
 - Setup precedes Foundational Contracts.

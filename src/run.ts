@@ -53,7 +53,7 @@ import {
   type CommandSandbox,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
-import { sealTree, type TreeSeal } from "./seal.js";
+import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
@@ -820,6 +820,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     sandbox: { ...options.result.sandbox, ...SANDBOX_POLICY },
     sessions: options.result.sessions,
   });
+  await verifyTree(options.buildRoot, options.buildTreeSeal, "Attempt build tree");
   await options.publishSummary(options.attemptRoot, summary);
   try {
     return await options.observeOverlap();

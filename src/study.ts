@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, readdir } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 import {
@@ -1047,8 +1047,39 @@ export interface ExecuteStudyPhaseOptions {
     Partial<Pick<StudyExecutionDependencies, "now">>;
 }
 
+async function acquirePhaseExecutionLock(
+  studyRoot: string,
+  phase: StudyPhase,
+): Promise<() => Promise<void>> {
+  const path = join(studyRoot, phase, ".execution.lock");
+  await mkdir(join(studyRoot, phase), { recursive: true });
+  try {
+    await writeFile(path, "", { flag: "wx" });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST") {
+      throw new Error(
+        "Phase execution lock already exists; another coordinator may be running or an earlier execution stopped ambiguously. Use a new study root.",
+      );
+    }
+    throw error;
+  }
+  return async () => rm(path, { force: true });
+}
+
 export async function executeStudyPhase(options: ExecuteStudyPhaseOptions): Promise<PhaseSummary> {
   const studyRoot = resolve(options.studyRoot);
+  const release = await acquirePhaseExecutionLock(studyRoot, options.phase);
+  try {
+    return await executeLockedStudyPhase(options, studyRoot);
+  } finally {
+    await release();
+  }
+}
+
+async function executeLockedStudyPhase(
+  options: ExecuteStudyPhaseOptions,
+  studyRoot: string,
+): Promise<PhaseSummary> {
   const deps = { ...defaultExecutionDependencies, ...options.dependencies };
   let summary = await initializeStudyPhase({
     studyRoot,

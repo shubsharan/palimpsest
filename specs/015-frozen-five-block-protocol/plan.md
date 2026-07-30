@@ -106,6 +106,8 @@ Attempt protocol snapshots remain agent-visible treatment inputs only. Feature 0
 
 Each phase has one strict `phase.json` written atomically after its prerequisites pass. It records the ordered plan, manifest/design digests, adjustments, resource accounting, durable attempts, launch reservations, completion, and failure.
 
+One empty phase-execution lock is created exclusively before phase initialization and held for the complete coordinator invocation. A competing or abandoned lock rejects execution before preflight, reservation, adapter construction, or provider work and is never recovered automatically.
+
 Before adapter/session work, the coordinator appends one launch reservation for the selected cell. After a strict attempt is durably indexed, the reservation becomes resolved. A crash or infrastructure failure before durable freeze leaves an unresolved reservation and blocks further execution in that study root. This prevents a resume command from silently relaunching work that may have reached a provider but lacks a valid scientific artifact.
 
 Validation requires the same study root, completed calibration, intact receipt-bound builds, matching immutable manifest/design identity, and one atomic adjustment record before the first validation reservation. The selected build's canonical tree seal is reverified immediately before every launch reservation. Only `budgets.tokenBudgetPerAgent` and `budgets.perAttemptMonetaryCeilingCents` may differ, and the recalculated twenty-primary-cell authorization must still fit the frozen totals.
@@ -120,7 +122,7 @@ An eligible attempt is indexed unchanged and stops the phase nonzero. `--replace
 
 Provider-backed launches verify the current clean source/sandbox preflight before credential resolution, adapter construction, or session opening. Provider-free tests inject fixture adapters and fake clocks. Phase completion means all planned cells have a successful durable primary or eligible replacement; it does not run overlap, select a workspace, evaluate, apply the rubric, aggregate outcomes, or make a benchmark claim.
 
-Every attempt records the selected build-tree seal and the complete frozen Git/workspace tree seal. Resume and evaluation reverify those roots before treating the attempt as durable evidence. This local integrity boundary detects filesystem drift; it does not add signatures, immutable storage, or an external verifier.
+Every attempt records the selected build-tree seal and the complete frozen Git/workspace tree seal. The selected build is reverified immediately before attempt publication; resume and evaluation reverify the relevant roots before treating the attempt as durable evidence. This local integrity boundary detects filesystem drift; it does not add signatures, immutable storage, continuous monitoring, or an external verifier.
 
 ## Complexity Tracking
 

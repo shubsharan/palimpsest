@@ -79,3 +79,11 @@
 **Rationale**: The builder, checker, runner, and evaluator consume evolving sets of files. Binding a hand-maintained list makes every new consumed artifact another provenance bug. Whole-tree identity turns the publication boundary into the invariant: anything present when the root is sealed must remain identical whenever the root is reused.
 
 **Alternatives rejected**: Enumerating stage, reference, ciphertext, checker, plaintext, repository, and workspace files duplicates consumer knowledge and inevitably drifts. Copying every tree per launch adds storage without improving local integrity. Signatures, immutable object storage, and transparency logs exceed the threat model of a trusted local research operator.
+
+## Decision 11: One local writer per phase
+
+**Decision**: Hold one empty, exclusively created lock file for the complete phase invocation and reverify the selected build immediately before durable attempt publication.
+
+**Rationale**: The final tree check closes ordinary mid-attempt drift, while the lock prevents two local commands from publishing competing reservations or duplicating paid work. Both reuse existing filesystem boundaries without changing scientific artifacts.
+
+**Alternatives rejected**: Compare-and-swap storage, heartbeats, stale-process recovery, services, and distributed leases add machinery the local puzzle does not need. An abandoned lock remains fail-closed and requires a new study root.

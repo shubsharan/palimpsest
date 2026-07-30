@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -532,6 +532,101 @@ describe("frozen study state", () => {
     expect(phase.attempts).toHaveLength(4);
     expect(phase.reservations.every(({ state }) => state === "resolved")).toBe(true);
     expect(phase.failure).toBeUndefined();
+    await expect(access(join(studyRoot, "calibration", ".execution.lock"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  }, 60_000);
+
+  it("allows only one coordinator to execute a phase", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    let releaseFirst!: () => void;
+    let firstReached!: () => void;
+    const holdFirst = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const reachedFirst = new Promise<void>((resolve) => {
+      firstReached = resolve;
+    });
+    let firstLaunches = 0;
+    let competingPreflights = 0;
+    let competingLaunches = 0;
+
+    const first = executeStudyPhase({
+      studyRoot,
+      study,
+      receipt,
+      phase: "calibration",
+      dependencies: {
+        beforeLaunch: async () => {
+          firstReached();
+          await holdFirst;
+        },
+        runCell: async () => {
+          firstLaunches += 1;
+          throw new Error("fixture stopped after claiming the phase");
+        },
+      },
+    });
+    await reachedFirst;
+
+    await expect(
+      executeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+        dependencies: {
+          beforeLaunch: async () => {
+            competingPreflights += 1;
+            throw new Error("competing coordinator reached preflight");
+          },
+          runCell: async () => {
+            competingLaunches += 1;
+          },
+        },
+      }),
+    ).rejects.toThrow(/phase execution lock.*new study root/i);
+
+    releaseFirst();
+    await expect(first).rejects.toThrow("fixture stopped after claiming the phase");
+    expect(firstLaunches).toBe(1);
+    expect(competingPreflights).toBe(0);
+    expect(competingLaunches).toBe(0);
+    const phase = await readPhaseSummary(studyRoot, "calibration");
+    expect(phase.reservations).toHaveLength(1);
+    expect(phase.failure?.kind).toBe("unresolved-reservation");
+    await expect(access(join(studyRoot, "calibration", ".execution.lock"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  }, 60_000);
+
+  it("fails closed on an abandoned phase execution lock", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    const lockPath = join(studyRoot, "calibration", ".execution.lock");
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "", { flag: "wx" });
+    let preflights = 0;
+
+    await expect(
+      executeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+        dependencies: {
+          beforeLaunch: async () => {
+            preflights += 1;
+          },
+          runCell: async () => {},
+        },
+      }),
+    ).rejects.toThrow(/phase execution lock.*new study root/i);
+
+    expect(preflights).toBe(0);
+    await expect(access(lockPath)).resolves.toBeUndefined();
+    await expect(readPhaseSummary(studyRoot, "calibration")).rejects.toThrow(
+      /missing or unreadable/,
+    );
   }, 60_000);
 
   it("revalidates indexed attempts before returning a completed phase", async () => {

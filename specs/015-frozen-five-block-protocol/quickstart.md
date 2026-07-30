@@ -20,6 +20,8 @@ pnpm puzzle:experiment -- --config experiments/config.yaml --phase validation --
 
 Provider-backed use requires a current clean receipt-bound preflight. Calibration publishes `/tmp/palimpsest-study/design.json` before the first session. Validation refuses to start until calibration is complete and every byte in the receipt-bound build trees remains intact.
 
+Only one coordinator may execute a phase in a study root. A competing or abandoned `.execution.lock` fails before provider work; select a new study root rather than deleting or recovering it.
+
 Expected primary attempts:
 
 - calibration: 4
