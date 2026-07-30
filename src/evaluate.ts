@@ -53,10 +53,11 @@ export interface EvaluatePuzzleOptions {
   root: string;
   attempt: string;
   workspace?: AgentId;
-  command?: string;
-  outputPath?: string;
   notes?: string;
 }
+
+export const SOLVER_COMMAND = "python3 solver.py";
+export const SOLVER_OUTPUT_PATH = "reconstruction.txt";
 
 function resolveOutputPath(workspacePath: string, outputPath: string): string {
   if (outputPath.length === 0 || isAbsolute(outputPath)) {
@@ -238,21 +239,9 @@ function attemptRootFrom(path: string): string {
 export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<EvaluationResult> {
   const root = resolve(options.root);
   const attemptRoot = attemptRootFrom(options.attempt);
-  if ((options.command === undefined) !== (options.outputPath === undefined)) {
-    throw new Error("Reviewer command and output path must be provided together.");
-  }
   if (options.workspace === undefined) {
     throw new Error("Reviewer workspace must be provided for evaluation.");
   }
-  validateReviewerSelection(
-    options.command === undefined || options.outputPath === undefined
-      ? undefined
-      : {
-          command: options.command,
-          outputPath: options.outputPath,
-          ...(options.notes === undefined ? {} : { notes: options.notes }),
-        },
-  );
   const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
   await Promise.all([
     verifyTree(attempt.buildRoot, attempt.buildTreeSeal, "Attempt build tree"),
@@ -262,14 +251,11 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if (!attempt.agentIds.includes(workspace)) {
     throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);
   }
-  const selection: EvaluationSelection | undefined =
-    options.command === undefined || options.outputPath === undefined
-      ? undefined
-      : {
-          command: options.command,
-          outputPath: options.outputPath,
-          ...(options.notes === undefined ? {} : { notes: options.notes }),
-        };
+  const selection: EvaluationSelection = {
+    command: SOLVER_COMMAND,
+    outputPath: SOLVER_OUTPUT_PATH,
+    ...(options.notes === undefined ? {} : { notes: options.notes }),
+  };
   const build = decodeBuildManifest(
     await readJsonObject(join(attempt.buildRoot, "puzzle-build.json")),
   );
@@ -327,15 +313,16 @@ export function evaluatePuzzleFromFlags(
   if (workspace !== undefined && !isAgentId(workspace)) {
     throw new Error("--workspace must be a canonical agent-N identifier.");
   }
-  const command = flags.get("--command");
-  const outputPath = flags.get("--output-path");
+  if (flags.has("--command") || flags.has("--output-path")) {
+    throw new Error(
+      "Evaluation always runs origin/main:solver.py; --command and --output-path are not accepted.",
+    );
+  }
   const notes = flags.get("--notes");
   return evaluatePuzzle({
     root,
     attempt: requiredFlag(flags, "--attempt"),
     ...(workspace === undefined ? {} : { workspace }),
-    ...(command === undefined ? {} : { command }),
-    ...(outputPath === undefined ? {} : { outputPath }),
     ...(notes === undefined ? {} : { notes }),
   });
 }

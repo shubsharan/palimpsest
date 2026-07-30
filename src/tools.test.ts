@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +8,27 @@ import { ActivityBus } from "./activity.js";
 import { createAgentTools, TOOL_DEFINITIONS } from "./tools.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
 
-async function toolFixture() {
+const COMMIT = "a".repeat(40);
+const SUCCESS = {
+  exitCode: 0,
+  stdout: "",
+  stderr: "",
+  timedOut: false,
+  outputExceeded: false,
+} as const;
+
+async function toolFixture(
+  execute: ConstructorParameters<typeof FakeCommandSandbox>[0] = async (request) => {
+    if (request.command === "pwd") return SUCCESS;
+    if (request.command.includes("git clone")) {
+      return { ...SUCCESS, stdout: `${COMMIT}\n` };
+    }
+    const root = request.command.match(/\/workspace\/(\.palimpsest-check-[^/]+)/)?.[1];
+    if (root === undefined) throw new Error("Expected a published-solver check root.");
+    await writeFile(join(request.workspacePath, root, "reconstruction.txt"), "one two\n", "utf8");
+    return SUCCESS;
+  },
+) {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
   const evidence = join(root, "evidence");
@@ -20,7 +40,7 @@ async function toolFixture() {
     mkdir(gitOrigin),
     writeFile(reference, "reference\n"),
   ]);
-  const sandbox = new FakeCommandSandbox();
+  const sandbox = new FakeCommandSandbox(execute);
   const lease = await sandbox.openAgentLease({
     profile: "agent",
     workspacePath: workspace,
@@ -65,9 +85,16 @@ describe("agent tools", () => {
   it("gives every agent the same command, checker, and waiting tools", () => {
     expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       "run_command",
-      "check_reconstruction",
+      "check_published_solver",
       "wait_for_activity",
     ]);
+    expect(
+      TOOL_DEFINITIONS.find(({ name }) => name === "check_published_solver")?.inputSchema,
+    ).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    });
     expect(TOOL_DEFINITIONS.find(({ name }) => name === "wait_for_activity")?.description).toBe(
       "Wait until new private evidence or Git activity is available.",
     );
@@ -84,10 +111,9 @@ describe("agent tools", () => {
     });
   });
 
-  it("routes commands through the injected sandbox and exposes only aggregate checker output", async () => {
+  it("checks only the pushed main solver and exposes its commit with aggregate output", async () => {
     const fixture = await toolFixture();
-    const { sandbox, tools, workspace } = fixture;
-    await writeFile(join(workspace, "candidate.txt"), "one two\n", "utf8");
+    const { sandbox, tools } = fixture;
     const command = await tools.execute("run_command", {
       command: "pwd",
       timeoutMs: 1_000,
@@ -104,56 +130,57 @@ describe("agent tools", () => {
       }),
     ]);
 
-    const checked = await tools.execute("check_reconstruction", {
-      candidatePath: "candidate.txt",
-    });
+    const checked = await tools.execute("check_published_solver", {});
     expect(checked).toEqual({
+      commit: COMMIT,
       matchedWords: 1,
       totalWords: 2,
       coverage: 1,
       accuracy: 0.5,
     });
     expect(JSON.stringify(checked)).not.toMatch(/expected|mismatch|correctWords/);
+    expect(fixture.checkerRequests).toHaveLength(1);
+    expect(sandbox.requests.slice(1).map((request) => request.command)).toEqual([
+      expect.stringContaining(
+        "git clone --no-local --branch main --single-branch '/git/origin.git'",
+      ),
+      expect.stringMatching(/PALIMPSEST_CIPHERTEXT=.* PALIMPSEST_OUTPUT=.* python3 solver\.py/),
+    ]);
+    expect(sandbox.requests[2]?.command).toContain("cat /evidence/stage-01-*.txt");
   });
 
-  it("rejects a checker candidate whose symlink escapes the workspace", async () => {
-    const { root, workspace, tools, checkerRequests } = await toolFixture();
-    const outside = join(root, "outside.txt");
-    await writeFile(outside, "secret\n");
-    await symlink(outside, join(workspace, "candidate.txt"));
-
+  it("rejects candidate paths because the published-solver checker takes no arguments", async () => {
+    const { tools, checkerRequests } = await toolFixture();
     await expect(
-      tools.execute("check_reconstruction", { candidatePath: "candidate.txt" }),
-    ).rejects.toThrow("resolves outside");
+      tools.execute("check_published_solver", { candidatePath: "candidate.txt" }),
+    ).rejects.toThrow("does not accept arguments");
     expect(checkerRequests).toEqual([]);
   });
 
-  it("accepts a contained symlink to a regular checker candidate", async () => {
-    const { workspace, tools, checkerRequests } = await toolFixture();
-    await writeFile(join(workspace, "answer.txt"), "candidate\n");
-    await symlink("answer.txt", join(workspace, "candidate.txt"));
+  it("reports checkout and solver failures without scoring private workspace files", async () => {
+    const checkoutFailure = await toolFixture(async () => ({
+      ...SUCCESS,
+      exitCode: 128,
+      stderr: "main does not exist",
+    }));
+    await expect(checkoutFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
+      error: "Published solver checkout failed.",
+      execution: expect.objectContaining({ exitCode: 128 }),
+    });
+    expect(checkoutFailure.checkerRequests).toEqual([]);
 
-    await expect(
-      tools.execute("check_reconstruction", { candidatePath: "candidate.txt" }),
-    ).resolves.toMatchObject({ matchedWords: 1 });
-    expect(checkerRequests).toHaveLength(1);
-  });
-
-  it("rejects checker directories and missing files", async () => {
-    const { workspace, tools } = await toolFixture();
-    await mkdir(join(workspace, "directory"));
-
-    await expect(
-      tools.execute("check_reconstruction", { candidatePath: "directory" }),
-    ).rejects.toThrow("regular file");
-    await expect(
-      tools.execute("check_reconstruction", { candidatePath: "missing.txt" }),
-    ).rejects.toThrow("does not exist");
-    await expect(
-      tools.execute("check_reconstruction", { candidatePath: "../outside.txt" }),
-    ).rejects.toThrow("inside the workspace");
-    await expect(
-      tools.execute("check_reconstruction", { candidatePath: "/absolute.txt" }),
-    ).rejects.toThrow("relative");
+    let invocation = 0;
+    const solverFailure = await toolFixture(async () => {
+      invocation += 1;
+      return invocation === 1
+        ? { ...SUCCESS, stdout: `${COMMIT}\n` }
+        : { ...SUCCESS, exitCode: 2, stderr: "solver.py missing" };
+    });
+    await expect(solverFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
+      commit: COMMIT,
+      error: "Published solver execution failed.",
+      execution: expect.objectContaining({ exitCode: 2, stderr: "solver.py missing" }),
+    });
+    expect(solverFailure.checkerRequests).toEqual([]);
   });
 });

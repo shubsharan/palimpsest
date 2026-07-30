@@ -51,7 +51,7 @@ As a researcher, I can inspect condition prompts, schedules, traces, and attempt
 1. **Given** all four prompts, **When** they are compared, **Then** only the communication-channel paragraph differs between shared and isolated modes and no prompt reveals the key regime.
 2. **Given** any condition, **When** fake time advances, **Then** the six private stages release at the declared offsets and the attempt stops at the declared cutoff.
 3. **Given** a completed attempt, **When** its durable records are decoded, **Then** they identify the block, condition, derived communication mode and key regime, exact schedule, usage, termination, sandbox, sessions, and frozen Git topology.
-4. **Given** an explicitly selected runnable workspace, **When** manual evaluation runs, **Then** it uses only that frozen workspace and its condition-appropriate frozen repository without merging team outputs.
+4. **Given** an explicitly selected workspace, **When** evaluation runs, **Then** it uses only that workspace's condition-appropriate frozen repository and canonical `solver.py` interface without merging team outputs.
 
 ### Edge Cases
 
@@ -67,11 +67,11 @@ As a researcher, I can inspect condition prompts, schedules, traces, and attempt
 
 **Puzzle Behavior**: Three concurrent agents receive different private evidence over the same six-stage schedule. The declared condition determines whether peer communication is available and whether the stationary or re-key paired block is used; it does not prescribe how agents solve or collaborate.
 
-**Agent Instructions & Tools**: Every prompt states the same team identity, reconstruction objective, peer presence, private evidence, references, local commands, aggregate checker, voluntary Git, wait tool, resource cutoff, and requested final response. Shared prompts state that one ordinary team Git repository and peer activity are available. Isolated prompts state that each agent has a private usable Git repository and no peer communication channel. Prompts do not reveal re-keying, oracle sets, scores, roles, workflows, required artifacts, or recommended strategies.
+**Agent Instructions & Tools**: Every prompt identifies the word-substitution cipher, states the same team identity and reconstruction objective, declares `origin/main:solver.py` as the sole checkable and gradeable submission, and describes private evidence, references, local commands, published-solver checker, activity wait, resource cutoff, and requested final response. Shared prompts state that one ordinary team Git repository and peer activity are available. Isolated prompts state that each agent has a private usable Git repository and no peer communication channel. Prompts do not reveal re-keying, oracle sets, scores, roles, prescribed workflows, algorithms, or required intermediate artifacts.
 
-**Environmental Constraints**: Shared conditions expose one bare repository to all three workspaces and peer Git activity. Isolated conditions expose one independent bare repository per workspace at the same agent-visible path and no peer Git activity. Evidence allocation, stage bytes, release offsets, references, sandbox, network, secrets, models, token limits, wall-time cutoff, checker, and evaluation boundary remain condition-invariant except for the declared key regime.
+**Environmental Constraints**: Shared conditions expose one bare repository to all three workspaces and peer Git activity. Isolated conditions expose one independent bare repository per workspace at the same agent-visible path and no peer Git activity. Every origin begins at the same deterministic commit containing a neutral `solver.py` scaffold. Evidence allocation, stage bytes, release offsets, references, sandbox, network, secrets, models, token limits, wall-time cutoff, checker, and evaluation boundary remain condition-invariant except for the declared key regime.
 
-**Observable Outcomes**: Durable records retain the canonical condition, derived treatment dimensions, block and variant identities, release timestamps, tool and checker activity, Git refs and frozen topology, session responses, usage, termination, sandbox identity, overlap observations, and manual evaluation. Independent work, raw sharing when possible, conflicts, no Git use, early stopping, and unconventional strategies remain outcomes.
+**Observable Outcomes**: Durable records retain the canonical condition, derived treatment dimensions, block and variant identities, release timestamps, tool and checker activity, Git refs and frozen topology, session responses, usage, termination, sandbox identity, overlap observations, and manual evaluation. Independent work, raw sharing when possible, conflicts, failure to improve the scaffold, early stopping, and unconventional strategies remain outcomes.
 
 **Infrastructure Failures**: Invalid condition/build pairing, missing treatment resources, sandbox setup failure, timer failure, evidence publication failure, repository creation/monitoring/freezing failure, trace publication failure, or evaluation-environment mismatch stop or explicitly fail the attempt. Model choices and unsuccessful collaboration do not become infrastructure failures.
 
@@ -89,22 +89,24 @@ As a researcher, I can inspect condition prompts, schedules, traces, and attempt
 - **FR-004**: The runner MUST select the stationary paired-build variant for `CS` and `IS`, and the re-key paired-build variant for `CR` and `IR`.
 - **FR-005**: Every attempt MUST use exactly three agents, six stages, release offsets of 0, 5, 10, 20, 30, and 40 minutes, and a 60-minute wall-time cutoff.
 - **FR-006**: Scheduling MUST use a monotonic clock and stop unreleased stages when the cutoff is reached.
-- **FR-007**: Shared conditions MUST provide all agents with workspaces cloned from one ordinary bare Git repository mounted at the common Git path.
+- **FR-007**: Shared conditions MUST provide all agents with workspaces cloned from one ordinary bare Git repository mounted at the common Git path and initialized with the neutral `solver.py` scaffold on `main`.
 - **FR-008**: Shared conditions MUST expose repository changes as peer-visible activity without requiring any Git operation.
-- **FR-009**: Isolated conditions MUST provide each agent with a usable independent bare Git repository mounted at the same common Git path.
+- **FR-009**: Isolated conditions MUST provide each agent with a usable independent bare Git repository mounted at the same common Git path and initialized with the same scaffold bytes and commit identity as every other origin.
 - **FR-010**: Isolated conditions MUST NOT expose another agent's repository, refs, committed content, evidence, workspace, or Git activity.
 - **FR-011**: Agent-visible team identity, objective, evidence allocation and timing, references, local tools, checker, non-Git activity, limits, sandbox, and evaluation boundary MUST remain identical across communication-paired conditions.
-- **FR-012**: Prompts MUST differ by communication mode only in the channel-availability paragraph and MUST NOT disclose key regime, re-keying, oracle sets, expected effects, scoring expectations, assigned roles, required workflows, or required intermediate artifacts.
-- **FR-013**: Git use MUST remain voluntary and unmetered in every condition, and attempts MUST retain independent work, conflicts, raw evidence exchange when possible, and no-Git behavior as outcomes.
+- **FR-012**: Prompts MUST differ by communication mode only in the channel-availability paragraph and MUST NOT disclose key regime, re-keying, oracle sets, expected effects, scoring expectations, assigned roles, prescribed workflows, decoding algorithms, or required intermediate artifacts.
+- **FR-013**: Git commands MUST remain model-chosen and unmetered in every condition. The runner MUST NOT automate agent commits, pushes, merges, conflict resolution, roles, turns, or collaboration cadence.
 - **FR-014**: Attempt configuration and durable summaries MUST record block identity, condition, derived communication mode, derived key regime, build variant identity, exact release offsets, cutoff, and sandbox identity.
 - **FR-015**: Traces MUST retain actual stage release timestamps, tool and checker activity, Git activity visible under the condition, session responses, usage, termination, and infrastructure errors.
 - **FR-016**: Freezing MUST preserve every repository and workspace in its native shared or isolated topology without merging or rewriting model work.
 - **FR-017**: Overlap observation MUST scan all frozen repositories independently and remain non-blocking and score-independent.
-- **FR-018**: Manual evaluation MUST select one documented runnable frozen workspace and its corresponding frozen repository without post-hoc merging.
+- **FR-018**: Evaluation MUST select one documented frozen workspace and its corresponding frozen repository, then execute only the canonical `python3 solver.py` interface without post-hoc merging or reviewer-selected commands.
 - **FR-019**: Attempt and experiment artifact decoders MUST reject missing, inconsistent, or unsupported condition fields and topology.
 - **FR-020**: Provider-free fixtures MUST exercise all four conditions without provider credentials or live model requests.
 - **FR-021**: Existing provider adapters, checker scoring, sandbox isolation, receipt-bound preflight, and explicit manual evaluation MUST be reused rather than replaced with condition-specific subsystems.
 - **FR-022**: The feature MUST NOT add automated behavioral review, reviewer schemas, outcome aggregation, automatic retries, or result selection.
+- **FR-023**: The checker MUST accept no candidate path, capture the exact current commit from the assigned origin's `main` branch, execute that commit's `solver.py` in a clean checkout against only the caller's released evidence, and return only the commit, aggregate score fields, or an execution error.
+- **FR-024**: Final grading MUST execute the selected condition-appropriate frozen origin's captured `main` commit through the same `python3 solver.py` interface against the complete ciphertext; uncommitted files, other branches, and post-hoc merges MUST NOT count.
 
 ### Key Entities
 
@@ -120,13 +122,14 @@ As a researcher, I can inspect condition prompts, schedules, traces, and attempt
 ### Measurable Outcomes
 
 - **SC-001**: All four canonical identifiers resolve to the declared treatment pair, and every non-canonical identifier or arbitrary pairing is rejected before execution.
-- **SC-002**: In provider-free tests, a shared commit becomes visible to both peers while an isolated commit remains invisible to both peers and every agent can use its own repository.
+- **SC-002**: In provider-free tests, every origin begins at the same scaffold commit, a shared commit becomes visible to both peers, and an isolated commit remains invisible to both peers while every agent can use its own repository.
 - **SC-003**: Prompt snapshots across all four conditions contain zero key-regime or oracle disclosures and differ between communication-paired conditions only in the declared channel paragraph.
 - **SC-004**: Fake-clock traces for every condition record six releases at exactly 0, 300000, 600000, 1200000, 1800000, and 2400000 milliseconds and stop sessions at 3600000 milliseconds.
 - **SC-005**: Stationary conditions use only the stationary build ID and re-key conditions use only the re-key build ID for every tested block.
 - **SC-006**: Frozen shared attempts contain one bare repository plus three workspaces; frozen isolated attempts contain three independent bare repositories plus their three workspaces, with no merge step.
 - **SC-007**: Every condition attempt round-trips through strict artifact decoders with complete block, treatment, schedule, session, trace, usage, termination, sandbox, and topology records.
-- **SC-008**: A provider-free four-condition run completes through build, run, freeze, overlap observation, and explicit manual evaluation with the complete repository verification suite passing.
+- **SC-008**: A provider-free four-condition run completes through build, run, published-main checking, freeze, overlap observation, and explicit manual evaluation with the complete repository verification suite passing.
+- **SC-009**: Checker tests prove that local files, unpushed commits, other branches, and caller-selected candidate paths cannot affect the reported score.
 
 ## Assumptions
 

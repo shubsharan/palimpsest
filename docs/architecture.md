@@ -54,7 +54,7 @@ For fixed registered source bytes, block definition, and builder version, the wi
 
 Within an attempt, TypeScript:
 
-- creates one shared bare Git repository or three isolated bare repositories, plus one assigned workspace per canonical agent ID;
+- creates one shared bare Git repository or three isolated bare repositories, seeds each with the identical neutral `solver.py` on `main`, and creates one assigned workspace per canonical agent ID;
 - creates one private evidence directory and independent persistent session per agent;
 - releases equivalent stage ordinals at 0, 5, 10, 20, 30, and 40 minutes on one monotonic schedule;
 - exposes the same local command, file, Git, checker, and activity-waiting tool surface to every session;
@@ -63,7 +63,7 @@ Within an attempt, TypeScript:
 - freezes every native Git repository and workspace without merging after all sessions end; and
 - atomically publishes `attempt.json` before optional overlap observation.
 
-Sessions in one attempt run concurrently. They share neither message history nor private evidence. No rounds, roles, checkpoints, mandatory Git behavior, or solver file convention are introduced by the study protocol.
+Sessions in one attempt run concurrently. They share neither message history nor private evidence. The protocol declares one graded `origin/main:solver.py` interface but introduces no rounds, roles, checkpoints, commit sequence, branch strategy, or merge policy.
 
 Missing provider usage or a provider request failure is an infrastructure-error session rather than estimated usage or a model-quality outcome. The attempt is still frozen and published. An experiment indexes that durable attempt and then stops before launching another.
 
@@ -112,7 +112,7 @@ Lease creation and every command share bounded deadlines under the attempt's glo
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Reviewer-selected evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals, then uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, that workspace's assigned frozen Git origin, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
+Reviewer-selected evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals, then uses a separate short-lived container with a clean checkout of the selected workspace's assigned frozen Git origin, complete ciphertext, and temporary storage. The reviewer selects only the workspace; the evaluator records and runs the canonical `python3 solver.py` command and `reconstruction.txt` output path.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
@@ -141,8 +141,7 @@ pnpm puzzle:experiment -- --config experiments/config.yaml \
   --phase validation --study-root artifacts/study
 pnpm puzzle:experiment -- --config experiments/config.yaml \
   --phase validation --study-root artifacts/study --replace <attempt-id>
-pnpm puzzle:evaluate -- --attempt artifacts/attempt --workspace agent-1 \
-  --command "sh solve.sh" --output-path reconstruction.txt
+pnpm puzzle:evaluate -- --attempt artifacts/attempt --workspace agent-1
 pnpm puzzle:offline -- --condition CR --output artifacts/offline
 ```
 
@@ -150,7 +149,7 @@ The offline command composes the same condition-selected build, runtime, native 
 
 ## Failure Semantics
 
-Configuration, build, adapter construction, provider execution, sandbox, Git, trace, artifact publication, overlap, and evaluation failures remain explicit infrastructure outcomes. Only a frozen session-infrastructure classification is replacement-eligible. Model mistakes, tool errors, repeated checking, raw sharing, no Git use, unusual coordination, and voluntary early completion remain observable model outcomes.
+Configuration, build, adapter construction, provider execution, sandbox, Git, trace, artifact publication, overlap, and evaluation failures remain explicit infrastructure outcomes. Only a frozen session-infrastructure classification is replacement-eligible. Model mistakes, tool errors, repeated publication and checking, raw sharing, failure to improve the seeded solver, unusual coordination, and early completion remain observable model outcomes.
 
 The architecture preserves the strongest local durable boundary available: exclusive design-receipt publication before sessions, one local phase writer, whole-tree verification before launch and attempt publication, launch reservation before provider work, complete attempt publication before optional observation, and atomic phase indexing after each durable attempt.
 
@@ -158,7 +157,7 @@ The architecture preserves the strongest local durable boundary available: exclu
 
 ## Verification
 
-The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, shared visibility, isolated non-observability, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
+The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, shared visibility, isolated non-observability, published-main-only checking, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
 
 ## Study Conditions And Frozen Protocol
 

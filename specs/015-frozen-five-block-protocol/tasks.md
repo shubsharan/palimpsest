@@ -140,6 +140,11 @@
 - [x] T043 Require canonical attempt-root trace paths and validate complete current trace metadata and JSONL structure whenever a study attempt is accepted
 - [x] T044 Cover missing, malformed, redirected, and valid post-publication trace tails and reconcile the Feature 015 contract
 
+## Phase 10: Published Solver Protocol Amendment
+
+- [x] T045 Carry Feature 014's identical scaffold, published-main-only checker, and canonical final evaluation through the frozen study protocol
+- [x] T046 Reconcile the active specification, plan, tasks, and operator documentation with the amended solver contract
+
 ---
 
 ## Dependencies And Execution Order

@@ -61,16 +61,18 @@ You are Agent N, one of 3 agents working concurrently as one team. Each agent re
 Shared channel paragraph:
 
 ```text
-Peer communication is available through a Git repository shared by the team. Git use is optional and does not count against your model-token budget.
+Three agents, one team submission: origin/main:solver.py. There are no individual submissions or scores. Collaborate through the team's shared Git repository: publish useful solver changes, inspect peer commits, compare approaches, and integrate the strongest work. A local commit is visible to peers only after you push it. Git does not count against your model-token budget.
 ```
 
 Isolated channel paragraph:
 
 ```text
-Peer communication is unavailable. You have a private Git repository that no peer can see. Git use is optional and does not count against your model-token budget.
+Peer communication is unavailable. Your assigned origin is private and no peer can see its commits or score. Publish your strongest solver to origin/main:solver.py so it remains part of the team record. Git does not count against your model-token budget.
 ```
 
-The remaining objective, schedule, cutoff, token limit, tools, paths, references, checker, wait behavior, manual-evaluation boundary, and final-response request are byte-identical. The prompt contains no key-regime term, oracle label, expected score, role, algorithm, branch/commit advice, workflow, checkpoint, required intermediate file, or raw-sharing warning.
+The remaining objective, word-substitution cipher disclosure, schedule, cutoff, token limit, tools, paths, references, published-solver checker, wait behavior, evaluation boundary, and final-response request are byte-identical. Every origin begins at the same neutral `solver.py` commit. The prompt contains no key-regime term, oracle label, expected score, assigned role, decoding algorithm, prescribed branch strategy, workflow, checkpoint, required intermediate file, or raw-sharing warning.
+
+`check_published_solver` takes no candidate path. It captures the exact current `origin/main` commit, checks it out cleanly, runs `python3 solver.py` against only the caller's released evidence, and returns the commit with aggregate matched words, total words, coverage, and accuracy or an execution error. Final grading uses the same interface against the complete ciphertext.
 
 ## Attempt Schema Version 3
 

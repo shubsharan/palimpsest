@@ -97,8 +97,6 @@ export async function runOfflinePuzzle(
     root,
     attempt: run.attemptRoot,
     workspace: "agent-1",
-    command: "sh solve.sh",
-    outputPath: "reconstruction.txt",
     notes: "Offline fixture selects the solver published by agent-1.",
   });
   return {

@@ -29,7 +29,7 @@ pnpm install --frozen-lockfile
 uv sync --frozen --project python
 ```
 
-The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored and reviewer-selected commands. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
+The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored commands and canonical solver evaluation. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
 
 ## Configure The Study
 
@@ -82,17 +82,17 @@ pnpm puzzle:experiment -- \
 
 Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, then indexes only strict durable attempts in its `phase.json`. A frozen `session-infrastructure-error` stops the phase; one explicit `--replace <attempt-id>` command may append a cited replacement. Nothing retries automatically.
 
-After inspecting a frozen attempt, the researcher selects an agent identity, its assigned published Git repository, and the command to evaluate:
+After inspecting a frozen attempt, the researcher selects an agent identity. The evaluator uses that agent's assigned published Git repository:
 
 ```bash
 pnpm puzzle:evaluate -- \
   --attempt artifacts/study/validation/attempts/<attempt-id> \
-  --workspace agent-1 \
-  --command "sh solve.sh" \
-  --output-path reconstruction.txt
+  --workspace agent-1
 ```
 
-Evaluation checks out the selected frozen Git origin, so uncommitted files and unpushed commits do not count. Shared-condition agents all map to the team origin; isolated-condition agents map to their own private origins. The runner does not prescribe a solver file, command, role, or collaboration pattern.
+Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` checks out the exact current `origin/main` commit, runs `python3 solver.py` on the evidence released to that agent, and reports only the commit plus aggregate coverage and accuracy. Local files, unpushed commits, and other branches cannot be checked.
+
+Final evaluation checks out the selected frozen Git origin and runs the same `solver.py` interface against the complete ciphertext. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. The runner prescribes no roles, commit sequence, branch strategy, or collaboration cadence.
 
 ## Development Check
 

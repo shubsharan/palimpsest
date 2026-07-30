@@ -33,22 +33,22 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
   const identity = options.agentId.slice("agent-".length);
   const channel =
     condition.communicationMode === "shared"
-      ? "Collaborate actively through the team's shared Git repository: commit and push useful discoveries and code, fetch peer work, compare different approaches, challenge assumptions, and integrate the strongest solver improvements. A local commit is visible to peers only after you push it to origin. Git does not count against your model-token budget."
-      : "Peer communication is unavailable. Work in your private Git repository; no peer can see it. Commit and push runnable solver work to your private origin so it can be graded. Git does not count against your model-token budget.";
+      ? "Three agents, one team submission: origin/main:solver.py. There are no individual submissions or scores. Collaborate through the team's shared Git repository: publish useful solver changes, inspect peer commits, compare approaches, and integrate the strongest work. A local commit is visible to peers only after you push it. Git does not count against your model-token budget."
+      : "Peer communication is unavailable. Your assigned origin is private and no peer can see its commits or score. Publish your strongest solver to origin/main:solver.py so it remains part of the team record. Git does not count against your model-token budget.";
   return [
     `You are Agent ${identity}, one of 3 agents working concurrently as one team. Each agent receives different private evidence.`,
     "",
     channel,
     "",
-    "Recover the plaintext of the complete ciphertext as accurately as you can.",
-    "Your team is graded only on runnable solver code committed and pushed to origin. Final prose, uncommitted files, and unpushed commits do not count.",
-    "A reviewer will check out a published repository after the attempt and run selected code against the complete ciphertext. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
+    "Recover the plaintext of the complete word-substitution cipher as accurately as you can.",
+    "A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.",
+    "The checker and final grader run python3 solver.py from a clean checkout. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
     "",
     `Additional private evidence may appear during the attempt. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,
     "",
-    "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check a reconstruction against your currently visible private evidence and receive aggregate metrics, use Git, or wait for visible activity. The checker covers only your visible evidence; a perfect score does not prove the complete ciphertext is solved.",
-    "Keep improving and committing the solver until you have verified that it produces a complete plaintext you believe solves the full ciphertext.",
+    "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.",
+    "Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.",
     "Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.",
     "",
     `Workspace: ${SANDBOX_PATHS.workspace}`,

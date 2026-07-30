@@ -79,7 +79,7 @@
 
 **Puzzle Behavior**: [State the agent-visible puzzle behavior this feature enables]
 
-**Agent Instructions & Tools**: [State the shared objective, stable team identity, communication availability and Git surface, available tools, and requested but unenforced behavior]
+**Agent Instructions & Tools**: [State the shared objective, stable team identity, communication availability and Git surface, canonical published solver interface, checking tools, and requested but unenforced coordination behavior]
 
 **Environmental Constraints**: [State private evidence and peer-activity visibility, schedule, wall-time/token cutoffs, network access, secrets, and host-safety boundaries]
 

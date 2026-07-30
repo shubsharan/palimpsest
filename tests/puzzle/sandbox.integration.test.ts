@@ -167,8 +167,11 @@ describe("real Docker command containment", () => {
     expect(await listRemoteRefs(fixture.repository.path)).toHaveProperty(
       "refs/heads/private/result",
     );
+    const scaffoldCommit = (await listRemoteRefs(fixture.repository.path))["refs/heads/main"];
     for (const repository of peerRepositories) {
-      expect(await listRemoteRefs(repository.path)).toEqual({});
+      expect(await listRemoteRefs(repository.path)).toEqual({
+        "refs/heads/main": scaffoldCommit,
+      });
     }
     await lease.close();
     await assertNoSandboxContainers(sandbox.containerLabelValue);

@@ -6,7 +6,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { decodeEvaluationRecord } from "./artifacts.js";
 import { resolveCondition, type ConditionId } from "./condition.js";
-import { evaluateFrozenAttempt, evaluatePuzzle } from "./evaluate.js";
+import {
+  evaluateFrozenAttempt,
+  evaluatePuzzle,
+  evaluatePuzzleFromFlags,
+  SOLVER_COMMAND,
+  SOLVER_OUTPUT_PATH,
+} from "./evaluate.js";
 import { runGit } from "./git.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import type { SandboxCommandResult } from "./sandbox/contracts.js";
@@ -353,17 +359,13 @@ describe("frozen attempt evaluation", () => {
 });
 
 describe("condition attempt evaluation", () => {
-  it.each([
-    ["not-runnable", {}],
-    ["runnable", { command: "run selected solver", outputPath: "answer.txt" }],
-  ] as const)("requires an explicit workspace before %s evaluation setup", async (_, selection) => {
+  it("requires an explicit workspace before evaluation setup", async () => {
     const fixture = await conditionAttemptFixture("IR");
 
     await expect(
       evaluatePuzzle({
         root: process.cwd(),
         attempt: fixture.attemptRoot,
-        ...selection,
       }),
     ).rejects.toThrow("Reviewer workspace must be provided for evaluation.");
     expect(createSandboxMock).not.toHaveBeenCalled();
@@ -372,23 +374,25 @@ describe("condition attempt evaluation", () => {
     });
   });
 
-  it("preserves not-runnable evaluation for an explicitly selected workspace", async () => {
-    const fixture = await conditionAttemptFixture("IR");
-    const sandbox = new FakeCommandSandbox(async () => {
-      throw new Error("Not-runnable evaluation must not execute a command.");
-    });
-    createSandboxMock.mockResolvedValue(
-      sandbox as unknown as Awaited<ReturnType<typeof createDockerCommandSandbox>>,
-    );
-
-    const result = await evaluatePuzzle({
-      root: process.cwd(),
-      attempt: fixture.attemptRoot,
-      workspace: "agent-2",
-    });
-
-    expect(result).toEqual({ status: "not-runnable" });
-    expect(sandbox.requests).toEqual([]);
+  it("rejects reviewer-selected commands and output paths", () => {
+    expect(() =>
+      evaluatePuzzleFromFlags(
+        new Map([
+          ["--attempt", "attempt"],
+          ["--workspace", "agent-1"],
+          ["--command", "sh anything.sh"],
+        ]),
+      ),
+    ).toThrow("always runs origin/main:solver.py");
+    expect(() =>
+      evaluatePuzzleFromFlags(
+        new Map([
+          ["--attempt", "attempt"],
+          ["--workspace", "agent-1"],
+          ["--output-path", "anything.txt"],
+        ]),
+      ),
+    ).toThrow("always runs origin/main:solver.py");
   });
 
   it.each([
@@ -420,8 +424,6 @@ describe("condition attempt evaluation", () => {
         root: process.cwd(),
         attempt: fixture.attemptRoot,
         workspace: "agent-2",
-        command: "run selected solver",
-        outputPath: "answer.txt",
       });
 
       expect(result).toMatchObject({ status: "scored", score: { accuracy: 1, coverage: 1 } });
@@ -433,7 +435,8 @@ describe("condition attempt evaluation", () => {
         expect.objectContaining({
           profile: "evaluation",
           gitOriginPath: fixture.selectedRepository.path,
-          outputPath: "answer.txt",
+          command: SOLVER_COMMAND,
+          outputPath: SOLVER_OUTPUT_PATH,
         }),
       ]);
       for (const repository of fixture.peerRepositories) {
@@ -464,8 +467,6 @@ describe("condition attempt evaluation", () => {
           root: process.cwd(),
           attempt: root,
           workspace: "agent-2",
-          command: "must not run",
-          outputPath: "answer.txt",
         }),
       ).rejects.toThrow(/frozen Git|condition-assigned repository/i);
       expect(createSandboxMock).not.toHaveBeenCalled();

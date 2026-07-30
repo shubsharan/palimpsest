@@ -1,10 +1,16 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { basename, join, posix } from "node:path";
+
 import { ActivityBus, type ActivityEvent } from "./activity.js";
 import type { AgentId } from "./model.js";
-import type { AgentSandboxLease, SandboxCommandResult } from "./sandbox/contracts.js";
-import { resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
+import {
+  SANDBOX_PATHS,
+  type AgentSandboxLease,
+  type SandboxCommandResult,
+} from "./sandbox/contracts.js";
 
 export interface ToolDefinition {
-  name: "run_command" | "check_reconstruction" | "wait_for_activity";
+  name: "run_command" | "check_published_solver" | "wait_for_activity";
   description: string;
   inputSchema: Readonly<Record<string, unknown>>;
 }
@@ -24,13 +30,12 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     },
   },
   {
-    name: "check_reconstruction",
+    name: "check_published_solver",
     description:
-      "Compare a candidate file with your currently visible private evidence and receive aggregate metrics.",
+      "Run origin/main:solver.py against your currently visible private evidence and receive its commit and aggregate metrics.",
     inputSchema: {
       type: "object",
-      properties: { candidatePath: { type: "string" } },
-      required: ["candidatePath"],
+      properties: {},
       additionalProperties: false,
     },
   },
@@ -74,11 +79,99 @@ function requireObject(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
-async function resolveCandidate(workspacePath: string, candidatePath: unknown): Promise<string> {
-  if (typeof candidatePath !== "string") {
-    throw new Error("candidatePath must be a non-empty path relative to the workspace.");
+function failed(result: SandboxCommandResult): boolean {
+  return (
+    result.exitCode !== 0 ||
+    result.timedOut ||
+    result.outputExceeded ||
+    result.indeterminate === true
+  );
+}
+
+function executionSummary(result: SandboxCommandResult): Readonly<Record<string, unknown>> {
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    timedOut: result.timedOut,
+    outputExceeded: result.outputExceeded,
+    ...(result.indeterminate === true ? { indeterminate: true } : {}),
+  };
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function checkPublishedSolver(
+  options: {
+    agentId: AgentId;
+    workspacePath: string;
+    sandbox: AgentSandboxLease;
+    checker: CheckerHook;
+    commandTimeoutMs: number;
+  },
+  releasedStages: readonly number[],
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const checkRoot = await mkdtemp(join(options.workspacePath, ".palimpsest-check-"));
+  const sandboxRoot = posix.join(SANDBOX_PATHS.workspace, basename(checkRoot));
+  const repositoryPath = posix.join(sandboxRoot, "repository");
+  const ciphertextPath = posix.join(sandboxRoot, "ciphertext.txt");
+  const outputPath = posix.join(sandboxRoot, "reconstruction.txt");
+  let commit: string | undefined;
+  try {
+    const checkout = await options.sandbox.execute({
+      command: [
+        "set -eu",
+        `git clone --no-local --branch main --single-branch ${shellQuote(SANDBOX_PATHS.gitOrigin)} ${shellQuote(repositoryPath)} >/dev/null 2>&1`,
+        `git -C ${shellQuote(repositoryPath)} rev-parse HEAD`,
+      ].join("\n"),
+      timeoutMs: options.commandTimeoutMs,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (failed(checkout)) {
+      return {
+        error: "Published solver checkout failed.",
+        execution: executionSummary(checkout),
+      };
+    }
+    commit = checkout.stdout.trim();
+    if (!/^[a-f0-9]{40}$/.test(commit)) {
+      return { error: "Published solver checkout returned an invalid commit identity." };
+    }
+
+    const visibleStages = releasedStages.map(
+      (ordinal) => `${SANDBOX_PATHS.evidence}/stage-${String(ordinal).padStart(2, "0")}-*.txt`,
+    );
+    const execution = await options.sandbox.execute({
+      command: [
+        "set -eu",
+        `cat ${visibleStages.join(" ")} > ${shellQuote(ciphertextPath)}`,
+        `cd ${shellQuote(repositoryPath)}`,
+        `PALIMPSEST_CIPHERTEXT=${shellQuote(ciphertextPath)} PALIMPSEST_OUTPUT=${shellQuote(outputPath)} python3 solver.py`,
+        `test -f ${shellQuote(outputPath)}`,
+      ].join("\n"),
+      timeoutMs: options.commandTimeoutMs,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (failed(execution)) {
+      return {
+        commit,
+        error: "Published solver execution failed.",
+        execution: executionSummary(execution),
+      };
+    }
+    const score = await options.checker({
+      agentId: options.agentId,
+      candidatePath: join(checkRoot, "reconstruction.txt"),
+      releasedStages,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    return { commit, ...score };
+  } finally {
+    await rm(checkRoot, { recursive: true, force: true });
   }
-  return resolveWorkspaceRegularFile(workspacePath, candidatePath, "candidatePath");
 }
 
 function activitySummary(event: ActivityEvent): string {
@@ -115,14 +208,21 @@ export function createAgentTools(options: {
         };
         return options.sandbox.execute(request) satisfies Promise<SandboxCommandResult>;
       }
-      if (name === "check_reconstruction") {
-        const candidatePath = await resolveCandidate(options.workspacePath, input.candidatePath);
-        return options.checker({
-          agentId: options.agentId,
-          candidatePath,
-          releasedStages: options.getReleasedStages(),
-          ...(signal === undefined ? {} : { signal }),
-        });
+      if (name === "check_published_solver") {
+        if (Object.keys(input).length !== 0) {
+          throw new Error("check_published_solver does not accept arguments.");
+        }
+        return checkPublishedSolver(
+          {
+            agentId: options.agentId,
+            workspacePath: options.workspacePath,
+            sandbox: options.sandbox,
+            checker: options.checker,
+            commandTimeoutMs: options.commandTimeoutMs ?? 30_000,
+          },
+          options.getReleasedStages(),
+          signal,
+        );
       }
       if (name === "wait_for_activity") {
         if (!Number.isSafeInteger(input.afterSequence) || (input.afterSequence as number) < 0) {
