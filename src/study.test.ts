@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -20,6 +20,7 @@ import type { SourceState } from "./preflight.js";
 import { SANDBOX_POLICY } from "./sandbox/contracts.js";
 import {
   executeStudyPhase,
+  initializeStudyPhase,
   prepareStudyDesign,
   StudyPhaseStoppedError,
   type StudyCellLaunch,
@@ -38,12 +39,34 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
   const manifest = testBuildManifest();
   const digest = (suffix: string) =>
     createHash("sha256").update(`${options.block}:${suffix}`).digest("hex");
+  const digestBytes = (value: string): string => createHash("sha256").update(value).digest("hex");
   manifest.blockId = options.block;
   manifest.pairedBuildId = `paired-${digest("paired")}`;
   const variants = manifest.variants as Record<"stationary" | "rekey", Record<string, unknown>>;
   variants.stationary.buildId = `build-${digest("stationary")}`;
   variants.rekey.buildId = `build-${digest("rekey")}`;
   await mkdir(options.output, { recursive: true });
+  const writeArtifact = async (path: string, content: string): Promise<string> => {
+    await mkdir(dirname(join(options.output, path)), { recursive: true });
+    await writeFile(join(options.output, path), content);
+    return digestBytes(content);
+  };
+  const allocation = manifest.allocation as Record<string, unknown>;
+  const oracleDesign = manifest.oracleDesign as Record<string, unknown>;
+  const manipulationCheck = manifest.manipulationCheck as Record<string, unknown>;
+  allocation.sha256 = await writeArtifact(String(allocation.path), `allocation:${options.block}\n`);
+  oracleDesign.sha256 = await writeArtifact(String(oracleDesign.path), `oracle:${options.block}\n`);
+  manipulationCheck.sha256 = await writeArtifact(
+    String(manipulationCheck.path),
+    `manipulation:${options.block}\n`,
+  );
+  for (const variant of Object.values(variants)) {
+    const stages = variant.stages as Array<Record<string, unknown>>;
+    for (const stage of stages) {
+      const content = `stage:${options.block}:${String(stage.agentId)}:${String(stage.ordinal)}\n`;
+      stage.sha256 = await writeArtifact(String(stage.sourcePath), content);
+    }
+  }
   await writeFile(
     join(options.output, "puzzle-build.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
@@ -256,6 +279,49 @@ describe("frozen study state", () => {
     ).rejects.toThrow(/drifted/);
   }, 60_000);
 
+  it("rejects receipt-bound artifact byte drift", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    const stage = receipt.builds[0]!.manifest.variants.stationary.stages[0]!;
+    await writeFile(
+      join(studyRoot, "builds", receipt.builds[0]!.blockId, stage.sourcePath),
+      "tampered stage\n",
+    );
+
+    await expect(
+      prepareStudyDesign({
+        root,
+        studyRoot,
+        study,
+        phase: "validation",
+        dependencies: {
+          sourceState: async () => cleanSourceState(),
+          sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+        },
+      }),
+    ).rejects.toThrow(/artifact .*drifted/);
+  }, 60_000);
+
+  it("recomputes the receipt baseline manifest digest during validation", async () => {
+    const { studyRoot, study } = await prepareFixture();
+    const path = join(studyRoot, "design.json");
+    const receipt = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    receipt.manifestDigest = "f".repeat(64);
+    await writeFile(path, `${JSON.stringify(receipt, null, 2)}\n`);
+
+    await expect(
+      prepareStudyDesign({
+        root,
+        studyRoot,
+        study,
+        phase: "validation",
+        dependencies: {
+          sourceState: async () => cleanSourceState(),
+          sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+        },
+      }),
+    ).rejects.toThrow(/manifestDigest.*baseline manifest/);
+  }, 60_000);
+
   it("requires a clean source before touching construction dependencies", async () => {
     const studyRoot = await temporaryRoot();
     const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
@@ -411,6 +477,51 @@ describe("frozen study state", () => {
     expect(phase.attempts).toHaveLength(4);
     expect(phase.reservations.every(({ state }) => state === "resolved")).toBe(true);
     expect(phase.failure).toBeUndefined();
+  }, 60_000);
+
+  it("revalidates indexed attempts before returning a completed phase", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture();
+    const phase = await executeStudyPhase({
+      studyRoot,
+      study,
+      receipt,
+      phase: "calibration",
+      dependencies: {
+        beforeLaunch: async () => {},
+        runCell: async (launch) => {
+          await publishLaunchAttempt(launch, study, false);
+        },
+      },
+    });
+    const firstAttempt = phase.attempts[0];
+    if (firstAttempt === undefined) {
+      throw new Error("Fixture phase did not publish a durable attempt.");
+    }
+    const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
+    adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
+    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 8_000;
+    await expect(
+      initializeStudyPhase({
+        studyRoot,
+        study: await resolveStudy(adjustedManifest, root),
+        receipt,
+        phase: "validation",
+      }),
+    ).resolves.toMatchObject({ state: "ready" });
+    await rm(join(firstAttempt.attemptRoot, "attempt.json"), { force: true });
+
+    await expect(
+      executeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+        dependencies: {
+          beforeLaunch: async () => {},
+          runCell: async () => {},
+        },
+      }),
+    ).rejects.toThrow(/missing its durable attempt\.json/);
   }, 60_000);
 
   it("freezes an infrastructure failure and permits only cited replacements within ceilings", async () => {

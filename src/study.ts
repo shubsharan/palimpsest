@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   decodeAttemptSummary,
@@ -15,6 +15,7 @@ import {
   readPhaseSummary,
   selectBuildVariant,
   type AttemptSummary,
+  type BuildManifest,
   type DesignBuildBinding,
   type DesignReceipt,
   type PhaseAdjustment,
@@ -94,12 +95,53 @@ async function readBuildBinding(buildRoot: string, blockId: string): Promise<Des
   if (manifest.blockId !== blockId) {
     throw new Error(`Receipt build ${blockId} contains block ${manifest.blockId}.`);
   }
+  await assertBuildArtifacts(buildRoot, blockId, manifest);
   return {
     blockId,
     buildRoot,
     buildManifestDigest: sha256(bytes),
     manifest,
   };
+}
+
+function buildArtifactPath(buildRoot: string, artifactPath: string): string {
+  const root = resolve(buildRoot);
+  const path = resolve(root, artifactPath);
+  const difference = relative(root, path);
+  if (
+    difference.length === 0 ||
+    difference === ".." ||
+    difference.startsWith(`..${sep}`) ||
+    isAbsolute(difference)
+  ) {
+    throw new Error(`Build artifact path ${artifactPath} must remain inside its build root.`);
+  }
+  return path;
+}
+
+function buildArtifactDigests(
+  manifest: BuildManifest,
+): readonly { path: string; sha256: string }[] {
+  return [
+    { path: manifest.allocation.path, sha256: manifest.allocation.sha256 },
+    { path: manifest.oracleDesign.path, sha256: manifest.oracleDesign.sha256 },
+    { path: manifest.manipulationCheck.path, sha256: manifest.manipulationCheck.sha256 },
+    ...[manifest.variants.stationary, manifest.variants.rekey].flatMap((variant) =>
+      variant.stages.map((stage) => ({ path: stage.sourcePath, sha256: stage.sha256 })),
+    ),
+  ];
+}
+
+async function assertBuildArtifacts(buildRoot: string, blockId: string, manifest: BuildManifest) {
+  await Promise.all(
+    buildArtifactDigests(manifest).map(async ({ path, sha256: expected }) => {
+      const bytes = await readFile(buildArtifactPath(buildRoot, path));
+      const actual = sha256(bytes);
+      if (actual !== expected) {
+        throw new Error(`Receipt-bound build ${blockId} artifact ${path} has drifted.`);
+      }
+    }),
+  );
 }
 
 export interface StudyDesignDependencies {
@@ -228,6 +270,27 @@ function assertReceiptDigest(receipt: DesignReceipt): void {
   const { createdAt, designDigest, ...identity } = receipt;
   if (createdAt.length === 0 || hashProtocolSnapshot(designIdentity(identity)) !== designDigest) {
     throw new Error("Study design receipt digest does not match its frozen contents.");
+  }
+}
+
+function assertReceiptManifestDigest(receipt: DesignReceipt): void {
+  const immutableBudgets = receipt.immutableManifest.budgets;
+  if (
+    typeof immutableBudgets !== "object" ||
+    immutableBudgets === null ||
+    Array.isArray(immutableBudgets)
+  ) {
+    throw new Error("Study design receipt immutable manifest budgets are invalid.");
+  }
+  const baselineManifest = {
+    ...receipt.immutableManifest,
+    budgets: {
+      ...immutableBudgets,
+      ...receipt.baselineBudgets,
+    },
+  };
+  if (hashProtocolSnapshot(baselineManifest) !== receipt.manifestDigest) {
+    throw new Error("Study design receipt manifestDigest does not match its baseline manifest.");
   }
 }
 
@@ -387,7 +450,10 @@ export async function prepareStudyDesign(
     throw new Error("Validation requires an existing calibration design receipt.");
   }
   const receipt = receiptExists ? await readDesignReceipt(studyRoot) : undefined;
-  if (receipt !== undefined) assertReceiptDigest(receipt);
+  if (receipt !== undefined) {
+    assertReceiptDigest(receipt);
+    assertReceiptManifestDigest(receipt);
+  }
   const initialSource = await deps.sourceState(root);
   requireCleanStudySource(initialSource);
   if (receipt === undefined) {
@@ -545,6 +611,17 @@ export async function initializeStudyPhase(options: {
   }
   const calibration = await readPhaseIfPresent(studyRoot, "calibration");
   const existing = await readPhaseIfPresent(studyRoot, options.phase);
+  const indexedSummaries = options.phase === "validation" ? [calibration, existing] : [existing];
+  for (const summary of indexedSummaries) {
+    if (summary !== undefined) {
+      await assertIndexedAttempts({
+        studyRoot,
+        summary,
+        study: options.study,
+        receipt: options.receipt,
+      });
+    }
+  }
   if (options.phase === "validation") {
     if (calibration?.state !== "complete") {
       throw new Error("Validation requires a completed calibration phase.");
@@ -701,8 +778,13 @@ function assertAttemptMatchesLaunch(options: {
   receipt: DesignReceipt;
   attemptId: string;
   replacementOfAttemptId?: string;
+  budgets?: {
+    tokenBudgetPerAgent: number;
+    perAttemptMonetaryCeilingCents: number;
+  };
 }): void {
   const attempt = options.attempt;
+  const budgets = options.budgets ?? options.study.budgets;
   if (
     attempt.studyPhase === "standalone" ||
     attempt.attemptId !== options.attemptId ||
@@ -714,9 +796,8 @@ function assertAttemptMatchesLaunch(options: {
     attempt.condition !== options.cell.condition ||
     attempt.buildId !== options.cell.buildId ||
     resolve(attempt.buildRoot) !== options.cell.buildRoot ||
-    attempt.tokenBudgetPerAgent !== options.study.budgets.tokenBudgetPerAgent ||
-    attempt.monetaryAuthorizationCeilingCents !==
-      options.study.budgets.perAttemptMonetaryCeilingCents ||
+    attempt.tokenBudgetPerAgent !== budgets.tokenBudgetPerAgent ||
+    attempt.monetaryAuthorizationCeilingCents !== budgets.perAttemptMonetaryCeilingCents ||
     attempt.replacementOfAttemptId !== options.replacementOfAttemptId
   ) {
     throw new Error(`Attempt ${attempt.attemptId} does not match its reserved study cell.`);
@@ -735,6 +816,70 @@ function assertAttemptMatchesLaunch(options: {
   }
   if (resolve(options.attemptRoot) === options.cell.buildRoot) {
     throw new Error("Attempt root cannot overlap its receipt-bound build root.");
+  }
+}
+
+async function assertIndexedAttempts(options: {
+  studyRoot: string;
+  summary: PhaseSummary;
+  study: ResolvedStudy;
+  receipt: DesignReceipt;
+}): Promise<void> {
+  const cells = new Map(
+    plannedCells(options.study, options.receipt, options.summary.phase).map((cell) => [
+      cell.cellId,
+      cell,
+    ]),
+  );
+  const attemptsRoot = resolve(options.studyRoot, options.summary.phase, "attempts");
+  const budgets =
+    options.summary.phase === "calibration"
+      ? options.receipt.baselineBudgets
+      : options.study.budgets;
+  for (const reference of options.summary.attempts) {
+    const attemptRoot = resolve(reference.attemptRoot);
+    if (attemptRoot !== attemptsRoot && !attemptRoot.startsWith(`${attemptsRoot}${sep}`)) {
+      throw new Error(`Indexed attempt ${reference.attemptId} is outside its phase attempts root.`);
+    }
+    const cell = cells.get(reference.cellId);
+    if (cell === undefined) {
+      throw new Error(`Indexed attempt ${reference.attemptId} references an unknown phase cell.`);
+    }
+    const reservation = options.summary.reservations.find(
+      (candidate) => candidate.reservationId === reference.reservationId,
+    );
+    if (
+      reservation === undefined ||
+      reservation.authorizedTokens !== authorizedTokens(budgets.tokenBudgetPerAgent) ||
+      reservation.monetaryAuthorizationCeilingCents !== budgets.perAttemptMonetaryCeilingCents
+    ) {
+      throw new Error(`Indexed attempt ${reference.attemptId} has inconsistent authorization.`);
+    }
+    const attempt = await readAttempt(attemptRoot);
+    if (attempt === undefined) {
+      throw new Error(
+        `Indexed attempt ${reference.attemptId} is missing its durable attempt.json.`,
+      );
+    }
+    assertAttemptMatchesLaunch({
+      attempt,
+      attemptRoot,
+      summary: options.summary,
+      cell,
+      study: options.study,
+      receipt: options.receipt,
+      attemptId: reference.attemptId,
+      budgets,
+      ...(reference.replacementOfAttemptId === undefined
+        ? {}
+        : { replacementOfAttemptId: reference.replacementOfAttemptId }),
+    });
+    if (
+      attempt.infrastructureClassification !== reference.infrastructureClassification ||
+      totalSessionTokens(attempt) !== reference.actualTokenUsage
+    ) {
+      throw new Error(`Indexed attempt ${reference.attemptId} does not match its durable summary.`);
+    }
   }
 }
 
