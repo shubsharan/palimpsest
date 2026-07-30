@@ -33,7 +33,7 @@ function stoppedPhase(): PhaseSummary {
 }
 
 describe("study experiment orchestration", () => {
-  it("constructs the frozen mixed assignment and accepts only registered builds", async () => {
+  it("constructs the frozen assignment and accepts only registered builds", async () => {
     const study = await loadResolvedStudy("experiments/config.yaml", root);
     const models: string[] = [];
     const agents = createConfiguredStudyAgents(study, {
@@ -43,10 +43,14 @@ describe("study experiment orchestration", () => {
       },
     });
 
-    expect(models).toEqual(["gpt-5.2", "claude-opus-4-6", "gemini-3.1-pro-preview"]);
-    expect(agents["agent-1"]!.model.profile).toBe("gpt");
-    expect(agents["agent-2"]!.model.profile).toBe("claude");
-    expect(agents["agent-3"]!.model.profile).toBe("gemini");
+    expect(models).toEqual([
+      "gpt-5.4-mini-2026-03-17",
+      "gpt-5.4-mini-2026-03-17",
+      "gpt-5.4-mini-2026-03-17",
+    ]);
+    expect(agents["agent-1"]!.model.profile).toBe("mini");
+    expect(agents["agent-2"]!.model.profile).toBe("mini");
+    expect(agents["agent-3"]!.model.profile).toBe("mini");
     const manifest = decodeBuildManifest(testBuildManifest());
     expect(() => assertBuildMatchesStudy(manifest, study)).not.toThrow();
     expect(() =>

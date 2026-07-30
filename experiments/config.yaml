@@ -14,43 +14,38 @@ blocks:
 
 assignment:
   - agentId: agent-1
-    modelProfileId: gpt
+    modelProfileId: mini
   - agentId: agent-2
-    modelProfileId: claude
+    modelProfileId: mini
   - agentId: agent-3
-    modelProfileId: gemini
+    modelProfileId: mini
 
 providers:
   openai:
     driver: openai
     apiKeyEnv: OPENAI_API_KEY
-  anthropic:
-    driver: anthropic
-    apiKeyEnv: ANTHROPIC_API_KEY
-  google:
-    driver: google
-    apiKeyEnv: GOOGLE_GENERATIVE_AI_API_KEY
 
 models:
-  gpt:
+  mini:
     provider: openai
-    model: gpt-5.2
-  claude:
-    provider: anthropic
-    model: claude-opus-4-6
-  gemini:
-    provider: google
-    model: gemini-3.1-pro-preview
+    model: gpt-5.4-mini-2026-03-17
+    settings:
+      maxOutputTokens: 32768
+    providerOptions:
+      openai:
+        reasoningEffort: low
+        serviceTier: default
+        store: false
 
 schedule:
   releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
   cutoffMs: 3600000
 
 budgets:
-  tokenBudgetPerAgent: 200000
-  perAttemptMonetaryCeilingCents: 10000
-  totalTokenCeiling: 15000000
-  totalMonetaryCeilingCents: 250000
+  tokenBudgetPerAgent: 500000
+  perAttemptMonetaryCeilingCents: 1000
+  totalTokenCeiling: 37500000
+  totalMonetaryCeilingCents: 25000
 
 orders:
   calibration: [CS, CR, IR, IS]
