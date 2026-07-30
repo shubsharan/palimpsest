@@ -1,10 +1,9 @@
 import { ActivityBus, type ActivityEvent } from "./activity.js";
 import type { AgentId } from "./model.js";
-import type { AgentSandboxLease, SandboxCommandResult } from "./sandbox/contracts.js";
-import { resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
+import { type AgentSandboxLease, type SandboxCommandResult } from "./sandbox/contracts.js";
 
 export interface ToolDefinition {
-  name: "run_command" | "check_reconstruction" | "wait_for_activity";
+  name: "run_command" | "check_published_solver" | "wait_for_activity";
   description: string;
   inputSchema: Readonly<Record<string, unknown>>;
 }
@@ -24,13 +23,12 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     },
   },
   {
-    name: "check_reconstruction",
+    name: "check_published_solver",
     description:
-      "Compare a candidate file with your currently visible private evidence and receive aggregate metrics.",
+      "Run origin/main:solver.py against your currently visible private evidence and receive its commit and aggregate metrics.",
     inputSchema: {
       type: "object",
-      properties: { candidatePath: { type: "string" } },
-      required: ["candidatePath"],
+      properties: {},
       additionalProperties: false,
     },
   },
@@ -62,6 +60,11 @@ export type CheckerHook = (request: {
   signal?: AbortSignal;
 }) => Promise<CheckerResult>;
 
+export type PublishedSolverCheckHook = (
+  releasedStages: readonly number[],
+  signal?: AbortSignal,
+) => Promise<unknown>;
+
 export interface AgentToolSet {
   definitions: readonly ToolDefinition[];
   execute(name: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
@@ -74,13 +77,6 @@ function requireObject(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
-async function resolveCandidate(workspacePath: string, candidatePath: unknown): Promise<string> {
-  if (typeof candidatePath !== "string") {
-    throw new Error("candidatePath must be a non-empty path relative to the workspace.");
-  }
-  return resolveWorkspaceRegularFile(workspacePath, candidatePath, "candidatePath");
-}
-
 function activitySummary(event: ActivityEvent): string {
   return event.kind === "stage-released"
     ? "new private evidence is available"
@@ -88,11 +84,9 @@ function activitySummary(event: ActivityEvent): string {
 }
 
 export function createAgentTools(options: {
-  agentId: AgentId;
-  workspacePath: string;
   sandbox: AgentSandboxLease;
   activity: ActivityBus;
-  checker: CheckerHook;
+  checkPublishedSolver: PublishedSolverCheckHook;
   getReleasedStages: () => readonly number[];
   getActivityCursor: () => number;
   setActivityCursor?: (sequence: number) => void;
@@ -115,14 +109,11 @@ export function createAgentTools(options: {
         };
         return options.sandbox.execute(request) satisfies Promise<SandboxCommandResult>;
       }
-      if (name === "check_reconstruction") {
-        const candidatePath = await resolveCandidate(options.workspacePath, input.candidatePath);
-        return options.checker({
-          agentId: options.agentId,
-          candidatePath,
-          releasedStages: options.getReleasedStages(),
-          ...(signal === undefined ? {} : { signal }),
-        });
+      if (name === "check_published_solver") {
+        if (Object.keys(input).length !== 0) {
+          throw new Error("check_published_solver does not accept arguments.");
+        }
+        return options.checkPublishedSolver(options.getReleasedStages(), signal);
       }
       if (name === "wait_for_activity") {
         if (!Number.isSafeInteger(input.afterSequence) || (input.afterSequence as number) < 0) {

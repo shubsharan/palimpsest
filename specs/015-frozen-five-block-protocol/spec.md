@@ -70,7 +70,7 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 
 **Puzzle Behavior**: The same three-agent word-substitution puzzle runs once per block-condition cell. Calibration has one block and four cells; validation has four blocks and sixteen cells. Condition selection still determines only native peer communication and stationary or re-key evidence. Neither phase nor order prescribes how agents solve.
 
-**Agent Instructions & Tools**: Every attempt reuses the Feature 014 prompt, team identity, objective, voluntary unmetered Git, private staged evidence, target-excluded references, local commands, aggregate checker, activity wait, and requested final response. Phase, block order, design receipt, ceilings, rubric, replacement eligibility, and other cells are trusted operator inputs and are not added to the agent prompt.
+**Agent Instructions & Tools**: Every attempt reuses the Feature 014 prompt, team identity, word-substitution objective, identical neutral scaffold, model-chosen unmetered Git, private staged evidence, target-excluded references, local commands, published-main checker, activity wait, and requested final response. Only `origin/main:solver.py` is checkable and gradeable. Phase, block order, design receipt, ceilings, rubric, replacement eligibility, and other cells are trusted operator inputs and are not added to the agent prompt.
 
 **Environmental Constraints**: Every cell retains exactly three agents, six releases at 0, 5, 10, 20, 30, and 40 minutes, a 60-minute cutoff, the condition-native Git topology, no public sandbox network, no provider credentials in model workspaces, and one explicit per-agent token budget. Validation uses receipt-bound puzzle builds and permits only recorded changes to the manifest-declared operational budget fields within immutable total ceilings.
 
@@ -93,7 +93,7 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 - **FR-005**: The manifest MUST declare the exact six release offsets, 60-minute cutoff, per-agent token budget, per-attempt monetary authorization ceiling, study-wide token ceiling, and study-wide monetary ceiling.
 - **FR-006**: The sum of maximum authorized cell tokens and monetary ceilings MUST remain within the frozen study-wide ceilings before a phase launches.
 - **FR-007**: The manifest MUST declare calibration order `CS CR IR IS` and the four validation orders `CS CR IR IS`, `CR IS CS IR`, `IS IR CR CS`, and `IR CS IS CR` paired to the validation blocks in declaration order.
-- **FR-008**: The manifest MUST declare one deterministic reconstruction-scoring boundary, one versioned rubric file plus digest, and the explicit reviewer-selection boundary.
+- **FR-008**: The manifest MUST declare one deterministic reconstruction-scoring boundary, one versioned rubric file plus digest, and the explicit reviewer workspace-selection boundary; checker and grader share one canonical published-`main` executor, solver command, and fresh output contract rather than reviewer-selected execution.
 - **FR-009**: The manifest MUST declare a failure policy that stops on a frozen `session-infrastructure-error`, forbids automatic retry, and permits only explicit appended replacement of the cited attempt.
 - **FR-010**: The manifest MUST restrict calibration-adjustable fields to the per-agent token budget and per-attempt monetary authorization ceiling; schedules, total ceilings, and every scientific field MUST remain immutable.
 - **FR-011**: Calibration MUST prepare and validate all five paired builds before writing the design receipt.
@@ -115,7 +115,7 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 - **FR-027**: Provider-backed run and phase commands MUST require the existing current clean receipt-bound preflight before a provider session begins.
 - **FR-028**: Provider-free acceptance MUST exercise the complete five-block by four-condition protocol with fixture adapters and fake clocks and MUST make no provider request.
 - **FR-029**: Configuration, design receipt, attempt, phase, and replacement decoders MUST reject missing, inconsistent, unsupported, secret-bearing, or lineage-invalid records.
-- **FR-030**: `puzzle:build --block`, manual `puzzle:evaluate`, deterministic scoring, checker behavior, native Git topology, overlap observation, sandbox isolation, and durable publication before optional observation MUST remain intact.
+- **FR-030**: `puzzle:build --block`, manual `puzzle:evaluate`, deterministic scoring, shared published-solver execution, native Git topology, overlap observation, sandbox isolation, and durable publication before optional observation MUST remain intact.
 
 ### Key Entities
 

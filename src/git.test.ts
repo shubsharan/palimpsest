@@ -11,6 +11,7 @@ import {
   GitActivityMonitor,
   listRemoteRefs,
   runGit,
+  SOLVER_SCAFFOLD,
 } from "./git.js";
 import type { AgentId } from "./model.js";
 
@@ -45,6 +46,7 @@ describe("condition-assigned ordinary Git", () => {
     );
     expect(await listRemoteRefs(repository.path)).toHaveProperty("refs/heads/ideas/first-rule");
     expect(await readFile(join(first.path, "solver.ts"), "utf8")).toContain("attempt");
+    expect(await readFile(join(unused.path, "solver.py"), "utf8")).toBe(SOLVER_SCAFFOLD);
     expect((await runGit(["status", "--porcelain"], unused.path)).stdout).toBe("");
     expect((await runGit(["remote", "get-url", "origin"], unused.path)).stdout.trim()).toBe(
       "/git/origin.git",
@@ -69,6 +71,8 @@ describe("condition-assigned ordinary Git", () => {
     if (!first || !second || !firstRepository || !secondRepository) {
       throw new Error("Expected isolated workspaces and repositories.");
     }
+    expect(await readFile(join(first.path, "solver.py"), "utf8")).toBe(SOLVER_SCAFFOLD);
+    expect(await readFile(join(second.path, "solver.py"), "utf8")).toBe(SOLVER_SCAFFOLD);
 
     await runGit(["switch", "--orphan", "private/rule"], first.path);
     await writeFile(join(first.path, "rule.txt"), "agent one\n", "utf8");
@@ -76,8 +80,12 @@ describe("condition-assigned ordinary Git", () => {
     await runGit(["commit", "-m", "record private rule"], first.path);
     await runGit(["push", firstRepository.path, "HEAD:refs/heads/private/rule"], first.path);
 
-    expect(await listRemoteRefs(firstRepository.path)).toHaveProperty("refs/heads/private/rule");
-    expect(await listRemoteRefs(secondRepository.path)).toEqual({});
+    const firstRefs = await listRemoteRefs(firstRepository.path);
+    const secondRefs = await listRemoteRefs(secondRepository.path);
+    expect(firstRefs).toHaveProperty("refs/heads/private/rule");
+    expect(firstRefs).toHaveProperty("refs/heads/main");
+    expect(secondRefs).toHaveProperty("refs/heads/main");
+    expect(firstRefs["refs/heads/main"]).toBe(secondRefs["refs/heads/main"]);
     expect((await runGit(["remote", "get-url", "origin"], first.path)).stdout.trim()).toBe(
       "/git/origin.git",
     );
@@ -192,7 +200,7 @@ describe("condition-assigned ordinary Git", () => {
         if (repository.repositoryId === activeRepository.repositoryId) {
           expect(refs).toHaveProperty("refs/heads/result/agent-1");
         } else {
-          expect(refs).toEqual({});
+          expect(refs).toHaveProperty("refs/heads/main");
         }
       }
     },

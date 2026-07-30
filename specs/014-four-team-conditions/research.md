@@ -18,9 +18,9 @@
 
 ## Git Topology
 
-**Decision**: Generalize the existing Git environment into a repository inventory plus one workspace-to-repository assignment per agent. Shared conditions assign all workspaces to one origin; isolated conditions assign one origin per agent. All origins appear inside the sandbox at `/git/origin.git`.
+**Decision**: Generalize the existing Git environment into a repository inventory plus one workspace-to-repository assignment per agent. Shared conditions assign all workspaces to one origin; isolated conditions assign one origin per agent. All origins appear inside the sandbox at `/git/origin.git` and begin at the same deterministic commit containing a neutral `solver.py`.
 
-**Rationale**: Ordinary Git remains a native, voluntary tool in both modes. One stable path holds the non-treatment environment constant while host-side assignment enforces peer visibility.
+**Rationale**: Ordinary Git remains a native, unmetered tool in both modes. One stable path and identical scaffold hold the non-treatment environment constant while host-side assignment enforces peer visibility. Agents choose their own Git operations, but only pushed `main` state can be checked or graded.
 
 **Alternatives considered**: Removing Git in isolated mode was rejected because it changes the tool surface and violates Constitution 5. Permission layers inside one shared repository were rejected as leak-prone and more complex than three local bare repositories.
 
@@ -34,9 +34,9 @@
 
 ## Prompt Parity
 
-**Decision**: Build prompts from invariant paragraphs plus exactly one communication paragraph. State Git availability and that Git is optional/unmetered, but remove coordination, role, branch, review, "best solver," and raw-sharing recommendations.
+**Decision**: Build prompts from invariant paragraphs plus exactly one communication paragraph. Declare the word-substitution cipher and canonical `origin/main:solver.py` submission in both modes. In shared conditions, encourage agents to publish useful changes, inspect peer commits, compare approaches, and integrate the strongest work without assigning roles, turns, branches, or a commit sequence.
 
-**Rationale**: Communication availability is an environmental treatment. Advice about using or avoiding the channel changes the behavior being observed.
+**Rationale**: Communication availability remains the environmental treatment. The common final interface makes the collaboration target and grading boundary legible; open-ended Git choices preserve collaboration behavior as an outcome.
 
 **Alternatives considered**: Separate full shared and isolated prompt templates were rejected because they drift easily. Keeping the current "coordinate and review" text was rejected as behavior-prescriptive.
 
@@ -50,11 +50,11 @@
 
 ## Variant-Safe Observation And Evaluation
 
-**Decision**: Resolve stationary/re-key selection from the persisted condition in run, overlap, and evaluation. Scan isolated repositories independently and evaluate only the explicitly selected workspace plus its assigned origin.
+**Decision**: Resolve stationary/re-key selection from the persisted condition in run, overlap, and evaluation. Scan isolated repositories independently. Route both checking and final evaluation through one published-solver executor that explicitly materializes `refs/heads/main`, removes Git metadata, and runs the tree with only caller-supplied ciphertext plus a fresh external output directory.
 
-**Rationale**: The current re-key hard-coding would make stationary conditions inconsistent. Independent scans and selected-origin evaluation preserve model work without post-hoc synthesis.
+**Rationale**: The current re-key hard-coding would make stationary conditions inconsistent. A single exact-commit execution boundary keeps checker feedback and final grading reproducible from the same published artifact, prevents unpublished workspace state or mutable origin metadata from affecting results, and preserves selected-origin work without post-hoc synthesis.
 
-**Alternatives considered**: Merging isolated repositories after freeze was rejected because it fabricates a collaboration channel. Scoring all workspaces and choosing automatically was rejected as behavioral-review automation.
+**Alternatives considered**: Keeping separate checker and evaluator implementations was rejected because their mounts, ref selection, and output semantics drifted. Patching each leak independently was rejected in favor of one smaller invariant. Merging isolated repositories after freeze was rejected because it fabricates a collaboration channel. Scoring all workspaces and choosing automatically was rejected as behavioral-review automation.
 
 ## Transitional Configuration
 

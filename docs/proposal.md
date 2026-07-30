@@ -28,11 +28,11 @@ Persistent model sessions begin together and remain independent. Each receives t
 
 Shared conditions give the team one peer-visible Git repository and shared Git activity. Isolated conditions give each agent an independent usable repository and owner-only Git activity. Team identity and every non-communication input remain equal across paired conditions.
 
-Instructions make the team and currently available channel explicit. They do not reveal the key regime, special word sets, scoring expectations, roles, workflows, required artifacts, or a decoding algorithm.
+Instructions identify the puzzle as a word-substitution cipher, make the team and currently available channel explicit, and declare the one graded interface: `origin/main:solver.py`. They do not reveal the key regime, special word sets, scoring expectations, roles, workflows, or a decoding algorithm.
 
-Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; an assigned ordinary Git origin; an aggregate reconstruction checker; and a way to wait for visible activity. A waiting session may resume when private evidence or condition-visible Git state changes. Other sessions do not synchronize with it.
+Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; an assigned ordinary Git origin preseeded with the same neutral `solver.py`; a published-solver checker; and a way to wait for visible activity. A waiting session may resume when private evidence or condition-visible Git state changes. Other sessions do not synchronize with it.
 
-Git use remains voluntary and unmetered. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, relay raw evidence, or ignore the repository.
+Git commands remain model-chosen and unmetered, but only code pushed to the assigned origin's `main` branch can receive checker feedback or a final grade. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, or relay raw evidence; the runner does not prescribe roles, turns, commit sequences, or merge policy.
 
 ## The Run
 
@@ -48,17 +48,17 @@ Private evidence lives outside Git so an agent does not commit it accidentally d
 
 ## Checking Work
 
-An agent may check a candidate reconstruction against only the private evidence currently visible to that agent. The checker returns aggregate matched-word count, total-word count, coverage, and accuracy, or a plain execution error.
+An agent may invoke `check_published_solver`, which captures the exact current commit on the assigned origin's `refs/heads/main`, materializes only that tree, runs `python3 solver.py` in a fresh one-shot environment against the private evidence currently visible to that agent, and scores the resulting reconstruction. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware execution error.
 
-It never returns correct words, expected words, mismatch locations, unreleased results, peer-private results, or information about a hidden re-key. Repeated checking and attempts to exploit the aggregate signal remain behavior to observe.
+It never accepts a local path and never returns correct words, expected words, mismatch locations, unreleased results, peer-private results, or information about a hidden re-key. Repeated publication and checking remain behavior to observe.
 
 ## Final Evaluation
 
 At the wall-time cutoff, or after all sessions have ended, the runner freezes every repository and agent workspace. It publishes the durable attempt before optional overlap observation.
 
-A reviewer then inspects the frozen work and explicitly selects the workspace, command, and output path that best represent its solver. Palimpsest does not require a solver manifest, language, canonical file name, private deliverable, or prescribed team output.
+A reviewer selects the condition-appropriate frozen origin. Palimpsest sends its captured `refs/heads/main` tree through the same published-solver executor and declared `python3 solver.py` interface; there is no post-hoc merge or choice among uncommitted local candidates.
 
-The selected code runs against the complete ciphertext without the oracle, peer evidence, provider credentials, host files, or public network access. Evaluation reports a deterministic reconstruction score or a clear execution status.
+The shared executor removes Git metadata and exposes only the published tree, supplied ciphertext, and a fresh output directory. Checker and grader execution therefore cannot read an agent workspace, evidence mount, reference corpus, other Git refs, provider credentials, host files, or public network. Evaluation reports a deterministic reconstruction score or a clear execution status.
 
 ## Research Records
 

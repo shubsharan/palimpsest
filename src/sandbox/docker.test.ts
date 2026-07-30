@@ -132,9 +132,8 @@ describe("sandbox Docker image and arguments", () => {
   it("gives evaluation only ciphertext, frozen Git, and a contained output path", async () => {
     const root = await temporaryRoot();
     const workspace = join(root, "workspace");
-    const frozenGit = join(root, "agent-1.git");
     const ciphertext = join(root, "ciphertext.txt");
-    await Promise.all([mkdir(workspace), mkdir(frozenGit), writeFile(ciphertext, "ciphertext\n")]);
+    await Promise.all([mkdir(workspace), writeFile(ciphertext, "ciphertext\n")]);
     const args = await buildDockerCreateArguments(
       {
         profile: "evaluation",
@@ -142,7 +141,6 @@ describe("sandbox Docker image and arguments", () => {
         timeoutMs: 1_000,
         workspacePath: workspace,
         ciphertextPath: ciphertext,
-        gitOriginPath: frozenGit,
         outputPath: "out/answer.txt",
       },
       TEST_IDENTITY,
@@ -150,11 +148,9 @@ describe("sandbox Docker image and arguments", () => {
       { uid: 501, gid: 20 },
     );
     const joined = args.join("\n");
-    const resolvedFrozenGit = await realpath(frozenGit);
 
     expect(joined).toContain("target=/input/ciphertext.txt,readonly");
-    expect(joined).toContain(`source=${resolvedFrozenGit},target=/git/origin.git,readonly`);
-    expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
+    expect(joined).not.toContain("target=/git/origin.git");
     expect(joined).toContain("PALIMPSEST_CIPHERTEXT=/input/ciphertext.txt");
     expect(joined).toContain("PALIMPSEST_OUTPUT=/workspace/out/answer.txt");
     expect(joined).not.toContain("/evidence");

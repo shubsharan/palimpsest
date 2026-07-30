@@ -49,7 +49,6 @@ export interface EvaluationSandboxCommand extends BaseSandboxCommand {
   profile: "evaluation";
   workspacePath: string;
   ciphertextPath: string;
-  gitOriginPath: string;
   outputPath: string;
 }
 

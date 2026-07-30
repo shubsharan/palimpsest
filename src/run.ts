@@ -1,4 +1,5 @@
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { ActivityBus } from "./activity.js";
@@ -43,6 +44,7 @@ import {
   type PreflightReceipt,
 } from "./preflight.js";
 import { buildAgentPrompt } from "./prompt.js";
+import { executePublishedSolver } from "./published-solver.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
@@ -51,6 +53,7 @@ import {
   SandboxInfrastructureError,
   type AgentSandboxLease,
   type CommandSandbox,
+  type SandboxCommandResult,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
 import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
@@ -302,6 +305,64 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
       ] as const;
     }),
   ) as Record<AgentId, AgentRuntimeBinding>;
+}
+
+function executionSummary(result: SandboxCommandResult): Readonly<Record<string, unknown>> {
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    timedOut: result.timedOut,
+    outputExceeded: result.outputExceeded,
+    ...(result.indeterminate === true ? { indeterminate: true } : {}),
+  };
+}
+
+async function runPublishedSolverCheck(options: {
+  agentId: AgentId;
+  repositoryPath: string;
+  ciphertextPaths: readonly string[];
+  releasedStages: readonly number[];
+  sandbox: CommandSandbox;
+  checker: CheckerHook;
+  signal?: AbortSignal;
+}): Promise<unknown> {
+  const checkRoot = await mkdtemp(join(tmpdir(), "palimpsest-check-"));
+  try {
+    const result = await executePublishedSolver({
+      repositoryPath: options.repositoryPath,
+      ciphertextPaths: options.ciphertextPaths,
+      executionRoot: join(checkRoot, "execution"),
+      sandbox: options.sandbox,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    if (result.status === "checkout-error") {
+      return { error: "Published solver checkout failed." };
+    }
+    if (result.status === "execution-error") {
+      return {
+        commit: result.commit,
+        error: result.error,
+        execution: executionSummary(result.execution),
+      };
+    }
+    if (result.status === "no-output") {
+      return {
+        commit: result.commit,
+        error: "Published solver execution produced no output.",
+        execution: executionSummary(result.execution),
+      };
+    }
+    const score = await options.checker({
+      agentId: options.agentId,
+      candidatePath: result.outputPath,
+      releasedStages: options.releasedStages,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    return { commit: result.commit, ...score };
+  } finally {
+    await rm(checkRoot, { recursive: true, force: true });
+  }
 }
 
 async function publishStages(options: {
@@ -587,11 +648,17 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
 
     sessionPromises = config.agentIds.map((agentId) => {
       const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
+      const repository = git.repositories.find(
+        (candidate) => candidate.repositoryId === workspace?.repositoryId,
+      );
+      const evidencePath = evidencePaths[agentId];
       const released = releasedStages[agentId];
       const runtime = agents[agentId];
       const lease = openedLeases[agentId];
       if (
         workspace === undefined ||
+        repository === undefined ||
+        evidencePath === undefined ||
         released === undefined ||
         runtime === undefined ||
         lease === undefined
@@ -599,11 +666,27 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         throw new Error(`Runtime resources are missing for ${agentId}.`);
       }
       const tools = createAgentTools({
-        agentId,
-        workspacePath: workspace.path,
         sandbox: lease,
         activity: activities[agentId]!,
-        checker: options.checker,
+        checkPublishedSolver: (releasedStageOrdinals, signal) =>
+          runPublishedSolverCheck({
+            agentId,
+            repositoryPath: repository.path,
+            ciphertextPaths: releasedStageOrdinals.map((ordinal) => {
+              const source = config.agentStages[agentId]?.[ordinal - 1];
+              if (source === undefined) {
+                throw new Error(`Missing ${agentId} stage ${String(ordinal)}.`);
+              }
+              return join(
+                evidencePath,
+                `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
+              );
+            }),
+            releasedStages: releasedStageOrdinals,
+            sandbox: options.sandbox,
+            checker: options.checker,
+            ...(signal === undefined ? {} : { signal }),
+          }),
         getReleasedStages: () => [...released].sort((left, right) => left - right),
         getActivityCursor: () => cursors[agentId]!,
         setActivityCursor: (sequence) => {

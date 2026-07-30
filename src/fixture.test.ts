@@ -82,9 +82,6 @@ describe("fixture scenario selection", () => {
       name: "run_command",
       arguments: { command: expect.stringMatching(/mapping=v2/) },
     });
-    expect(agent3.toolCalls.map((call) => call.name)).toEqual([
-      "run_command",
-      "check_reconstruction",
-    ]);
+    expect(agent3.toolCalls.map((call) => call.name)).toEqual(["check_published_solver"]);
   });
 });

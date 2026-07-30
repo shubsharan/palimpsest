@@ -29,6 +29,11 @@ describe("trace log", () => {
     expect(JSON.stringify(records)).not.toContain("secret");
     expect(JSON.stringify(records)).not.toContain("hidden");
     expect(JSON.stringify(records)).toContain("outputTokens");
+    const text = await readFile(join(root, "trace.log"), "utf8");
+    expect(text).toContain("Palimpsest trace");
+    expect(text).toContain("[000001 +00:00:00.025] agent-1 · model.response");
+    expect(text).toContain('"credential": "[REDACTED]"');
+    expect(text).not.toContain("secret");
     await expect(readFile(join(root, "trace.meta.json"), "utf8")).resolves.toContain(
       '"schemaVersion":1',
     );
@@ -43,6 +48,7 @@ describe("trace log", () => {
     });
     await live.append("attempt.frozen", { ok: true });
     await live.flush();
+    await writeFile(join(root, "trace.log"), "stale text\n", "utf8");
 
     const resumed = await JsonlObservationLog.open(path, { nowEpochMs: () => 900 });
     await resumed.append("evaluation.started", { credential: "hidden" });
@@ -55,6 +61,10 @@ describe("trace log", () => {
     expect(records.map((record) => record.sequence)).toEqual([1, 2, 3]);
     expect(records.map((record) => record.atMs)).toEqual([50, 50, 50]);
     expect(await readFile(path, "utf8")).not.toContain("hidden");
+    const text = await readFile(join(root, "trace.log"), "utf8");
+    expect(text).toContain("[000001 +00:00:00.050] runner · attempt.frozen");
+    expect(text).toContain("[000003 +00:00:00.050] runner · evaluation.completed");
+    expect(text).not.toContain("hidden");
   });
 
   it("accepts canonical dynamic agent identities", async () => {

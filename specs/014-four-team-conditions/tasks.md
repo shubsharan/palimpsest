@@ -95,6 +95,22 @@
 - [x] T031 Run focused condition/runtime suites, format, `pnpm verify`, and `git diff --check`
 - [x] T032 Mark every completed Feature 014 task, re-run Spec Kit analysis, and commit the verified branch before Feature 015
 
+## Phase 7: Published Solver Protocol Amendment
+
+- [x] T033 Seed every shared and isolated origin with one deterministic neutral `solver.py` commit in `src/git.ts`
+- [x] T034 Replace caller-selected reconstruction checking with exact `origin/main:solver.py` checkout, execution, commit reporting, and aggregate scoring in `src/tools.ts`
+- [x] T035 State the word-substitution cipher, shared team submission, Git collaboration incentive, canonical grading boundary, and persistence expectation concisely in `src/prompt.ts`
+- [x] T036 Fix final evaluation to the selected frozen origin's `python3 solver.py` interface in `src/evaluate.ts` and `src/offline.ts`
+- [x] T037 Cover identical scaffold commits, published-main-only checking, prompt parity, canonical evaluation, and fixture behavior in TypeScript tests
+- [x] T038 Amend Constitution 6.0.0, active specifications, contracts, templates, and operator documentation for the published solver boundary
+
+## Phase 8: Canonical Published-Solver Execution
+
+- [x] T039 Add adversarial regressions for mutable bare-origin `HEAD`, persistent-agent mount leakage, and tracked stale output
+- [x] T040 Add one `published-solver.ts` executor for explicit `refs/heads/main` materialization, Git-metadata removal, sterile one-shot execution, and fresh output validation
+- [x] T041 Route both `check_published_solver` and final evaluation through the shared executor and remove the Git-origin mount from the evaluation sandbox profile
+- [x] T042 Reconcile Feature 014/015 contracts and operator documentation, then run focused and complete verification
+
 ## Dependencies And Parallel Work
 
 - T001-T004 freeze the condition and attempt contracts.
@@ -103,6 +119,8 @@
 - T017-T022 deliver communication visibility and topology-aware observation/evaluation.
 - T023-T028 prove parity and complete the durable runtime.
 - T029-T032 require all user stories.
+- T033-T038 form the later published-solver protocol amendment and require the implemented native Git topology.
+- T039-T042 replace review-driven per-path hardening with one canonical execution invariant.
 - T001, T003, T005, T007, T009, and T011 touch independent test surfaces and can start in parallel.
 - Within each story, verification tasks precede implementation.
 

@@ -47,6 +47,33 @@ function metadataPathFor(tracePath: string): string {
   return join(dirname(tracePath), "trace.meta.json");
 }
 
+function textLogPathFor(tracePath: string): string {
+  return join(dirname(tracePath), "trace.log");
+}
+
+function elapsedLabel(atMs: number): string {
+  const totalMilliseconds = Math.max(0, Math.floor(atMs));
+  const milliseconds = totalMilliseconds % 1_000;
+  const totalSeconds = Math.floor(totalMilliseconds / 1_000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  return [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":")
+    .concat(`.${String(milliseconds).padStart(3, "0")}`);
+}
+
+function renderEvent(event: ObservationEvent): string {
+  const actor = event.agentId === undefined ? "runner" : event.agentId;
+  return `${`[${String(event.sequence).padStart(6, "0")} +${elapsedLabel(event.atMs)}] ${actor} · ${event.kind}`}\n${JSON.stringify(event.data, null, 2)}\n\n`;
+}
+
+function renderTextLog(metadata: TraceMetadata, events: readonly ObservationEvent[]): string {
+  return `Palimpsest trace\nStarted: ${metadata.startedAt}\n\n${events.map((event) => renderEvent(event)).join("")}`;
+}
+
 function requireMetadata(value: unknown, path: string): TraceMetadata {
   if (
     typeof value !== "object" ||
@@ -121,6 +148,7 @@ async function readExistingEvents(path: string): Promise<readonly ObservationEve
 export class JsonlObservationLog {
   readonly path: string;
   readonly metadataPath: string;
+  readonly textPath: string;
   readonly #nowMs: () => number;
   #sequence: number;
   #lastAtMs: number;
@@ -129,12 +157,14 @@ export class JsonlObservationLog {
   private constructor(options: {
     path: string;
     metadataPath: string;
+    textPath: string;
     nowMs: () => number;
     sequence: number;
     lastAtMs: number;
   }) {
     this.path = options.path;
     this.metadataPath = options.metadataPath;
+    this.textPath = options.textPath;
     this.#nowMs = options.nowMs;
     this.#sequence = options.sequence;
     this.#lastAtMs = options.lastAtMs;
@@ -145,6 +175,7 @@ export class JsonlObservationLog {
     options: ObservationClockOptions = {},
   ): Promise<JsonlObservationLog> {
     const metadataPath = metadataPathFor(path);
+    const textPath = textLogPathFor(path);
     const startedAtMs = options.startedAtMs ?? Date.now();
     if (!Number.isFinite(startedAtMs)) {
       throw new Error("Trace clock origin must be finite.");
@@ -164,9 +195,16 @@ export class JsonlObservationLog {
       await rm(metadataPath, { force: true });
       throw error;
     }
+    try {
+      await writeFile(textPath, renderTextLog(metadata, []), { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      await Promise.all([rm(path, { force: true }), rm(metadataPath, { force: true })]);
+      throw error;
+    }
     return new JsonlObservationLog({
       path,
       metadataPath,
+      textPath,
       nowMs: options.nowMs ?? (() => Date.now() - startedAtMs),
       sequence: 0,
       lastAtMs: 0,
@@ -178,6 +216,7 @@ export class JsonlObservationLog {
     options: { nowEpochMs?: () => number } = {},
   ): Promise<JsonlObservationLog> {
     const metadataPath = metadataPathFor(path);
+    const textPath = textLogPathFor(path);
     let metadataValue: unknown;
     try {
       metadataValue = JSON.parse(await readFile(metadataPath, "utf8"));
@@ -188,10 +227,12 @@ export class JsonlObservationLog {
     const metadata = requireMetadata(metadataValue, metadataPath);
     const startedAtMs = Date.parse(metadata.startedAt);
     const events = await readExistingEvents(path);
+    await writeFile(textPath, renderTextLog(metadata, events), "utf8");
     const last = events.at(-1);
     return new JsonlObservationLog({
       path,
       metadataPath,
+      textPath,
       nowMs: () => (options.nowEpochMs ?? Date.now)() - startedAtMs,
       sequence: last?.sequence ?? 0,
       lastAtMs: last?.atMs ?? 0,
@@ -214,6 +255,7 @@ export class JsonlObservationLog {
       };
       written = agentId === undefined ? common : { ...common, agentId };
       await appendFile(this.path, `${JSON.stringify(written)}\n`, "utf8");
+      await appendFile(this.textPath, renderEvent(written), "utf8");
       this.#sequence = written.sequence;
       this.#lastAtMs = written.atMs;
     });

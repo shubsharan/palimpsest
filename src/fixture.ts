@@ -69,10 +69,9 @@ export function decodeFixtureScenario(value?: string): FixtureScenario {
 
 function collaborativeRevisionScripts(): Record<AgentId, readonly ModelTurn[]> {
   const solverCommand = [
-    `printf '%s\\n' '#!/bin/sh' 'cp "$PALIMPSEST_CIPHERTEXT" "$PALIMPSEST_OUTPUT"' > solve.sh`,
-    "chmod +x solve.sh",
-    "git add solve.sh",
-    "git commit -m 'add fixture solver'",
+    `printf '%s\\n' 'import os' 'from pathlib import Path' '' 'source = Path(os.environ["PALIMPSEST_CIPHERTEXT"])' 'destination = Path(os.environ["PALIMPSEST_OUTPUT"])' 'destination.write_text(source.read_text())' > solver.py`,
+    "git add solver.py",
+    "git commit -m 'improve fixture solver'",
     "git push origin HEAD:main",
   ].join(" && ");
   return {
@@ -148,23 +147,12 @@ function collaborativeRevisionScripts(): Record<AgentId, readonly ModelTurn[]> {
     ],
     "agent-3": [
       {
-        toolCalls: [
-          {
-            id: "candidate",
-            name: "run_command",
-            arguments: { command: "printf 'placeholder\\n' > candidate.txt" },
-          },
-          {
-            id: "check",
-            name: "check_reconstruction",
-            arguments: { candidatePath: "candidate.txt" },
-          },
-        ],
+        toolCalls: [{ id: "check", name: "check_published_solver", arguments: {} }],
         usage: { inputTokens: 3, outputTokens: 2 },
       },
       {
         toolCalls: [],
-        finalResponse: "Checked an independent candidate.",
+        finalResponse: "Checked the published team solver.",
         usage: { inputTokens: 1, outputTokens: 1 },
       },
     ],

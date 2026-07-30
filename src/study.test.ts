@@ -284,7 +284,7 @@ describe("frozen study state", () => {
 
     const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
     adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
-    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 8_000;
+    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 800;
     const adjusted = await resolveStudy(adjustedManifest, root);
     const reused = await prepareStudyDesign({
       root,
@@ -299,7 +299,7 @@ describe("frozen study state", () => {
     expect(reused.designDigest).toBe(receipt.designDigest);
 
     const immutableDrift = await loadStudyManifest("experiments/config.yaml");
-    immutableDrift.models.gpt!.model = "different-model";
+    immutableDrift.models.sol!.model = "different-model";
     await expect(
       prepareStudyDesign({
         root,
@@ -656,7 +656,7 @@ describe("frozen study state", () => {
     }
     const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
     adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
-    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 8_000;
+    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 800;
     await expect(
       initializeStudyPhase({
         studyRoot,

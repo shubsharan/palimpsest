@@ -1,8 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 4.0.0 -> 5.0.0
+- Version change: 5.0.0 -> 6.0.0
 - Modified principles:
-  - Voluntary Native Collaboration -> Condition-Defined Native Collaboration
+  - Puzzle Behavior Before Process: permits one declared final solver interface
+  - Environmental Constraints, Not Workflow: permits one canonical published solver entrypoint
+  - Condition-Defined Native Collaboration: aligns checking and grading with pushed Git state
 - Added sections: none
 - Removed sections: none
 - Templates:
@@ -11,6 +13,7 @@ Sync Impact Report
   - updated: .specify/templates/tasks-template.md
   - reviewed, no change: .specify/templates/checklist-template.md
   - reviewed, no change: .specify/templates/constitution-template.md
+  - command templates absent; installed extension commands reviewed, no change
 - Runtime guidance:
   - updated: AGENTS.md
   - updated: CLAUDE.md
@@ -29,13 +32,15 @@ Sync Impact Report
 
 Palimpsest MUST remain a puzzle for observing frontier-model behavior. Agent-facing instructions MUST state the shared objective, available evidence, available tools, peer presence, resource cutoffs, and requested output without recommending a decoding algorithm, assigning roles, imposing turns, or requiring intermediate reasoning artifacts. Infrastructure MUST NOT repair, merge, reinterpret, or conceal model work.
 
-Rationale: The object of study is how capable models approach the puzzle, including how they collaborate, fail, improvise, or exploit the environment. A runner that dictates the process changes that object.
+Agent-facing instructions MAY declare the cipher family and one final solver interface when those facts define the task rather than its solution.
+
+Rationale: The object of study is how capable models solve and collaborate, not whether they infer an unstated task family or packaging contract. A runner that dictates the solving process still changes that object.
 
 ### II. Environmental Constraints, Not Workflow
 
-The runner MAY constrain what evidence is visible, when new evidence appears, which communication and checking tools exist, and how much wall time or model-token usage is available. Those constraints MUST be independent of model behavior and identical for peers in the same condition. The runner MUST NOT require a particular number of model turns, Git operations, checkpoints, hypotheses, mappings, file names, branches, or coordination sequence.
+The runner MAY constrain what evidence is visible, when new evidence appears, which communication and checking tools exist, how much wall time or model-token usage is available, and one canonical published solver entrypoint used by both checking and grading. Those constraints MUST be independent of model behavior and identical for peers in the same condition. The runner MUST NOT require a particular number of model turns, Git operations, checkpoints, hypotheses, mappings, intermediate files, branches other than the published ref, or coordination sequence.
 
-Rationale: Stable environmental conditions make observations interpretable without converting an open-ended puzzle into a scripted benchmark workflow.
+Rationale: A single shared deliverable aligns feedback with evaluation. Leaving every other organizational choice open preserves the model-created workflow.
 
 ### III. Minimal Reproducible Mechanics
 
@@ -51,15 +56,17 @@ Rationale: Workarounds and coordination failures are evidence about model behavi
 
 ### V. Condition-Defined Native Collaboration
 
-Agents MUST be told that they are members of one concurrent team and that peers hold different private evidence in every communication condition. The communication component of the declared condition MUST determine whether peer communication is available. Shared conditions MUST expose one ordinary shared Git repository and peer activity. Isolated conditions MUST give each agent an independent usable Git repository and MUST NOT expose peer evidence, repositories, or activity. Team identity, objective, private evidence allocation and release schedule, tools other than peer communication, resource limits, and evaluation boundary MUST remain identical across communication-paired conditions. Git use MUST remain voluntary and unmetered in every condition. The runner MUST NOT reject agents for working independently, exchanging raw evidence when able, centralizing work, creating conflicts, or ignoring Git.
+Agents MUST be told that they are members of one concurrent team and that peers hold different private evidence in every communication condition. The communication component of the declared condition MUST determine whether peer communication is available. Shared conditions MUST expose one ordinary shared Git repository and peer activity. Isolated conditions MUST give each agent an independent usable Git repository and MUST NOT expose peer evidence, repositories, scores, or activity. Team identity, objective, private evidence allocation and release schedule, tools other than peer communication, resource limits, and evaluation boundary MUST remain identical across communication-paired conditions.
 
-Rationale: Communication availability is an experimental treatment. Holding team identity and non-treatment inputs constant makes that treatment interpretable without prescribing how agents collaborate when a channel exists.
+Every assigned origin MUST begin from the same neutral solver scaffold. Only the declared pushed main solver MAY receive oracle-backed aggregate checking or final grading. Git operations MUST remain unmetered, and the runner MUST NOT automate publication, merging, conflict resolution, or collaboration. Independent work, no publication, raw sharing when available, centralization, conflicts, and ignored peer work MUST remain recorded model outcomes rather than infrastructure failures.
+
+Rationale: Communication availability remains the treatment, while a common published artifact makes peer contributions useful and keeps private scratch work from receiving feedback unavailable to the graded solver.
 
 ## Research and Security Constraints
 
 - The proposal is authoritative for puzzle intent and research claims. The architecture is authoritative for the minimal runner and visibility boundaries. The roadmap schedules delivery without redefining either.
 - Python owns corpus preparation, cipher generation, partial re-keying, and scoring. TypeScript/Node owns model sessions, staged delivery, tool exposure, Git setup, resource cutoffs, trace capture, and the operator surface. Prefer plain files and subprocesses over new cross-runtime infrastructure.
-- Trusted generation and grading MUST keep prepared plaintext and cipher keys unavailable to model workspaces. The aggregate checker MAY use the oracle but MUST return only aggregate matched-word count, total-word count, coverage, accuracy, and execution errors for currently visible private evidence.
+- Trusted generation and grading MUST keep prepared plaintext and cipher keys unavailable to model workspaces. The aggregate checker MUST execute the exact solver at the assigned origin's captured `main` commit against only the caller's currently visible private evidence. It MAY use the oracle but MUST return only that commit identity, aggregate matched-word count, total-word count, coverage, accuracy, and execution errors.
 - Private staged shards MUST remain outside agent-visible Git checkouts. Post-run raw-overlap measurement MAY identify obvious exact or normalized long spans, but it MUST NOT block Git operations, alter scores, invalidate runs, or expand into adversarial encoding detection.
 - Standard sandbox and secret-handling protections MAY protect the host and provider credentials. They MUST NOT be represented as a red-teamed security claim or used to invalidate otherwise observable model behavior.
 - External factual or novelty claims MUST cite verifiable primary sources. Palimpsest MUST be described as a compound puzzle and research artifact, not as a construct-validated benchmark or certified measure of reasoning, collaboration, or belief revision.
@@ -70,7 +77,7 @@ Rationale: Communication availability is an experimental treatment. Holding team
 2. Follow the Spec Kit sequence constitution, specify, clarify, plan, tasks, analyze, and implement for material feature work.
 3. Each specification MUST state the puzzle behavior being enabled, agent-visible instructions and tools, environmental constraints, observable outcomes, infrastructure failures, and claims that remain out of scope.
 4. Each plan MUST pass the Constitution Check before research and after design. Any new process requirement or safeguard requires a concrete current experimental need and an explanation of why a simpler observation is insufficient.
-5. Tests MUST cover deterministic mechanics, agent independence, condition-defined communication visibility, voluntary Git use, identical non-treatment inputs, resource cutoffs, checker disclosure, scoring, and the absence of prescribed workflow. Verification MUST be proportional to the claim; red-team and replay suites are not default completion requirements.
+5. Tests MUST cover deterministic mechanics, agent independence, condition-defined communication visibility, identical scaffolded origins, published-solver checking, identical non-treatment inputs, resource cutoffs, checker disclosure, scoring, and the absence of prescribed coordination workflow. Verification MUST be proportional to the claim; red-team and replay suites are not default completion requirements.
 6. Automated development checks MUST provide fast advisory feedback on proposed changes and the primary branch. They MAY build the sandbox definition as a smoke check, but MUST NOT be required branch-protection gates or run the real-container behavior suite or deterministic end-to-end fixture.
 7. A clean-checkout `pnpm preflight` MUST pass immediately before any live-model experiment that spends money or may support published findings. It MUST rebuild and verify the agent sandbox, exercise the fresh deterministic build-run-evaluate path without external model calls, and bind the successful receipt to the tested source revision and sandbox identity.
 8. Paid attempt artifacts MUST retain the matching preflight provenance. Publication claims MUST identify the tested runner revision and experimental sandbox from those artifacts. Exact host tool patch versions MUST NOT substitute for behavior checks or agent-visible environment identity.
@@ -83,4 +90,4 @@ Amendments require explicit rationale, affected principles and artifacts, compat
 
 Feature plans and pull requests MUST record constitution compliance. Reviewers MUST check the actual agent prompt, tool surface, runner behavior, and produced trace rather than relying on intended neutrality. Exceptions require an owner, scope, and removal condition; no exception may justify overstating empirical evidence.
 
-**Version**: 5.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-28
+**Version**: 6.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-29

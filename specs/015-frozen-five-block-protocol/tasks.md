@@ -140,6 +140,20 @@
 - [x] T043 Require canonical attempt-root trace paths and validate complete current trace metadata and JSONL structure whenever a study attempt is accepted
 - [x] T044 Cover missing, malformed, redirected, and valid post-publication trace tails and reconcile the Feature 015 contract
 
+## Phase 10: Published Solver Protocol Amendment
+
+- [x] T045 Carry Feature 014's identical scaffold, published-main-only checker, and canonical final evaluation through the frozen study protocol
+- [x] T046 Reconcile the active specification, plan, tasks, and operator documentation with the amended solver contract
+
+---
+
+## Phase 11: Shared Published-Solver Executor
+
+- [x] T047 Add failing regressions for mutable bare-origin `HEAD`, agent-workspace leakage, and stale tracked reconstruction
+- [x] T048 Implement one explicit-main, Git-free, sterile published-tree executor used by checking and grading
+- [x] T049 Remove the evaluation Git-origin mount and update real-container containment coverage
+- [x] T050 Reconcile Feature 014/015 and operator documentation, then run focused and complete verification
+
 ---
 
 ## Dependencies And Execution Order

@@ -1,5 +1,5 @@
-import { chmod, cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { basename, dirname, join, posix, resolve, win32 } from "node:path";
 
 import {
   type AggregateScore,
@@ -14,12 +14,11 @@ import {
   type CommandSandbox,
   SandboxInfrastructureError,
   type SandboxCommandResult,
-  WorkspaceFileError,
 } from "./sandbox/contracts.js";
-import { resolveWorkspacePath, resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
 import { requiredFlag } from "./flags.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 
+import { executePublishedSolver } from "./published-solver.js";
 import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
 import { verifyTree } from "./seal.js";
 
@@ -51,42 +50,11 @@ export interface EvaluatePuzzleOptions {
   root: string;
   attempt: string;
   workspace?: AgentId;
-  command?: string;
-  outputPath?: string;
   notes?: string;
 }
 
-function resolveOutputPath(workspacePath: string, outputPath: string): string {
-  if (outputPath.length === 0 || isAbsolute(outputPath)) {
-    throw new Error("Reviewer outputPath must be relative to the selected workspace.");
-  }
-  const resolved = resolve(workspacePath, outputPath);
-  const difference = relative(workspacePath, resolved);
-  if (
-    difference === ".." ||
-    difference.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
-    throw new Error("Reviewer outputPath must remain inside the evaluation workspace.");
-  }
-  return resolved;
-}
-
-async function makeWritable(path: string): Promise<void> {
-  const entries = await readdir(path, { withFileTypes: true });
-  await Promise.all(
-    entries.map(async (entry) => {
-      const child = join(path, entry.name);
-      if (entry.isDirectory()) {
-        await makeWritable(child);
-      } else if (!entry.isSymbolicLink()) {
-        const metadata = await lstat(child);
-        await chmod(child, metadata.mode | 0o200);
-      }
-    }),
-  );
-  const metadata = await lstat(path);
-  await chmod(path, metadata.mode | 0o700);
-}
+export const SOLVER_COMMAND = "python3 solver.py";
+export const SOLVER_OUTPUT_PATH = "reconstruction.txt";
 
 function withSelection(
   status: EvaluationStatus,
@@ -129,11 +97,15 @@ function validateReviewerSelection(selection: EvaluationSelection | undefined): 
     ) {
       throw new Error("Reviewer outputPath must be a safe relative path.");
     }
+    if (selection.command !== SOLVER_COMMAND || selection.outputPath !== SOLVER_OUTPUT_PATH) {
+      throw new Error(
+        "Evaluation always runs origin/main:solver.py through the canonical output interface.",
+      );
+    }
   }
 }
 
 export async function evaluateFrozenAttempt(options: {
-  frozenWorkspacePath: string;
   frozenGitPath: string;
   evaluationRoot: string;
   ciphertextPath: string;
@@ -155,37 +127,18 @@ export async function evaluateFrozenAttempt(options: {
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
-  let outputPath: string;
-  const workspacePath = join(options.evaluationRoot, "workspace");
-  try {
-    await cp(options.frozenWorkspacePath, workspacePath, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-    });
-    await makeWritable(workspacePath);
-    outputPath = resolveOutputPath(workspacePath, options.selection.outputPath);
-    await resolveWorkspacePath(workspacePath, options.selection.outputPath, "Reviewer outputPath");
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const result = withSelection("execution-error", options.selection, { error: detail });
-    return writeEvaluationResult(options.evaluationRoot, result);
-  }
-
   await options.observe?.("evaluation.started", {
     command: options.selection.command,
     outputPath: options.selection.outputPath,
   });
-  let execution: SandboxCommandResult;
+  let published: Awaited<ReturnType<typeof executePublishedSolver>>;
   try {
-    execution = await options.sandbox.execute({
-      profile: "evaluation",
-      command: options.selection.command,
+    published = await executePublishedSolver({
+      repositoryPath: options.frozenGitPath,
+      ciphertextPaths: [options.ciphertextPath],
+      executionRoot: join(options.evaluationRoot, "solver"),
+      sandbox: options.sandbox,
       timeoutMs: options.timeoutMs ?? 30_000,
-      workspacePath,
-      ciphertextPath: options.ciphertextPath,
-      gitOriginPath: options.frozenGitPath,
-      outputPath: options.selection.outputPath,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -198,38 +151,24 @@ export async function evaluateFrozenAttempt(options: {
     const result = withSelection("execution-error", options.selection, { error: detail });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
-  await options.observe?.("evaluation.completed", { execution });
-  if (execution.exitCode !== 0 || execution.timedOut) {
+  if (published.status === "checkout-error") {
     const result = withSelection("execution-error", options.selection, {
-      execution,
-      error: execution.timedOut
-        ? "Reviewer-selected command timed out."
-        : `Reviewer-selected command exited ${String(execution.exitCode)}.`,
+      error: published.error,
     });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
-
-  try {
-    outputPath = await resolveWorkspaceRegularFile(
-      workspacePath,
-      options.selection.outputPath,
-      "Reviewer outputPath",
-    );
-    if ((await readFile(outputPath)).byteLength === 0) {
-      const result = withSelection("no-output", options.selection, { execution, outputPath });
-      return writeEvaluationResult(options.evaluationRoot, result);
-    }
-  } catch (error) {
-    if (error instanceof WorkspaceFileError && error.failure === "missing") {
-      const result = withSelection("no-output", options.selection, { execution, outputPath });
-      return writeEvaluationResult(options.evaluationRoot, result);
-    }
-    const detail = error instanceof Error ? error.message : String(error);
+  const { commit, execution, outputPath } = published;
+  await options.observe?.("evaluation.completed", { commit, execution });
+  if (published.status === "execution-error") {
     const result = withSelection("execution-error", options.selection, {
       execution,
       outputPath,
-      error: detail,
+      error: published.error,
     });
+    return writeEvaluationResult(options.evaluationRoot, result);
+  }
+  if (published.status === "no-output") {
+    const result = withSelection("no-output", options.selection, { execution, outputPath });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
@@ -258,21 +197,9 @@ function attemptRootFrom(path: string): string {
 export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<EvaluationResult> {
   const root = resolve(options.root);
   const attemptRoot = attemptRootFrom(options.attempt);
-  if ((options.command === undefined) !== (options.outputPath === undefined)) {
-    throw new Error("Reviewer command and output path must be provided together.");
-  }
   if (options.workspace === undefined) {
     throw new Error("Reviewer workspace must be provided for evaluation.");
   }
-  validateReviewerSelection(
-    options.command === undefined || options.outputPath === undefined
-      ? undefined
-      : {
-          command: options.command,
-          outputPath: options.outputPath,
-          ...(options.notes === undefined ? {} : { notes: options.notes }),
-        },
-  );
   const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
   await Promise.all([
     verifyTree(attempt.buildRoot, attempt.buildTreeSeal, "Attempt build tree"),
@@ -282,14 +209,11 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if (!attempt.agentIds.includes(workspace)) {
     throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);
   }
-  const selection: EvaluationSelection | undefined =
-    options.command === undefined || options.outputPath === undefined
-      ? undefined
-      : {
-          command: options.command,
-          outputPath: options.outputPath,
-          ...(options.notes === undefined ? {} : { notes: options.notes }),
-        };
+  const selection: EvaluationSelection = {
+    command: SOLVER_COMMAND,
+    outputPath: SOLVER_OUTPUT_PATH,
+    ...(options.notes === undefined ? {} : { notes: options.notes }),
+  };
   const build = decodeBuildManifest(
     await readJsonObject(join(attempt.buildRoot, "puzzle-build.json")),
   );
@@ -318,7 +242,6 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
     expectedImageId: attempt.sandbox.imageId,
   });
   await evaluateFrozenAttempt({
-    frozenWorkspacePath: frozenWorkspace.path,
     frozenGitPath: frozenRepository.path,
     evaluationRoot: join(attemptRoot, "evaluation"),
     ciphertextPath: join(attempt.buildRoot, variant.publicCiphertextPath),
@@ -348,15 +271,16 @@ export function evaluatePuzzleFromFlags(
   if (workspace !== undefined && !isAgentId(workspace)) {
     throw new Error("--workspace must be a canonical agent-N identifier.");
   }
-  const command = flags.get("--command");
-  const outputPath = flags.get("--output-path");
+  if (flags.has("--command") || flags.has("--output-path")) {
+    throw new Error(
+      "Evaluation always runs origin/main:solver.py; --command and --output-path are not accepted.",
+    );
+  }
   const notes = flags.get("--notes");
   return evaluatePuzzle({
     root,
     attempt: requiredFlag(flags, "--attempt"),
     ...(workspace === undefined ? {} : { workspace }),
-    ...(command === undefined ? {} : { command }),
-    ...(outputPath === undefined ? {} : { outputPath }),
     ...(notes === undefined ? {} : { notes }),
   });
 }

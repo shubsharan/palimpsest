@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readdir, stat } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { ActivityBus } from "./activity.js";
@@ -40,20 +40,38 @@ export interface FrozenGitEnvironment extends GitEnvironment {
   treeSeal: TreeSeal;
 }
 
-function commandEnvironment(): NodeJS.ProcessEnv {
+export const SOLVER_SCAFFOLD = `import os
+from pathlib import Path
+
+
+def solve(ciphertext: str) -> str:
+    return ciphertext
+
+
+if __name__ == "__main__":
+    source = Path(os.environ["PALIMPSEST_CIPHERTEXT"])
+    destination = Path(os.environ["PALIMPSEST_OUTPUT"])
+    destination.write_text(solve(source.read_text(encoding="utf-8")), encoding="utf-8")
+`;
+
+function commandEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     LANG: "C.UTF-8",
     LC_ALL: "C.UTF-8",
   };
   if (process.env.PATH !== undefined) environment.PATH = process.env.PATH;
   if (process.env.TMPDIR !== undefined) environment.TMPDIR = process.env.TMPDIR;
-  return environment;
+  return { ...environment, ...overrides };
 }
 
-export function runGit(args: readonly string[], cwd?: string): Promise<GitCommandResult> {
+export function runGit(
+  args: readonly string[],
+  cwd?: string,
+  environment: NodeJS.ProcessEnv = {},
+): Promise<GitCommandResult> {
   return runProcess("git", args, {
     cwd: cwd ?? process.cwd(),
-    env: commandEnvironment(),
+    env: commandEnvironment(environment),
   }).then((captured) => {
     const result = {
       stdout: captured.stdout.toString("utf8"),
@@ -67,6 +85,28 @@ export function runGit(args: readonly string[], cwd?: string): Promise<GitComman
     }
     return result;
   });
+}
+
+const SCAFFOLD_COMMIT_ENVIRONMENT = {
+  GIT_AUTHOR_NAME: "Palimpsest",
+  GIT_AUTHOR_EMAIL: "scaffold@palimpsest.invalid",
+  GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
+  GIT_COMMITTER_NAME: "Palimpsest",
+  GIT_COMMITTER_EMAIL: "scaffold@palimpsest.invalid",
+  GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
+} as const;
+
+async function seedSolverScaffold(root: string, repository: GitRepository): Promise<void> {
+  const seed = await mkdtemp(join(root, ".scaffold-"));
+  try {
+    await runGit(["clone", repository.path, seed]);
+    await writeFile(join(seed, "solver.py"), SOLVER_SCAFFOLD, { encoding: "utf8", flag: "wx" });
+    await runGit(["add", "solver.py"], seed);
+    await runGit(["commit", "-m", "Initialize solver scaffold"], seed, SCAFFOLD_COMMIT_ENVIRONMENT);
+    await runGit(["push", repository.path, "HEAD:main"], seed);
+  } finally {
+    await rm(seed, { recursive: true, force: true });
+  }
 }
 
 export async function createGitEnvironment(
@@ -99,6 +139,7 @@ export async function createGitEnvironment(
       runGit(["init", "--bare", "--initial-branch=main", repository.path]),
     ),
   );
+  await Promise.all(repositories.map((repository) => seedSolverScaffold(resolvedRoot, repository)));
   const workspaces = await Promise.all(
     agentIds.map(async (agentId) => {
       const repository = repositories.find((candidate) => candidate.agentIds.includes(agentId));
