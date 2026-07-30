@@ -147,6 +147,15 @@
 
 ---
 
+## Phase 11: Shared Published-Solver Executor
+
+- [x] T047 Add failing regressions for mutable bare-origin `HEAD`, agent-workspace leakage, and stale tracked reconstruction
+- [x] T048 Implement one explicit-main, Git-free, sterile published-tree executor used by checking and grading
+- [x] T049 Remove the evaluation Git-origin mount and update real-container containment coverage
+- [x] T050 Reconcile Feature 014/015 and operator documentation, then run focused and complete verification
+
+---
+
 ## Dependencies And Execution Order
 
 - Setup precedes Foundational Contracts.

@@ -160,18 +160,11 @@ export async function buildDockerCreateArguments(
     );
   } else {
     validateRelativeWorkspacePath(request.outputPath, "Reviewer outputPath");
-    mounts.push(
-      {
-        source: await requireMountSource(request.ciphertextPath, "file", "ciphertext"),
-        target: SANDBOX_PATHS.ciphertext,
-        readOnly: true,
-      },
-      {
-        source: await requireMountSource(request.gitOriginPath, "directory", "frozen Git origin"),
-        target: SANDBOX_PATHS.gitOrigin,
-        readOnly: true,
-      },
-    );
+    mounts.push({
+      source: await requireMountSource(request.ciphertextPath, "file", "ciphertext"),
+      target: SANDBOX_PATHS.ciphertext,
+      readOnly: true,
+    });
     environment.push(
       `PALIMPSEST_CIPHERTEXT=${SANDBOX_PATHS.ciphertext}`,
       `PALIMPSEST_OUTPUT=${posix.join(SANDBOX_PATHS.workspace, request.outputPath)}`,

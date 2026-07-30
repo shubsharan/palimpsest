@@ -29,7 +29,7 @@ pnpm install --frozen-lockfile
 uv sync --frozen --project python
 ```
 
-The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored commands and canonical solver evaluation. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
+The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored commands and canonical solver execution. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while checking and evaluation use a separate one-shot published-tree sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
 
 ## Configure The Study
 
@@ -90,9 +90,9 @@ pnpm puzzle:evaluate -- \
   --workspace agent-1
 ```
 
-Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` checks out the exact current `origin/main` commit, runs `python3 solver.py` on the evidence released to that agent, and reports only the commit plus aggregate coverage and accuracy. Local files, unpushed commits, and other branches cannot be checked.
+Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` explicitly materializes the exact current `refs/heads/main` tree, removes Git metadata, runs `python3 solver.py` on the evidence released to that agent in a fresh one-shot sandbox, and reports only the commit plus aggregate coverage and accuracy. Local files, unpushed commits, other branches, and persistent agent mounts cannot affect the check.
 
-Final evaluation checks out the selected frozen Git origin and runs the same `solver.py` interface against the complete ciphertext. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. The runner prescribes no roles, commit sequence, branch strategy, or collaboration cadence.
+Final evaluation sends the selected frozen origin's `refs/heads/main` tree through the same executor and `solver.py` interface against the complete ciphertext. The origin is not mounted, and the output begins outside the published tree so a tracked stale reconstruction cannot be scored accidentally. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. The runner prescribes no roles, commit sequence, branch strategy, or collaboration cadence.
 
 Each attempt writes an append-only canonical `trace.jsonl` and a live-readable sibling `trace.log`. The text log renders each redacted event with its elapsed time, actor, event type, and indented data; watch it during a run with `tail -F artifacts/attempt/trace.log`. When a trace is reopened, the runner regenerates `trace.log` from `trace.jsonl`.
 

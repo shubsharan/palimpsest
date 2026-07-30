@@ -204,7 +204,7 @@ describe("real Docker command containment", () => {
     });
   });
 
-  it("gives evaluation only the ciphertext, frozen Git, and writable workspace", async () => {
+  it("gives published-solver execution only the ciphertext and writable sterile workspace", async () => {
     const fixture = await agentFixture();
     const ciphertext = join(fixture.root, "ciphertext.txt");
     await writeFile(ciphertext, "complete-ciphertext\n");
@@ -213,7 +213,7 @@ describe("real Docker command containment", () => {
       profile: "evaluation",
       command: [
         'test "$(cat "$PALIMPSEST_CIPHERTEXT")" = complete-ciphertext',
-        "git fetch origin",
+        "test ! -e /git/origin.git/HEAD",
         'cp "$PALIMPSEST_CIPHERTEXT" "$PALIMPSEST_OUTPUT"',
         `test ! -e ${shellQuote(fixture.oracle)}`,
         `test ! -e ${shellQuote(fixture.hostSentinel)}`,
@@ -222,7 +222,6 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       ciphertextPath: ciphertext,
-      gitOriginPath: fixture.repository.path,
       outputPath: "reconstruction.txt",
     });
 

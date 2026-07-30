@@ -50,11 +50,11 @@
 
 ## Variant-Safe Observation And Evaluation
 
-**Decision**: Resolve stationary/re-key selection from the persisted condition in run, overlap, and evaluation. Scan isolated repositories independently. The checker cleanly executes only the current assigned `origin/main:solver.py`; final evaluation cleanly executes the selected frozen origin's captured `main:solver.py`.
+**Decision**: Resolve stationary/re-key selection from the persisted condition in run, overlap, and evaluation. Scan isolated repositories independently. Route both checking and final evaluation through one published-solver executor that explicitly materializes `refs/heads/main`, removes Git metadata, and runs the tree with only caller-supplied ciphertext plus a fresh external output directory.
 
-**Rationale**: The current re-key hard-coding would make stationary conditions inconsistent. Exact-commit checking aligns feedback with the submitted artifact, and selected-origin evaluation preserves model work without post-hoc synthesis.
+**Rationale**: The current re-key hard-coding would make stationary conditions inconsistent. A single exact-commit execution boundary keeps checker feedback and final grading reproducible from the same published artifact, prevents unpublished workspace state or mutable origin metadata from affecting results, and preserves selected-origin work without post-hoc synthesis.
 
-**Alternatives considered**: Merging isolated repositories after freeze was rejected because it fabricates a collaboration channel. Scoring all workspaces and choosing automatically was rejected as behavioral-review automation.
+**Alternatives considered**: Keeping separate checker and evaluator implementations was rejected because their mounts, ref selection, and output semantics drifted. Patching each leak independently was rejected in favor of one smaller invariant. Merging isolated repositories after freeze was rejected because it fabricates a collaboration channel. Scoring all workspaces and choosing automatically was rejected as behavioral-review automation.
 
 ## Transitional Configuration
 

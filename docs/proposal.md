@@ -48,7 +48,7 @@ Private evidence lives outside Git so an agent does not commit it accidentally d
 
 ## Checking Work
 
-An agent may invoke `check_published_solver`, which captures the exact current commit on the assigned origin's `main` branch, checks it out cleanly, runs `python3 solver.py` against only the private evidence currently visible to that agent, and scores the resulting reconstruction. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware execution error.
+An agent may invoke `check_published_solver`, which captures the exact current commit on the assigned origin's `refs/heads/main`, materializes only that tree, runs `python3 solver.py` in a fresh one-shot environment against the private evidence currently visible to that agent, and scores the resulting reconstruction. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware execution error.
 
 It never accepts a local path and never returns correct words, expected words, mismatch locations, unreleased results, peer-private results, or information about a hidden re-key. Repeated publication and checking remain behavior to observe.
 
@@ -56,9 +56,9 @@ It never accepts a local path and never returns correct words, expected words, m
 
 At the wall-time cutoff, or after all sessions have ended, the runner freezes every repository and agent workspace. It publishes the durable attempt before optional overlap observation.
 
-A reviewer selects the condition-appropriate frozen origin. Palimpsest checks out its captured `main` commit and runs the declared `python3 solver.py` interface; there is no post-hoc merge or choice among uncommitted local candidates.
+A reviewer selects the condition-appropriate frozen origin. Palimpsest sends its captured `refs/heads/main` tree through the same published-solver executor and declared `python3 solver.py` interface; there is no post-hoc merge or choice among uncommitted local candidates.
 
-The selected code runs against the complete ciphertext without the oracle, peer evidence, provider credentials, host files, or public network access. Evaluation reports a deterministic reconstruction score or a clear execution status.
+The shared executor removes Git metadata and exposes only the published tree, supplied ciphertext, and a fresh output directory. Checker and grader execution therefore cannot read an agent workspace, evidence mount, reference corpus, other Git refs, provider credentials, host files, or public network. Evaluation reports a deterministic reconstruction score or a clear execution status.
 
 ## Research Records
 

@@ -18,16 +18,7 @@ const SUCCESS = {
 } as const;
 
 async function toolFixture(
-  execute: ConstructorParameters<typeof FakeCommandSandbox>[0] = async (request) => {
-    if (request.command === "pwd") return SUCCESS;
-    if (request.command.includes("git clone")) {
-      return { ...SUCCESS, stdout: `${COMMIT}\n` };
-    }
-    const root = request.command.match(/\/workspace\/(\.palimpsest-check-[^/]+)/)?.[1];
-    if (root === undefined) throw new Error("Expected a published-solver check root.");
-    await writeFile(join(request.workspacePath, root, "reconstruction.txt"), "one two\n", "utf8");
-    return SUCCESS;
-  },
+  execute: ConstructorParameters<typeof FakeCommandSandbox>[0] = async () => SUCCESS,
 ) {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
@@ -50,16 +41,15 @@ async function toolFixture(
     timeoutMs: 1_000,
   });
   const activity = new ActivityBus();
-  const checkerRequests: string[] = [];
+  const checkerRequests: number[][] = [];
   const tools = createAgentTools({
-    agentId: "agent-1",
-    workspacePath: workspace,
     sandbox: lease,
     activity,
     getActivityCursor: () => 0,
-    checker: async ({ candidatePath }) => {
-      checkerRequests.push(candidatePath);
+    checkPublishedSolver: async (releasedStages) => {
+      checkerRequests.push([...releasedStages]);
       return {
+        commit: COMMIT,
         matchedWords: 1,
         totalWords: 2,
         coverage: 1,
@@ -139,14 +129,8 @@ describe("agent tools", () => {
       accuracy: 0.5,
     });
     expect(JSON.stringify(checked)).not.toMatch(/expected|mismatch|correctWords/);
-    expect(fixture.checkerRequests).toHaveLength(1);
-    expect(sandbox.requests.slice(1).map((request) => request.command)).toEqual([
-      expect.stringContaining(
-        "git clone --no-local --branch main --single-branch '/git/origin.git'",
-      ),
-      expect.stringMatching(/PALIMPSEST_CIPHERTEXT=.* PALIMPSEST_OUTPUT=.* python3 solver\.py/),
-    ]);
-    expect(sandbox.requests[2]?.command).toContain("cat /evidence/stage-01-*.txt");
+    expect(fixture.checkerRequests).toEqual([[1]]);
+    expect(sandbox.requests).toHaveLength(1);
   });
 
   it("rejects candidate paths because the published-solver checker takes no arguments", async () => {
@@ -155,32 +139,5 @@ describe("agent tools", () => {
       tools.execute("check_published_solver", { candidatePath: "candidate.txt" }),
     ).rejects.toThrow("does not accept arguments");
     expect(checkerRequests).toEqual([]);
-  });
-
-  it("reports checkout and solver failures without scoring private workspace files", async () => {
-    const checkoutFailure = await toolFixture(async () => ({
-      ...SUCCESS,
-      exitCode: 128,
-      stderr: "main does not exist",
-    }));
-    await expect(checkoutFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
-      error: "Published solver checkout failed.",
-      execution: expect.objectContaining({ exitCode: 128 }),
-    });
-    expect(checkoutFailure.checkerRequests).toEqual([]);
-
-    let invocation = 0;
-    const solverFailure = await toolFixture(async () => {
-      invocation += 1;
-      return invocation === 1
-        ? { ...SUCCESS, stdout: `${COMMIT}\n` }
-        : { ...SUCCESS, exitCode: 2, stderr: "solver.py missing" };
-    });
-    await expect(solverFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
-      commit: COMMIT,
-      error: "Published solver execution failed.",
-      execution: expect.objectContaining({ exitCode: 2, stderr: "solver.py missing" }),
-    });
-    expect(solverFailure.checkerRequests).toEqual([]);
   });
 });

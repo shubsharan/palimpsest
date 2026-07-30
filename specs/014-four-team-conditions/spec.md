@@ -105,8 +105,8 @@ As a researcher, I can inspect condition prompts, schedules, traces, and attempt
 - **FR-020**: Provider-free fixtures MUST exercise all four conditions without provider credentials or live model requests.
 - **FR-021**: Existing provider adapters, checker scoring, sandbox isolation, receipt-bound preflight, and explicit manual evaluation MUST be reused rather than replaced with condition-specific subsystems.
 - **FR-022**: The feature MUST NOT add automated behavioral review, reviewer schemas, outcome aggregation, automatic retries, or result selection.
-- **FR-023**: The checker MUST accept no candidate path, capture the exact current commit from the assigned origin's `main` branch, execute that commit's `solver.py` in a clean checkout against only the caller's released evidence, and return only the commit, aggregate score fields, or an execution error.
-- **FR-024**: Final grading MUST execute the selected condition-appropriate frozen origin's captured `main` commit through the same `python3 solver.py` interface against the complete ciphertext; uncommitted files, other branches, and post-hoc merges MUST NOT count.
+- **FR-023**: The checker MUST accept no candidate path, explicitly capture the exact current commit from the assigned origin's `refs/heads/main`, materialize only that tree without Git metadata, execute `solver.py` in a fresh one-shot sandbox containing only the supplied released ciphertext and an empty output directory, and return only the commit, aggregate score fields, or an execution error.
+- **FR-024**: Final grading MUST execute the selected condition-appropriate frozen origin's captured `refs/heads/main` commit through the same published-solver executor and `python3 solver.py` interface against the complete ciphertext; agent workspaces, evidence directories, reference corpora, Git origins, uncommitted files, other branches, stale tracked outputs, and post-hoc merges MUST NOT count.
 
 ### Key Entities
 
@@ -129,7 +129,7 @@ As a researcher, I can inspect condition prompts, schedules, traces, and attempt
 - **SC-006**: Frozen shared attempts contain one bare repository plus three workspaces; frozen isolated attempts contain three independent bare repositories plus their three workspaces, with no merge step.
 - **SC-007**: Every condition attempt round-trips through strict artifact decoders with complete block, treatment, schedule, session, trace, usage, termination, sandbox, and topology records.
 - **SC-008**: A provider-free four-condition run completes through build, run, published-main checking, freeze, overlap observation, and explicit manual evaluation with the complete repository verification suite passing.
-- **SC-009**: Checker tests prove that local files, unpushed commits, other branches, and caller-selected candidate paths cannot affect the reported score.
+- **SC-009**: Shared-executor tests prove that a mutated bare-origin `HEAD`, local files, unpushed commits, other branches, Git history, caller-selected candidate paths, and a tracked stale reconstruction cannot affect checker feedback or final grading.
 
 ## Assumptions
 

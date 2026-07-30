@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { basename, dirname, join, posix, resolve, win32 } from "node:path";
 
 import {
   type AggregateScore,
@@ -9,19 +9,16 @@ import {
   decodeEvaluationRecord,
   selectBuildVariant,
 } from "./artifacts.js";
-import { runGit } from "./git.js";
 import { isAgentId, type AgentId } from "./model.js";
 import {
   type CommandSandbox,
-  SANDBOX_PATHS,
   SandboxInfrastructureError,
   type SandboxCommandResult,
-  WorkspaceFileError,
 } from "./sandbox/contracts.js";
-import { resolveWorkspacePath, resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
 import { requiredFlag } from "./flags.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 
+import { executePublishedSolver } from "./published-solver.js";
 import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
 import { verifyTree } from "./seal.js";
 
@@ -58,21 +55,6 @@ export interface EvaluatePuzzleOptions {
 
 export const SOLVER_COMMAND = "python3 solver.py";
 export const SOLVER_OUTPUT_PATH = "reconstruction.txt";
-
-function resolveOutputPath(workspacePath: string, outputPath: string): string {
-  if (outputPath.length === 0 || isAbsolute(outputPath)) {
-    throw new Error("Reviewer outputPath must be relative to the selected workspace.");
-  }
-  const resolved = resolve(workspacePath, outputPath);
-  const difference = relative(workspacePath, resolved);
-  if (
-    difference === ".." ||
-    difference.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
-    throw new Error("Reviewer outputPath must remain inside the evaluation workspace.");
-  }
-  return resolved;
-}
 
 function withSelection(
   status: EvaluationStatus,
@@ -115,6 +97,11 @@ function validateReviewerSelection(selection: EvaluationSelection | undefined): 
     ) {
       throw new Error("Reviewer outputPath must be a safe relative path.");
     }
+    if (selection.command !== SOLVER_COMMAND || selection.outputPath !== SOLVER_OUTPUT_PATH) {
+      throw new Error(
+        "Evaluation always runs origin/main:solver.py through the canonical output interface.",
+      );
+    }
   }
 }
 
@@ -140,33 +127,18 @@ export async function evaluateFrozenAttempt(options: {
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
-  let outputPath: string;
-  const workspacePath = join(options.evaluationRoot, "workspace");
-  try {
-    await runGit(["clone", "--no-local", options.frozenGitPath, workspacePath]);
-    await runGit(["remote", "set-url", "origin", SANDBOX_PATHS.gitOrigin], workspacePath);
-    outputPath = resolveOutputPath(workspacePath, options.selection.outputPath);
-    await resolveWorkspacePath(workspacePath, options.selection.outputPath, "Reviewer outputPath");
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const result = withSelection("execution-error", options.selection, { error: detail });
-    return writeEvaluationResult(options.evaluationRoot, result);
-  }
-
   await options.observe?.("evaluation.started", {
     command: options.selection.command,
     outputPath: options.selection.outputPath,
   });
-  let execution: SandboxCommandResult;
+  let published: Awaited<ReturnType<typeof executePublishedSolver>>;
   try {
-    execution = await options.sandbox.execute({
-      profile: "evaluation",
-      command: options.selection.command,
+    published = await executePublishedSolver({
+      repositoryPath: options.frozenGitPath,
+      ciphertextPaths: [options.ciphertextPath],
+      executionRoot: join(options.evaluationRoot, "solver"),
+      sandbox: options.sandbox,
       timeoutMs: options.timeoutMs ?? 30_000,
-      workspacePath,
-      ciphertextPath: options.ciphertextPath,
-      gitOriginPath: options.frozenGitPath,
-      outputPath: options.selection.outputPath,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -179,38 +151,24 @@ export async function evaluateFrozenAttempt(options: {
     const result = withSelection("execution-error", options.selection, { error: detail });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
-  await options.observe?.("evaluation.completed", { execution });
-  if (execution.exitCode !== 0 || execution.timedOut) {
+  if (published.status === "checkout-error") {
     const result = withSelection("execution-error", options.selection, {
-      execution,
-      error: execution.timedOut
-        ? "Reviewer-selected command timed out."
-        : `Reviewer-selected command exited ${String(execution.exitCode)}.`,
+      error: published.error,
     });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
-
-  try {
-    outputPath = await resolveWorkspaceRegularFile(
-      workspacePath,
-      options.selection.outputPath,
-      "Reviewer outputPath",
-    );
-    if ((await readFile(outputPath)).byteLength === 0) {
-      const result = withSelection("no-output", options.selection, { execution, outputPath });
-      return writeEvaluationResult(options.evaluationRoot, result);
-    }
-  } catch (error) {
-    if (error instanceof WorkspaceFileError && error.failure === "missing") {
-      const result = withSelection("no-output", options.selection, { execution, outputPath });
-      return writeEvaluationResult(options.evaluationRoot, result);
-    }
-    const detail = error instanceof Error ? error.message : String(error);
+  const { commit, execution, outputPath } = published;
+  await options.observe?.("evaluation.completed", { commit, execution });
+  if (published.status === "execution-error") {
     const result = withSelection("execution-error", options.selection, {
       execution,
       outputPath,
-      error: detail,
+      error: published.error,
     });
+    return writeEvaluationResult(options.evaluationRoot, result);
+  }
+  if (published.status === "no-output") {
+    const result = withSelection("no-output", options.selection, { execution, outputPath });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
