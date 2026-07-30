@@ -69,7 +69,7 @@ Missing provider usage or a provider request failure is an infrastructure-error 
 
 ## Experiment Orchestration
 
-`puzzle:experiment --phase calibration|validation` expands one fixed local state machine. Calibration prepares and validates all five builds, binds their complete manifest bytes plus prompt templates, rubric, assignment, order, scoring, failure rules, and sandbox identity, then exclusively publishes `design.json` before the first session. Validation requires that receipt, a completed calibration phase, and unchanged build bytes.
+`puzzle:experiment --phase calibration|validation` expands one fixed local state machine. Calibration prepares and validates all five builds, seals each complete build tree, and binds those seals plus prompt templates, rubric, assignment, order, scoring, failure rules, and sandbox identity before exclusively publishing `design.json`. Validation requires that receipt, a completed calibration phase, and unchanged build trees.
 
 ```text
 study/
@@ -89,7 +89,7 @@ study/
         attempt.json
 ```
 
-Before opening a cell's sessions, the runner writes one launch reservation to the phase summary. After immutable `attempt.json` publication, it indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
+Immediately before opening a cell's sessions, the runner reverifies the selected receipt-bound build tree and writes one launch reservation to the phase summary. After immutable `attempt.json` publication, it indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
 
 A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. A post-publication overlap error remains diagnostic: the durable non-infrastructure attempt is indexed and the phase continues sequentially without manual resume. Successful resume skips every indexed cell. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, or aggregation.
 
@@ -112,7 +112,7 @@ Lease creation and every command share bounded deadlines under the attempt's glo
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Reviewer-selected evaluation uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, that workspace's assigned frozen Git origin, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
+Reviewer-selected evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals, then uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, that workspace's assigned frozen Git origin, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
@@ -120,7 +120,9 @@ The sandbox protects the local host and oracle. It is not presented as a hardene
 
 The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify standalone or study phase, condition, derived treatment, selected variant build, fixed schedule and cutoff, resource authorization, and requested model bindings without exposing block order, rubric, replacement policy, oracle sets, or hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
 
-`attempt.json` schema version 4 contains the block, condition, derived treatment, selected build, exact schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory, trace, sandbox identity, token limit, monetary authorization, infrastructure classification, and optional study/replacement provenance. It is the durable evaluation boundary.
+`attempt.json` schema version 4 contains the block, condition, derived treatment, selected build and complete-tree seal, exact schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory and complete-tree seal, trace, sandbox identity, token limit, monetary authorization, infrastructure classification, and optional study/replacement provenance. It is the durable evaluation boundary.
+
+The canonical tree-sealing primitive covers sorted relative paths, directories, file bytes and lengths, executable bits, and symlink targets. It replaces per-consumer artifact lists, so new builder, checker, runner, or evaluator inputs are bound automatically when they live under the published root. This is local drift detection under a trusted-operator model, not cryptographic attestation: a coherent rewrite of artifacts and their embedded seals, signatures, immutable storage, and an external transparency service are outside the project boundary.
 
 Optional post-freeze overlap observation reports obvious exact or normalized raw text overlap without warning, blocking, invalidating, or rescoring the run. If observation fails, the already published attempt remains evaluatable.
 
@@ -150,7 +152,7 @@ The offline command composes the same condition-selected build, runtime, native 
 
 Configuration, build, adapter construction, provider execution, sandbox, Git, trace, artifact publication, overlap, and evaluation failures remain explicit infrastructure outcomes. Only a frozen session-infrastructure classification is replacement-eligible. Model mistakes, tool errors, repeated checking, raw sharing, no Git use, unusual coordination, and voluntary early completion remain observable model outcomes.
 
-The architecture preserves the strongest durable boundary available: exclusive design-receipt publication before sessions, launch reservation before provider work, complete attempt publication before optional observation, and atomic phase indexing after each durable attempt.
+The architecture preserves the strongest local durable boundary available: exclusive design-receipt publication before sessions, whole-tree sealing and launch-time verification, launch reservation before provider work, complete attempt publication before optional observation, and atomic phase indexing after each durable attempt.
 
 `pnpm preflight` is the authorization boundary for provider-backed work. It requires a clean committed checkout, rebuilds the sandbox, runs full verification plus a fresh offline fixture, and writes `artifacts/preflight.json` only on success. A provider-backed attempt must match that receipt before model sessions begin and copies it into the attempt root first.
 

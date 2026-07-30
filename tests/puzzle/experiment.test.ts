@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -21,6 +21,7 @@ import { buildAgentPrompt } from "../../src/prompt.js";
 import { readJsonObject } from "../../src/python.js";
 import type { RunPuzzleOptions } from "../../src/run.js";
 import { SANDBOX_POLICY } from "../../src/sandbox/contracts.js";
+import { sealTree } from "../../src/seal.js";
 import { prepareStudyDesign } from "../../src/study.js";
 import {
   FakeCommandSandbox,
@@ -101,6 +102,16 @@ async function publishFixtureAttempt(
           path: join(frozenRoot, `${agentId}.git`),
           agentIds: [agentId],
         }));
+  const workspaces = manifest.agentIds.map((agentId) => ({
+    agentId,
+    path: join(frozenRoot, "workspaces", agentId),
+    repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
+  }));
+  await Promise.all(
+    [...repositories.map(({ path }) => path), ...workspaces.map(({ path }) => path)].map((path) =>
+      mkdir(path, { recursive: true }),
+    ),
+  );
   const summary = decodeAttemptSummary({
     ...base,
     attemptId,
@@ -119,6 +130,7 @@ async function publishFixtureAttempt(
     variantId: condition.variantId,
     buildId: variant.buildId,
     buildRoot: request.buildRoot,
+    buildTreeSeal: await sealTree(request.buildRoot),
     tokenBudgetPerAgent: request.tokenBudgetPerAgent,
     protocolDigest: hashProtocolSnapshot(protocol),
     protocol,
@@ -128,11 +140,8 @@ async function publishFixtureAttempt(
       root: frozenRoot,
       communicationMode: condition.communicationMode,
       repositories,
-      workspaces: manifest.agentIds.map((agentId) => ({
-        agentId,
-        path: join(frozenRoot, "workspaces", agentId),
-        repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
-      })),
+      workspaces,
+      treeSeal: await sealTree(frozenRoot),
     },
     sandbox: { ...TEST_SANDBOX_IDENTITY, ...SANDBOX_POLICY },
     sessions: manifest.agentIds.map((agentId, index) => ({

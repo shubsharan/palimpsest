@@ -25,6 +25,7 @@ import {
   type SandboxCommandResult,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
+import type { TreeSeal } from "./seal.js";
 import type { AgentSessionResult, SessionState } from "./session.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -238,6 +239,7 @@ export interface FrozenGitInventory {
   communicationMode: ResolvedCondition["communicationMode"];
   repositories: readonly FrozenGitRepository[];
   workspaces: readonly FrozenGitWorkspace[];
+  treeSeal: TreeSeal;
 }
 
 export type StudyPhase = "calibration" | "validation";
@@ -254,6 +256,7 @@ interface AttemptSummaryBase {
   variantId: ResolvedCondition["variantId"];
   buildId: string;
   buildRoot: string;
+  buildTreeSeal: TreeSeal;
   agentIds: readonly AgentId[];
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
@@ -291,6 +294,7 @@ export interface DesignBuildBinding {
   blockId: string;
   buildRoot: string;
   buildManifestDigest: string;
+  treeSeal: TreeSeal;
   manifest: BuildManifest;
 }
 
@@ -1427,6 +1431,19 @@ function repositoryId(value: unknown, name: string): "shared" | AgentId {
   return agentId(value, name);
 }
 
+function decodeTreeSeal(value: unknown, name: string): TreeSeal {
+  const record = strictObject(value, name, ["schemaVersion", "digest", "fileCount", "byteCount"]);
+  if (record.schemaVersion !== 1) {
+    throw new Error(`Unsupported ${name} schema version.`);
+  }
+  return {
+    schemaVersion: 1,
+    digest: digest(record.digest, `${name} digest`),
+    fileCount: integer(record.fileCount, `${name} fileCount`),
+    byteCount: integer(record.byteCount, `${name} byteCount`),
+  };
+}
+
 function decodeFrozenGitInventory(
   value: unknown,
   communicationMode: ResolvedCondition["communicationMode"],
@@ -1437,6 +1454,7 @@ function decodeFrozenGitInventory(
     "communicationMode",
     "repositories",
     "workspaces",
+    "treeSeal",
   ]);
   if (record.communicationMode !== communicationMode) {
     throw new Error("Attempt frozen Git communication mode must match its condition.");
@@ -1501,7 +1519,13 @@ function decodeFrozenGitInventory(
   if (new Set(paths).size !== paths.length) {
     throw new Error("Attempt frozen Git repository and workspace paths must be unique.");
   }
-  return { root, communicationMode, repositories, workspaces };
+  return {
+    root,
+    communicationMode,
+    repositories,
+    workspaces,
+    treeSeal: decodeTreeSeal(record.treeSeal, "Attempt frozen Git tree seal"),
+  };
 }
 
 interface AttemptProtocolExpectations {
@@ -1641,6 +1665,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
       "variantId",
       "buildId",
       "buildRoot",
+      "buildTreeSeal",
       "agentIds",
       "releaseOffsetsMs",
       "cutoffMs",
@@ -1731,6 +1756,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     variantId: condition.variantId,
     buildId,
     buildRoot: absolutePath(record.buildRoot, "Attempt summary buildRoot"),
+    buildTreeSeal: decodeTreeSeal(record.buildTreeSeal, "Attempt build tree seal"),
     agentIds,
     releaseOffsetsMs,
     cutoffMs,
@@ -1843,6 +1869,7 @@ function decodeDesignBuild(value: unknown, index: number): DesignBuildBinding {
     "blockId",
     "buildRoot",
     "buildManifestDigest",
+    "treeSeal",
     "manifest",
   ]);
   const blockId = identifier(record.blockId, `${name} blockId`);
@@ -1858,6 +1885,7 @@ function decodeDesignBuild(value: unknown, index: number): DesignBuildBinding {
     blockId,
     buildRoot: absolutePath(record.buildRoot, `${name} buildRoot`),
     buildManifestDigest: digest(record.buildManifestDigest, `${name} buildManifestDigest`),
+    treeSeal: decodeTreeSeal(record.treeSeal, `${name} tree seal`),
     manifest,
   };
 }

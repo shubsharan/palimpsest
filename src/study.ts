@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, readdir } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import {
   decodeAttemptSummary,
@@ -15,7 +15,6 @@ import {
   readPhaseSummary,
   selectBuildVariant,
   type AttemptSummary,
-  type BuildManifest,
   type DesignBuildBinding,
   type DesignReceipt,
   type PhaseAdjustment,
@@ -43,6 +42,7 @@ import {
 import { readJsonObject } from "./python.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import { SANDBOX_POLICY, type SandboxIdentity } from "./sandbox/contracts.js";
+import { sealTree, verifyTree } from "./seal.js";
 
 const AGENT_COUNT = 3;
 const CALIBRATION_CELL_COUNT = 4;
@@ -100,104 +100,13 @@ async function readBuildBinding(buildRoot: string, blockId: string): Promise<Des
   if (manifest.blockId !== blockId) {
     throw new Error(`Receipt build ${blockId} contains block ${manifest.blockId}.`);
   }
-  await assertBuildArtifacts(buildRoot, blockId, manifest);
   return {
     blockId,
     buildRoot,
     buildManifestDigest: sha256(bytes),
+    treeSeal: await sealTree(buildRoot),
     manifest,
   };
-}
-
-function buildArtifactPath(buildRoot: string, artifactPath: string): string {
-  const root = resolve(buildRoot);
-  const path = resolve(root, artifactPath);
-  const difference = relative(root, path);
-  if (
-    difference.length === 0 ||
-    difference === ".." ||
-    difference.startsWith(`..${sep}`) ||
-    isAbsolute(difference)
-  ) {
-    throw new Error(`Build artifact path ${artifactPath} must remain inside its build root.`);
-  }
-  return path;
-}
-
-function buildArtifactDigests(
-  manifest: BuildManifest,
-): readonly { path: string; sha256: string }[] {
-  return [
-    { path: manifest.allocation.path, sha256: manifest.allocation.sha256 },
-    { path: manifest.oracleDesign.path, sha256: manifest.oracleDesign.sha256 },
-    { path: manifest.manipulationCheck.path, sha256: manifest.manipulationCheck.sha256 },
-    ...[manifest.variants.stationary, manifest.variants.rekey].flatMap((variant) =>
-      variant.stages.map((stage) => ({ path: stage.sourcePath, sha256: stage.sha256 })),
-    ),
-  ];
-}
-
-async function assertBuildArtifacts(buildRoot: string, blockId: string, manifest: BuildManifest) {
-  await Promise.all(
-    buildArtifactDigests(manifest).map(async ({ path, sha256: expected }) => {
-      const bytes = await readFile(buildArtifactPath(buildRoot, path));
-      const actual = sha256(bytes);
-      if (actual !== expected) {
-        throw new Error(`Receipt-bound build ${blockId} artifact ${path} has drifted.`);
-      }
-    }),
-  );
-  await Promise.all(
-    [manifest.variants.stationary, manifest.variants.rekey].map(async (variant) => {
-      const ciphertext = await readFile(buildArtifactPath(buildRoot, variant.publicCiphertextPath));
-      const expectedReferenceNames = manifest.references
-        .map(({ sourceId }) => `${sourceId}-reference.txt`)
-        .sort();
-      const referenceRoot = buildArtifactPath(buildRoot, variant.referenceCorpusPath);
-      const referenceEntries = await readdir(referenceRoot, { withFileTypes: true });
-      const actualReferenceNames = referenceEntries.map(({ name }) => name).sort();
-      if (
-        referenceEntries.some((entry) => !entry.isFile()) ||
-        !sameValue(actualReferenceNames, expectedReferenceNames)
-      ) {
-        throw new Error(
-          `Receipt-bound build ${blockId} ${variant.variantId} reference artifact set has drifted.`,
-        );
-      }
-      const references = await Promise.all(
-        manifest.references.map(async (reference) => {
-          const path = `${variant.referenceCorpusPath}/${reference.sourceId}-reference.txt`;
-          const bytes = await readFile(buildArtifactPath(buildRoot, path));
-          return {
-            sourceId: reference.sourceId,
-            sourceSha256: reference.sha256,
-            path,
-            byteLength: bytes.byteLength,
-            sha256: sha256(bytes),
-          };
-        }),
-      );
-      const buildId = `build-${hashProtocolSnapshot({
-        schemaVersion: 1,
-        blockId: manifest.blockId,
-        variantId: variant.variantId,
-        allocationId: manifest.allocation.allocationId,
-        windowSha256: manifest.window.sha256,
-        complete: {
-          byteLength: ciphertext.byteLength,
-          sha256: sha256(ciphertext),
-        },
-        references,
-        stages: variant.stages,
-        keyTransitions: variant.keyTransitions,
-      })}`;
-      if (buildId !== variant.buildId) {
-        throw new Error(
-          `Receipt-bound build ${blockId} ${variant.variantId} consumed artifact set has drifted.`,
-        );
-      }
-    }),
-  );
 }
 
 export interface StudyDesignDependencies {
@@ -461,6 +370,7 @@ async function assertBuildBindings(
     const actual = await readBuildBinding(expectedRoot, expected.blockId);
     if (
       actual.buildManifestDigest !== expected.buildManifestDigest ||
+      !sameValue(actual.treeSeal, expected.treeSeal) ||
       !sameValue(actual.manifest, expected.manifest)
     ) {
       throw new Error(`Receipt-bound build ${expected.blockId} has drifted.`);
@@ -483,6 +393,7 @@ async function assertCellBuildBinding(receipt: DesignReceipt, cell: PlannedCell)
   const actual = await readBuildBinding(cell.buildRoot, cell.blockId);
   if (
     actual.buildManifestDigest !== expected.buildManifestDigest ||
+    !sameValue(actual.treeSeal, expected.treeSeal) ||
     !sameValue(actual.manifest, expected.manifest)
   ) {
     throw new Error(`Receipt-bound build ${cell.blockId} has drifted before launch.`);
@@ -844,7 +755,7 @@ function reserveLaunch(options: {
   };
 }
 
-function assertAttemptMatchesLaunch(options: {
+async function assertAttemptMatchesLaunch(options: {
   attempt: AttemptSummary;
   attemptRoot: string;
   summary: PhaseSummary;
@@ -857,7 +768,7 @@ function assertAttemptMatchesLaunch(options: {
     tokenBudgetPerAgent: number;
     perAttemptMonetaryCeilingCents: number;
   };
-}): void {
+}): Promise<void> {
   const attempt = options.attempt;
   const budgets = options.budgets ?? options.study.budgets;
   const condition = resolveCondition(options.cell.condition);
@@ -914,6 +825,9 @@ function assertAttemptMatchesLaunch(options: {
     prompts,
     sandbox: options.receipt.sandbox,
   };
+  const build = options.receipt.builds.find(
+    (candidate) => candidate.blockId === options.cell.blockId,
+  );
   if (
     attempt.studyPhase === "standalone" ||
     attempt.attemptId !== options.attemptId ||
@@ -931,12 +845,20 @@ function assertAttemptMatchesLaunch(options: {
   ) {
     throw new Error(`Attempt ${attempt.attemptId} does not match its reserved study cell.`);
   }
+  if (build === undefined || !sameValue(attempt.buildTreeSeal, build.treeSeal)) {
+    throw new Error(`Attempt ${attempt.attemptId} does not use its receipt-bound build tree.`);
+  }
   if (!sameValue(attempt.protocol, expectedProtocol)) {
     throw new Error(`Attempt ${attempt.attemptId} does not match the frozen study protocol.`);
   }
   if (resolve(options.attemptRoot) === options.cell.buildRoot) {
     throw new Error("Attempt root cannot overlap its receipt-bound build root.");
   }
+  await verifyTree(
+    attempt.frozen.root,
+    attempt.frozen.treeSeal,
+    `Attempt ${attempt.attemptId} frozen tree`,
+  );
 }
 
 async function assertIndexedAttempts(options: {
@@ -981,7 +903,7 @@ async function assertIndexedAttempts(options: {
         `Indexed attempt ${reference.attemptId} is missing its durable attempt.json.`,
       );
     }
-    assertAttemptMatchesLaunch({
+    await assertAttemptMatchesLaunch({
       attempt,
       attemptRoot,
       summary: options.summary,
@@ -1196,7 +1118,7 @@ export async function executeStudyPhase(options: ExecuteStudyPhaseOptions): Prom
         await publishPhaseSummary(studyRoot, summary);
         throw error;
       }
-      assertAttemptMatchesLaunch({
+      await assertAttemptMatchesLaunch({
         attempt: durable,
         attemptRoot: preview.attemptRoot,
         summary,
@@ -1228,7 +1150,7 @@ export async function executeStudyPhase(options: ExecuteStudyPhaseOptions): Prom
       await publishPhaseSummary(studyRoot, summary);
       throw error;
     }
-    assertAttemptMatchesLaunch({
+    await assertAttemptMatchesLaunch({
       attempt: durable,
       attemptRoot: preview.attemptRoot,
       summary,

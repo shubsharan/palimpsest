@@ -38,7 +38,7 @@ Strict schema version 1, exclusively created at `<study-root>/design.json`.
 - `createdAt`, `sourceRevision`, `sandboxIdentity`.
 - `manifestDigest`, `immutableManifestDigest`, `designDigest`.
 - Immutable manifest snapshot.
-- Five build bindings with block, variant/build identities, raw build-manifest digest, seed/allocation/manipulation metadata.
+- Five build bindings with block, variant/build identities, raw build-manifest digest, canonical complete-tree seal, and seed/allocation/manipulation metadata.
 - Model assignment and orders.
 - Rubric bytes digest.
 - Scoring/reviewer boundary.
@@ -73,6 +73,8 @@ A `reserved` entry is terminally unresolved for automatic resume.
 Strict schema version 4.
 
 - Existing Feature 014 treatment, schedule, sessions, traces, native frozen Git, sandbox, overlap, evaluation, and score fields.
+- `buildTreeSeal`: canonical identity of the complete selected build root.
+- `frozen.treeSeal`: canonical identity of the complete frozen repository/workspace root.
 - `studyPhase`: `standalone | calibration | validation`.
 - `studyRootId`, `conditionOrderPosition`, and `designDigest`, required for calibration, validation, and replacement attempts and absent for standalone attempts.
 - `monetaryAuthorizationCeilingCents`.
@@ -80,6 +82,16 @@ Strict schema version 4.
 - optional `replacementOfAttemptId`.
 
 Obsolete `runName` and `repetition` fields are removed. Standalone `puzzle:run` uses `studyPhase: standalone`, the same assignment and protocol snapshot, and no study-receipt identity.
+
+## Tree Seal
+
+Strict schema version 1.
+
+- `digest`: SHA-256 identity of sorted canonical tree entries.
+- `fileCount`, `byteCount`: redundant totals checked with the digest.
+- Entries cover every relative directory, regular-file byte length/hash/executable bit, and symbolic-link target.
+
+The entry list is intentionally not duplicated into receipts. The compact seal binds the complete published directory while semantic manifests continue to describe its protocol meaning.
 
 ## Phase Summary
 

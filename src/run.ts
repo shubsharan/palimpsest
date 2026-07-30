@@ -53,6 +53,7 @@ import {
   type CommandSandbox,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
+import { sealTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
@@ -762,6 +763,7 @@ export interface RunPuzzleResult extends AttemptResult {
 export interface FinalizeAttemptOptions {
   attemptRoot: string;
   buildRoot: string;
+  buildTreeSeal: TreeSeal;
   result: AttemptResult;
   publishSummary: (attemptRoot: string, summary: AttemptSummary) => Promise<void>;
   observeOverlap: () => Promise<OverlapResult>;
@@ -799,6 +801,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     variantId: options.result.variantId,
     buildId: options.result.buildId,
     buildRoot: options.buildRoot,
+    buildTreeSeal: options.buildTreeSeal,
     agentIds: options.result.agentIds,
     releaseOffsetsMs: options.result.releaseOffsetsMs,
     cutoffMs: options.result.cutoffMs,
@@ -812,6 +815,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
       communicationMode: options.result.frozen.communicationMode,
       repositories: options.result.frozen.repositories,
       workspaces: options.result.frozen.workspaces,
+      treeSeal: options.result.frozen.treeSeal,
     },
     sandbox: { ...options.result.sandbox, ...SANDBOX_POLICY },
     sessions: options.result.sessions,
@@ -861,6 +865,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const preflight = usesProvider ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
+  const buildTreeSeal = await sealTree(buildRoot);
   const condition = resolveCondition(options.condition);
   const variant = selectBuildVariant(manifest, condition.variantId);
   const agentStages = Object.fromEntries(
@@ -912,6 +917,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const overlap = await finalizeAttempt({
     attemptRoot: output,
     buildRoot,
+    buildTreeSeal,
     result,
     publishSummary: publishAttemptSummary,
     observeOverlap: () => observeOverlap(root, buildRoot, result),

@@ -18,7 +18,7 @@ pnpm puzzle:experiment -- --config experiments/config.yaml --phase calibration -
 pnpm puzzle:experiment -- --config experiments/config.yaml --phase validation --study-root /tmp/palimpsest-study
 ```
 
-Provider-backed use requires a current clean receipt-bound preflight. Calibration publishes `/tmp/palimpsest-study/design.json` before the first session. Validation refuses to start until calibration is complete and the receipt-bound builds remain intact.
+Provider-backed use requires a current clean receipt-bound preflight. Calibration publishes `/tmp/palimpsest-study/design.json` before the first session. Validation refuses to start until calibration is complete and every byte in the receipt-bound build trees remains intact.
 
 Expected primary attempts:
 
@@ -48,8 +48,11 @@ python -m json.tool /tmp/palimpsest-study/validation/phase.json
 Confirm:
 
 - receipt publication predates the first calibration attempt;
-- all five build-manifest digests match;
+- all five build-manifest digests and complete-tree seals match;
+- each attempt records the selected build-tree seal and complete frozen Git/workspace tree seal;
 - calibration and validation cell order is exact;
 - only the two declared operational budget values can differ in validation;
 - cumulative authorization, actual usage, and replacement lineage are explicit;
 - no phase record applies the rubric, selects a result, or aggregates scores.
+
+The seals detect local filesystem drift. They assume the operator and receipt files are trusted; the protocol does not add signatures, immutable storage, or a remote ledger.

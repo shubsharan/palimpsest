@@ -71,3 +71,11 @@
 **Rationale**: Matrix order, receipt timing, prompt parity, durability, and accounting need complete coverage. Provider behavior and repeated Docker startup do not.
 
 **Alternatives rejected**: Sampling conditions misses order/integration errors. Live calls are costly and nondeterministic. Twenty real sandbox runs add time without distinct evidence.
+
+## Decision 10: Seal complete artifact trees
+
+**Decision**: Use one canonical directory-sealing primitive for complete build roots and frozen Git/workspace roots. A seal deterministically covers sorted relative paths, directory entries, file bytes and lengths, executable bits, and symlink targets.
+
+**Rationale**: The builder, checker, runner, and evaluator consume evolving sets of files. Binding a hand-maintained list makes every new consumed artifact another provenance bug. Whole-tree identity turns the publication boundary into the invariant: anything present when the root is sealed must remain identical whenever the root is reused.
+
+**Alternatives rejected**: Enumerating stage, reference, ciphertext, checker, plaintext, repository, and workspace files duplicates consumer knowledge and inevitably drifts. Copying every tree per launch adds storage without improving local integrity. Signatures, immutable object storage, and transparency logs exceed the threat model of a trusted local research operator.

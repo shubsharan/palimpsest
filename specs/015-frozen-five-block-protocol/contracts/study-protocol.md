@@ -19,7 +19,7 @@ It returns a deterministic adjustment record and rejects any immutable drift or 
 
 1. requires a clean committed source checkout before construction or receipt validation;
 2. refuses any non-empty study root that has no design receipt;
-3. constructs and validates all five registered paired builds without reusing unreceipted output;
+3. constructs and validates all five registered paired builds without reusing unreceipted output, then seals each complete build root;
 4. reads the rubric and prompt templates;
 5. verifies all twenty primary authorizations fit total ceilings;
 6. immediately before publication, requires the source to remain clean at the same commit;
@@ -45,18 +45,20 @@ Cell IDs and positions are deterministic.
 
 `executeStudyPhase(options)`:
 
-1. validates the receipt, build bindings, phase prerequisites, and current manifest;
+1. validates the receipt, complete build-tree bindings, phase prerequisites, and current manifest;
 2. reads or initializes strict `phase.json`;
 3. rejects an unresolved reservation or unremediated eligible failure;
 4. selects the next unstarted cell;
 5. verifies remaining token and monetary authorization;
 6. verifies provider preflight when adapters are not injected;
-7. writes a launch reservation;
-8. executes exactly one attempt with three concurrent sessions;
-9. indexes the strict durable attempt and resolves the reservation;
-10. stops nonzero on eligible infrastructure classification, otherwise continues sequentially.
+7. reverifies the selected complete build-tree seal immediately before launch;
+8. writes a launch reservation;
+9. executes exactly one attempt with three concurrent sessions;
+10. seals the selected build and complete frozen Git/workspace roots into the durable attempt;
+11. indexes the strict durable attempt and resolves the reservation;
+12. stops nonzero on eligible infrastructure classification, otherwise continues sequentially.
 
-Reinvocation never launches an indexed primary cell. A post-publication overlap failure remains in the attempt trace, but the durable non-infrastructure attempt is indexed and the same invocation continues to the next cell.
+Reinvocation never launches an indexed primary cell. Reloading an indexed attempt revalidates its complete receipt-bound protocol plus its selected-build and frozen-tree seals. A post-publication overlap failure remains in the attempt trace, but the durable non-infrastructure attempt is indexed and the same invocation continues to the next cell.
 
 ## Explicit Replacement
 
@@ -84,4 +86,6 @@ pnpm puzzle:experiment -- --config experiments/config.yaml --phase <calibration|
 pnpm puzzle:experiment -- --config experiments/config.yaml --phase <calibration|validation> --study-root <path> --replace <attempt-id>
 ```
 
-`puzzle:evaluate` remains an explicit attempt-level command. Phase completion does not invoke it.
+`puzzle:evaluate` remains an explicit attempt-level command. It reverifies the selected-build and frozen-tree seals before consuming ciphertext, oracle truth, workspaces, or Git origins. Phase completion does not invoke it.
+
+Tree seals provide local drift detection under a trusted-operator model. They are not signatures and do not defend against coherent rewriting of artifacts and their embedded seals.

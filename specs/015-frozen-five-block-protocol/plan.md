@@ -53,6 +53,8 @@ src/
 ├── experiment.test.ts
 ├── run.ts
 ├── run.test.ts
+├── seal.ts
+├── seal.test.ts
 ├── prompt.ts
 └── prompt.test.ts
 
@@ -66,7 +68,7 @@ experiments/
 └── behavior-rubric.md
 ```
 
-**Structure Decision**: Add only `src/study.ts` as a genuine ownership boundary for study expansion, receipt validation, phase state, launch reservation, accounting, and explicit replacement. Keep one-attempt execution in `run.ts`, artifact codecs in `artifacts.ts`, manifest decoding in `config.ts`, and CLI wiring in `experiment.ts`.
+**Structure Decision**: Keep `src/study.ts` as the ownership boundary for study expansion, receipt validation, phase state, launch reservation, accounting, and explicit replacement. Add one small generic `src/seal.ts` boundary for canonical directory identity shared by construction, phase launch, attempt freeze, resume, and evaluation. Keep one-attempt execution in `run.ts`, artifact codecs in `artifacts.ts`, manifest decoding in `config.ts`, and CLI wiring in `experiment.ts`.
 
 ## Phase 0 Decisions
 
@@ -93,8 +95,8 @@ Calibration validates the credential-free manifest, builds all five blocks once,
 
 - the complete manifest digest;
 - an immutable-manifest digest that omits only the two declared adjustable values;
-- a design digest over the immutable manifest projection, raw build-manifest digests, rubric bytes, prompt templates, scoring/reviewer boundary, failure rules, and sandbox policy;
-- block IDs, build identities, raw build-manifest digests, and construction/manipulation metadata;
+- a design digest over the immutable manifest projection, complete build-tree seals, rubric bytes, prompt templates, scoring/reviewer boundary, failure rules, and sandbox policy;
+- block IDs, build identities, raw build-manifest digests, complete build-tree seals, and construction/manipulation metadata;
 - the fixed model assignment and condition orders;
 - prompt templates with a token-budget placeholder plus baseline resolved prompt snapshots.
 
@@ -106,7 +108,7 @@ Each phase has one strict `phase.json` written atomically after its prerequisite
 
 Before adapter/session work, the coordinator appends one launch reservation for the selected cell. After a strict attempt is durably indexed, the reservation becomes resolved. A crash or infrastructure failure before durable freeze leaves an unresolved reservation and blocks further execution in that study root. This prevents a resume command from silently relaunching work that may have reached a provider but lacks a valid scientific artifact.
 
-Validation requires the same study root, completed calibration, intact receipt-bound builds, matching immutable manifest/design identity, and one atomic adjustment record before the first validation reservation. Only `budgets.tokenBudgetPerAgent` and `budgets.perAttemptMonetaryCeilingCents` may differ, and the recalculated twenty-primary-cell authorization must still fit the frozen totals.
+Validation requires the same study root, completed calibration, intact receipt-bound builds, matching immutable manifest/design identity, and one atomic adjustment record before the first validation reservation. The selected build's canonical tree seal is reverified immediately before every launch reservation. Only `budgets.tokenBudgetPerAgent` and `budgets.perAttemptMonetaryCeilingCents` may differ, and the recalculated twenty-primary-cell authorization must still fit the frozen totals.
 
 ### Failure And Replacement Boundary
 
@@ -117,6 +119,8 @@ An eligible attempt is indexed unchanged and stops the phase nonzero. `--replace
 ### Provider And Evaluation Boundaries
 
 Provider-backed launches verify the current clean source/sandbox preflight before credential resolution, adapter construction, or session opening. Provider-free tests inject fixture adapters and fake clocks. Phase completion means all planned cells have a successful durable primary or eligible replacement; it does not run overlap, select a workspace, evaluate, apply the rubric, aggregate outcomes, or make a benchmark claim.
+
+Every attempt records the selected build-tree seal and the complete frozen Git/workspace tree seal. Resume and evaluation reverify those roots before treating the attempt as durable evidence. This local integrity boundary detects filesystem drift; it does not add signatures, immutable storage, or an external verifier.
 
 ## Complexity Tracking
 

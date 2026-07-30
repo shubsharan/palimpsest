@@ -98,15 +98,15 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 - **FR-010**: The manifest MUST restrict calibration-adjustable fields to the per-agent token budget and per-attempt monetary authorization ceiling; schedules, total ceilings, and every scientific field MUST remain immutable.
 - **FR-011**: Calibration MUST prepare and validate all five paired builds before writing the design receipt.
 - **FR-012**: Calibration MUST atomically publish the design receipt before opening the first model session.
-- **FR-013**: The design receipt MUST bind the complete immutable manifest projection, rubric bytes, all five build identities, block seeds, allocations, manipulation checks, prompt snapshots, scoring boundary, model assignment, condition orders, failure rules, sandbox policy, and total ceilings with deterministic digests.
-- **FR-014**: Validation MUST require the matching design receipt, completed calibration index, and unchanged receipt-bound build artifacts before any validation attempt or provider call.
+- **FR-013**: The design receipt MUST bind the complete immutable manifest projection, rubric bytes, complete canonical tree seals for all five build roots, prompt snapshots, scoring boundary, model assignment, condition orders, failure rules, sandbox policy, and total ceilings with deterministic digests.
+- **FR-014**: Every study launch MUST require the matching design receipt, phase prerequisites, and an unchanged canonical tree seal for the selected build immediately before reservation or provider work; validation MUST additionally require the completed calibration index.
 - **FR-015**: Validation MUST reject immutable drift and MUST record every permitted adjustable-field change with its original value, resolved value, prior manifest digest, and current manifest digest.
 - **FR-016**: `puzzle:experiment --phase calibration` MUST expand exactly four sequential cells for the calibration block.
 - **FR-017**: `puzzle:experiment --phase validation` MUST expand exactly sixteen sequential cells across the four validation blocks in the declared balanced orders.
 - **FR-018**: `puzzle:run --condition` MUST continue to run one canonical condition against an explicitly supplied paired build without phase expansion.
 - **FR-019**: Planned cells MUST execute sequentially and MUST retain concurrent three-session behavior only inside each attempt.
 - **FR-020**: Phase invocation MUST read its durable index, skip already completed planned cells without relaunching them, and refuse to pass an unresolved infrastructure-failure cell.
-- **FR-021**: Every attempt summary MUST record standalone or study-phase provenance, block, canonical condition, protocol digest, monetary authorization ceiling, infrastructure classification, and optional replacement lineage; calibration, validation, and replacement attempts MUST additionally record condition-order position and design digest.
+- **FR-021**: Every attempt summary MUST record standalone or study-phase provenance, block, canonical condition, protocol digest, complete selected-build and frozen-Git tree seals, monetary authorization ceiling, infrastructure classification, and optional replacement lineage; calibration, validation, and replacement attempts MUST additionally record condition-order position and design digest.
 - **FR-022**: Every phase summary MUST record its manifest digests, design digest, ordered planned cells, durable attempts, adjustments, cumulative token usage, cumulative authorized monetary ceiling, completion state, and failure state.
 - **FR-023**: A session-infrastructure-failure attempt MUST be frozen and indexed before the phase stops nonzero; a pre-freeze failure MUST leave an unresolved reservation and MUST NOT be relaunched in the same study root.
 - **FR-024**: A replacement MUST require an explicit cited attempt ID, MUST inherit its block, condition, phase, order position, design identity, assignment, and budgets, and MUST append a new immutable attempt with `replacementOfAttemptId`.
@@ -132,7 +132,7 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 
 - **SC-001**: One valid manifest resolves to exactly five blocks, three fixed agent assignments, four calibration cells, sixteen validation cells, and twenty total block-condition cells.
 - **SC-002**: All schema-version-1, unknown-field, order-drift, schedule-drift, assignment-drift, rubric-drift, failure-policy-drift, secret-bearing, and ceiling-overflow fixtures fail before an attempt starts.
-- **SC-003**: The design receipt is durably present and decodable before the first calibration session event and binds all five deterministic build identities plus the immutable study design.
+- **SC-003**: The design receipt is durably present and decodable before the first calibration session event and binds every byte, path, symlink target, and executable bit under all five deterministic build roots plus the immutable study design.
 - **SC-004**: Validation accepts 100% of changes limited to declared adjustable budget fields within total ceilings and rejects 100% of tested immutable-field changes before execution.
 - **SC-005**: Provider-free calibration produces four ordered durable attempts and provider-free validation produces sixteen ordered durable attempts using the four declared balanced validation sequences.
 - **SC-006**: Every successful phase contains no overlapping attempts, while every attempt still contains exactly three concurrent sessions.
@@ -151,5 +151,6 @@ As a researcher, I can preserve a frozen infrastructure-failure attempt, stop th
 - Declared monetary ceilings are authorization and provenance values. Provider billing remains an external fact and is not inferred from model usage.
 - A phase can be resumed from its durable index, but a recorded planned cell is never relaunched; an eligible replacement is always a separate explicit command and artifact.
 - Validation requires a completed calibration phase in the same study root.
+- Study artifacts are protected against accidental or out-of-band local drift, not against a trusted operator coherently rewriting artifacts and their embedded seals; signatures, immutable storage, and an external transparency service remain out of scope.
 - The frozen rubric is retained for later human or automated review but is not applied by this feature.
 - No live model call, paid calibration, automated review, outcome aggregation, statistical analysis, service, database, account, dashboard, retry engine, compatibility layer, or benchmark claim is in scope.

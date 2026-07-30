@@ -112,6 +112,17 @@
 
 ---
 
+## Phase 7: Review-Driven Integrity Refinement
+
+**Purpose**: Replace artifact-by-artifact provenance hardening with one complete publication-boundary invariant.
+
+- [x] T036 Add the canonical complete-tree sealing primitive and drift regressions in `src/seal.ts` and `src/seal.test.ts`
+- [x] T037 Bind and reverify complete build roots during receipt preparation, phase initialization, every launch, and evaluation
+- [x] T038 Bind and reverify complete frozen Git/workspace roots during attempt reload and evaluation
+- [x] T039 Reconcile the protocol documents and run focused plus full repository verification
+
+---
+
 ## Dependencies And Execution Order
 
 - Setup precedes Foundational Contracts.

@@ -5,6 +5,7 @@ import { ActivityBus } from "./activity.js";
 import { generateAgentIds, type AgentId } from "./model.js";
 import { runProcess } from "./process.js";
 import { SANDBOX_PATHS } from "./sandbox/contracts.js";
+import { sealTree, type TreeSeal } from "./seal.js";
 
 export interface GitCommandResult {
   stdout: string;
@@ -36,6 +37,7 @@ export interface GitEnvironment {
 
 export interface FrozenGitEnvironment extends GitEnvironment {
   frozen: true;
+  treeSeal: TreeSeal;
 }
 
 function commandEnvironment(): NodeJS.ProcessEnv {
@@ -259,5 +261,6 @@ export async function freezeGitEnvironment(
     repositories,
     workspaces,
     frozen: true,
+    treeSeal: await sealTree(resolvedTargetRoot),
   };
 }

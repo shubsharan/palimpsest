@@ -14,7 +14,7 @@ import type { ConditionId } from "../../src/condition.js";
 import { evaluateFrozenAttempt } from "../../src/evaluate.js";
 import { appendTraceEvent } from "../../src/python.js";
 import { finalizeAttempt } from "../../src/run.js";
-import { FakeCommandSandbox, testAttemptSummary } from "../../src/test-helpers.js";
+import { FakeCommandSandbox, TEST_TREE_SEAL, testAttemptSummary } from "../../src/test-helpers.js";
 import type { AttemptResult } from "../../src/run.js";
 import type { AgentId } from "../../src/model.js";
 
@@ -118,6 +118,7 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
         repositories,
         workspaces,
         frozen: true,
+        treeSeal: TEST_TREE_SEAL,
       },
       tracePath,
       traceMetadataPath,
@@ -161,6 +162,7 @@ describe("post-freeze attempt durability", () => {
         finalizeAttempt({
           attemptRoot: fixture.attemptRoot,
           buildRoot: fixture.buildRoot,
+          buildTreeSeal: TEST_TREE_SEAL,
           result: fixture.result,
           publishSummary: publishAttemptSummary,
           observeOverlap: async () => {
@@ -268,6 +270,7 @@ describe("post-freeze attempt durability", () => {
     await finalizeAttempt({
       attemptRoot: fixture.attemptRoot,
       buildRoot: fixture.buildRoot,
+      buildTreeSeal: TEST_TREE_SEAL,
       result,
       publishSummary: publishAttemptSummary,
       observeOverlap: async () => EMPTY_OVERLAP,
@@ -292,6 +295,7 @@ describe("post-freeze attempt durability", () => {
     const operation = finalizeAttempt({
       attemptRoot: fixture.attemptRoot,
       buildRoot: fixture.buildRoot,
+      buildTreeSeal: TEST_TREE_SEAL,
       result: fixture.result,
       publishSummary: async (attemptRoot: string) => {
         await writeFile(join(attemptRoot, ".attempt.json.incomplete"), '{"attemptId":', "utf8");
@@ -319,6 +323,7 @@ describe("post-freeze attempt durability", () => {
     const operation = finalizeAttempt({
       attemptRoot: fixture.attemptRoot,
       buildRoot: fixture.buildRoot,
+      buildTreeSeal: TEST_TREE_SEAL,
       result: fixture.result,
       publishSummary: publishAttemptSummary,
       observeOverlap: async () => {

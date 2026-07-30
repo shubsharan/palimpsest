@@ -29,6 +29,10 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function treeSeal(digest = "a".repeat(64)): Record<string, unknown> {
+  return { schemaVersion: 1, digest, fileCount: 1, byteCount: 1 };
+}
+
 const attemptSummary = testAttemptSummary;
 
 function buildStages(variantId: "stationary" | "rekey"): Record<string, unknown>[] {
@@ -170,6 +174,7 @@ function receiptBuild(blockId: string, index: number): Record<string, unknown> {
     blockId,
     buildRoot: `/tmp/palimpsest/study/builds/${blockId}`,
     buildManifestDigest: (index + 10).toString(16).repeat(64),
+    treeSeal: treeSeal((index + 1).toString(16).repeat(64)),
     manifest,
   };
 }

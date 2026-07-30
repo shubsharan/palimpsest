@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -19,6 +19,7 @@ import type { ModelBinding } from "./model.js";
 import type { SourceState } from "./preflight.js";
 import { buildAgentPrompt } from "./prompt.js";
 import { SANDBOX_POLICY } from "./sandbox/contracts.js";
+import { sealTree } from "./seal.js";
 import {
   executeStudyPhase,
   initializeStudyPhase,
@@ -208,6 +209,16 @@ async function publishLaunchAttempt(
           path: join(frozenRoot, `${agentId}.git`),
           agentIds: [agentId],
         }));
+  const workspaces = agentIds.map((agentId) => ({
+    agentId,
+    path: join(frozenRoot, "workspaces", agentId),
+    repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
+  }));
+  await Promise.all(
+    [...repositories.map(({ path }) => path), ...workspaces.map(({ path }) => path)].map((path) =>
+      mkdir(path, { recursive: true }),
+    ),
+  );
   const summary = decodeAttemptSummary({
     ...base,
     attemptId: launch.attemptId,
@@ -226,6 +237,7 @@ async function publishLaunchAttempt(
     variantId: condition.variantId,
     buildId: launch.cell.buildId,
     buildRoot: launch.cell.buildRoot,
+    buildTreeSeal: await sealTree(launch.cell.buildRoot),
     tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
     protocolDigest: hashProtocolSnapshot(protocol),
     protocol,
@@ -235,11 +247,8 @@ async function publishLaunchAttempt(
       root: frozenRoot,
       communicationMode: condition.communicationMode,
       repositories,
-      workspaces: agentIds.map((agentId) => ({
-        agentId,
-        path: join(frozenRoot, "workspaces", agentId),
-        repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
-      })),
+      workspaces,
+      treeSeal: await sealTree(frozenRoot),
     },
     sandbox: { ...TEST_SANDBOX_IDENTITY, ...SANDBOX_POLICY },
     sessions: study.assignment.map((assignment, index) => ({
@@ -315,40 +324,22 @@ describe("frozen study state", () => {
     ).rejects.toThrow(/drifted/);
   }, 60_000);
 
-  it("rejects receipt-bound artifact byte drift", async () => {
+  it("rejects any receipt-bound build tree drift, including checker and scoring truth", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
-    const stage = receipt.builds[0]!.manifest.variants.stationary.stages[0]!;
-    await writeFile(
-      join(studyRoot, "builds", receipt.builds[0]!.blockId, stage.sourcePath),
-      "tampered stage\n",
-    );
-
-    await expect(
-      prepareStudyDesign({
-        root,
-        studyRoot,
-        study,
-        phase: "validation",
-        dependencies: {
-          sourceState: async () => cleanSourceState(),
-          sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
-        },
-      }),
-    ).rejects.toThrow(/artifact .*drifted/);
-  }, 60_000);
-
-  it.each(["public ciphertext", "reference corpus"] as const)(
-    "rejects receipt-bound %s byte drift",
-    async (artifact) => {
-      const { studyRoot, study, receipt } = await prepareFixture();
-      const binding = receipt.builds[0]!;
-      const variant = binding.manifest.variants.stationary;
-      const path =
-        artifact === "public ciphertext"
-          ? variant.publicCiphertextPath
-          : `${variant.referenceCorpusPath}/${binding.manifest.references[0]!.sourceId}-reference.txt`;
-      await writeFile(join(studyRoot, "builds", binding.blockId, path), `tampered ${artifact}\n`);
-
+    const binding = receipt.builds[0]!;
+    const variant = binding.manifest.variants.stationary;
+    const stage = variant.stages[0]!;
+    const paths = [
+      stage.sourcePath,
+      variant.publicCiphertextPath,
+      `${variant.referenceCorpusPath}/${binding.manifest.references[0]!.sourceId}-reference.txt`,
+      "oracle/plaintext.txt",
+      `oracle/checker/${stage.agentId}/${basename(stage.sourcePath)}`,
+    ];
+    for (const path of paths) {
+      const absolute = join(binding.buildRoot, path);
+      const original = await readFile(absolute);
+      await writeFile(absolute, `tampered ${path}\n`);
       await expect(
         prepareStudyDesign({
           root,
@@ -360,10 +351,10 @@ describe("frozen study state", () => {
             sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
           },
         }),
-      ).rejects.toThrow(/consumed artifact set .*drifted/);
-    },
-    60_000,
-  );
+      ).rejects.toThrow(/Receipt-bound build .* has drifted/);
+      await writeFile(absolute, original);
+    }
+  }, 60_000);
 
   it("recomputes the receipt baseline manifest digest during validation", async () => {
     const { studyRoot, study } = await prepareFixture();
@@ -588,7 +579,7 @@ describe("frozen study state", () => {
     ).rejects.toThrow(/missing its durable attempt\.json/);
   }, 60_000);
 
-  it("revalidates the complete receipt-bound protocol of indexed attempts", async () => {
+  it("revalidates the complete protocol and frozen tree of indexed attempts", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
     const phase = await executeStudyPhase({
       studyRoot,
@@ -644,6 +635,19 @@ describe("frozen study state", () => {
         }),
       ).rejects.toThrow(/does not match the frozen study protocol/);
     }
+    await writeFile(attemptPath, original);
+    await writeFile(
+      join(firstAttempt.attemptRoot, "frozen", "workspaces", "agent-1", "tampered.txt"),
+      "tampered frozen workspace\n",
+    );
+    await expect(
+      initializeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+      }),
+    ).rejects.toThrow(/frozen tree has drifted/);
   }, 60_000);
 
   it("revalidates selected build bytes before reserving each launch", async () => {
@@ -680,7 +684,7 @@ describe("frozen study state", () => {
           },
         },
       }),
-    ).rejects.toThrow(/consumed artifact set .*drifted/);
+    ).rejects.toThrow(/Receipt-bound build .* has drifted before launch/);
 
     expect(launches).toBe(1);
     const phase = await readPhaseSummary(studyRoot, "calibration");

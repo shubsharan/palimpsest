@@ -72,6 +72,12 @@ export class FakeCommandSandbox implements CommandSandbox {
 }
 
 export const TEST_DIGEST = "a".repeat(64);
+export const TEST_TREE_SEAL = {
+  schemaVersion: 1 as const,
+  digest: TEST_DIGEST,
+  fileCount: 1,
+  byteCount: 1,
+};
 
 export function testModelBinding(overrides: Partial<ModelBinding> = {}): ModelBinding {
   return {
@@ -276,6 +282,7 @@ export function testAttemptSummary(
     variantId: condition.variantId,
     buildId,
     buildRoot: "/tmp/palimpsest/build",
+    buildTreeSeal: TEST_TREE_SEAL,
     agentIds,
     releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
     cutoffMs: ATTEMPT_CUTOFF_MS,
@@ -293,6 +300,7 @@ export function testAttemptSummary(
         path: `/tmp/palimpsest/attempt/frozen/workspaces/${agentId}`,
         repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
       })),
+      treeSeal: TEST_TREE_SEAL,
     },
     sandbox,
     sessions: agentIds.map((agentId) => {
