@@ -51,7 +51,15 @@ Represents the exact submitted code used by checker feedback or final evaluation
 - `commit`: resolved 40-character commit object identity.
 - `root`: host-created temporary directory containing the complete exported commit tree and no Git metadata.
 
-Validation: main must resolve to a commit before execution; the exported root remains outside all agent workspaces; and execution continues to use the captured commit if the branch advances.
+Validation: one deadline-bound transaction fetches only literal main into a private ref and materializes it before publishing `commit`; the exported root remains outside all agent workspaces and exists only for the callback; execution continues to use the captured tree if main advances or is force-pushed.
+
+## Released Stage
+
+- `ordinal`: contiguous one-based publication order.
+- `sourcePath`: sealed build-stage source trusted by checker assembly.
+- `visiblePath`: copied agent-visible evidence representation.
+
+Validation: publication appends the record only after the visible copy succeeds. Canonical checker input reads ordered `sourcePath` values only and inserts one newline between newline-terminated stages; it never rescans `visiblePath` directories.
 
 ## Solver Execution
 
@@ -62,6 +70,8 @@ Validation: main must resolve to a commit before execution; the exported root re
 - `outputPath`: contained canonical reconstruction path when present.
 
 Validation: submission and ciphertext are read-only; Git, agent workspaces, evidence, references, oracle files, and credentials are absent; successful output resolves inside `outputRoot`, is a regular non-empty file, and does not exceed 16 MiB.
+
+Execution returns a discriminated success or submission-error outcome. Trusted host-process, sandbox, mount, cleanup, and cancellation failures are infrastructure errors and do not become normal solver results.
 
 ## Evaluation Submission Selection
 

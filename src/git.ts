@@ -4,13 +4,34 @@ import { join, resolve } from "node:path";
 import { ActivityBus } from "./activity.js";
 import { generateAgentIds, type AgentId } from "./model.js";
 import { runProcess } from "./process.js";
-import { SANDBOX_PATHS } from "./sandbox/contracts.js";
+import { InfrastructureError, SANDBOX_PATHS } from "./sandbox/contracts.js";
 import { sealTree, type TreeSeal } from "./seal.js";
 
 export interface GitCommandResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+}
+
+export interface GitCommandOptions {
+  cwd?: string;
+  environment?: NodeJS.ProcessEnv;
+  deadline?: number;
+  signal?: AbortSignal;
+}
+
+export class GitCommandError extends Error {
+  override readonly name = "GitCommandError";
+}
+
+export class GitCommandTimeoutError extends InfrastructureError {
+  override readonly name = "GitCommandTimeoutError";
+  override readonly component = "host-git";
+}
+
+export class GitProcessInfrastructureError extends InfrastructureError {
+  override readonly name = "GitProcessInfrastructureError";
+  override readonly component = "host-git";
 }
 
 export interface AgentGitWorkspace {
@@ -64,26 +85,52 @@ function commandEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEn
   return { ...environment, ...overrides };
 }
 
+export function runGitCommand(
+  args: readonly string[],
+  options: GitCommandOptions = {},
+): Promise<GitCommandResult> {
+  return runProcess("git", args, {
+    cwd: options.cwd ?? process.cwd(),
+    env: commandEnvironment(options.environment),
+    ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  }).then(
+    (captured) => {
+      const result = {
+        stdout: captured.stdout.toString("utf8"),
+        stderr: captured.stderr.toString("utf8"),
+        exitCode: captured.exitCode ?? 1,
+      };
+      if (captured.cancelled) {
+        throw new DOMException("Git command was cancelled.", "AbortError");
+      }
+      if (captured.timedOut) {
+        throw new GitCommandTimeoutError(`git ${args.join(" ")} exceeded its deadline.`);
+      }
+      if (captured.signal !== null || result.exitCode !== 0) {
+        throw new GitCommandError(
+          `git ${args.join(" ")} failed${captured.signal === null ? ` with exit ${String(captured.exitCode)}` : ` from ${captured.signal}`}: ${result.stderr.trim()}`,
+        );
+      }
+      return result;
+    },
+    (error: unknown) => {
+      throw new GitProcessInfrastructureError(
+        `Unable to execute host git process: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    },
+  );
+}
+
 export function runGit(
   args: readonly string[],
   cwd?: string,
   environment: NodeJS.ProcessEnv = {},
 ): Promise<GitCommandResult> {
-  return runProcess("git", args, {
-    cwd: cwd ?? process.cwd(),
-    env: commandEnvironment(environment),
-  }).then((captured) => {
-    const result = {
-      stdout: captured.stdout.toString("utf8"),
-      stderr: captured.stderr.toString("utf8"),
-      exitCode: captured.exitCode ?? 1,
-    };
-    if (captured.signal !== null || result.exitCode !== 0) {
-      throw new Error(
-        `git ${args.join(" ")} failed${captured.signal === null ? ` with exit ${String(captured.exitCode)}` : ` from ${captured.signal}`}: ${result.stderr.trim()}`,
-      );
-    }
-    return result;
+  return runGitCommand(args, {
+    environment,
+    ...(cwd === undefined ? {} : { cwd }),
   });
 }
 

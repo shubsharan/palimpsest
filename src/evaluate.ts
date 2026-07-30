@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, resolve, win32 } from "node:path";
 
 import {
@@ -13,18 +13,18 @@ import type { GitRepositoryId } from "./git.js";
 import { isAgentId, type AgentId } from "./model.js";
 import {
   type CommandSandbox,
-  SandboxInfrastructureError,
+  InfrastructureError,
   type SandboxCommandResult,
 } from "./sandbox/contracts.js";
 import { requiredFlag } from "./flags.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import {
   executePublishedSolver,
-  materializePublishedSolver,
   PUBLISHED_MAIN_REF,
-  resolvePublishedSolver,
+  PublishedSolverSubmissionError,
   SOLVER_COMMAND,
   SOLVER_OUTPUT_PATH,
+  withPublishedMainSnapshot,
 } from "./published-solver.js";
 
 import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
@@ -41,6 +41,8 @@ export interface EvaluationSelection {
   outputPath: string;
   notes?: string;
 }
+
+export type EvaluationSelectionRequest = Omit<EvaluationSelection, "ref" | "commit">;
 
 export type ScoreHook = (request: {
   outputPath: string;
@@ -91,15 +93,13 @@ async function writeEvaluationResult(
   return result;
 }
 
-function validateReviewerSelection(selection: EvaluationSelection | undefined): void {
+function validateReviewerSelection(selection: EvaluationSelectionRequest | undefined): void {
   if (
     selection !== undefined &&
     (!isAgentId(selection.workspace) ||
-      (selection.repositoryId !== "shared" && !isAgentId(selection.repositoryId)) ||
-      selection.ref !== PUBLISHED_MAIN_REF ||
-      !/^[0-9a-f]{40}$/.test(selection.commit))
+      (selection.repositoryId !== "shared" && !isAgentId(selection.repositoryId)))
   ) {
-    throw new Error("Reviewer selection must identify one captured published-main commit.");
+    throw new Error("Reviewer selection must identify one published-main repository.");
   }
   if (selection?.command !== undefined && selection.command.trim().length === 0) {
     throw new Error("Reviewer command must contain non-whitespace shell source.");
@@ -125,112 +125,132 @@ export async function evaluateFrozenAttempt(options: {
   evaluationRoot: string;
   ciphertextPath: string;
   sandbox: CommandSandbox;
-  selection: EvaluationSelection | undefined;
+  selection: EvaluationSelectionRequest | undefined;
   score: ScoreHook;
   observe?: EvaluationObserver;
   timeoutMs?: number;
 }): Promise<EvaluationResult> {
   validateReviewerSelection(options.selection);
   await mkdir(options.evaluationRoot, { recursive: false });
-  await writeJson(join(options.evaluationRoot, "selection.json"), {
-    selectedAt: new Date().toISOString(),
-    selection: options.selection ?? null,
-  });
-  await options.observe?.("reviewer.selection", { selection: options.selection });
   if (options.selection === undefined || options.selection.command.trim().length === 0) {
-    const result = withSelection("not-runnable", options.selection);
+    await writeJson(join(options.evaluationRoot, "selection.json"), {
+      selectedAt: new Date().toISOString(),
+      selection: null,
+    });
+    await options.observe?.("reviewer.selection", { selection: null });
+    const result = withSelection("not-runnable", undefined);
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
+  const selectionRequest = options.selection;
   const snapshotPath = join(options.evaluationRoot, ".submission");
   const outputRoot = join(options.evaluationRoot, "output");
+  const deadline = performance.now() + (options.timeoutMs ?? 30_000);
+  let recordedSelection = false;
   try {
     await mkdir(outputRoot);
-    await materializePublishedSolver(options.frozenGitPath, snapshotPath, {
-      ref: options.selection.ref,
-      commit: options.selection.commit,
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const result = withSelection("execution-error", options.selection, { error: detail });
-    return writeEvaluationResult(options.evaluationRoot, result);
-  }
+    return await withPublishedMainSnapshot(
+      {
+        repositoryPath: options.frozenGitPath,
+        snapshotPath,
+        deadline,
+      },
+      async (snapshot) => {
+        const selection: EvaluationSelection = {
+          ...selectionRequest,
+          ref: snapshot.ref,
+          commit: snapshot.commit,
+        };
+        await writeJson(join(options.evaluationRoot, "selection.json"), {
+          selectedAt: new Date().toISOString(),
+          selection,
+        });
+        recordedSelection = true;
+        await options.observe?.("reviewer.selection", { selection });
+        await options.observe?.("evaluation.started", {
+          command: selection.command,
+          outputPath: selection.outputPath,
+        });
 
-  await options.observe?.("evaluation.started", {
-    command: options.selection.command,
-    outputPath: options.selection.outputPath,
-  });
-  let published: Awaited<ReturnType<typeof executePublishedSolver>>;
-  try {
-    published = await executePublishedSolver({
-      snapshotPath,
-      ciphertextPath: options.ciphertextPath,
-      outputRoot,
-      sandbox: options.sandbox,
-      command: options.selection.command,
-      outputPath: options.selection.outputPath,
-      timeoutMs: options.timeoutMs ?? 30_000,
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    await options.observe?.(
-      error instanceof SandboxInfrastructureError
-        ? "evaluation.infrastructure-error"
-        : "evaluation.error",
-      { error: detail },
+        let published: Awaited<ReturnType<typeof executePublishedSolver>>;
+        try {
+          published = await executePublishedSolver({
+            snapshot,
+            ciphertextPath: options.ciphertextPath,
+            outputRoot,
+            sandbox: options.sandbox,
+            command: selection.command,
+            outputPath: selection.outputPath,
+            timeoutMs: Math.max(1, Math.ceil(deadline - performance.now())),
+          });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          await options.observe?.(
+            error instanceof InfrastructureError
+              ? "evaluation.infrastructure-error"
+              : "evaluation.error",
+            { error: detail },
+          );
+          throw error;
+        }
+        const { execution, outputPath } = published;
+        await options.observe?.("evaluation.completed", { execution });
+        if (published.kind === "submission-error") {
+          if (
+            published.error === "Published solver did not produce output." ||
+            published.error === "Published solver output is empty."
+          ) {
+            const result = withSelection("no-output", selection, { execution, outputPath });
+            return writeEvaluationResult(options.evaluationRoot, result);
+          }
+          const result = withSelection("execution-error", selection, {
+            execution,
+            outputPath,
+            error: execution.timedOut
+              ? "Reviewer-selected command timed out."
+              : execution.exitCode !== 0
+                ? `Reviewer-selected command exited ${String(execution.exitCode)}.`
+                : published.error,
+          });
+          return writeEvaluationResult(options.evaluationRoot, result);
+        }
+
+        try {
+          const score = await options.score({
+            outputPath,
+            ciphertextPath: options.ciphertextPath,
+          });
+          await options.observe?.("evaluation.scored", { score });
+          const result = withSelection("scored", selection, {
+            execution,
+            outputPath,
+            score,
+          });
+          return await writeEvaluationResult(options.evaluationRoot, result);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          await options.observe?.("evaluation.error", { error: detail });
+          const result = withSelection("execution-error", selection, {
+            execution,
+            outputPath,
+            error: detail,
+          });
+          return writeEvaluationResult(options.evaluationRoot, result);
+        }
+      },
     );
-    const result = withSelection("execution-error", options.selection, { error: detail });
-    return writeEvaluationResult(options.evaluationRoot, result);
-  } finally {
-    await rm(snapshotPath, { recursive: true, force: true });
-  }
-  const { execution, outputPath } = published;
-  await options.observe?.("evaluation.completed", { execution });
-  if (
-    execution.exitCode !== 0 ||
-    execution.timedOut ||
-    execution.outputExceeded ||
-    execution.indeterminate === true
-  ) {
-    const result = withSelection("execution-error", options.selection, {
-      execution,
-      error: execution.timedOut
-        ? "Reviewer-selected command timed out."
-        : `Reviewer-selected command exited ${String(execution.exitCode)}.`,
-    });
-    return writeEvaluationResult(options.evaluationRoot, result);
-  }
-
-  if (published.error !== undefined) {
-    if (
-      published.error === "Published solver did not produce output." ||
-      published.error === "Published solver output is empty."
-    ) {
-      const result = withSelection("no-output", options.selection, { execution, outputPath });
-      return writeEvaluationResult(options.evaluationRoot, result);
-    }
-    const result = withSelection("execution-error", options.selection, {
-      execution,
-      outputPath,
-      error: published.error,
-    });
-    return writeEvaluationResult(options.evaluationRoot, result);
-  }
-
-  try {
-    const score = await options.score({ outputPath, ciphertextPath: options.ciphertextPath });
-    await options.observe?.("evaluation.scored", { score });
-    const result = withSelection("scored", options.selection, { execution, outputPath, score });
-    return await writeEvaluationResult(options.evaluationRoot, result);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    await options.observe?.("evaluation.error", { error: detail });
-    const result = withSelection("execution-error", options.selection, {
-      execution,
-      outputPath,
-      error: detail,
-    });
-    return writeEvaluationResult(options.evaluationRoot, result);
+    if (error instanceof PublishedSolverSubmissionError) {
+      if (!recordedSelection) {
+        await writeJson(join(options.evaluationRoot, "selection.json"), {
+          selectedAt: new Date().toISOString(),
+          selection: null,
+        });
+        await options.observe?.("reviewer.selection", { selection: null });
+      }
+      await options.observe?.("evaluation.error", { error: error.message });
+    }
+    throw error;
   }
 }
 
@@ -277,11 +297,9 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   ) {
     throw new Error(`Frozen Git topology is inconsistent for workspace ${workspace}.`);
   }
-  const published = await resolvePublishedSolver(frozenRepository.path);
-  const selection: EvaluationSelection = {
+  const selection: EvaluationSelectionRequest = {
     workspace,
     repositoryId: frozenRepository.repositoryId,
-    ...published,
     command: SOLVER_COMMAND,
     outputPath: SOLVER_OUTPUT_PATH,
     ...(options.notes === undefined ? {} : { notes: options.notes }),

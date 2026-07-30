@@ -36,7 +36,7 @@ def check_reconstruction(
     if agent_id not in build.agent_ids:
         raise ValueError(f"Unknown puzzle agent: {agent_id}.")
     ordinals = _released_prefix(released_ordinals, build.stage_count)
-    truth = "\n\n".join(
+    truth = "\n".join(
         (
             build_root
             / "oracle"

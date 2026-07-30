@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,9 +11,11 @@ import {
 } from "./sandbox/contracts.js";
 import {
   executePublishedSolver,
-  materializePublishedSolver,
-  resolvePublishedSolver,
+  PublishedSolverInfrastructureError,
+  PublishedSolverSubmissionError,
+  withPublishedMainSnapshot,
 } from "./published-solver.js";
+import { type ReleasedStage, writeCanonicalReleasedCiphertext } from "./released-stage.js";
 import type { TeamChannel } from "./team-channel.js";
 
 export interface ToolDefinition {
@@ -125,75 +127,86 @@ function executionSummary(result: SandboxCommandResult): Readonly<Record<string,
   };
 }
 
-async function assembleReleasedCiphertext(
-  evidencePath: string,
-  releasedStages: readonly number[],
-  ciphertextPath: string,
-): Promise<void> {
-  const entries = await readdir(evidencePath, { withFileTypes: true });
-  const chunks = await Promise.all(
-    releasedStages.map(async (ordinal) => {
-      const prefix = `stage-${String(ordinal).padStart(2, "0")}-`;
-      const matches = entries.filter((entry) => entry.isFile() && entry.name.startsWith(prefix));
-      if (matches.length !== 1) {
-        throw new Error(
-          `Released stage ${String(ordinal)} must resolve to exactly one regular evidence file.`,
-        );
-      }
-      return readFile(join(evidencePath, matches[0]!.name));
-    }),
-  );
-  await writeFile(ciphertextPath, Buffer.concat(chunks), { flag: "wx" });
-}
-
 async function checkPublishedSolver(
   options: {
     agentId: AgentId;
     repositoryPath: string;
-    evidencePath: string;
     solverSandbox: CommandSandbox;
     checker: CheckerHook;
     commandTimeoutMs: number;
   },
-  releasedStages: readonly number[],
+  releasedStages: readonly ReleasedStage[],
   signal?: AbortSignal,
 ): Promise<unknown> {
   const checkRoot = await mkdtemp(join(tmpdir(), "palimpsest-published-check-"));
   const snapshotPath = join(checkRoot, "submission");
   const outputRoot = join(checkRoot, "output");
   const ciphertextPath = join(checkRoot, "ciphertext.txt");
+  const deadline = performance.now() + options.commandTimeoutMs;
+  let outcome: unknown;
+  let operationFailure: { error: unknown } | undefined;
   try {
-    const identity = await resolvePublishedSolver(options.repositoryPath);
-    await mkdir(outputRoot);
-    await assembleReleasedCiphertext(options.evidencePath, releasedStages, ciphertextPath);
-    await materializePublishedSolver(options.repositoryPath, snapshotPath, identity);
-    const result = await executePublishedSolver({
-      snapshotPath,
-      ciphertextPath,
-      outputRoot,
-      sandbox: options.solverSandbox,
-      timeoutMs: options.commandTimeoutMs,
-      ...(signal === undefined ? {} : { signal }),
-    });
-    if (result.error !== undefined) {
-      return {
-        commit: identity.commit,
-        error: result.error,
-        execution: executionSummary(result.execution),
-      };
-    }
-    const score = await options.checker({
-      agentId: options.agentId,
-      candidatePath: result.outputPath,
-      releasedStages,
-      ...(signal === undefined ? {} : { signal }),
-    });
-    return { commit: identity.commit, ...score };
+    outcome = await withPublishedMainSnapshot(
+      {
+        repositoryPath: options.repositoryPath,
+        snapshotPath,
+        deadline,
+        ...(signal === undefined ? {} : { signal }),
+      },
+      async (snapshot) => {
+        await mkdir(outputRoot);
+        await writeCanonicalReleasedCiphertext(releasedStages, ciphertextPath);
+        const result = await executePublishedSolver({
+          snapshot,
+          ciphertextPath,
+          outputRoot,
+          sandbox: options.solverSandbox,
+          timeoutMs: Math.max(1, Math.ceil(deadline - performance.now())),
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (result.kind === "submission-error") {
+          return {
+            commit: snapshot.commit,
+            error: result.error,
+            execution: executionSummary(result.execution),
+          };
+        }
+        const stageOrdinals = releasedStages.map(({ ordinal }) => ordinal);
+        const score = await options.checker({
+          agentId: options.agentId,
+          candidatePath: result.outputPath,
+          releasedStages: stageOrdinals,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        return { commit: snapshot.commit, ...score };
+      },
+    );
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
-  } finally {
-    await rm(checkRoot, { recursive: true, force: true });
+    if (error instanceof PublishedSolverSubmissionError) {
+      outcome = { error: error.message };
+    } else {
+      operationFailure = { error };
+    }
   }
+  try {
+    await rm(checkRoot, { recursive: true, force: true });
+  } catch (error) {
+    const cause =
+      operationFailure === undefined
+        ? error
+        : new AggregateError(
+            [operationFailure.error, error],
+            "Published-solver operation and cleanup both failed.",
+          );
+    throw new PublishedSolverInfrastructureError(
+      `Unable to clean published-solver check root: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause },
+    );
+  }
+  if (operationFailure !== undefined) throw operationFailure.error;
+  return outcome;
 }
 
 function activitySummary(event: ActivityEvent): string {
@@ -212,11 +225,10 @@ export function createAgentTools(options: {
   sandbox: AgentSandboxLease;
   solverSandbox: CommandSandbox;
   repositoryPath: string;
-  evidencePath: string;
   activity: ActivityBus;
   teamChannel?: TeamChannel;
   checker: CheckerHook;
-  getReleasedStages: () => readonly number[];
+  getReleasedStages: () => readonly ReleasedStage[];
   getActivityCursor: () => number;
   setActivityCursor?: (sequence: number) => void;
   commandTimeoutMs?: number;
@@ -261,7 +273,6 @@ export function createAgentTools(options: {
           {
             agentId: options.agentId,
             repositoryPath: options.repositoryPath,
-            evidencePath: options.evidencePath,
             solverSandbox: options.solverSandbox,
             checker: options.checker,
             commandTimeoutMs: options.commandTimeoutMs ?? 30_000,

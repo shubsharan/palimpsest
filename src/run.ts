@@ -45,6 +45,7 @@ import {
 import { buildAgentPrompt } from "./prompt.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
+import type { ReleasedStage } from "./released-stage.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import {
   SANDBOX_POLICY,
@@ -314,7 +315,7 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
 async function publishStages(options: {
   config: AttemptConfig;
   evidencePaths: Record<AgentId, string>;
-  releasedStages: Record<AgentId, Set<number>>;
+  releasedStages: Record<AgentId, ReleasedStage[]>;
   activities: Record<AgentId, ActivityBus>;
   observationLog: JsonlObservationLog;
   startedAt: number;
@@ -347,7 +348,10 @@ async function publishStage(
         `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
       );
       await cp(source, destination, { errorOnExist: true, force: false });
-      released.add(ordinal);
+      if (released.length + 1 !== ordinal) {
+        throw new Error(`Released stages for ${agentId} are not contiguous at ${String(ordinal)}.`);
+      }
+      released.push({ ordinal, sourcePath: source, visiblePath: destination });
       const activityBus = options.activities[agentId];
       if (activityBus === undefined) {
         throw new Error(`Missing activity bus for ${agentId}.`);
@@ -570,8 +574,8 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     }
 
     const releasedStages = Object.fromEntries(
-      config.agentIds.map((agentId) => [agentId, new Set<number>()]),
-    ) as Record<AgentId, Set<number>>;
+      config.agentIds.map((agentId) => [agentId, []]),
+    ) as Record<AgentId, ReleasedStage[]>;
     await publishStage({ config, evidencePaths, releasedStages, activities, observationLog }, 1);
     const cursors = Object.fromEntries(
       config.agentIds.map((agentId) => [agentId, activities[agentId]!.latestSequence]),
@@ -629,11 +633,10 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         sandbox: lease,
         solverSandbox: options.sandbox,
         repositoryPath: repository.path,
-        evidencePath,
         activity: activities[agentId]!,
         ...(teamChannel === undefined ? {} : { teamChannel }),
         checker: options.checker,
-        getReleasedStages: () => [...released].sort((left, right) => left - right),
+        getReleasedStages: () => released,
         getActivityCursor: () => cursors[agentId]!,
         setActivityCursor: (sequence) => {
           cursors[agentId] = sequence;

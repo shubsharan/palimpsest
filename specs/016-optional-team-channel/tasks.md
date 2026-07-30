@@ -80,6 +80,15 @@
 - [x] T029 Run focused tests, `pnpm verify`, and `git diff --check`
 - [ ] T030 After committing the implementation, run clean receipt-bound `pnpm preflight`
 
+## Phase 9: Immutable Published-Solver Transaction
+
+- [x] T031 [P] Add adversarial capture, released-stage geometry, infrastructure propagation, and shared-provenance tests in `src/published-solver.test.ts`, `src/tools.test.ts`, `src/evaluate.test.ts`, `src/run.test.ts`, and `tests/puzzle/attempt-durability.test.ts`
+- [x] T032 Replace the public resolve/materialize pair with one deadline-bound `withPublishedMainSnapshot` transaction in `src/published-solver.ts` and bounded host Git execution in `src/git.ts`
+- [x] T033 Replace evidence rescanning with ordered `ReleasedStage` records and canonical released-input assembly in `src/run.ts`, `src/tools.ts`, and `python/palimpsest/evaluation/checker.py`
+- [x] T034 Route checker and evaluation through the captured snapshot and preserve typed submission versus infrastructure outcomes in `src/tools.ts` and `src/evaluate.ts`
+- [x] T035 Update Feature 016 contracts and design artifacts for fetch-and-materialize capture before identity publication
+- [ ] T036 Run focused TypeScript tests, provider-free suites, Python tests, `pnpm verify`, and `git diff --check`
+
 ## Dependencies And Execution Order
 
 - T001-T006 establish the immutable mode contract.
@@ -90,6 +99,9 @@
 - T020-T021 specify the User Story 4 boundary before T022-T025 implementation.
 - T024 and T025 depend on the shared runner and sandbox contract from T022-T023.
 - T026-T027 complete User Story 4 before T028-T030 verification.
+- T031 specifies the immutable transaction boundary before T032-T034 implementation.
+- T033 and T034 depend on the captured snapshot interface from T032.
+- T035-T036 complete the immutable transaction slice; T030 still requires a committed clean tree.
 
 ## Parallel Opportunities
 
@@ -99,9 +111,12 @@
 - T016 can begin after the User Story 1 trace event shape is fixed.
 - T020 and T021 cover independent snapshot and real-sandbox contracts.
 - T026 can split checker, evaluator, and durability probes across separate test files.
+- T031 can split capture, checker, evaluator, and durability probes across independent test files.
 
 ## Implementation Strategy
 
 Deliver the enabled shared-room slice first, then prove disabled/isolated absence, then complete provenance and documentation. Reuse the existing tool, activity, trace, prompt, manifest, receipt, and protocol boundaries. Add no transport, service, database, private-message topology, automatic injection, moderator, summarizer, or grading path.
 
 The remediation slice first fixes the shared published-solver contract with adversarial tests, then routes checker and evaluator through it, then updates frozen identity and documentation. Reuse the existing short-lived Docker sandbox and Python scoring hooks; add no grader service or permanent duplicate submission store.
+
+The immutable transaction slice captures literal `refs/heads/main` into one private local ref, materializes that pinned object before publishing its identity, and supplies it only inside a callback. Released input is assembled from ordered host-owned stage records, and only agent submission failures become normal checker or evaluation results.

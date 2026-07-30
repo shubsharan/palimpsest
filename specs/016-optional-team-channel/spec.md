@@ -65,6 +65,8 @@ An experiment operator can trust that checker feedback and final scoring execute
 2. **Given** a frozen repository whose symbolic `HEAD` names another branch, **When** final evaluation starts, **Then** evaluation resolves and records `refs/heads/main` and executes that exact commit.
 3. **Given** a solver that probes parent paths, Git objects, private evidence, or reference material, **When** checking or evaluation runs it, **Then** none of those resources is present in the execution environment.
 4. **Given** a solver that writes a missing, empty, escaping, symbolic-link, directory, or oversized result, **When** execution finishes, **Then** scoring is withheld and the failure is explicit.
+5. **Given** main is captured and then force-pushed to unrelated history, **When** solver execution continues, **Then** the recorded and executed snapshot remains the originally captured commit.
+6. **Given** trusted sandbox or host cleanup machinery fails, **When** checking or evaluation runs, **Then** the attempt classifies an infrastructure failure rather than returning a normal solver error.
 
 ### Edge Cases
 
@@ -74,7 +76,7 @@ An experiment operator can trust that checker feedback and final scoring execute
 - A caller supplies message-tool arguments when the channel is disabled.
 - A waiting agent is awakened by a team message while a stage or Git event is also published.
 - The attempt reaches its wall-time cutoff while an agent is reading or posting.
-- The published `main` ref is missing, malformed, or changes after its commit was resolved.
+- The published `main` ref is missing, malformed, or force-pushed after capture.
 - The bare repository's symbolic `HEAD` points at a non-main branch.
 - The published tree contains helper modules in addition to `solver.py`.
 - Concurrent agents request checker feedback while `main` advances.
@@ -89,7 +91,7 @@ An experiment operator can trust that checker feedback and final scoring execute
 
 **Observable Outcomes**: Durable traces retain the declared channel mode, accepted message sequence, author, content, time, reads, tool failures, wake activity, Git/checker behavior, captured published ref and commit, model responses, usage, and termination. Choosing not to post, ignoring messages, duplicating discussion in Git, disagreement, and unsuccessful coordination remain model outcomes.
 
-**Infrastructure Failures**: Invalid configuration, channel construction failure, trace publication failure, or inconsistent prompt/tool/artifact declarations fail explicitly. Empty or oversized messages and invalid cursors are ordinary tool errors. Lack of messages or poor use of the channel is not an infrastructure failure.
+**Infrastructure Failures**: Invalid configuration, channel construction failure, trace publication failure, inconsistent prompt/tool/artifact declarations, trusted host-process failure, sandbox or mount failure, cleanup failure, and cancellation fail through infrastructure paths. Missing main, unavailable submitted objects, solver exit or timeout, and invalid output are explicit submission outcomes. Empty or oversized messages and invalid cursors are ordinary tool errors. Lack of messages or poor use of the channel is not an infrastructure failure.
 
 **Verification Boundary**: Provider-free fixtures verify enabled delivery, disabled absence, isolated non-observability, wake behavior, ordered tracing, prompt disclosure, exact `refs/heads/main` selection, Git-free submission execution, output containment, and unchanged deterministic scoring. Advisory development checks remain non-authorizing. A clean receipt-bound preflight is required before a paid or findings-bearing run and binds the selected channel mode, prompts, source revision, sandbox identity, and published-main snapshot boundary.
 
@@ -112,13 +114,14 @@ An experiment operator can trust that checker feedback and final scoring execute
 - **FR-011**: Invalid mode values, invalid message authorship, empty or oversized content, and invalid read cursors MUST be rejected explicitly.
 - **FR-012**: The feature MUST preserve the existing cipher inputs, private evidence allocation, release schedule, Git topology, solver scaffold, checker, evaluation interface, token budget, cutoff, sandbox, and provider behavior.
 - **FR-013**: The feature MUST NOT add private messages, external services, accounts, databases, automated summaries, moderators, required responses, roles, rounds, or post-hoc merging.
-- **FR-014**: Checking and final evaluation MUST resolve the selected origin's `refs/heads/main` to one exact commit without consulting the repository's symbolic `HEAD`.
-- **FR-015**: The resolved commit's complete tree MUST be materialized outside every live agent workspace without Git metadata and MUST remain the only submitted code visible during execution.
+- **FR-014**: Checking and final evaluation MUST fetch only the selected origin's literal `refs/heads/main` into a private local ref without consulting symbolic `HEAD`, then materialize that pinned commit before publishing its identity.
+- **FR-015**: One callback-scoped capture MUST expose the materialized commit tree outside every live agent workspace without Git metadata, keep it stable across later ref changes, and remove it after use.
 - **FR-016**: Published solver execution MUST occur in a fresh sandbox exposing only the read-only submission tree, read-only assigned ciphertext, a writable output directory, and the standard bounded temporary filesystem.
-- **FR-017**: The checker MUST assemble the caller's released ciphertext from trusted release records outside the agent sandbox and MUST NOT expose private reference or unreleased evidence to the solver.
+- **FR-017**: The checker MUST assemble the caller's released ciphertext from ordered trusted release records outside the agent sandbox, insert exactly one newline between newline-terminated stages, and MUST NOT rescan agent-visible directories or expose private reference or unreleased evidence to the solver.
 - **FR-018**: Checker feedback and final evaluation records MUST identify the exact captured published commit; final evaluation provenance MUST also identify the reviewer-selected workspace, assigned repository, and `refs/heads/main`.
 - **FR-019**: Scoring MUST accept only a non-empty, size-bounded regular output file whose resolved path remains inside the dedicated output directory.
 - **FR-020**: The immutable study scoring declaration MUST name the selected-workspace published-main snapshot boundary rather than reviewer-selected commands or output paths.
+- **FR-021**: Missing or invalid submissions MUST remain explicit submission outcomes, while trusted host-process, sandbox, mount, cleanup, and cancellation failures MUST propagate through infrastructure classification.
 
 ### Key Entities
 

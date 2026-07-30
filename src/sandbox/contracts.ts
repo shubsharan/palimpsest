@@ -86,8 +86,14 @@ export interface AgentSandboxLease {
   close(): Promise<void>;
 }
 
-export class SandboxInfrastructureError extends Error {
+export class InfrastructureError extends Error {
+  override readonly name: string = "InfrastructureError";
+  readonly component: string = "trusted-host";
+}
+
+export class SandboxInfrastructureError extends InfrastructureError {
   override readonly name = "SandboxInfrastructureError";
+  override readonly component = "command-sandbox";
 }
 
 export type WorkspaceFileFailure = "absolute" | "outside" | "missing" | "not-regular";

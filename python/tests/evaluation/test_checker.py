@@ -30,7 +30,7 @@ def test_checker_uses_declared_agent_and_released_prefix(build_root: Path) -> No
 
 
 def test_checker_matches_complete_six_stage_prefix(build_root: Path) -> None:
-    truth = "\n\n".join(
+    truth = "\n".join(
         (build_root / f"oracle/checker/agent-1/stage-{ordinal:02d}.txt").read_text(encoding="utf-8")
         for ordinal in range(1, 7)
     )

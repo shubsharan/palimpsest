@@ -14,7 +14,6 @@ import type { ConditionId } from "../../src/condition.js";
 import { evaluateFrozenAttempt } from "../../src/evaluate.js";
 import { runGit } from "../../src/git.js";
 import { appendTraceEvent } from "../../src/python.js";
-import { resolvePublishedSolver } from "../../src/published-solver.js";
 import { finalizeAttempt } from "../../src/run.js";
 import { sealTree } from "../../src/seal.js";
 import { FakeCommandSandbox, TEST_TREE_SEAL, testAttemptSummary } from "../../src/test-helpers.js";
@@ -252,7 +251,6 @@ describe("post-freeze attempt durability", () => {
         selection: {
           workspace: "agent-1",
           repositoryId: selectedRepository.repositoryId,
-          ...(await resolvePublishedSolver(selectedRepository.path)),
           command: "sh solve.sh",
           outputPath: "reconstruction.txt",
         },

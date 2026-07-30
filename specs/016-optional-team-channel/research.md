@@ -48,13 +48,21 @@
 
 **Alternatives considered**: An optional field or implicit disabled default was rejected because old and new tests would be ambiguous. Compatibility decoding was rejected by the project's greenfield contract policy.
 
-## Published Code As An Exported Commit Snapshot
+## Published Code As An Immutable Capture Transaction
 
-**Decision**: Resolve the assigned origin's `refs/heads/main` to an exact commit on the trusted host, export that commit's complete tree without Git metadata, and make the exported tree the sole code input to checker and evaluation execution.
+**Decision**: Initialize one fresh host-owned temporary repository, fetch only literal `refs/heads/main` into a private ref, resolve and check out that pinned object, remove Git metadata, and expose `{ ref, commit, snapshotPath }` only inside one deadline-bound callback. Checker and evaluation both execute through this transaction.
 
-**Rationale**: A clone inside an agent workspace can observe unpublished siblings, while a clone of a bare repository can follow mutable symbolic `HEAD` or expose other refs at runtime. An exported exact commit is the smallest artifact that directly represents the declared submission.
+**Rationale**: Materializing before identity publication eliminates the mutable-ref interval. A clone inside an agent workspace can observe unpublished siblings, while a later clone of a bare repository can lose a force-pushed object or follow mutable symbolic `HEAD`. The callback makes the already materialized tree and recorded identity one indivisible capability.
 
-**Alternatives considered**: More path guards around the in-workspace checker were rejected because the live agent filesystem would remain inside the grading boundary. A `--branch main` clone retaining the origin mount was rejected because submitted code could still inspect other Git objects. A permanent duplicate submission tree was rejected because the sealed frozen repository already provides durable source provenance.
+**Alternatives considered**: More path guards around the in-workspace checker were rejected because the live agent filesystem would remain inside the grading boundary. Resolve-then-clone and `--branch main` were rejected because selection and materialization remain separate mutable operations. A mirror, daemon, database, or permanent duplicate submission tree was rejected because the short-lived callback and sealed frozen repository already provide the required execution and durable provenance boundaries.
+
+## Ordered Released Input
+
+**Decision**: Stage publication creates ordered records containing ordinal, sealed build source, and visible copied path. Checker ciphertext reads only those source records and inserts one newline between already newline-terminated stages; Python checker truth uses the identical geometry.
+
+**Rationale**: The release event, not an agent-writable directory scan, is the authority for what is visible. One canonical separator rule retains the intended blank paragraph boundary without accumulating extra newlines.
+
+**Alternatives considered**: Rescanning evidence filenames was rejected because visible directories are not the release authority and name matching creates ambiguity. Concatenating bytes without a separator and joining with two newlines were rejected because both change cross-stage paragraph geometry.
 
 ## One Short-Lived Solver Execution Profile
 

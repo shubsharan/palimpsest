@@ -4,7 +4,7 @@
 
 ## Summary
 
-Add one manifest-declared `enabled`/`disabled` team-channel mode. When enabled, shared conditions receive one in-memory append-only room with post and paged-read tools; accepted posts wake condition-visible activity and are written once to the canonical trace. Disabled shared conditions retain the existing Git-only prompt and tools, and isolated conditions never receive the room. The mode is bound through schema-v3 configuration, design receipts, prompt snapshots, protocol-v2 attempt identity, and tests. Git remains the only solver integration boundary. A shared published-solver runner resolves the assigned origin's exact `refs/heads/main` commit, exports its Git-free tree outside agent workspaces, and executes that snapshot for both checking and grading with only the assigned ciphertext and a contained output directory.
+Add one manifest-declared `enabled`/`disabled` team-channel mode. When enabled, shared conditions receive one in-memory append-only room with post and paged-read tools; accepted posts wake condition-visible activity and are written once to the canonical trace. Disabled shared conditions retain the existing Git-only prompt and tools, and isolated conditions never receive the room. The mode is bound through schema-v3 configuration, design receipts, prompt snapshots, protocol-v2 attempt identity, and tests. Git remains the only solver integration boundary. One callback-scoped published-solver transaction fetches only literal `refs/heads/main`, materializes its pinned Git-free tree before publishing identity, and executes that snapshot for both checking and grading with only canonical host-assembled ciphertext and a contained output directory.
 
 ## Technical Context
 
@@ -83,7 +83,7 @@ tests/puzzle/
 └── sandbox.integration.test.ts
 ```
 
-**Structure Decision**: Keep message ordering and validation in one small `team-channel.ts` value object. Reuse `ActivityBus` for wakeups, `createAgentTools` for exposure, `run.ts` for attempt ownership and trace publication, and the existing manifest/protocol/receipt codecs for provenance. Put exact-main resolution, Git-free tree materialization, isolated execution, and contained-output validation in one `published-solver.ts` module used by both checking and evaluation. The sandbox receives the exported tree rather than any repository or agent workspace. Add no transport, persistence, or grader service.
+**Structure Decision**: Keep message ordering and validation in one small `team-channel.ts` value object. Reuse `ActivityBus` for wakeups, `createAgentTools` for exposure, `run.ts` for attempt ownership and trace publication, and the existing manifest/protocol/receipt codecs for provenance. Put deadline-bound exact-main fetch, Git-free tree materialization, callback lifetime, isolated execution, and contained-output validation in one `published-solver.ts` module used by both checking and evaluation. Represent releases as ordered host-owned records and serialize their sealed sources in one `released-stage.ts` module. The sandbox receives the exported tree rather than any repository or agent workspace. Add no transport, mirror, persistence, or grader service.
 
 ## Complexity Tracking
 

@@ -7,7 +7,7 @@ import type {
   ModelToolResult,
   TokenUsage,
 } from "./model.js";
-import { SandboxInfrastructureError } from "./sandbox/contracts.js";
+import { InfrastructureError } from "./sandbox/contracts.js";
 import type { AgentToolSet } from "./tools.js";
 
 export type SessionState =
@@ -220,9 +220,9 @@ export async function runAgentSession(options: {
           break;
         }
         const detail = error instanceof Error ? error.message : String(error);
-        if (error instanceof SandboxInfrastructureError) {
+        if (error instanceof InfrastructureError) {
           await observe("infrastructure.error", {
-            component: "command-sandbox",
+            component: error.component,
             error: detail,
           });
           await transition("infrastructure-error", detail);

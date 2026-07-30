@@ -47,11 +47,12 @@ After committing the feature, run `pnpm preflight` before any provider-backed at
 2. Leave a different candidate uncommitted and publish another candidate on a non-main branch.
 3. Repoint the bare repository's symbolic `HEAD` to the non-main branch.
 4. Run `check_published_solver` and confirm it reports the exact `refs/heads/main` commit.
-5. Freeze and evaluate the selected workspace.
-6. Confirm selection/result records identify the workspace, assigned repository, canonical main ref, and captured commit.
-7. Confirm the solver environment contains no `.git`, `/git`, `/evidence`, `/reference`, workspace parent files, oracle paths, or provider credentials.
+5. While the captured solver is running, force-push `main` to unrelated history and confirm execution still uses the reported commit.
+6. Freeze and evaluate the selected workspace.
+7. Confirm selection/result records identify the workspace, assigned repository, canonical main ref, and captured commit before solver execution starts.
+8. Confirm the solver environment contains no `.git`, `/git`, `/evidence`, `/reference`, workspace parent files, oracle paths, or provider credentials.
 
-Expected result: checker and evaluation execute the exported complete tree of the exact selected main commit regardless of workspace state, other refs, or symbolic `HEAD`.
+Expected result: checker and evaluation fetch and materialize literal main as one callback-scoped transaction and execute that exact Git-free tree regardless of workspace state, later force-pushes, other refs, or symbolic `HEAD`.
 
 ## Output Containment
 

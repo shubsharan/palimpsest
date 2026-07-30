@@ -1,61 +1,200 @@
-import { rm, stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { runGit } from "./git.js";
+import { GitCommandError, runGitCommand } from "./git.js";
 import type { CommandSandbox, SandboxCommandResult } from "./sandbox/contracts.js";
-import { WorkspaceFileError } from "./sandbox/contracts.js";
+import { InfrastructureError, WorkspaceFileError } from "./sandbox/contracts.js";
 import { resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
 
 export const PUBLISHED_MAIN_REF = "refs/heads/main";
+const CAPTURED_MAIN_REF = "refs/palimpsest/captured-main";
 export const SOLVER_COMMAND = "python3 solver.py";
 export const SOLVER_OUTPUT_PATH = "reconstruction.txt";
 export const MAX_SOLVER_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-export interface PublishedSolverIdentity {
+export interface PublishedMainSnapshot {
   ref: typeof PUBLISHED_MAIN_REF;
   commit: string;
+  snapshotPath: string;
 }
 
-export interface PublishedSolverExecution {
-  execution: SandboxCommandResult;
-  outputPath: string;
-  error?: string;
+export type PublishedSolverExecution =
+  | {
+      kind: "succeeded";
+      execution: SandboxCommandResult;
+      outputPath: string;
+    }
+  | {
+      kind: "submission-error";
+      execution: SandboxCommandResult;
+      outputPath: string;
+      error: string;
+    };
+
+export class PublishedSolverSubmissionError extends Error {
+  override readonly name = "PublishedSolverSubmissionError";
 }
 
-export async function resolvePublishedSolver(
-  repositoryPath: string,
-): Promise<PublishedSolverIdentity> {
-  let commit: string;
+export class PublishedSolverInfrastructureError extends InfrastructureError {
+  override readonly name = "PublishedSolverInfrastructureError";
+  override readonly component = "published-solver";
+}
+
+function gitOptions(options: { cwd?: string; signal?: AbortSignal; deadline: number }): {
+  cwd?: string;
+  signal?: AbortSignal;
+  deadline: number;
+} {
+  return {
+    deadline: options.deadline,
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  };
+}
+
+async function removeSnapshot(path: string): Promise<void> {
   try {
-    commit = (
-      await runGit(["rev-parse", "--verify", `${PUBLISHED_MAIN_REF}^{commit}`], repositoryPath)
-    ).stdout.trim();
-  } catch {
-    throw new Error(`Published ref ${PUBLISHED_MAIN_REF} must resolve to a commit.`);
-  }
-  if (!/^[0-9a-f]{40}$/.test(commit)) {
-    throw new Error(`Published ref ${PUBLISHED_MAIN_REF} returned an invalid commit identity.`);
-  }
-  return { ref: PUBLISHED_MAIN_REF, commit };
-}
-
-export async function materializePublishedSolver(
-  repositoryPath: string,
-  targetPath: string,
-  identity: PublishedSolverIdentity,
-): Promise<void> {
-  try {
-    await runGit(["clone", "--no-local", "--no-checkout", repositoryPath, targetPath]);
-    await runGit(["checkout", "--detach", identity.commit], targetPath);
-    await rm(join(targetPath, ".git"), { recursive: true, force: true });
+    await rm(path, { recursive: true, force: true });
   } catch (error) {
-    await rm(targetPath, { recursive: true, force: true });
-    throw error;
+    throw new PublishedSolverInfrastructureError(
+      `Unable to clean captured published-main snapshot: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
   }
+}
+
+export async function withPublishedMainSnapshot<T>(
+  options: {
+    repositoryPath: string;
+    snapshotPath: string;
+    deadline: number;
+    signal?: AbortSignal;
+  },
+  use: (snapshot: PublishedMainSnapshot) => Promise<T>,
+): Promise<T> {
+  let created = false;
+  let outcome: { value: T } | undefined;
+  let operationFailure: { error: unknown } | undefined;
+  try {
+    try {
+      await mkdir(options.snapshotPath);
+      created = true;
+      await runGitCommand(
+        ["init", "--initial-branch=main", "."],
+        gitOptions({
+          cwd: options.snapshotPath,
+          deadline: options.deadline,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof InfrastructureError || error instanceof DOMException) throw error;
+      throw new PublishedSolverInfrastructureError(
+        `Unable to initialize captured published-main snapshot: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+    }
+
+    let commit: string;
+    try {
+      await runGitCommand(
+        [
+          "fetch",
+          "--no-tags",
+          "--no-recurse-submodules",
+          "--force",
+          options.repositoryPath,
+          `+${PUBLISHED_MAIN_REF}:${CAPTURED_MAIN_REF}`,
+        ],
+        gitOptions({
+          cwd: options.snapshotPath,
+          deadline: options.deadline,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      );
+      commit = (
+        await runGitCommand(
+          ["rev-parse", "--verify", `${CAPTURED_MAIN_REF}^{commit}`],
+          gitOptions({
+            cwd: options.snapshotPath,
+            deadline: options.deadline,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+          }),
+        )
+      ).stdout.trim();
+      if (!/^[0-9a-f]{40}$/.test(commit)) {
+        throw new PublishedSolverSubmissionError(
+          `Published ref ${PUBLISHED_MAIN_REF} returned an invalid commit identity.`,
+        );
+      }
+      await runGitCommand(
+        ["checkout", "--detach", commit],
+        gitOptions({
+          cwd: options.snapshotPath,
+          deadline: options.deadline,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof GitCommandError) {
+        throw new PublishedSolverSubmissionError(
+          `Published ref ${PUBLISHED_MAIN_REF} must resolve to an available commit.`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    try {
+      await rm(join(options.snapshotPath, ".git"), { recursive: true, force: false });
+    } catch (error) {
+      throw new PublishedSolverInfrastructureError(
+        `Unable to seal captured published-main snapshot: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+    }
+    outcome = {
+      value: await use({
+        ref: PUBLISHED_MAIN_REF,
+        commit,
+        snapshotPath: options.snapshotPath,
+      }),
+    };
+  } catch (error) {
+    operationFailure = { error };
+  }
+  if (created) {
+    try {
+      await removeSnapshot(options.snapshotPath);
+    } catch (error) {
+      if (operationFailure === undefined) throw error;
+      throw new PublishedSolverInfrastructureError(
+        "Published-main capture and cleanup both failed.",
+        {
+          cause: new AggregateError(
+            [operationFailure.error, error],
+            "Published-main capture and cleanup both failed.",
+          ),
+        },
+      );
+    }
+  }
+  if (operationFailure !== undefined) throw operationFailure.error;
+  if (outcome === undefined) {
+    throw new PublishedSolverInfrastructureError(
+      "Published-main capture completed without a result.",
+    );
+  }
+  return outcome.value;
 }
 
 export async function executePublishedSolver(options: {
-  snapshotPath: string;
+  snapshot: PublishedMainSnapshot;
   ciphertextPath: string;
   outputRoot: string;
   sandbox: CommandSandbox;
@@ -70,7 +209,7 @@ export async function executePublishedSolver(options: {
     profile: "solver",
     command: options.command ?? SOLVER_COMMAND,
     timeoutMs: options.timeoutMs ?? 30_000,
-    submissionPath: options.snapshotPath,
+    submissionPath: options.snapshot.snapshotPath,
     ciphertextPath: options.ciphertextPath,
     outputRoot: options.outputRoot,
     outputPath,
@@ -82,7 +221,12 @@ export async function executePublishedSolver(options: {
     execution.outputExceeded ||
     execution.indeterminate === true
   ) {
-    return { execution, outputPath: candidatePath, error: "Published solver execution failed." };
+    return {
+      kind: "submission-error",
+      execution,
+      outputPath: candidatePath,
+      error: "Published solver execution failed.",
+    };
   }
 
   let resolved: string;
@@ -93,30 +237,36 @@ export async function executePublishedSolver(options: {
       "Published solver output",
     );
   } catch (error) {
-    if (error instanceof WorkspaceFileError && error.failure === "missing") {
-      return {
-        execution,
-        outputPath: candidatePath,
-        error: "Published solver did not produce output.",
-      };
-    }
+    const detail =
+      error instanceof WorkspaceFileError && error.failure === "missing"
+        ? "Published solver did not produce output."
+        : error instanceof Error
+          ? error.message
+          : String(error);
     return {
+      kind: "submission-error",
       execution,
       outputPath: candidatePath,
-      error: error instanceof Error ? error.message : String(error),
+      error: detail,
     };
   }
 
   const metadata = await stat(resolved);
   if (metadata.size === 0) {
-    return { execution, outputPath: resolved, error: "Published solver output is empty." };
+    return {
+      kind: "submission-error",
+      execution,
+      outputPath: resolved,
+      error: "Published solver output is empty.",
+    };
   }
   if (metadata.size > MAX_SOLVER_OUTPUT_BYTES) {
     return {
+      kind: "submission-error",
       execution,
       outputPath: resolved,
       error: `Published solver output exceeds ${String(MAX_SOLVER_OUTPUT_BYTES)} bytes.`,
     };
   }
-  return { execution, outputPath: resolved };
+  return { kind: "succeeded", execution, outputPath: resolved };
 }

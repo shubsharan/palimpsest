@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { ActivityBus } from "./activity.js";
 import { runGit } from "./git.js";
+import { SandboxInfrastructureError } from "./sandbox/contracts.js";
 import { TeamChannel } from "./team-channel.js";
 import { createAgentTools, TOOL_DEFINITIONS } from "./tools.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
@@ -19,20 +20,40 @@ const SUCCESS = {
 } as const;
 
 async function toolFixture(
-  execute: ConstructorParameters<typeof FakeCommandSandbox>[0] = async (request) => {
-    if (request.profile === "agent") return SUCCESS;
-    await writeFile(join(request.outputRoot, request.outputPath), "one two\n", "utf8");
-    return SUCCESS;
-  },
+  execute?: ConstructorParameters<typeof FakeCommandSandbox>[0],
   withTeamChannel = false,
 ) {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
   const evidence = join(root, "evidence");
+  const source = join(root, "source");
   const gitOrigin = join(root, "origin.git");
   const reference = join(root, "reference.txt");
-  await Promise.all([mkdir(workspace), mkdir(evidence), writeFile(reference, "reference\n")]);
-  await writeFile(join(evidence, "stage-01-visible.txt"), "one two\n");
+  await Promise.all([
+    mkdir(workspace),
+    mkdir(evidence),
+    mkdir(source),
+    writeFile(reference, "reference\n"),
+  ]);
+  const releasedStages = [
+    {
+      ordinal: 1,
+      sourcePath: join(source, "stage-01.txt"),
+      visiblePath: join(evidence, "stage-01-visible.txt"),
+    },
+    {
+      ordinal: 2,
+      sourcePath: join(source, "stage-02.txt"),
+      visiblePath: join(evidence, "stage-02-visible.txt"),
+    },
+  ] as const;
+  await Promise.all([
+    writeFile(releasedStages[0].sourcePath, "one two\n"),
+    writeFile(releasedStages[1].sourcePath, "three four\n"),
+    writeFile(releasedStages[0].visiblePath, "tampered visible stage\n"),
+    writeFile(releasedStages[1].visiblePath, "tampered visible stage\n"),
+    writeFile(join(evidence, "stage-01-decoy.txt"), "decoy\n"),
+  ]);
   await runGit(["init", "--bare", "--initial-branch=main", gitOrigin]);
   const seed = join(root, "seed");
   await runGit(["clone", gitOrigin, seed]);
@@ -43,7 +64,16 @@ async function toolFixture(
   await runGit(["commit", "-m", "Publish solver"], seed);
   await runGit(["push", "origin", "HEAD:main"], seed);
   const commit = (await runGit(["rev-parse", "HEAD"], seed)).stdout.trim();
-  const sandbox = new FakeCommandSandbox(execute);
+  const capturedCiphertexts: string[] = [];
+  const sandbox = new FakeCommandSandbox(async (request) => {
+    if (request.profile === "solver") {
+      capturedCiphertexts.push(await readFile(request.ciphertextPath, "utf8"));
+    }
+    if (execute !== undefined) return execute(request);
+    if (request.profile === "agent") return SUCCESS;
+    await writeFile(join(request.outputRoot, request.outputPath), "one two\n", "utf8");
+    return SUCCESS;
+  });
   const lease = await sandbox.openAgentLease({
     profile: "agent",
     workspacePath: workspace,
@@ -74,7 +104,6 @@ async function toolFixture(
     sandbox: lease,
     solverSandbox: sandbox,
     repositoryPath: gitOrigin,
-    evidencePath: evidence,
     activity,
     ...(teamChannel === undefined ? {} : { teamChannel }),
     getActivityCursor: () => 0,
@@ -87,7 +116,7 @@ async function toolFixture(
         accuracy: 0.5,
       };
     },
-    getReleasedStages: () => [1],
+    getReleasedStages: () => releasedStages,
   });
   return {
     root,
@@ -97,6 +126,7 @@ async function toolFixture(
     commit,
     reference,
     sandbox,
+    capturedCiphertexts,
     checkerRequests,
     activity,
     peerActivities,
@@ -199,6 +229,7 @@ describe("agent tools", () => {
     });
     expect(JSON.stringify(checked)).not.toMatch(/expected|mismatch|correctWords/);
     expect(fixture.checkerRequests).toHaveLength(1);
+    expect(fixture.capturedCiphertexts).toEqual(["one two\n\nthree four\n"]);
     expect(fixture.checkerRequests[0]).not.toContain(fixture.workspace);
     expect(sandbox.requests.slice(1)).toEqual([
       expect.objectContaining({
@@ -224,7 +255,7 @@ describe("agent tools", () => {
     const checkoutFailure = await toolFixture();
     await runGit(["update-ref", "-d", "refs/heads/main"], checkoutFailure.gitOrigin);
     await expect(checkoutFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
-      error: "Published ref refs/heads/main must resolve to a commit.",
+      error: "Published ref refs/heads/main must resolve to an available commit.",
     });
     expect(checkoutFailure.checkerRequests).toEqual([]);
 
@@ -239,5 +270,29 @@ describe("agent tools", () => {
       execution: expect.objectContaining({ exitCode: 2, stderr: "solver.py missing" }),
     });
     expect(solverFailure.checkerRequests).toEqual([]);
+
+    const timeout = await toolFixture(async (request) =>
+      request.profile === "solver" ? { ...SUCCESS, timedOut: true } : SUCCESS,
+    );
+    await expect(timeout.tools.execute("check_published_solver", {})).resolves.toEqual({
+      commit: timeout.commit,
+      error: "Published solver execution failed.",
+      execution: expect.objectContaining({ timedOut: true }),
+    });
+    expect(timeout.checkerRequests).toEqual([]);
+  });
+
+  it("propagates sandbox infrastructure failures instead of returning checker errors", async () => {
+    const fixture = await toolFixture(async (request) => {
+      if (request.profile === "solver") {
+        throw new SandboxInfrastructureError("Docker daemon unavailable.");
+      }
+      return SUCCESS;
+    });
+
+    await expect(fixture.tools.execute("check_published_solver", {})).rejects.toThrow(
+      SandboxInfrastructureError,
+    );
+    expect(fixture.checkerRequests).toEqual([]);
   });
 });

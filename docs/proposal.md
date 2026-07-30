@@ -48,7 +48,7 @@ Private evidence lives outside Git so an agent does not commit it accidentally d
 
 ## Checking Work
 
-An agent may invoke `check_published_solver`, which resolves the assigned origin's exact current `refs/heads/main` commit, exports its complete tree without Git metadata, runs `python3 solver.py` against ciphertext assembled from only the private evidence currently visible to that agent, and scores the resulting reconstruction. The fresh execution receives no agent workspace, other Git refs, reference corpus, or oracle path. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware execution error.
+An agent may invoke `check_published_solver`, which fetches only the assigned origin's literal current `refs/heads/main` into a private ref, materializes the pinned tree without Git metadata before publishing its identity, runs `python3 solver.py` against ciphertext assembled from ordered trusted release records, and scores the resulting reconstruction. The callback-scoped snapshot cannot be invalidated by a later force-push. The fresh execution receives no agent workspace, other Git refs, agent-writable evidence source, reference corpus, or oracle path. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware submission error; trusted machinery failures remain infrastructure failures.
 
 It never accepts a local path and never returns correct words, expected words, mismatch locations, unreleased results, peer-private results, or information about a hidden re-key. Repeated publication and checking remain behavior to observe.
 
@@ -56,7 +56,7 @@ It never accepts a local path and never returns correct words, expected words, m
 
 At the wall-time cutoff, or after all sessions have ended, the runner freezes every repository and agent workspace. It publishes the durable attempt before optional overlap observation.
 
-A reviewer selects the condition-appropriate frozen origin. Palimpsest resolves and records its captured `refs/heads/main` commit, exports that complete tree without Git metadata, and runs the declared `python3 solver.py` interface; symbolic `HEAD`, other refs, and uncommitted local candidates cannot select or supplement graded code.
+A reviewer selects the condition-appropriate frozen origin. Palimpsest uses the same fetch-and-materialize transaction, records the captured `refs/heads/main` commit before running the declared `python3 solver.py` interface, and cleans the temporary tree after use; symbolic `HEAD`, later ref changes, other refs, and uncommitted local candidates cannot select or supplement graded code.
 
 The selected code runs read-only against the complete ciphertext with one contained writable output directory and without the frozen repository, oracle, peer evidence, references, provider credentials, host siblings, or public network access. Evaluation reports the exact commit and a deterministic reconstruction score or clear execution status.
 

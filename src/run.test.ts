@@ -688,7 +688,7 @@ describe("fixed four-condition run coordinator", () => {
     expect(sandbox.closedLeases).toBe(3);
   });
 
-  it("records provider and command-sandbox failures without losing native frozen work", async () => {
+  it("records provider and published-checker infrastructure failures without losing frozen work", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-run-session-failures-"));
     const config = await fixtureConfig(root, "IR");
     const adapter: ModelAdapter = {
@@ -700,7 +700,7 @@ describe("fixed four-condition run coordinator", () => {
             if (agentId === "agent-2" && !called) {
               called = true;
               return {
-                toolCalls: [{ id: "command", name: "run_command", arguments: { command: "true" } }],
+                toolCalls: [{ id: "check", name: "check_published_solver", arguments: {} }],
                 usage: { inputTokens: 1, outputTokens: 1 },
               };
             }
@@ -713,8 +713,17 @@ describe("fixed four-condition run coordinator", () => {
         };
       },
     };
-    const sandbox = new FakeCommandSandbox(async () => {
-      throw new SandboxInfrastructureError("Docker daemon unavailable.");
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile === "solver") {
+        throw new SandboxInfrastructureError("Docker daemon unavailable.");
+      }
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        outputExceeded: false,
+      };
     });
 
     const result = await runAttempt({

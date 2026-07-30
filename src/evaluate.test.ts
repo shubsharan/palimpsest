@@ -11,13 +11,14 @@ import {
   evaluatePuzzle,
   evaluatePuzzleFromFlags,
   type EvaluationSelection,
+  type EvaluationSelectionRequest,
   SOLVER_COMMAND,
   SOLVER_OUTPUT_PATH,
 } from "./evaluate.js";
 import { runGit } from "./git.js";
-import { resolvePublishedSolver } from "./published-solver.js";
+import { PUBLISHED_MAIN_REF } from "./published-solver.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
-import type { SandboxCommandResult } from "./sandbox/contracts.js";
+import { SandboxInfrastructureError, type SandboxCommandResult } from "./sandbox/contracts.js";
 import { sealTree, type TreeSeal } from "./seal.js";
 import {
   FakeCommandSandbox,
@@ -48,12 +49,12 @@ async function evaluationFixture() {
     runGit(["init", "--bare", "--initial-branch=main", frozenGitPath]),
     writeFile(ciphertextPath, "ciphertext\n"),
   ]);
-  await publishFile(frozenGitPath, "solver.py", "print('fixture')\n");
+  const commit = await publishFile(frozenGitPath, "solver.py", "print('fixture')\n");
   return {
     root,
     frozenGitPath,
     ciphertextPath,
-    published: await resolvePublishedSolver(frozenGitPath),
+    published: { ref: PUBLISHED_MAIN_REF, commit },
   };
 }
 
@@ -75,13 +76,12 @@ async function publishFile(
 }
 
 function selectionFor(
-  fixture: Awaited<ReturnType<typeof evaluationFixture>>,
-  overrides: Partial<EvaluationSelection> = {},
-): EvaluationSelection {
+  _fixture: Awaited<ReturnType<typeof evaluationFixture>>,
+  overrides: Partial<EvaluationSelectionRequest> = {},
+): EvaluationSelectionRequest {
   return {
     workspace: "agent-1",
     repositoryId: "shared",
-    ...fixture.published,
     command: "true",
     outputPath: "answer.txt",
     ...overrides,
@@ -288,7 +288,7 @@ describe("frozen attempt evaluation", () => {
 
   it("records selection before sandbox execution and preserves the score", async () => {
     const fixture = await evaluationFixture();
-    await publishFile(
+    const solverCommit = await publishFile(
       fixture.frozenGitPath,
       "solver.sh",
       "printf 'answer' > \"$PALIMPSEST_OUTPUT\"\n",
@@ -336,9 +336,88 @@ describe("frozen attempt evaluation", () => {
     expect(recorded.selection).toEqual({
       workspace: "agent-1",
       repositoryId: "shared",
-      ...fixture.published,
+      ref: PUBLISHED_MAIN_REF,
+      commit: solverCommit,
       command: "sh solver.sh",
       outputPath: "answer.txt",
+    });
+  });
+
+  it("executes the recorded snapshot after main advances during sandbox execution", async () => {
+    const fixture = await evaluationFixture();
+    let submittedSolver = "";
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      await publishFile(fixture.frozenGitPath, "solver.py", "print('replacement')\n");
+      submittedSolver = await readFile(join(request.submissionPath, "solver.py"), "utf8");
+      await writeFile(join(request.outputRoot, request.outputPath), "answer");
+      return SUCCESS;
+    });
+
+    const result = await evaluateFrozenAttempt({
+      ...fixture,
+      evaluationRoot: join(fixture.root, "evaluation"),
+      selection: selectionFor(fixture),
+      sandbox,
+      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
+    });
+
+    expect(submittedSolver).toBe("print('fixture')\n");
+    expect(result).toMatchObject({
+      status: "scored",
+      selection: fixture.published,
+    });
+  });
+
+  it("propagates sandbox infrastructure failure after recording commit provenance", async () => {
+    const fixture = await evaluationFixture();
+    const evaluationRoot = join(fixture.root, "evaluation");
+    const sandbox = new FakeCommandSandbox(async () => {
+      throw new SandboxInfrastructureError("Docker daemon unavailable.");
+    });
+
+    await expect(
+      evaluateFrozenAttempt({
+        ...fixture,
+        evaluationRoot,
+        selection: selectionFor(fixture),
+        sandbox,
+        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
+      }),
+    ).rejects.toThrow(SandboxInfrastructureError);
+    const recorded = JSON.parse(await readFile(join(evaluationRoot, "selection.json"), "utf8")) as {
+      selection: EvaluationSelection;
+    };
+    expect(recorded.selection.commit).toBe(fixture.published.commit);
+    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("raises a typed missing-main submission error without fabricating provenance", async () => {
+    const fixture = await evaluationFixture();
+    const evaluationRoot = join(fixture.root, "evaluation");
+    const sandbox = new FakeCommandSandbox(async () => SUCCESS);
+    await runGit(["update-ref", "-d", "refs/heads/main"], fixture.frozenGitPath);
+
+    await expect(
+      evaluateFrozenAttempt({
+        ...fixture,
+        evaluationRoot,
+        selection: selectionFor(fixture),
+        sandbox,
+        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
+      }),
+    ).rejects.toMatchObject({
+      name: "PublishedSolverSubmissionError",
+      message: "Published ref refs/heads/main must resolve to an available commit.",
+    });
+    expect(sandbox.requests).toEqual([]);
+    await expect(readFile(join(evaluationRoot, "selection.json"), "utf8")).resolves.toContain(
+      '"selection": null',
+    );
+    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
   });
 
