@@ -2,36 +2,38 @@ import { join, resolve } from "node:path";
 
 import { decodeBuildManifest } from "./artifacts.js";
 import { resolveCondition } from "./condition.js";
-import { loadExperimentConfig } from "./config.js";
-import { assertBuildMatchesExperimentConfig, createConfiguredRunAgents } from "./experiment.js";
+import { loadResolvedStudy } from "./config.js";
+import { assertBuildMatchesStudy, createConfiguredStudyAgents } from "./experiment.js";
 import { requiredFlag } from "./flags.js";
+import { assertPreflightSandbox, readCurrentPreflight } from "./preflight.js";
 import { readJsonObject } from "./python.js";
 import { runPuzzle, type RunPuzzleResult } from "./run.js";
+import { createDockerCommandSandbox } from "./sandbox/container.js";
 
 export async function runConfiguredPuzzleFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
 ): Promise<RunPuzzleResult> {
-  const configPath = requiredFlag(flags, "--config");
-  const runName = requiredFlag(flags, "--run");
+  const repositoryRoot = resolve(root);
+  const configPath = resolve(repositoryRoot, requiredFlag(flags, "--config"));
   const condition = resolveCondition(requiredFlag(flags, "--condition")).id;
-  const buildRoot = resolve(requiredFlag(flags, "--build"));
-  const config = await loadExperimentConfig(configPath, {
-    root,
-    selectedRun: runName,
-  });
-  const run = config.runs.find((candidate) => candidate.name === runName);
-  if (run === undefined) throw new Error(`Selected run ${runName} does not exist.`);
+  const buildRoot = resolve(repositoryRoot, requiredFlag(flags, "--build"));
+  const study = await loadResolvedStudy(configPath, repositoryRoot);
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  assertBuildMatchesExperimentConfig(manifest, config);
+  assertBuildMatchesStudy(manifest, study);
+  const sandbox = await createDockerCommandSandbox({ root: repositoryRoot });
+  const preflight = await readCurrentPreflight(repositoryRoot);
+  assertPreflightSandbox(preflight, sandbox.identity);
+  const agents = createConfiguredStudyAgents(study);
   return runPuzzle({
-    root,
+    root: repositoryRoot,
     buildRoot,
-    output: requiredFlag(flags, "--output"),
-    runName,
-    repetition: 1,
+    output: resolve(repositoryRoot, requiredFlag(flags, "--attempt-root")),
+    studyPhase: "standalone",
+    monetaryAuthorizationCeilingCents: study.budgets.perAttemptMonetaryCeilingCents,
     condition,
-    agents: createConfiguredRunAgents(config, run),
-    tokenBudgetPerAgent: config.limits.tokenBudgetPerAgent,
+    agents,
+    tokenBudgetPerAgent: study.budgets.tokenBudgetPerAgent,
+    sandbox,
   });
 }

@@ -119,7 +119,7 @@ describe("model session lifecycle", () => {
     );
   });
 
-  it("keeps absent final text absent in strict attempt schema v3", async () => {
+  it("keeps absent final text absent in strict standalone attempt schema v4", async () => {
     const result = await runAgentSession({
       agentId: "agent-1",
       model: binding(),

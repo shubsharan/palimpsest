@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,15 +9,29 @@ import {
   decodeAttemptSummary,
   decodeBuildManifest,
   decodeBuildResult,
+  decodeDesignReceipt,
   decodeEvaluationRecord,
-  decodeExperimentSummary,
+  decodeLaunchReservation,
   decodeOverlapResult,
-  publishExperimentSummary,
+  decodePhaseSummary,
+  publishAttemptSummary,
+  publishDesignReceipt,
+  publishPhaseSummary,
+  readDesignReceipt,
+  readPhaseSummary,
 } from "./artifacts.js";
 import { readJsonObject } from "./python.js";
-import { testAttemptSummary, testExperimentSummary } from "./test-helpers.js";
+import { testAttemptSummary } from "./test-helpers.js";
 
 const digest = "a".repeat(64);
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function treeSeal(digest = "a".repeat(64)): Record<string, unknown> {
+  return { schemaVersion: 1, digest, fileCount: 1, byteCount: 1 };
+}
 
 const attemptSummary = testAttemptSummary;
 
@@ -132,6 +147,152 @@ function buildManifest(): Record<string, unknown> {
   };
 }
 
+const blockIds = [
+  "calibration-theron-ware",
+  "validation-odd-women",
+  "validation-pointed-firs",
+  "validation-custom-country",
+  "validation-woodlanders",
+] as const;
+
+const calibrationOrder = ["CS", "CR", "IR", "IS"] as const;
+const validationOrders = [
+  ["CS", "CR", "IR", "IS"],
+  ["CR", "IS", "CS", "IR"],
+  ["IS", "IR", "CR", "CS"],
+  ["IR", "CS", "IS", "CR"],
+] as const;
+
+function receiptBuild(blockId: string, index: number): Record<string, unknown> {
+  const manifest = structuredClone(buildManifest());
+  const variants = manifest.variants as Record<string, Record<string, unknown>>;
+  manifest.blockId = blockId;
+  manifest.pairedBuildId = `paired-${String(index + 1).repeat(64)}`;
+  variants.stationary!.buildId = `build-${String(index + 1).repeat(64)}`;
+  variants.rekey!.buildId = `build-${(index + 6).toString(16).repeat(64)}`;
+  return {
+    blockId,
+    buildRoot: `/tmp/palimpsest/study/builds/${blockId}`,
+    buildManifestDigest: (index + 10).toString(16).repeat(64),
+    treeSeal: treeSeal((index + 1).toString(16).repeat(64)),
+    manifest,
+  };
+}
+
+function designReceipt(): Record<string, unknown> {
+  const conditions = ["CS", "CR", "IS", "IR"] as const;
+  const agentIds = ["agent-1", "agent-2", "agent-3"] as const;
+  const templates = agentIds.flatMap((agentId) => [
+    {
+      agentId,
+      communicationMode: "shared",
+      template: `Shared ${agentId} {TOKEN_BUDGET}`,
+    },
+    {
+      agentId,
+      communicationMode: "isolated",
+      template: `Isolated ${agentId} {TOKEN_BUDGET}`,
+    },
+  ]);
+  const baselinePrompts = conditions.flatMap((condition) =>
+    agentIds.map((agentId) => {
+      const prompt = `${condition} fixture prompt for ${agentId}`;
+      return { condition, agentId, prompt, sha256: sha256(prompt) };
+    }),
+  );
+  return {
+    schemaVersion: 1,
+    createdAt: "2026-07-28T12:00:00.000Z",
+    sourceRevision: "1".repeat(40),
+    sandbox: attemptSummary().sandbox,
+    manifestDigest: "2".repeat(64),
+    immutableManifestDigest: "3".repeat(64),
+    designDigest: "4".repeat(64),
+    immutableManifest: {
+      schemaVersion: 2,
+      studyId: "frozen-five-block",
+      providers: { openai: { apiKeyEnv: "OPENAI_API_KEY" } },
+    },
+    builds: blockIds.map(receiptBuild),
+    assignment: ["gpt", "claude", "gemini"].map((modelProfileId, index) => ({
+      agentId: `agent-${String(index + 1)}`,
+      modelProfileId,
+    })),
+    orders: {
+      calibration: calibrationOrder,
+      validation: validationOrders,
+    },
+    rubric: {
+      id: "behavior-review-v1",
+      path: "experiments/behavior-rubric.md",
+      sha256: "5".repeat(64),
+    },
+    scoring: {
+      metricId: "reconstruction-v1",
+      reviewerSelectionId: "explicit-workspace-command-output-v1",
+    },
+    promptTemplates: templates.map((template) => ({
+      ...template,
+      sha256: sha256(template.template),
+    })),
+    baselinePrompts,
+    failurePolicy: {
+      stopOn: "session-infrastructure-error",
+      automaticRetry: false,
+      replacement: "explicit-appended",
+    },
+    baselineBudgets: {
+      tokenBudgetPerAgent: 200_000,
+      perAttemptMonetaryCeilingCents: 5_000,
+    },
+    totalCeilings: {
+      tokens: 12_000_000,
+      monetaryAuthorizationCents: 100_000,
+    },
+  };
+}
+
+function plannedCells(phase: "calibration" | "validation"): Record<string, unknown>[] {
+  const phaseBlocks = phase === "calibration" ? blockIds.slice(0, 1) : blockIds.slice(1);
+  const orders = phase === "calibration" ? [calibrationOrder] : validationOrders;
+  return phaseBlocks.flatMap((blockId, blockIndex) =>
+    orders[blockIndex]!.map((condition, conditionIndex) => {
+      const phasePosition = blockIndex * 4 + conditionIndex + 1;
+      const buildIndex = blockIds.indexOf(blockId);
+      return {
+        cellId: `${phase}-${String(phasePosition).padStart(3, "0")}-${blockId}-${condition}`,
+        phase,
+        blockId,
+        condition,
+        conditionOrderPosition: conditionIndex + 1,
+        phasePosition,
+        buildRoot: `/tmp/palimpsest/study/builds/${blockId}`,
+        pairedBuildId: `paired-${String(buildIndex + 1).repeat(64)}`,
+        buildId: `build-${String(buildIndex + 1).repeat(64)}`,
+      };
+    }),
+  );
+}
+
+function phaseSummary(overrides: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    phase: "calibration",
+    state: "ready",
+    manifestDigest: "2".repeat(64),
+    immutableManifestDigest: "3".repeat(64),
+    designDigest: "4".repeat(64),
+    plannedCells: plannedCells("calibration"),
+    adjustments: [],
+    reservations: [],
+    attempts: [],
+    cumulativeAuthorizedTokens: 0,
+    cumulativeAuthorizedMonetaryCents: 0,
+    cumulativeActualTokens: 0,
+    ...overrides,
+  };
+}
+
 function overlapResult(): Record<string, unknown> {
   return {
     findings: [
@@ -187,7 +348,8 @@ describe("stored artifact decoders", () => {
     expect(decodeBuildManifest(buildManifest()).variants.stationary.stages).toHaveLength(18);
     expect(decodeBuildManifest(buildManifest()).variants.rekey.stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);
-    expect(decodeExperimentSummary(testExperimentSummary()).attempts).toHaveLength(1);
+    expect(decodeDesignReceipt(designReceipt()).builds).toHaveLength(5);
+    expect(decodePhaseSummary(phaseSummary()).plannedCells).toHaveLength(4);
     expect(decodeOverlapResult(overlapResult()).findings).toHaveLength(1);
     expect(decodeEvaluationRecord(evaluationRecord()).status).toBe("scored");
   });
@@ -198,7 +360,8 @@ describe("stored artifact decoders", () => {
 
     expect(decoded).toEqual(encoded);
     expect(decoded).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
+      studyPhase: "standalone",
       blockId: "calibration-theron-ware",
       condition: "CR",
       communicationMode: "shared",
@@ -211,6 +374,44 @@ describe("stored artifact decoders", () => {
         repositories: [{ repositoryId: "shared" }],
       },
     });
+  });
+
+  it("accepts strict study provenance and replacement lineage", () => {
+    const decoded = decodeAttemptSummary({
+      ...attemptSummary(),
+      attemptId: "attempt-validation-replacement",
+      studyPhase: "validation",
+      studyRootId: "study-frozen-five-block",
+      conditionOrderPosition: 2,
+      designDigest: "4".repeat(64),
+      monetaryAuthorizationCeilingCents: 5_000,
+      replacementOfAttemptId: "attempt-validation-primary",
+    });
+
+    expect(decoded).toMatchObject({
+      studyPhase: "validation",
+      studyRootId: "study-frozen-five-block",
+      conditionOrderPosition: 2,
+      monetaryAuthorizationCeilingCents: 5_000,
+      replacementOfAttemptId: "attempt-validation-primary",
+    });
+    expect(decoded).not.toHaveProperty("runName");
+    expect(decoded).not.toHaveProperty("repetition");
+  });
+
+  it("requires study provenance only for phase attempts", () => {
+    expect(() =>
+      decodeAttemptSummary({
+        ...attemptSummary(),
+        studyRootId: "study-frozen-five-block",
+      }),
+    ).toThrow(/standalone/i);
+    expect(() =>
+      decodeAttemptSummary({
+        ...attemptSummary(),
+        studyPhase: "calibration",
+      }),
+    ).toThrow(/studyRootId/i);
   });
 
   it.each([
@@ -475,6 +676,23 @@ describe("stored artifact decoders", () => {
       },
     ],
     [
+      "infrastructure classification without a matching session",
+      () =>
+        decodeAttemptSummary({
+          ...attemptSummary(),
+          infrastructureClassification: "session-infrastructure-error",
+        }),
+    ],
+    [
+      "infrastructure session without a matching classification",
+      () => {
+        const value = attemptSummary();
+        const sessions = [...(value.sessions as Record<string, unknown>[])];
+        sessions[0] = { ...sessions[0], state: "infrastructure-error" };
+        return decodeAttemptSummary({ ...value, sessions });
+      },
+    ],
+    [
       "mutable-looking image identity",
       () => {
         const value = attemptSummary();
@@ -508,62 +726,404 @@ describe("stored artifact decoders", () => {
     expect(decode).toThrow();
   });
 
+  it("round-trips the immutable five-build design receipt", () => {
+    const encoded = JSON.parse(JSON.stringify(designReceipt())) as unknown;
+    expect(decodeDesignReceipt(encoded)).toEqual(encoded);
+  });
+
   it.each([
     [
-      "unsupported summary version",
-      () => decodeExperimentSummary({ ...testExperimentSummary(), schemaVersion: 2 }),
+      "unsupported receipt version",
+      () => decodeDesignReceipt({ ...designReceipt(), schemaVersion: 2 }),
     ],
     [
-      "relative build root",
-      () => decodeExperimentSummary({ ...testExperimentSummary(), buildRoot: "build" }),
+      "unsupported receipt field",
+      () => decodeDesignReceipt({ ...designReceipt(), credential: "secret" }),
     ],
     [
-      "non-object resolved config",
-      () => decodeExperimentSummary({ ...testExperimentSummary(), resolvedConfig: [] }),
-    ],
-    [
-      "zero repetition",
+      "secret-bearing immutable manifest",
       () => {
-        const value = testExperimentSummary();
-        const attempts = [...(value.attempts as Record<string, unknown>[])];
-        attempts[0] = { ...attempts[0], repetition: 0 };
-        return decodeExperimentSummary({ ...value, attempts });
+        const value = designReceipt();
+        return decodeDesignReceipt({
+          ...value,
+          immutableManifest: {
+            ...(value.immutableManifest as object),
+            providers: { openai: { apiKey: "sk-secret" } },
+          },
+        });
       },
     ],
     [
-      "duplicate completed attempt",
+      "reordered build",
       () => {
-        const value = testExperimentSummary();
-        const attempt = (value.attempts as Record<string, unknown>[])[0]!;
-        return decodeExperimentSummary({ ...value, attempts: [attempt, attempt] });
+        const value = designReceipt();
+        const builds = [...(value.builds as Record<string, unknown>[])];
+        [builds[0], builds[1]] = [builds[1]!, builds[0]!];
+        return decodeDesignReceipt({ ...value, builds });
       },
     ],
-  ])("rejects a malformed experiment summary: %s", (_name, decode) => {
+    [
+      "prompt-template digest drift",
+      () => {
+        const value = designReceipt();
+        const templates = [...(value.promptTemplates as Record<string, unknown>[])];
+        templates[0] = { ...templates[0], template: "changed" };
+        return decodeDesignReceipt({ ...value, promptTemplates: templates });
+      },
+    ],
+    [
+      "missing baseline condition-agent pair",
+      () => {
+        const value = designReceipt();
+        const prompts = [...(value.baselinePrompts as Record<string, unknown>[])];
+        prompts[1] = prompts[0]!;
+        return decodeDesignReceipt({ ...value, baselinePrompts: prompts });
+      },
+    ],
+  ])("rejects a malformed design receipt: %s", (_name, decode) => {
     expect(decode).toThrow();
   });
 
-  it("atomically replaces the complete experiment summary", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-summary-"));
-    const initial = testExperimentSummary();
-    await publishExperimentSummary(root, initial);
-    const next = {
-      ...initial,
-      attempts: [
-        ...(initial.attempts as Record<string, unknown>[]),
+  it("publishes the design receipt exclusively and never overwrites it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-design-receipt-"));
+    const receipt = designReceipt();
+    await publishDesignReceipt(root, receipt);
+
+    await expect(
+      publishDesignReceipt(root, { ...receipt, createdAt: "2026-07-29T12:00:00.000Z" }),
+    ).rejects.toThrow();
+    expect(await readDesignReceipt(root)).toEqual(decodeDesignReceipt(receipt));
+  });
+
+  it("publishes an attempt summary once without an overwrite path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-attempt-summary-"));
+    const attempt = decodeAttemptSummary(attemptSummary());
+    await publishAttemptSummary(root, attempt);
+
+    await expect(publishAttemptSummary(root, attempt)).rejects.toThrow();
+  });
+
+  it("strictly decodes primary and replacement launch reservations", () => {
+    const primary = {
+      reservationId: "reservation-calibration-001",
+      cellId: "calibration-001-calibration-theron-ware-CS",
+      reservedAt: "2026-07-28T12:01:00.000Z",
+      kind: "primary",
+      authorizedTokens: 600_000,
+      monetaryAuthorizationCeilingCents: 5_000,
+      state: "reserved",
+    };
+    expect(decodeLaunchReservation(primary)).toEqual(primary);
+    expect(
+      decodeLaunchReservation({
+        ...primary,
+        reservationId: "reservation-calibration-001-replacement",
+        kind: "replacement",
+        replacementOfAttemptId: "attempt-calibration-001",
+        state: "resolved",
+        attemptId: "attempt-calibration-001-replacement",
+      }),
+    ).toMatchObject({ kind: "replacement", state: "resolved" });
+    expect(() => decodeLaunchReservation({ ...primary, kind: "replacement" })).toThrow(/lineage/i);
+    expect(() => decodeLaunchReservation({ ...primary, state: "resolved" })).toThrow(/attemptId/i);
+  });
+
+  it("round-trips ready and reserved phase summaries with exact accounting", () => {
+    expect(decodePhaseSummary(phaseSummary())).toEqual(phaseSummary());
+    const reservation = {
+      reservationId: "reservation-calibration-001",
+      cellId: plannedCells("calibration")[0]!.cellId as string,
+      reservedAt: "2026-07-28T12:01:00.000Z",
+      kind: "primary",
+      authorizedTokens: 600_000,
+      monetaryAuthorizationCeilingCents: 5_000,
+      state: "reserved",
+    };
+    const running = phaseSummary({
+      state: "running",
+      reservations: [reservation],
+      cumulativeAuthorizedTokens: 600_000,
+      cumulativeAuthorizedMonetaryCents: 5_000,
+    });
+
+    expect(decodePhaseSummary(running)).toEqual(running);
+  });
+
+  it("accepts only the two validation adjustment records", () => {
+    const currentManifestDigest = "6".repeat(64);
+    const validation = phaseSummary({
+      phase: "validation",
+      manifestDigest: currentManifestDigest,
+      plannedCells: plannedCells("validation"),
+      adjustments: [
         {
-          runName: "mixed",
-          repetition: 1,
-          attemptId: "attempt-mixed-1",
-          attemptRoot: "/tmp/palimpsest/attempts/mixed/001",
+          fieldPath: "budgets.tokenBudgetPerAgent",
+          priorValue: 200_000,
+          resolvedValue: 150_000,
+          priorManifestDigest: "2".repeat(64),
+          currentManifestDigest,
+        },
+        {
+          fieldPath: "budgets.perAttemptMonetaryCeilingCents",
+          priorValue: 5_000,
+          resolvedValue: 4_000,
+          priorManifestDigest: "2".repeat(64),
+          currentManifestDigest,
         },
       ],
+    });
+
+    expect(decodePhaseSummary(validation).plannedCells).toHaveLength(16);
+  });
+
+  it("round-trips a blocked frozen session-infrastructure attempt", () => {
+    const cellId = plannedCells("calibration")[0]!.cellId as string;
+    const blocked = phaseSummary({
+      state: "blocked",
+      reservations: [
+        {
+          reservationId: "reservation-source",
+          cellId,
+          reservedAt: "2026-07-28T12:01:00.000Z",
+          kind: "primary",
+          authorizedTokens: 600_000,
+          monetaryAuthorizationCeilingCents: 5_000,
+          state: "resolved",
+          attemptId: "attempt-source",
+        },
+      ],
+      attempts: [
+        {
+          attemptId: "attempt-source",
+          attemptRoot: "/tmp/palimpsest/study/calibration/attempts/source",
+          cellId,
+          reservationId: "reservation-source",
+          infrastructureClassification: "session-infrastructure-error",
+          actualTokenUsage: 12,
+        },
+      ],
+      cumulativeAuthorizedTokens: 600_000,
+      cumulativeAuthorizedMonetaryCents: 5_000,
+      cumulativeActualTokens: 12,
+      failure: {
+        kind: "session-infrastructure-error",
+        reservationId: "reservation-source",
+        attemptId: "attempt-source",
+        detail: "provider session failed",
+      },
+    });
+
+    expect(decodePhaseSummary(blocked).failure).toMatchObject({
+      kind: "session-infrastructure-error",
+      attemptId: "attempt-source",
+    });
+  });
+
+  it("accepts one eligible failure followed by one inherited replacement", () => {
+    const cellId = plannedCells("calibration")[0]!.cellId as string;
+    const sourceReservation = {
+      reservationId: "reservation-source",
+      cellId,
+      reservedAt: "2026-07-28T12:01:00.000Z",
+      kind: "primary",
+      authorizedTokens: 600_000,
+      monetaryAuthorizationCeilingCents: 5_000,
+      state: "resolved",
+      attemptId: "attempt-source",
     };
-
-    await publishExperimentSummary(root, next);
-
-    expect(JSON.parse(await readFile(join(root, "experiment.json"), "utf8"))).toEqual(
-      decodeExperimentSummary(next),
+    const replacementReservation = {
+      reservationId: "reservation-replacement",
+      cellId,
+      reservedAt: "2026-07-28T13:01:00.000Z",
+      kind: "replacement",
+      replacementOfAttemptId: "attempt-source",
+      authorizedTokens: 600_000,
+      monetaryAuthorizationCeilingCents: 5_000,
+      state: "resolved",
+      attemptId: "attempt-replacement",
+    };
+    const source = {
+      attemptId: "attempt-source",
+      attemptRoot: "/tmp/palimpsest/study/calibration/attempts/source",
+      cellId,
+      reservationId: "reservation-source",
+      infrastructureClassification: "session-infrastructure-error",
+      actualTokenUsage: 12,
+    };
+    const replacement = {
+      attemptId: "attempt-replacement",
+      attemptRoot: "/tmp/palimpsest/study/calibration/attempts/replacement",
+      cellId,
+      reservationId: "reservation-replacement",
+      infrastructureClassification: "none",
+      actualTokenUsage: 18,
+      replacementOfAttemptId: "attempt-source",
+    };
+    const decoded = decodePhaseSummary(
+      phaseSummary({
+        state: "running",
+        reservations: [sourceReservation, replacementReservation],
+        attempts: [source, replacement],
+        cumulativeAuthorizedTokens: 1_200_000,
+        cumulativeAuthorizedMonetaryCents: 10_000,
+        cumulativeActualTokens: 30,
+      }),
     );
+
+    expect(decoded.attempts[1]).toMatchObject({
+      attemptId: "attempt-replacement",
+      replacementOfAttemptId: "attempt-source",
+    });
+  });
+
+  it.each([
+    ["unknown phase field", () => decodePhaseSummary({ ...phaseSummary(), currentCell: 1 })],
+    [
+      "duplicate primary reservation",
+      () => {
+        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const reservation = {
+          reservationId: "reservation-one",
+          cellId,
+          reservedAt: "2026-07-28T12:01:00.000Z",
+          kind: "primary",
+          authorizedTokens: 600_000,
+          monetaryAuthorizationCeilingCents: 5_000,
+          state: "reserved",
+        };
+        return decodePhaseSummary(
+          phaseSummary({
+            state: "running",
+            reservations: [
+              { ...reservation, state: "resolved", attemptId: "attempt-one" },
+              { ...reservation, reservationId: "reservation-two" },
+            ],
+            attempts: [
+              {
+                attemptId: "attempt-one",
+                attemptRoot: "/tmp/palimpsest/attempt-one",
+                cellId,
+                reservationId: "reservation-one",
+                infrastructureClassification: "none",
+                actualTokenUsage: 1,
+              },
+            ],
+            cumulativeAuthorizedTokens: 1_200_000,
+            cumulativeAuthorizedMonetaryCents: 10_000,
+            cumulativeActualTokens: 1,
+          }),
+        );
+      },
+    ],
+    [
+      "accounting drift",
+      () => decodePhaseSummary(phaseSummary({ cumulativeAuthorizedMonetaryCents: 1 })),
+    ],
+    [
+      "replacement of a model outcome",
+      () => {
+        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        return decodePhaseSummary(
+          phaseSummary({
+            state: "running",
+            reservations: [
+              {
+                reservationId: "reservation-source",
+                cellId,
+                reservedAt: "2026-07-28T12:01:00.000Z",
+                kind: "primary",
+                authorizedTokens: 1,
+                monetaryAuthorizationCeilingCents: 0,
+                state: "resolved",
+                attemptId: "attempt-source",
+              },
+              {
+                reservationId: "reservation-replacement",
+                cellId,
+                reservedAt: "2026-07-28T12:02:00.000Z",
+                kind: "replacement",
+                replacementOfAttemptId: "attempt-source",
+                authorizedTokens: 1,
+                monetaryAuthorizationCeilingCents: 0,
+                state: "resolved",
+                attemptId: "attempt-replacement",
+              },
+            ],
+            attempts: [
+              {
+                attemptId: "attempt-source",
+                attemptRoot: "/tmp/palimpsest/source",
+                cellId,
+                reservationId: "reservation-source",
+                infrastructureClassification: "none",
+                actualTokenUsage: 0,
+              },
+              {
+                attemptId: "attempt-replacement",
+                attemptRoot: "/tmp/palimpsest/replacement",
+                cellId,
+                reservationId: "reservation-replacement",
+                infrastructureClassification: "none",
+                actualTokenUsage: 0,
+                replacementOfAttemptId: "attempt-source",
+              },
+            ],
+            cumulativeAuthorizedTokens: 2,
+          }),
+        );
+      },
+    ],
+    [
+      "reserved replacement with an absent source",
+      () => {
+        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        return decodePhaseSummary(
+          phaseSummary({
+            state: "running",
+            reservations: [
+              {
+                reservationId: "reservation-replacement",
+                cellId,
+                reservedAt: "2026-07-28T12:02:00.000Z",
+                kind: "replacement",
+                replacementOfAttemptId: "attempt-absent",
+                authorizedTokens: 1,
+                monetaryAuthorizationCeilingCents: 0,
+                state: "reserved",
+              },
+            ],
+            cumulativeAuthorizedTokens: 1,
+          }),
+        );
+      },
+    ],
+  ])("rejects malformed phase lineage or state: %s", (_name, decode) => {
+    expect(decode).toThrow();
+  });
+
+  it("atomically replaces the complete phase summary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-phase-summary-"));
+    const initial = phaseSummary();
+    await publishPhaseSummary(root, initial);
+    const next = phaseSummary({
+      state: "running",
+      reservations: [
+        {
+          reservationId: "reservation-calibration-001",
+          cellId: plannedCells("calibration")[0]!.cellId,
+          reservedAt: "2026-07-28T12:01:00.000Z",
+          kind: "primary",
+          authorizedTokens: 600_000,
+          monetaryAuthorizationCeilingCents: 5_000,
+          state: "reserved",
+        },
+      ],
+      cumulativeAuthorizedTokens: 600_000,
+      cumulativeAuthorizedMonetaryCents: 5_000,
+    });
+    await publishPhaseSummary(root, next);
+
+    expect(await readPhaseSummary(root, "calibration")).toEqual(decodePhaseSummary(next));
   });
 
   it.each([
@@ -739,14 +1299,18 @@ describe("stored artifact decoders", () => {
     expect(decodeEvaluationRecord(value).status).toBe(value.status);
   });
 
-  it.each(["puzzle-build.json", "attempt.json", "experiment.json", "overlap.json", "result.json"])(
-    "rejects invalid JSON in %s before any decoder can return a partial object",
-    async (name) => {
-      const root = await mkdtemp(join(tmpdir(), "palimpsest-artifact-json-"));
-      const path = join(root, name);
-      await writeFile(path, '{"attemptId":', "utf8");
+  it.each([
+    "puzzle-build.json",
+    "attempt.json",
+    "design.json",
+    "phase.json",
+    "overlap.json",
+    "result.json",
+  ])("rejects invalid JSON in %s before any decoder can return a partial object", async (name) => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-artifact-json-"));
+    const path = join(root, name);
+    await writeFile(path, '{"attemptId":', "utf8");
 
-      await expect(readJsonObject(path)).rejects.toThrow(/not valid JSON/i);
-    },
-  );
+    await expect(readJsonObject(path)).rejects.toThrow(/not valid JSON/i);
+  });
 });

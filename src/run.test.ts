@@ -154,11 +154,11 @@ async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promi
   await writeFile(join(referenceCorpusPath, "reference.txt"), "reference\n", "utf8");
   return {
     attemptId: `attempt-${condition.toLowerCase()}-001`,
+    studyPhase: "standalone",
+    monetaryAuthorizationCeilingCents: 0,
     blockId: "calibration-theron-ware",
     condition,
     buildId: resolved.variantId === "stationary" ? STATIONARY_BUILD_ID : REKEY_BUILD_ID,
-    runName: "baseline",
-    repetition: 1,
     artifactRoot: join(root, "attempt"),
     buildRoot: join(root, "build"),
     referenceCorpusPath,
@@ -286,6 +286,8 @@ describe("fixed four-condition run coordinator", () => {
       });
 
       expect(result).toMatchObject({
+        studyPhase: "standalone",
+        monetaryAuthorizationCeilingCents: 0,
         blockId: "calibration-theron-ware",
         condition,
         communicationMode: expected.communicationMode,
@@ -339,6 +341,45 @@ describe("fixed four-condition run coordinator", () => {
     expect(config).not.toHaveProperty("maxGitBytes");
     expect(config).not.toHaveProperty("wallTimeMs");
     expect(config).not.toHaveProperty("stageIntervalMs");
+  });
+
+  it.each([
+    ["studyRootId", "study-fixture"],
+    ["conditionOrderPosition", 1],
+    ["designDigest", "a".repeat(64)],
+  ] as const)("forbids standalone study receipt field %s", async (field, value) => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-standalone-provenance-"));
+    const config = await fixtureConfig(root);
+
+    expect(() => validateAttemptConfig({ ...config, [field]: value })).toThrow(
+      "Standalone attempts cannot carry study receipt provenance.",
+    );
+  });
+
+  it("requires complete receipt provenance for study attempts and forbids standalone lineage", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-run-study-provenance-"));
+    const config = await fixtureConfig(root);
+    const studyConfig = {
+      ...config,
+      studyPhase: "validation",
+      studyRootId: "study-fixture",
+      conditionOrderPosition: 2,
+      designDigest: "a".repeat(64),
+    } as const;
+
+    expect(validateAttemptConfig(studyConfig)).toMatchObject({
+      studyPhase: "validation",
+      studyRootId: "study-fixture",
+      conditionOrderPosition: 2,
+      designDigest: "a".repeat(64),
+      monetaryAuthorizationCeilingCents: 0,
+    });
+    expect(() =>
+      validateAttemptConfig({
+        ...config,
+        replacementOfAttemptId: "attempt-source",
+      }),
+    ).toThrow("Standalone attempts cannot replace study attempts.");
   });
 
   it("publishes each first private stage before opening model sessions", async () => {
@@ -512,9 +553,9 @@ describe("fixed four-condition run coordinator", () => {
         root,
         buildRoot: join(root, "unused-build"),
         output,
+        studyPhase: "standalone",
+        monetaryAuthorizationCeilingCents: 0,
         condition: "CR",
-        runName: "provider",
-        repetition: 1,
         agents,
         tokenBudgetPerAgent: 100,
         sandbox: new FakeCommandSandbox(),

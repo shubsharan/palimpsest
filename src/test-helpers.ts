@@ -72,6 +72,12 @@ export class FakeCommandSandbox implements CommandSandbox {
 }
 
 export const TEST_DIGEST = "a".repeat(64);
+export const TEST_TREE_SEAL = {
+  schemaVersion: 1 as const,
+  digest: TEST_DIGEST,
+  fileCount: 1,
+  byteCount: 1,
+};
 
 export function testModelBinding(overrides: Partial<ModelBinding> = {}): ModelBinding {
   return {
@@ -191,10 +197,14 @@ export function testAttemptSummary(
   options: {
     agentIds?: readonly AgentId[];
     condition?: "CS" | "CR" | "IS" | "IR";
+    studyPhase?: "standalone" | "calibration" | "validation";
+    infrastructureAgentId?: AgentId;
+    replacementOfAttemptId?: string;
   } = {},
 ): Record<string, unknown> {
   const agentIds = options.agentIds ?? generateAgentIds(3);
   const condition = resolveCondition(options.condition ?? "CR");
+  const studyPhase = options.studyPhase ?? "standalone";
   const buildId = `build-${condition.variantId === "stationary" ? "b".repeat(64) : TEST_DIGEST}`;
   const sandbox = {
     ...TEST_SANDBOX_IDENTITY,
@@ -249,10 +259,22 @@ export function testAttemptSummary(
           agentIds: [agentId],
         }));
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     attemptId: "attempt-fixture",
-    runName: "fixture",
-    repetition: 1,
+    studyPhase,
+    ...(studyPhase === "standalone"
+      ? {}
+      : {
+          studyRootId: "study-fixture",
+          conditionOrderPosition: 1,
+          designDigest: TEST_DIGEST,
+        }),
+    monetaryAuthorizationCeilingCents: 0,
+    infrastructureClassification:
+      options.infrastructureAgentId === undefined ? "none" : "session-infrastructure-error",
+    ...(options.replacementOfAttemptId === undefined
+      ? {}
+      : { replacementOfAttemptId: options.replacementOfAttemptId }),
     blockId: "calibration-theron-ware",
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -260,6 +282,7 @@ export function testAttemptSummary(
     variantId: condition.variantId,
     buildId,
     buildRoot: "/tmp/palimpsest/build",
+    buildTreeSeal: TEST_TREE_SEAL,
     agentIds,
     releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
     cutoffMs: ATTEMPT_CUTOFF_MS,
@@ -277,41 +300,21 @@ export function testAttemptSummary(
         path: `/tmp/palimpsest/attempt/frozen/workspaces/${agentId}`,
         repositoryId: condition.communicationMode === "shared" ? "shared" : agentId,
       })),
+      treeSeal: TEST_TREE_SEAL,
     },
     sandbox,
-    sessions: agentIds.map((agentId) => ({
-      agentId,
-      model: testModelBinding(),
-      state: "finished",
-      inputTokens: 1,
-      outputTokens: 1,
-      activityCursor: 0,
-      terminationReason: "finished",
-      finalResponse: "done",
-    })),
-  };
-}
-
-export function testExperimentSummary(): Record<string, unknown> {
-  return {
-    schemaVersion: 1,
-    resolvedConfig: {
-      schemaVersion: 1,
-      puzzle: {
-        agentIds: generateAgentIds(3),
-        stageCount: 6,
-      },
-      runs: [{ name: "baseline", repetitions: 1 }],
-    },
-    buildRoot: "/tmp/palimpsest/build",
-    buildId: `build-${TEST_DIGEST}`,
-    attempts: [
-      {
-        runName: "baseline",
-        repetition: 1,
-        attemptId: "attempt-fixture",
-        attemptRoot: "/tmp/palimpsest/attempts/baseline/001",
-      },
-    ],
+    sessions: agentIds.map((agentId) => {
+      const infrastructureError = agentId === options.infrastructureAgentId;
+      return {
+        agentId,
+        model: testModelBinding(),
+        state: infrastructureError ? "infrastructure-error" : "finished",
+        inputTokens: 1,
+        outputTokens: 1,
+        activityCursor: 0,
+        terminationReason: infrastructureError ? "fixture infrastructure failure" : "finished",
+        ...(infrastructureError ? {} : { finalResponse: "done" }),
+      };
+    }),
   };
 }

@@ -101,7 +101,7 @@ describe("operator CLI contract", () => {
     expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
   });
 
-  it("accepts the provider-neutral build, run, experiment, and evaluate flag names", () => {
+  it("accepts the provider-neutral build, run, phase, replacement, and evaluate flags", () => {
     expect(
       parseFlags([
         "--",
@@ -111,10 +111,14 @@ describe("operator CLI contract", () => {
         "true",
         "--config",
         "experiments/config.yaml",
-        "--run",
-        "mixed",
         "--condition",
         "CR",
+        "--phase",
+        "validation",
+        "--study-root",
+        "study",
+        "--replace",
+        "attempt-source",
         "--output",
         "attempt",
         "--build",
@@ -135,8 +139,10 @@ describe("operator CLI contract", () => {
         ["--block", block],
         ["--discover", "true"],
         ["--config", "experiments/config.yaml"],
-        ["--run", "mixed"],
         ["--condition", "CR"],
+        ["--phase", "validation"],
+        ["--study-root", "study"],
+        ["--replace", "attempt-source"],
         ["--output", "attempt"],
         ["--build", "build"],
         ["--attempt", "attempt"],

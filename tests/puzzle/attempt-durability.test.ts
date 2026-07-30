@@ -14,7 +14,8 @@ import type { ConditionId } from "../../src/condition.js";
 import { evaluateFrozenAttempt } from "../../src/evaluate.js";
 import { appendTraceEvent } from "../../src/python.js";
 import { finalizeAttempt } from "../../src/run.js";
-import { FakeCommandSandbox, testAttemptSummary } from "../../src/test-helpers.js";
+import { sealTree } from "../../src/seal.js";
+import { FakeCommandSandbox, TEST_TREE_SEAL, testAttemptSummary } from "../../src/test-helpers.js";
 import type { AttemptResult } from "../../src/run.js";
 import type { AgentId } from "../../src/model.js";
 
@@ -96,6 +97,8 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
     buildRoot,
     result: {
       attemptId: "attempt-durable",
+      studyPhase: "standalone",
+      monetaryAuthorizationCeilingCents: 0,
       blockId: artifact.blockId,
       condition: artifact.condition,
       communicationMode: artifact.communicationMode,
@@ -103,8 +106,6 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
       variantId: artifact.variantId,
       buildId: artifact.buildId,
       buildRoot,
-      runName: "durability",
-      repetition: 1,
       agentIds: AGENT_IDS,
       releaseOffsetsMs: artifact.releaseOffsetsMs,
       cutoffMs: artifact.cutoffMs,
@@ -118,6 +119,7 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
         repositories,
         workspaces,
         frozen: true,
+        treeSeal: TEST_TREE_SEAL,
       },
       tracePath,
       traceMetadataPath,
@@ -161,6 +163,7 @@ describe("post-freeze attempt durability", () => {
         finalizeAttempt({
           attemptRoot: fixture.attemptRoot,
           buildRoot: fixture.buildRoot,
+          buildTreeSeal: await sealTree(fixture.buildRoot),
           result: fixture.result,
           publishSummary: publishAttemptSummary,
           observeOverlap: async () => {
@@ -183,7 +186,11 @@ describe("post-freeze attempt durability", () => {
 
       const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
       expect(summary).toMatchObject({
+        schemaVersion: 4,
         attemptId: fixture.result.attemptId,
+        studyPhase: "standalone",
+        monetaryAuthorizationCeilingCents: 0,
+        infrastructureClassification: "none",
         buildRoot: fixture.buildRoot,
         condition,
         communicationMode,
@@ -193,6 +200,10 @@ describe("post-freeze attempt durability", () => {
         },
       });
       expect(summary.frozen.repositories).toHaveLength(repositoryCount);
+      expect(summary).not.toHaveProperty("studyRootId");
+      expect(summary).not.toHaveProperty("conditionOrderPosition");
+      expect(summary).not.toHaveProperty("designDigest");
+      expect(summary).not.toHaveProperty("replacementOfAttemptId");
       const selectedWorkspace = summary.frozen.workspaces.find(
         ({ agentId }) => agentId === "agent-1",
       );
@@ -242,6 +253,42 @@ describe("post-freeze attempt durability", () => {
     },
   );
 
+  it("classifies a frozen infrastructure session during durable finalization", async () => {
+    const fixture = await frozenFixture();
+    const result: AttemptResult = {
+      ...fixture.result,
+      sessions: fixture.result.sessions.map((session) =>
+        session.agentId === "agent-1"
+          ? {
+              ...session,
+              state: "infrastructure-error",
+              terminationReason: "provider unavailable",
+            }
+          : session,
+      ),
+    };
+
+    await finalizeAttempt({
+      attemptRoot: fixture.attemptRoot,
+      buildRoot: fixture.buildRoot,
+      buildTreeSeal: await sealTree(fixture.buildRoot),
+      result,
+      publishSummary: publishAttemptSummary,
+      observeOverlap: async () => EMPTY_OVERLAP,
+      appendTrace: appendTraceEvent,
+    });
+
+    const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
+    expect(summary).toMatchObject({
+      studyPhase: "standalone",
+      infrastructureClassification: "session-infrastructure-error",
+    });
+    expect(summary.sessions.find(({ agentId }) => agentId === "agent-1")).toMatchObject({
+      state: "infrastructure-error",
+      terminationReason: "provider unavailable",
+    });
+  });
+
   it("does not begin overlap or expose a partial summary when attempt publication fails", async () => {
     const fixture = await frozenFixture();
     let overlapStarted = 0;
@@ -249,6 +296,7 @@ describe("post-freeze attempt durability", () => {
     const operation = finalizeAttempt({
       attemptRoot: fixture.attemptRoot,
       buildRoot: fixture.buildRoot,
+      buildTreeSeal: await sealTree(fixture.buildRoot),
       result: fixture.result,
       publishSummary: async (attemptRoot: string) => {
         await writeFile(join(attemptRoot, ".attempt.json.incomplete"), '{"attemptId":', "utf8");
@@ -276,6 +324,7 @@ describe("post-freeze attempt durability", () => {
     const operation = finalizeAttempt({
       attemptRoot: fixture.attemptRoot,
       buildRoot: fixture.buildRoot,
+      buildTreeSeal: await sealTree(fixture.buildRoot),
       result: fixture.result,
       publishSummary: publishAttemptSummary,
       observeOverlap: async () => {
@@ -294,5 +343,34 @@ describe("post-freeze attempt durability", () => {
       "secondary trace append failure",
     );
     await expect(stat(join(fixture.attemptRoot, "overlap.json"))).rejects.toThrow();
+  });
+
+  it("rejects build drift before durable publication or optional overlap", async () => {
+    const fixture = await frozenFixture();
+    const buildTreeSeal = await sealTree(fixture.buildRoot);
+    await writeFile(join(fixture.buildRoot, "drifted.txt"), "changed during attempt\n", "utf8");
+    let publications = 0;
+    let overlapStarted = 0;
+
+    await expect(
+      finalizeAttempt({
+        attemptRoot: fixture.attemptRoot,
+        buildRoot: fixture.buildRoot,
+        buildTreeSeal,
+        result: fixture.result,
+        publishSummary: async () => {
+          publications += 1;
+        },
+        observeOverlap: async () => {
+          overlapStarted += 1;
+          return EMPTY_OVERLAP;
+        },
+        appendTrace: appendTraceEvent,
+      }),
+    ).rejects.toThrow(/Attempt build tree has drifted/);
+
+    expect(publications).toBe(0);
+    expect(overlapStarted).toBe(0);
+    await expect(stat(join(fixture.attemptRoot, "attempt.json"))).rejects.toThrow();
   });
 });

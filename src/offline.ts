@@ -3,13 +3,12 @@ import { resolve } from "node:path";
 import { decodeBuildResult, decodeEvaluationRecord, decodeOverlapResult } from "./artifacts.js";
 import { buildPuzzle, type BuildPuzzleResult } from "./build.js";
 import { resolveCondition, type ConditionId } from "./condition.js";
-import type { PuzzleDefinition } from "./config.js";
 import { evaluatePuzzle } from "./evaluate.js";
 import { requiredFlag } from "./flags.js";
 import type { MonotonicClock } from "./reveal.js";
 import { createFixtureAgentRuntimes, runPuzzle, type RunPuzzleResult } from "./run.js";
 
-const OFFLINE_PUZZLE: PuzzleDefinition = { block: "calibration-theron-ware" };
+const OFFLINE_BLOCK = "calibration-theron-ware";
 
 export interface OfflinePuzzleOptions {
   root: string;
@@ -81,14 +80,14 @@ export async function runOfflinePuzzle(
   const build = await buildPuzzle({
     root,
     output: resolve(output, "build"),
-    block: OFFLINE_PUZZLE.block,
+    block: OFFLINE_BLOCK,
   });
   const run = await runPuzzle({
     root,
     buildRoot: build.buildPath,
     output: resolve(output, "attempt"),
-    runName: "offline",
-    repetition: 1,
+    studyPhase: "standalone",
+    monetaryAuthorizationCeilingCents: 0,
     condition: options.condition,
     agents: createFixtureAgentRuntimes(build.agentIds, "collaborative-revision"),
     tokenBudgetPerAgent: 100,

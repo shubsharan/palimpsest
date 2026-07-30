@@ -10,7 +10,7 @@ import type { AgentId } from "./model.js";
 import { collectCommittedFiles, collectFrozenCommittedFiles, observeOverlap } from "./overlap.js";
 import { runProcess } from "./process.js";
 import type { AttemptResult } from "./run.js";
-import { testAttemptSummary, testBuildManifest } from "./test-helpers.js";
+import { TEST_TREE_SEAL, testAttemptSummary, testBuildManifest } from "./test-helpers.js";
 
 const temporaryRoots: string[] = [];
 const agentIds = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
@@ -53,6 +53,7 @@ function frozenEnvironment(
       repositoryId: communicationMode === "shared" ? "shared" : agentId,
     })),
     frozen: true,
+    treeSeal: TEST_TREE_SEAL,
   };
 }
 

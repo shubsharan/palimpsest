@@ -59,8 +59,12 @@ describe("offline behavior-neutral runner", () => {
       expect(result.run.condition).toBe(conditionId);
       expect(result.run.communicationMode).toBe(condition.communicationMode);
       expect(result.run.keyRegime).toBe(condition.keyRegime);
-      expect(result.run.runName).toBe("offline");
-      expect(result.run.repetition).toBe(1);
+      expect(result.run.studyPhase).toBe("standalone");
+      expect(result.run.monetaryAuthorizationCeilingCents).toBe(0);
+      expect(result.run).not.toHaveProperty("studyRootId");
+      expect(result.run).not.toHaveProperty("conditionOrderPosition");
+      expect(result.run).not.toHaveProperty("designDigest");
+      expect(result.run).not.toHaveProperty("replacementOfAttemptId");
       expect(result.run.sessions).toHaveLength(result.build.agentIds.length);
       expect(result.run.sessions.every((session) => session.state !== "infrastructure-error")).toBe(
         true,
@@ -112,8 +116,11 @@ describe("offline behavior-neutral runner", () => {
         },
       });
       expect(attemptSummary).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
         attemptId: result.run.attemptId,
+        studyPhase: "standalone",
+        monetaryAuthorizationCeilingCents: 0,
+        infrastructureClassification: "none",
         condition: conditionId,
         communicationMode: condition.communicationMode,
         keyRegime: condition.keyRegime,
@@ -121,6 +128,10 @@ describe("offline behavior-neutral runner", () => {
         buildId: result.run.buildId,
         agentIds: result.build.agentIds,
       });
+      expect(attemptSummary).not.toHaveProperty("studyRootId");
+      expect(attemptSummary).not.toHaveProperty("conditionOrderPosition");
+      expect(attemptSummary).not.toHaveProperty("designDigest");
+      expect(attemptSummary).not.toHaveProperty("replacementOfAttemptId");
       expect(attemptSummary.frozen.repositories).toHaveLength(
         condition.communicationMode === "shared" ? 1 : 3,
       );

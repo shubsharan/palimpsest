@@ -53,19 +53,27 @@ import {
   type CommandSandbox,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
+import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
 
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
+
+export type AttemptStudyPhase = "standalone" | "calibration" | "validation";
 
 export interface AttemptConfig {
   attemptId: string;
+  studyPhase: AttemptStudyPhase;
+  studyRootId?: string;
+  conditionOrderPosition?: number;
+  designDigest?: string;
+  monetaryAuthorizationCeilingCents: number;
+  replacementOfAttemptId?: string;
   blockId: string;
   condition: ConditionId;
   buildId: string;
-  runName: string;
-  repetition: number;
   artifactRoot: string;
   buildRoot: string;
   referenceCorpusPath: string;
@@ -85,14 +93,18 @@ export type AgentRuntimeMap = Readonly<Record<AgentId, AgentRuntimeBinding>>;
 
 export interface AttemptResult {
   attemptId: string;
+  studyPhase: AttemptStudyPhase;
+  studyRootId?: string;
+  conditionOrderPosition?: number;
+  designDigest?: string;
+  monetaryAuthorizationCeilingCents: number;
+  replacementOfAttemptId?: string;
   blockId: string;
   condition: ConditionId;
   communicationMode: ReturnType<typeof resolveCondition>["communicationMode"];
   keyRegime: ReturnType<typeof resolveCondition>["keyRegime"];
   variantId: ReturnType<typeof resolveCondition>["variantId"];
   buildId: string;
-  runName: string;
-  repetition: number;
   buildRoot: string;
   agentIds: readonly AgentId[];
   releaseOffsetsMs: readonly number[];
@@ -142,6 +154,14 @@ function requirePositiveInteger(record: Record<string, unknown>, key: string): n
   const value = record[key];
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
     throw new Error(`${key} must be a positive safe integer.`);
+  }
+  return value as number;
+}
+
+function requireNonNegativeInteger(record: Record<string, unknown>, key: string): number {
+  const value = record[key];
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`${key} must be a non-negative safe integer.`);
   }
   return value as number;
 }
@@ -205,13 +225,49 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
   if (cutoffMs !== ATTEMPT_CUTOFF_MS) {
     throw new Error("cutoffMs must match the fixed 60-minute attempt cutoff.");
   }
+  const studyPhase = value.studyPhase;
+  if (studyPhase !== "standalone" && studyPhase !== "calibration" && studyPhase !== "validation") {
+    throw new Error("studyPhase must be standalone, calibration, or validation.");
+  }
+  const optionalStudyFields = [value.studyRootId, value.conditionOrderPosition, value.designDigest];
+  if (studyPhase === "standalone" && optionalStudyFields.some((field) => field !== undefined)) {
+    throw new Error("Standalone attempts cannot carry study receipt provenance.");
+  }
+  if (studyPhase === "standalone" && value.replacementOfAttemptId !== undefined) {
+    throw new Error("Standalone attempts cannot replace study attempts.");
+  }
+  let studyRootId: string | undefined;
+  let conditionOrderPosition: number | undefined;
+  let designDigest: string | undefined;
+  if (studyPhase !== "standalone") {
+    studyRootId = requireNonEmptyString(value, "studyRootId");
+    conditionOrderPosition = requirePositiveInteger(value, "conditionOrderPosition");
+    if (conditionOrderPosition > 4) {
+      throw new Error("conditionOrderPosition must be between 1 and 4.");
+    }
+    designDigest = requireNonEmptyString(value, "designDigest");
+    if (!SHA256.test(designDigest)) {
+      throw new Error("designDigest must be a lowercase SHA-256 digest.");
+    }
+  }
+  const replacementOfAttemptId =
+    value.replacementOfAttemptId === undefined
+      ? undefined
+      : requireNonEmptyString(value, "replacementOfAttemptId");
   return {
     attemptId: requireNonEmptyString(value, "attemptId"),
+    studyPhase,
+    ...(studyRootId === undefined ? {} : { studyRootId }),
+    ...(conditionOrderPosition === undefined ? {} : { conditionOrderPosition }),
+    ...(designDigest === undefined ? {} : { designDigest }),
+    monetaryAuthorizationCeilingCents: requireNonNegativeInteger(
+      value,
+      "monetaryAuthorizationCeilingCents",
+    ),
+    ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
     blockId: requireNonEmptyString(value, "blockId"),
     condition: condition.id,
     buildId,
-    runName: requireNonEmptyString(value, "runName"),
-    repetition: requirePositiveInteger(value, "repetition"),
     artifactRoot: requireNonEmptyString(value, "artifactRoot"),
     buildRoot: requireNonEmptyString(value, "buildRoot"),
     referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
@@ -426,14 +482,22 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   const protocolDigest = hashProtocolSnapshot(protocol);
   await observationLog.append("attempt.configured", {
     attemptId: config.attemptId,
+    studyPhase: config.studyPhase,
+    ...(config.studyRootId === undefined ? {} : { studyRootId: config.studyRootId }),
+    ...(config.conditionOrderPosition === undefined
+      ? {}
+      : { conditionOrderPosition: config.conditionOrderPosition }),
+    ...(config.designDigest === undefined ? {} : { designDigest: config.designDigest }),
+    monetaryAuthorizationCeilingCents: config.monetaryAuthorizationCeilingCents,
+    ...(config.replacementOfAttemptId === undefined
+      ? {}
+      : { replacementOfAttemptId: config.replacementOfAttemptId }),
     blockId: config.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,
     variantId: condition.variantId,
     buildId: config.buildId,
-    runName: config.runName,
-    repetition: config.repetition,
     releaseOffsetsMs: config.releaseOffsetsMs,
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
@@ -642,14 +706,22 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   await observationLog.flush();
   return {
     attemptId: config.attemptId,
+    studyPhase: config.studyPhase,
+    ...(config.studyRootId === undefined ? {} : { studyRootId: config.studyRootId }),
+    ...(config.conditionOrderPosition === undefined
+      ? {}
+      : { conditionOrderPosition: config.conditionOrderPosition }),
+    ...(config.designDigest === undefined ? {} : { designDigest: config.designDigest }),
+    monetaryAuthorizationCeilingCents: config.monetaryAuthorizationCeilingCents,
+    ...(config.replacementOfAttemptId === undefined
+      ? {}
+      : { replacementOfAttemptId: config.replacementOfAttemptId }),
     blockId: config.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,
     variantId: condition.variantId,
     buildId: config.buildId,
-    runName: config.runName,
-    repetition: config.repetition,
     buildRoot: config.buildRoot,
     agentIds: config.agentIds,
     releaseOffsetsMs: config.releaseOffsetsMs,
@@ -669,8 +741,13 @@ export interface RunPuzzleOptions {
   root: string;
   buildRoot: string;
   output: string;
-  runName: string;
-  repetition: number;
+  attemptId?: string;
+  studyPhase: AttemptStudyPhase;
+  studyRootId?: string;
+  conditionOrderPosition?: number;
+  designDigest?: string;
+  monetaryAuthorizationCeilingCents: number;
+  replacementOfAttemptId?: string;
   condition: ConditionId;
   agents: AgentRuntimeMap;
   tokenBudgetPerAgent: number;
@@ -686,6 +763,7 @@ export interface RunPuzzleResult extends AttemptResult {
 export interface FinalizeAttemptOptions {
   attemptRoot: string;
   buildRoot: string;
+  buildTreeSeal: TreeSeal;
   result: AttemptResult;
   publishSummary: (attemptRoot: string, summary: AttemptSummary) => Promise<void>;
   observeOverlap: () => Promise<OverlapResult>;
@@ -693,11 +771,29 @@ export interface FinalizeAttemptOptions {
 }
 
 export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<OverlapResult> {
+  const infrastructureClassification = options.result.sessions.some(
+    (session) => session.state === "infrastructure-error",
+  )
+    ? "session-infrastructure-error"
+    : "none";
   const summary = decodeAttemptSummary({
-    schemaVersion: 3,
+    schemaVersion: 4,
     attemptId: options.result.attemptId,
-    runName: options.result.runName,
-    repetition: options.result.repetition,
+    studyPhase: options.result.studyPhase,
+    ...(options.result.studyRootId === undefined
+      ? {}
+      : { studyRootId: options.result.studyRootId }),
+    ...(options.result.conditionOrderPosition === undefined
+      ? {}
+      : { conditionOrderPosition: options.result.conditionOrderPosition }),
+    ...(options.result.designDigest === undefined
+      ? {}
+      : { designDigest: options.result.designDigest }),
+    monetaryAuthorizationCeilingCents: options.result.monetaryAuthorizationCeilingCents,
+    infrastructureClassification,
+    ...(options.result.replacementOfAttemptId === undefined
+      ? {}
+      : { replacementOfAttemptId: options.result.replacementOfAttemptId }),
     blockId: options.result.blockId,
     condition: options.result.condition,
     communicationMode: options.result.communicationMode,
@@ -705,6 +801,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     variantId: options.result.variantId,
     buildId: options.result.buildId,
     buildRoot: options.buildRoot,
+    buildTreeSeal: options.buildTreeSeal,
     agentIds: options.result.agentIds,
     releaseOffsetsMs: options.result.releaseOffsetsMs,
     cutoffMs: options.result.cutoffMs,
@@ -718,10 +815,12 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
       communicationMode: options.result.frozen.communicationMode,
       repositories: options.result.frozen.repositories,
       workspaces: options.result.frozen.workspaces,
+      treeSeal: options.result.frozen.treeSeal,
     },
     sandbox: { ...options.result.sandbox, ...SANDBOX_POLICY },
     sessions: options.result.sessions,
   });
+  await verifyTree(options.buildRoot, options.buildTreeSeal, "Attempt build tree");
   await options.publishSummary(options.attemptRoot, summary);
   try {
     return await options.observeOverlap();
@@ -767,6 +866,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const preflight = usesProvider ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
   const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
+  const buildTreeSeal = await sealTree(buildRoot);
   const condition = resolveCondition(options.condition);
   const variant = selectBuildVariant(manifest, condition.variantId);
   const agentStages = Object.fromEntries(
@@ -778,14 +878,24 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
         .map((stage) => absoluteFrom(buildRoot, stage.sourcePath)),
     ]),
   ) as Record<AgentId, readonly string[]>;
-  const attemptId = `attempt-${options.runName}-${condition.id.toLowerCase()}-${String(options.repetition).padStart(3, "0")}-${variant.buildId.slice("build-".length, "build-".length + 16)}`;
+  const attemptId =
+    options.attemptId ??
+    `attempt-standalone-${condition.id.toLowerCase()}-${variant.buildId.slice("build-".length, "build-".length + 16)}`;
   const config: AttemptConfig = {
     attemptId,
+    studyPhase: options.studyPhase,
+    ...(options.studyRootId === undefined ? {} : { studyRootId: options.studyRootId }),
+    ...(options.conditionOrderPosition === undefined
+      ? {}
+      : { conditionOrderPosition: options.conditionOrderPosition }),
+    ...(options.designDigest === undefined ? {} : { designDigest: options.designDigest }),
+    monetaryAuthorizationCeilingCents: options.monetaryAuthorizationCeilingCents,
+    ...(options.replacementOfAttemptId === undefined
+      ? {}
+      : { replacementOfAttemptId: options.replacementOfAttemptId }),
     blockId: manifest.blockId,
     condition: condition.id,
     buildId: variant.buildId,
-    runName: options.runName,
-    repetition: options.repetition,
     artifactRoot: output,
     buildRoot,
     referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
@@ -808,6 +918,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const overlap = await finalizeAttempt({
     attemptRoot: output,
     buildRoot,
+    buildTreeSeal,
     result,
     publishSummary: publishAttemptSummary,
     observeOverlap: () => observeOverlap(root, buildRoot, result),

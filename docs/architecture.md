@@ -13,18 +13,21 @@ One root TypeScript application lives under `src/`. One Python distribution unde
 
 ## Experiment Configuration
 
-The five-entry `experiments/blocks.json` catalog owns scientific block inputs. The versioned YAML manifest selects a block and declares operational runtime inputs. Both reject unknown fields before build or attempt side effects.
+The five-entry `experiments/blocks.json` catalog owns scientific block inputs. One strict schema-version-2 YAML manifest freezes the complete study protocol. Both reject unknown fields before build or attempt side effects.
 
 ```text
-experiment.yaml
-  puzzle     block
-  limits     token budget
-  providers  direct driver and credential environment names
-  models     provider model IDs and non-secret settings
-  runs       homogeneous or ordered mixed assignments and repetitions
+study.yaml
+  blocks            one calibration and four validation IDs
+  assignment        three ordered agent/model bindings
+  schedule          six release offsets and cutoff
+  budgets           per-attempt values and immutable total ceilings
+  providers/models  direct drivers, environment names, and model IDs
+  orders            calibration plus four balanced validation sequences
+  scoring/rubric    deterministic metric and descriptive review boundary
+  failurePolicy     stop, no retry, explicit cited replacement
 ```
 
-The block catalog pins target and references, seed, first-feasible prose window, and fixed three-agent/six-stage geometry. The resolved run configuration materializes canonical agent identities, ordered model bindings, and repetition ordinals. Credential values are resolved only when a live adapter is constructed and never enter this snapshot.
+The block catalog pins target and references, seed, first-feasible prose window, and fixed three-agent/six-stage geometry. The resolved study materializes the exact twenty planned cells and three-agent assignment without reading credentials. Only the per-agent token budget and per-attempt monetary authorization cents may change after calibration, within immutable total ceilings and with an explicit adjustment record. Credential values are resolved only after study checks and provider preflight and never enter the resolved manifest or artifacts.
 
 The supported direct drivers are OpenAI, Anthropic, Google, and OpenAI-compatible endpoints. The Vercel AI SDK is a narrow turn-level adapter: Palimpsest continues to own session loops, tools, token cutoffs, aborts, artifacts, and failure classification. Provider factories do not add gateway, registry, fallback, or attempt-retry behavior.
 
@@ -47,7 +50,7 @@ For fixed registered source bytes, block definition, and builder version, the wi
 
 ## Attempt Runtime
 
-`puzzle:run` selects one named model assignment and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the configured block matches the paired build, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
+`puzzle:run` uses the fixed manifest assignment and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the supplied paired build is one of the registered study blocks, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
@@ -60,30 +63,35 @@ Within an attempt, TypeScript:
 - freezes every native Git repository and workspace without merging after all sessions end; and
 - atomically publishes `attempt.json` before optional overlap observation.
 
-Sessions in one attempt run concurrently. They share neither message history nor private evidence. No rounds, roles, checkpoints, mandatory Git behavior, or solver file convention are introduced by configurable experiments.
+Sessions in one attempt run concurrently. They share neither message history nor private evidence. No rounds, roles, checkpoints, mandatory Git behavior, or solver file convention are introduced by the study protocol.
 
 Missing provider usage or a provider request failure is an infrastructure-error session rather than estimated usage or a model-quality outcome. The attempt is still frozen and published. An experiment indexes that durable attempt and then stops before launching another.
 
 ## Experiment Orchestration
 
-`puzzle:experiment` validates the complete configuration before creating its absent output root. It builds the puzzle once under `build/`, then executes run conditions and repetitions sequentially in declaration order:
+`puzzle:experiment --phase calibration|validation` expands one fixed local state machine. Calibration prepares and validates all five builds, seals each complete build tree, and binds those seals plus prompt templates, rubric, assignment, order, scoring, failure rules, and sandbox identity before exclusively publishing `design.json`. Validation requires that receipt, a completed calibration phase, and unchanged build trees.
 
 ```text
-experiment/
-  experiment.json
-  build/
-    puzzle-build.json
-  attempts/
-    <run-name>/
-      001/
+study/
+  design.json
+  builds/
+    <block-id>/
+      puzzle-build.json
+  calibration/
+    phase.json
+    attempts/
+      <attempt-id>/
         attempt.json
-      002/
+  validation/
+    phase.json
+    attempts/
+      <attempt-id>/
         attempt.json
 ```
 
-After each durable attempt, the runner writes a complete temporary experiment summary in the output directory and atomically renames it to `experiment.json`. The summary contains the resolved non-secret configuration, build identity, and ordered completed-attempt entries. It does not aggregate model quality or choose an evaluation.
+Before phase initialization, the runner exclusively creates one empty phase-execution lock and holds it for the complete invocation. A competing or abandoned lock fails before preflight, reservation, adapter construction, or provider work; there is no heartbeat, lock stealing, or stale-process recovery. Immediately before opening a cell's sessions, the runner reverifies the selected receipt-bound build tree and writes one launch reservation to the phase summary. After the sessions and Git freeze complete, it reverifies the selected build and only then publishes immutable `attempt.json`, indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
 
-A command-level failure before attempt publication creates no success-shaped entry. A failure after earlier attempts leaves their artifacts and the last valid summary untouched. There is no automatic resume, rollback, provider fallback, parallel attempt scheduling, or hidden retry.
+A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. A post-publication overlap error remains diagnostic: the durable non-infrastructure attempt is indexed and the phase continues sequentially without manual resume. Successful resume skips every indexed cell. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, or aggregation.
 
 ## Provider And Secret Boundary
 
@@ -104,15 +112,17 @@ Lease creation and every command share bounded deadlines under the attempt's glo
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Reviewer-selected evaluation uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, that workspace's assigned frozen Git origin, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
+Reviewer-selected evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals, then uses a separate short-lived container with a copy of the selected frozen workspace, complete ciphertext, that workspace's assigned frozen Git origin, and temporary storage. The reviewer must explicitly record the workspace, command, and output path before execution.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
 ## Trace And Artifacts
 
-The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Configured events identify the condition, derived treatment, selected variant build, fixed schedule and cutoff, run and repetition, and requested model bindings without exposing oracle sets or hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
+The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Study reload requires the referenced trace and metadata to remain at their canonical attempt-root paths and validates the complete current files before accepting an indexed attempt. The trace remains mutable supporting evidence rather than receipt-bound bytes so optional overlap and explicit evaluation can append after attempt publication; coherent rewriting by the trusted operator remains out of scope. Configured events identify standalone or study phase, condition, derived treatment, selected variant build, fixed schedule and cutoff, resource authorization, and requested model bindings without exposing block order, rubric, replacement policy, oracle sets, or hidden changed symbols. Session events may record actual provider/model identity and normalized usage.
 
-`attempt.json` schema version 3 contains the block, condition, derived treatment, selected build, exact schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory, trace, sandbox identity, and token limit. It is the durable evaluation boundary.
+`attempt.json` schema version 4 contains the block, condition, derived treatment, selected build and complete-tree seal, exact schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory and complete-tree seal, trace, sandbox identity, token limit, monetary authorization, infrastructure classification, and optional study/replacement provenance. It is the durable evaluation boundary.
+
+The canonical tree-sealing primitive covers sorted relative paths, directories, file bytes and lengths, executable bits, and symlink targets. It replaces per-consumer artifact lists, so new builder, checker, runner, or evaluator inputs are bound automatically when they live under the published root. This is local drift detection under a trusted-operator model, not cryptographic attestation: a coherent rewrite of artifacts and their embedded seals, signatures, immutable storage, and an external transparency service are outside the project boundary.
 
 Optional post-freeze overlap observation reports obvious exact or normalized raw text overlap without warning, blocking, invalidating, or rescoring the run. If observation fails, the already published attempt remains evaluatable.
 
@@ -123,10 +133,14 @@ All commands dispatch through `src/cli.ts` and emit one JSON object on success:
 ```bash
 pnpm preflight
 pnpm puzzle:build -- --block calibration-theron-ware --output artifacts/build
-pnpm puzzle:run -- --config experiments/config.yaml --run gpt-only \
-  --condition CR --build artifacts/build --output artifacts/attempt
+pnpm puzzle:run -- --config experiments/config.yaml \
+  --condition CR --build artifacts/build --attempt-root artifacts/attempt
 pnpm puzzle:experiment -- --config experiments/config.yaml \
-  --condition CR --output artifacts/experiment
+  --phase calibration --study-root artifacts/study
+pnpm puzzle:experiment -- --config experiments/config.yaml \
+  --phase validation --study-root artifacts/study
+pnpm puzzle:experiment -- --config experiments/config.yaml \
+  --phase validation --study-root artifacts/study --replace <attempt-id>
 pnpm puzzle:evaluate -- --attempt artifacts/attempt --workspace agent-1 \
   --command "sh solve.sh" --output-path reconstruction.txt
 pnpm puzzle:offline -- --condition CR --output artifacts/offline
@@ -136,9 +150,9 @@ The offline command composes the same condition-selected build, runtime, native 
 
 ## Failure Semantics
 
-Configuration, build, adapter construction, provider execution, sandbox, Git, trace, artifact publication, overlap, and evaluation failures remain explicit infrastructure outcomes. Model mistakes, tool errors, repeated checking, raw sharing, no Git use, unusual coordination, and voluntary early completion remain observable model outcomes.
+Configuration, build, adapter construction, provider execution, sandbox, Git, trace, artifact publication, overlap, and evaluation failures remain explicit infrastructure outcomes. Only a frozen session-infrastructure classification is replacement-eligible. Model mistakes, tool errors, repeated checking, raw sharing, no Git use, unusual coordination, and voluntary early completion remain observable model outcomes.
 
-The architecture preserves the strongest durable boundary available: publication of a complete attempt before optional observation, and publication of a complete experiment summary after each durable attempt.
+The architecture preserves the strongest local durable boundary available: exclusive design-receipt publication before sessions, one local phase writer, whole-tree verification before launch and attempt publication, launch reservation before provider work, complete attempt publication before optional observation, and atomic phase indexing after each durable attempt.
 
 `pnpm preflight` is the authorization boundary for provider-backed work. It requires a clean committed checkout, rebuilds the sandbox, runs full verification plus a fresh offline fixture, and writes `artifacts/preflight.json` only on success. A provider-backed attempt must match that receipt before model sessions begin and copies it into the attempt root first.
 
@@ -146,9 +160,9 @@ The architecture preserves the strongest durable boundary available: publication
 
 The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, shared visibility, isolated non-observability, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
 
-## Study Conditions And Planned Protocol
+## Study Conditions And Frozen Protocol
 
-Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 remains planned and will replace the transitional schema-v1 model-assignment manifest with the frozen five-block execution protocol.
+Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage.
 
 Canonical acceptance is:
 

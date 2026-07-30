@@ -21,6 +21,7 @@ import { requiredFlag } from "./flags.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 
 import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
+import { verifyTree } from "./seal.js";
 
 export type EvaluationStatus = "scored" | "not-runnable" | "no-output" | "execution-error";
 
@@ -273,6 +274,10 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
         },
   );
   const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
+  await Promise.all([
+    verifyTree(attempt.buildRoot, attempt.buildTreeSeal, "Attempt build tree"),
+    verifyTree(attempt.frozen.root, attempt.frozen.treeSeal, "Attempt frozen tree"),
+  ]);
   const workspace = options.workspace;
   if (!attempt.agentIds.includes(workspace)) {
     throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);

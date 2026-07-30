@@ -16,11 +16,11 @@ Each block produces stationary and re-key twins from one paragraph allocation an
 
 Trusted build records retain shared anchors, universal sentinels, owner-weighted specialists, matched stable controls, allocation metrics, rejected tiers, and manipulation checks. Agent-visible stages contain none of those labels, keys, expectations, or results.
 
-Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. The four-condition runtime releases them at 0, 5, 10, 20, 30, and 40 minutes and ends the attempt at 60 minutes. Feature 015 will freeze the complete study protocol without rebuilding block bytes.
+Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. The four-condition runtime releases them at 0, 5, 10, 20, 30, and 40 minutes and ends the attempt at 60 minutes. The frozen study protocol prepares the five deterministic block builds before calibration behavior begins.
 
 ## The Agents
 
-The manifest also declares direct provider connections and named model profiles. A run condition can assign one profile to every agent or an ordered profile per agent. This supports homogeneous and mixed-model conditions across OpenAI, Anthropic, Google, and OpenAI-compatible endpoints without provider logic in the puzzle runtime.
+The manifest declares direct provider connections, named model profiles, and one fixed ordered three-agent assignment used in every cell. It supports OpenAI, Anthropic, Google, and OpenAI-compatible endpoints without provider logic in the puzzle runtime.
 
 Provider credentials are read only from named environment variables. They are not valid literal configuration values and are excluded from traces, attempt records, experiment summaries, error text, and command sandboxes. The runner does not silently fall back to another provider or retry an attempt.
 
@@ -62,9 +62,9 @@ The selected code runs against the complete ciphertext without the oracle, peer 
 
 ## Research Records
 
-An experiment builds its puzzle once, then executes conditions and repetitions sequentially. Sessions inside one attempt remain concurrent. After each durable attempt, an atomically replaced `experiment.json` indexes the resolved non-secret condition and attempt root. A later failure cannot erase earlier attempts.
+A study prepares all five builds and an immutable design receipt before calibration sessions begin. Calibration executes four condition cells; validation executes sixteen cells under four balanced orders. Attempts remain sequential while the three sessions inside one attempt remain concurrent. Each phase summary records launch reservations, durable attempts, resource authorization, and explicit replacement lineage without selecting or aggregating outcomes.
 
-Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain the condition and derived treatment, selected build, fixed schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, termination, model and tool activity, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Feature 015 will freeze the study-wide protocol. Records do not retain complete provider response payloads or credential values.
+Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain study provenance, condition and derived treatment, selected build, fixed schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, termination, model and tool activity, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Records do not retain complete provider response payloads or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 

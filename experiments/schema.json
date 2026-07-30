@@ -1,14 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://palimpsest.local/experiment.schema.json",
-  "title": "Palimpsest Experiment",
+  "$id": "https://palimpsest.local/study.schema.json",
+  "title": "Palimpsest Study",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "puzzle", "limits", "providers", "models", "runs"],
+  "required": [
+    "schemaVersion",
+    "blocks",
+    "assignment",
+    "providers",
+    "models",
+    "schedule",
+    "budgets",
+    "orders",
+    "scoring",
+    "rubric",
+    "adjustableFields",
+    "failurePolicy"
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "puzzle": { "$ref": "#/$defs/puzzle" },
-    "limits": { "$ref": "#/$defs/limits" },
+    "schemaVersion": { "const": 2 },
+    "blocks": { "$ref": "#/$defs/blocks" },
+    "assignment": { "$ref": "#/$defs/assignment" },
     "providers": {
       "type": "object",
       "minProperties": 1,
@@ -21,35 +34,252 @@
       "propertyNames": { "$ref": "#/$defs/identifier" },
       "additionalProperties": { "$ref": "#/$defs/model" }
     },
-    "runs": {
+    "schedule": { "$ref": "#/$defs/schedule" },
+    "budgets": { "$ref": "#/$defs/budgets" },
+    "orders": { "$ref": "#/$defs/orders" },
+    "scoring": { "$ref": "#/$defs/scoring" },
+    "rubric": { "$ref": "#/$defs/rubric" },
+    "adjustableFields": {
       "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/run" }
-    }
+      "prefixItems": [
+        { "const": "budgets.tokenBudgetPerAgent" },
+        { "const": "budgets.perAttemptMonetaryCeilingCents" }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "failurePolicy": { "$ref": "#/$defs/failurePolicy" }
   },
   "$defs": {
     "identifier": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "environmentName": {
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
-    "puzzle": {
+    "block": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["block"],
+      "required": ["blockId", "phase"],
       "properties": {
-        "block": { "$ref": "#/$defs/identifier" }
+        "blockId": { "$ref": "#/$defs/identifier" },
+        "phase": { "enum": ["calibration", "validation"] }
       }
     },
-    "limits": {
+    "blocks": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/block" },
+            {
+              "type": "object",
+              "properties": {
+                "blockId": { "const": "calibration-theron-ware" },
+                "phase": { "const": "calibration" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/block" },
+            {
+              "type": "object",
+              "properties": {
+                "blockId": { "const": "validation-odd-women" },
+                "phase": { "const": "validation" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/block" },
+            {
+              "type": "object",
+              "properties": {
+                "blockId": { "const": "validation-pointed-firs" },
+                "phase": { "const": "validation" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/block" },
+            {
+              "type": "object",
+              "properties": {
+                "blockId": { "const": "validation-custom-country" },
+                "phase": { "const": "validation" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/block" },
+            {
+              "type": "object",
+              "properties": {
+                "blockId": { "const": "validation-woodlanders" },
+                "phase": { "const": "validation" }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "assignmentEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tokenBudgetPerAgent"],
+      "required": ["agentId", "modelProfileId"],
       "properties": {
-        "tokenBudgetPerAgent": { "type": "integer", "minimum": 1 }
+        "agentId": { "type": "string" },
+        "modelProfileId": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "assignment": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/assignmentEntry" },
+            { "type": "object", "properties": { "agentId": { "const": "agent-1" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/assignmentEntry" },
+            { "type": "object", "properties": { "agentId": { "const": "agent-2" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/assignmentEntry" },
+            { "type": "object", "properties": { "agentId": { "const": "agent-3" } } }
+          ]
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "conditionOrder": {
+      "type": "array",
+      "prefixItems": [
+        { "enum": ["CS", "CR", "IS", "IR"] },
+        { "enum": ["CS", "CR", "IS", "IR"] },
+        { "enum": ["CS", "CR", "IS", "IR"] },
+        { "enum": ["CS", "CR", "IS", "IR"] }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseOffsetsMs", "cutoffMs"],
+      "properties": {
+        "releaseOffsetsMs": {
+          "type": "array",
+          "prefixItems": [
+            { "const": 0 },
+            { "const": 300000 },
+            { "const": 600000 },
+            { "const": 1200000 },
+            { "const": 1800000 },
+            { "const": 2400000 }
+          ],
+          "items": false,
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "cutoffMs": { "const": 3600000 }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokenBudgetPerAgent",
+        "perAttemptMonetaryCeilingCents",
+        "totalTokenCeiling",
+        "totalMonetaryCeilingCents"
+      ],
+      "properties": {
+        "tokenBudgetPerAgent": { "type": "integer", "minimum": 1 },
+        "perAttemptMonetaryCeilingCents": { "type": "integer", "minimum": 0 },
+        "totalTokenCeiling": { "type": "integer", "minimum": 1 },
+        "totalMonetaryCeilingCents": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "orders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calibration", "validation"],
+      "properties": {
+        "calibration": { "$ref": "#/$defs/conditionOrder" },
+        "validation": {
+          "type": "array",
+          "prefixItems": [
+            { "$ref": "#/$defs/conditionOrder" },
+            { "$ref": "#/$defs/conditionOrder" },
+            { "$ref": "#/$defs/conditionOrder" },
+            { "$ref": "#/$defs/conditionOrder" }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metricId", "reviewerSelectionId"],
+      "properties": {
+        "metricId": { "const": "normalized-positional-word-v1" },
+        "reviewerSelectionId": { "const": "manual-workspace-command-output-v1" }
+      }
+    },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubricId", "path", "sha256"],
+      "properties": {
+        "rubricId": { "$ref": "#/$defs/identifier" },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "failurePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stopOnInfrastructureFailure",
+        "automaticRetry",
+        "replacement",
+        "eligibleClassification"
+      ],
+      "properties": {
+        "stopOnInfrastructureFailure": { "const": true },
+        "automaticRetry": { "const": false },
+        "replacement": { "const": "explicit-appended" },
+        "eligibleClassification": { "const": "session-infrastructure-error" }
       }
     },
     "provider": {
@@ -102,25 +332,6 @@
           "additionalProperties": true
         }
       }
-    },
-    "run": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name"],
-      "properties": {
-        "name": { "$ref": "#/$defs/identifier" },
-        "model": { "$ref": "#/$defs/identifier" },
-        "agents": {
-          "type": "array",
-          "minItems": 2,
-          "items": { "$ref": "#/$defs/identifier" }
-        },
-        "repetitions": { "type": "integer", "minimum": 1 }
-      },
-      "oneOf": [
-        { "required": ["model"], "not": { "required": ["agents"] } },
-        { "required": ["agents"], "not": { "required": ["model"] } }
-      ]
     }
   }
 }

@@ -9,6 +9,7 @@ import { resolveCondition, type ConditionId } from "./condition.js";
 import { evaluateFrozenAttempt, evaluatePuzzle } from "./evaluate.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import type { SandboxCommandResult } from "./sandbox/contracts.js";
+import { sealTree, type TreeSeal } from "./seal.js";
 import {
   FakeCommandSandbox,
   testAttemptSummary,
@@ -59,6 +60,7 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
     root: string;
     repositories: Array<{ repositoryId: string; path: string; agentIds: string[] }>;
     workspaces: Array<{ agentId: string; path: string; repositoryId: string }>;
+    treeSeal: TreeSeal;
   };
   frozen.root = frozenRoot;
   frozen.repositories = frozen.repositories.map((repository) => ({
@@ -88,7 +90,6 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
     ...frozen.workspaces.map((workspace) => mkdir(workspace.path, { recursive: true })),
   ]);
   await Promise.all([
-    writeFile(join(attemptRoot, "attempt.json"), `${JSON.stringify(attempt)}\n`, "utf8"),
     writeFile(
       join(buildRoot, "puzzle-build.json"),
       `${JSON.stringify(testBuildManifest())}\n`,
@@ -106,6 +107,9 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
       writeFile(join(workspace.path, `${workspace.agentId}.txt`), `${workspace.agentId}\n`, "utf8"),
     ),
   ]);
+  attempt.buildTreeSeal = await sealTree(buildRoot);
+  frozen.treeSeal = await sealTree(frozenRoot);
+  await writeFile(join(attemptRoot, "attempt.json"), `${JSON.stringify(attempt)}\n`, "utf8");
   return {
     root,
     attemptRoot,

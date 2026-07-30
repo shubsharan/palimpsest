@@ -3,158 +3,249 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  parseExperimentYaml,
-  resolveExperimentConfig,
-  validateExperimentConfig,
+  expandPhase,
+  loadResolvedStudy,
+  loadStudyManifest,
+  parseStudyYaml,
+  resolveStudy,
   validateProviderOptions,
+  validateStudyManifest,
+  type StudyManifest,
 } from "./config.js";
 
-function validConfig(): Record<string, unknown> {
-  return {
-    schemaVersion: 1,
-    puzzle: { block: "calibration-theron-ware" },
-    limits: { tokenBudgetPerAgent: 200_000 },
-    providers: {
-      openai: { driver: "openai", apiKeyEnv: "RESEARCH_OPENAI_KEY" },
-      anthropic: { driver: "anthropic", apiKeyEnv: "RESEARCH_ANTHROPIC_KEY" },
-      google: { driver: "google", apiKeyEnv: "RESEARCH_GOOGLE_KEY" },
-      local: {
-        driver: "openai-compatible",
-        baseURL: "http://127.0.0.1:4000/v1",
-      },
-    },
-    models: {
-      gpt: {
-        provider: "openai",
-        model: "gpt-research",
-        settings: { maxOutputTokens: 4096, temperature: 0.2, topP: 0.9, seed: 7 },
-      },
-      claude: {
-        provider: "anthropic",
-        model: "claude-research",
-        providerOptions: { anthropic: { effort: "low" } },
-      },
-      gemini: { provider: "google", model: "gemini-research" },
-      local: { provider: "local", model: "local-research" },
-    },
-    runs: [
-      { name: "gpt-only", model: "gpt" },
-      { name: "mixed", agents: ["gpt", "claude", "gemini"], repetitions: 2 },
-    ],
-  };
+const fixture = (name: string): string => resolve("tests", "fixtures", "config", name);
+
+async function validManifest(): Promise<StudyManifest> {
+  return loadStudyManifest(fixture("valid.yaml"));
 }
 
-describe("experiment configuration", () => {
-  it("parses YAML and rejects duplicate keys and aliases", () => {
+describe("study manifest", () => {
+  it("parses YAML while rejecting duplicate keys and aliases", () => {
     expect(() =>
-      parseExperimentYaml(`
-schemaVersion: 1
-schemaVersion: 1
+      parseStudyYaml(`
+schemaVersion: 2
+schemaVersion: 2
 `),
     ).toThrow(/map keys must be unique/i);
 
     expect(() =>
-      parseExperimentYaml(`
-schemaVersion: 1
+      parseStudyYaml(`
+schemaVersion: 2
 value: &shared { nested: true }
 copy: *shared
 `),
     ).toThrow(/alias/i);
   });
 
-  it("rejects unknown structural fields with a useful path", () => {
-    const config = validConfig();
-    config.unexpected = true;
+  it("resolves the exact five-block matrix without reading credentials", async () => {
+    const study = await resolveStudy(await validManifest(), resolve("."));
 
-    expect(() => validateExperimentConfig(config)).toThrow(/\/unexpected|unexpected/);
-  });
-
-  it("resolves the block, defaults, and homogeneous and mixed assignments", async () => {
-    const resolved = await resolveExperimentConfig(validConfig(), {
-      root: resolve("."),
-      selectedRun: "mixed",
-      env: {
-        RESEARCH_OPENAI_KEY: "openai-secret",
-        RESEARCH_ANTHROPIC_KEY: "anthropic-secret",
-        RESEARCH_GOOGLE_KEY: "google-secret",
-      },
-    });
-
-    expect(resolved.puzzle).toEqual({ block: "calibration-theron-ware" });
-    expect(resolved.runs).toEqual([
-      {
-        name: "gpt-only",
-        repetitions: 1,
-        agents: [
-          { agentId: "agent-1", modelProfile: "gpt" },
-          { agentId: "agent-2", modelProfile: "gpt" },
-          { agentId: "agent-3", modelProfile: "gpt" },
-        ],
-      },
-      {
-        name: "mixed",
-        repetitions: 2,
-        agents: [
-          { agentId: "agent-1", modelProfile: "gpt" },
-          { agentId: "agent-2", modelProfile: "claude" },
-          { agentId: "agent-3", modelProfile: "gemini" },
-        ],
-      },
+    expect(study.assignment).toEqual([
+      { agentId: "agent-1", modelProfileId: "gpt" },
+      { agentId: "agent-2", modelProfileId: "claude" },
+      { agentId: "agent-3", modelProfileId: "gemini" },
     ]);
-    expect(Object.isFrozen(resolved)).toBe(true);
-    expect(Object.isFrozen(resolved.runs[0]?.agents)).toBe(true);
-    expect(JSON.stringify(resolved)).not.toContain("openai-secret");
-    expect(resolved.providers.openai).toEqual({
+    expect(
+      expandPhase(study, "calibration").map(({ blockId, condition }) => [blockId, condition]),
+    ).toEqual([
+      ["calibration-theron-ware", "CS"],
+      ["calibration-theron-ware", "CR"],
+      ["calibration-theron-ware", "IR"],
+      ["calibration-theron-ware", "IS"],
+    ]);
+    expect(
+      expandPhase(study, "validation").map(({ blockId, condition }) => [blockId, condition]),
+    ).toEqual([
+      ["validation-odd-women", "CS"],
+      ["validation-odd-women", "CR"],
+      ["validation-odd-women", "IR"],
+      ["validation-odd-women", "IS"],
+      ["validation-pointed-firs", "CR"],
+      ["validation-pointed-firs", "IS"],
+      ["validation-pointed-firs", "CS"],
+      ["validation-pointed-firs", "IR"],
+      ["validation-custom-country", "IS"],
+      ["validation-custom-country", "IR"],
+      ["validation-custom-country", "CR"],
+      ["validation-custom-country", "CS"],
+      ["validation-woodlanders", "IR"],
+      ["validation-woodlanders", "CS"],
+      ["validation-woodlanders", "IS"],
+      ["validation-woodlanders", "CR"],
+    ]);
+    expect(study.calibrationCells.map((cell) => cell.phasePosition)).toEqual([1, 2, 3, 4]);
+    expect(study.validationCells.map((cell) => cell.phasePosition)).toEqual(
+      Array.from({ length: 16 }, (_, index) => index + 1),
+    );
+    expect(study.validationCells[4]).toMatchObject({
+      cellId: "validation-5-validation-pointed-firs-CR",
+      conditionOrderPosition: 1,
+    });
+    expect(study.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(study.immutableManifestDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(study.immutableManifest.budgets).toEqual({
+      totalTokenCeiling: 15_000_000,
+      totalMonetaryCeilingCents: 250_000,
+    });
+    expect(study.rubricPath).toBe(fixture("behavior-rubric.md"));
+    expect(study.providers.openai).toEqual({
       driver: "openai",
       apiKeyEnv: "RESEARCH_OPENAI_KEY",
     });
+    expect(JSON.stringify(study)).not.toContain("secret");
+    expect(Object.isFrozen(study)).toBe(true);
+    expect(Object.isFrozen(study.validationCells)).toBe(true);
+  });
+
+  it("loads and verifies the checked-in manifest and rubric", async () => {
+    const study = await loadResolvedStudy(resolve("experiments", "config.yaml"), resolve("."));
+
+    expect(study.blocks).toHaveLength(5);
+    expect(study.calibrationCells).toHaveLength(4);
+    expect(study.validationCells).toHaveLength(16);
+    expect(study.rubric.rubricId).toBe("palimpsest-behavior-review-v1");
+  });
+
+  it("changes only the complete manifest digest for either adjustable budget", async () => {
+    const baseline = await validManifest();
+    const tokenAdjustment = structuredClone(baseline);
+    tokenAdjustment.budgets.tokenBudgetPerAgent = 210_000;
+    const monetaryAdjustment = structuredClone(baseline);
+    monetaryAdjustment.budgets.perAttemptMonetaryCeilingCents = 11_000;
+
+    const [original, changedTokens, changedMoney] = await Promise.all([
+      resolveStudy(baseline, resolve(".")),
+      resolveStudy(tokenAdjustment, resolve(".")),
+      resolveStudy(monetaryAdjustment, resolve(".")),
+    ]);
+
+    expect(changedTokens.manifestDigest).not.toBe(original.manifestDigest);
+    expect(changedMoney.manifestDigest).not.toBe(original.manifestDigest);
+    expect(changedTokens.immutableManifestDigest).toBe(original.immutableManifestDigest);
+    expect(changedMoney.immutableManifestDigest).toBe(original.immutableManifestDigest);
+  });
+
+  it("changes the immutable digest when any scientific field changes", async () => {
+    const baseline = await validManifest();
+    const changed = structuredClone(baseline);
+    changed.models.gpt!.model = "different-model";
+
+    const [original, drifted] = await Promise.all([
+      resolveStudy(baseline, resolve(".")),
+      resolveStudy(changed, resolve(".")),
+    ]);
+
+    expect(drifted.manifestDigest).not.toBe(original.manifestDigest);
+    expect(drifted.immutableManifestDigest).not.toBe(original.immutableManifestDigest);
+  });
+
+  it.each([
+    ["schema-v1-runs.yaml", /schemaVersion|unsupported|invalid/i],
+    ["schedule-drift.yaml", /releaseOffsetsMs|invalid/i],
+    ["order-drift.yaml", /condition orders/i],
+    ["secret-bearing.yaml", /secret-bearing provider option/i],
+    ["ceiling-overflow.yaml", /totalTokenCeiling/i],
+  ])("rejects the %s fixture", async (name, error) => {
+    await expect(
+      loadStudyManifest(fixture(name)).then((manifest) => resolveStudy(manifest, resolve("."))),
+    ).rejects.toThrow(error);
+  });
+
+  it("rejects compatibility and unknown structural fields", async () => {
+    const manifest = await validManifest();
+
+    expect(() => validateStudyManifest({ ...manifest, schemaVersion: 1 })).toThrow(
+      /schemaVersion|invalid/i,
+    );
+    expect(() => validateStudyManifest({ ...manifest, runs: [] })).toThrow(/runs|invalid/i);
+    expect(() => validateStudyManifest({ ...manifest, unexpected: true })).toThrow(
+      /unexpected|invalid/i,
+    );
+  });
+
+  it("rejects reordered blocks, assignments, and failure-policy drift", async () => {
+    const reorderedBlocks = structuredClone(await validManifest());
+    [reorderedBlocks.blocks[1], reorderedBlocks.blocks[2]] = [
+      reorderedBlocks.blocks[2]!,
+      reorderedBlocks.blocks[1]!,
+    ];
+    expect(() => validateStudyManifest(reorderedBlocks)).toThrow(/blocks|invalid/i);
+
+    const reorderedAssignment = structuredClone(await validManifest());
+    [reorderedAssignment.assignment[0], reorderedAssignment.assignment[1]] = [
+      reorderedAssignment.assignment[1]!,
+      reorderedAssignment.assignment[0]!,
+    ];
+    expect(() => validateStudyManifest(reorderedAssignment)).toThrow(/assignment|invalid/i);
+
+    const manifest = await validManifest();
+    const changedFailurePolicy = {
+      ...manifest,
+      failurePolicy: { ...manifest.failurePolicy, automaticRetry: true },
+    };
+    expect(() => validateStudyManifest(changedFailurePolicy)).toThrow(/automaticRetry|invalid/i);
+  });
+
+  it("checks token and monetary primary authorization independently", async () => {
+    const manifest = structuredClone(await validManifest());
+    manifest.budgets.totalMonetaryCeilingCents = 199_999;
+
+    await expect(resolveStudy(manifest, resolve("."))).rejects.toThrow(
+      /totalMonetaryCeilingCents/i,
+    );
   });
 
   it.each([
     {
-      name: "unknown provider",
-      change(config: Record<string, unknown>) {
-        (config.models as Record<string, Record<string, unknown>>).gpt!.provider = "missing";
+      name: "unknown model provider",
+      change(manifest: StudyManifest) {
+        manifest.models.gpt!.provider = "missing";
       },
       error: /models\.gpt\.provider.*missing/i,
     },
     {
-      name: "unknown run model",
-      change(config: Record<string, unknown>) {
-        config.runs = [{ name: "broken", model: "missing" }];
+      name: "unknown assigned model profile",
+      change(manifest: StudyManifest) {
+        manifest.assignment[1]!.modelProfileId = "missing";
       },
-      error: /runs\[0\].*missing/i,
+      error: /assignment\[1\].*missing/i,
     },
     {
-      name: "mixed assignment count mismatch",
-      change(config: Record<string, unknown>) {
-        config.runs = [{ name: "broken", agents: ["gpt", "claude"] }];
+      name: "credential-bearing provider URL",
+      change(manifest: StudyManifest) {
+        const provider = manifest.providers.local!;
+        if (provider.driver === "openai-compatible") {
+          provider.baseURL = "https://literal:secret@example.invalid/v1";
+        }
       },
-      error: /runs\[0\]\.agents.*exactly three/i,
+      error: /baseURL.*literal credentials/i,
     },
     {
-      name: "duplicate run names",
-      change(config: Record<string, unknown>) {
-        config.runs = [
-          { name: "same", model: "gpt" },
-          { name: "same", model: "claude" },
-        ];
+      name: "rubric digest mismatch",
+      change(manifest: StudyManifest) {
+        manifest.rubric.sha256 = "a".repeat(64);
       },
-      error: /runs\[1\]\.name.*unique/i,
+      error: /rubric.*digest/i,
+    },
+    {
+      name: "rubric outside the repository",
+      change(manifest: StudyManifest) {
+        manifest.rubric.path = "../behavior-rubric.md";
+      },
+      error: /rubric\.path.*repository/i,
+    },
+    {
+      name: "unsafe token arithmetic",
+      change(manifest: StudyManifest) {
+        manifest.budgets.tokenBudgetPerAgent = Number.MAX_SAFE_INTEGER;
+        manifest.budgets.totalTokenCeiling = Number.MAX_SAFE_INTEGER;
+      },
+      error: /authorized token total.*safe integer/i,
     },
   ])("rejects $name", async ({ change, error }) => {
-    const config = validConfig();
-    change(config);
-    await expect(resolveExperimentConfig(config, { root: resolve(".") })).rejects.toThrow(error);
-  });
-
-  it.each([
-    ["puzzle timing", "puzzle", "stageIntervalMs"],
-    ["wall-time drift", "limits", "wallTimeMs"],
-  ])("rejects obsolete %s configuration", (_name, section, field) => {
-    const config = validConfig();
-    (config[section] as Record<string, unknown>)[field] = 1;
-    expect(() => validateExperimentConfig(config)).toThrow(new RegExp(field));
+    const manifest = structuredClone(await validManifest());
+    change(manifest);
+    await expect(resolveStudy(manifest, resolve("."))).rejects.toThrow(error);
   });
 
   it.each([
@@ -166,27 +257,5 @@ copy: *shared
     expect(() => validateProviderOptions(options, "models.test.providerOptions")).toThrow(
       /models\.test\.providerOptions/,
     );
-  });
-
-  it("preflights only credentials used by the selected run", async () => {
-    await expect(
-      resolveExperimentConfig(validConfig(), {
-        root: resolve("."),
-        selectedRun: "gpt-only",
-        env: {},
-      }),
-    ).rejects.toThrow(/RESEARCH_OPENAI_KEY/);
-
-    await expect(
-      resolveExperimentConfig(validConfig(), {
-        root: resolve("."),
-        selectedRun: "gpt-only",
-        env: { RESEARCH_OPENAI_KEY: "present" },
-      }),
-    ).resolves.toMatchObject({
-      providers: {
-        anthropic: { apiKeyEnv: "RESEARCH_ANTHROPIC_KEY" },
-      },
-    });
   });
 });
