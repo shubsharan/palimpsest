@@ -2,7 +2,7 @@ import {
   type AgentSandboxLease,
   type AgentSandboxLeaseRequest,
   type CommandSandbox,
-  type EvaluationSandboxCommand,
+  type SolverSandboxCommand,
   type SandboxCommand,
   type SandboxCommandResult,
   type SandboxIdentity,
@@ -65,7 +65,7 @@ export class FakeCommandSandbox implements CommandSandbox {
     };
   }
 
-  async execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult> {
+  async execute(request: SolverSandboxCommand): Promise<SandboxCommandResult> {
     this.requests.push(request);
     return this.#execute(request);
   }

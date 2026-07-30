@@ -41,3 +41,36 @@ The activity is visible to every eligible shared agent and to no isolated agent.
 3. An eligible post validates, receives the next sequence, becomes readable, emits trace and activity.
 4. Reads return ordered pages without changing room state.
 5. Attempt termination prevents further model tool calls; the frozen trace remains authoritative.
+
+## Published Solver Snapshot
+
+Represents the exact submitted code used by checker feedback or final evaluation.
+
+- `repositoryId`: condition-assigned origin selected for the caller or reviewer workspace.
+- `ref`: canonical literal `refs/heads/main`.
+- `commit`: resolved 40-character commit object identity.
+- `root`: host-created temporary directory containing the complete exported commit tree and no Git metadata.
+
+Validation: main must resolve to a commit before execution; the exported root remains outside all agent workspaces; and execution continues to use the captured commit if the branch advances.
+
+## Solver Execution
+
+- `submission`: captured Published Solver Snapshot identity.
+- `ciphertextPath`: trusted host file containing released or complete ciphertext.
+- `outputRoot`: fresh empty host directory mounted as the only writable durable output.
+- `execution`: bounded sandbox exit, timeout, overflow, stdout, and stderr fields.
+- `outputPath`: contained canonical reconstruction path when present.
+
+Validation: submission and ciphertext are read-only; Git, agent workspaces, evidence, references, oracle files, and credentials are absent; successful output resolves inside `outputRoot`, is a regular non-empty file, and does not exceed 16 MiB.
+
+## Evaluation Submission Selection
+
+- `workspace`: explicit canonical reviewer-selected agent workspace.
+- `repositoryId`: repository assigned to that workspace by frozen condition topology.
+- `ref`: canonical literal `refs/heads/main`.
+- `commit`: exact captured commit.
+- `command`: canonical `python3 solver.py`.
+- `outputPath`: canonical `reconstruction.txt`.
+- optional non-empty `notes`.
+
+Shared workspaces select the same repository; isolated workspaces select their own. Checker and evaluation share snapshot and execution rules but use different ciphertext assembly and scoring hooks.

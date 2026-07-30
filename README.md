@@ -29,7 +29,7 @@ pnpm install --frozen-lockfile
 uv sync --frozen --project python
 ```
 
-The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored commands and canonical solver evaluation. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence, while evaluation uses a separate one-shot sandbox. Model calls happen on the host; provider credentials are never mounted into either sandbox.
+The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored commands and canonical solver execution. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence. Checker and final evaluation calls use separate one-shot sandboxes containing only a Git-free published-main snapshot, assigned ciphertext, and contained output directory. Model calls happen on the host; provider credentials are never mounted into either sandbox.
 
 ## Configure The Study
 
@@ -91,11 +91,11 @@ pnpm puzzle:evaluate -- \
   --workspace agent-1
 ```
 
-Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` checks out the exact current `origin/main` commit, runs `python3 solver.py` on the evidence released to that agent, and reports only the commit plus aggregate coverage and accuracy. Local files, unpushed commits, and other branches cannot be checked.
+Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` resolves the exact current `refs/heads/main` commit, exports its complete tree without Git metadata, runs `python3 solver.py` on ciphertext assembled from the evidence released to that agent, and reports only the commit plus aggregate coverage and accuracy. Local files, unpushed commits, other branches, private references, and agent-workspace siblings are absent from that execution.
 
 When `communication.teamChannel` is `enabled`, shared-condition agents also receive one attempt-local, append-only public room through `post_team_message` and `read_team_messages`; accepted posts wake peers and are retained in the attempt trace. Isolated agents never receive that room or its activity. Set the field to `disabled` to restore the prior Git-only treatment.
 
-Final evaluation checks out the selected frozen Git origin and runs the same `solver.py` interface against the complete ciphertext. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
+Final evaluation resolves the selected frozen origin's `refs/heads/main`, records the exact commit, and runs the same Git-free exported tree against the complete ciphertext. The solver sandbox mounts no frozen repository, agent workspace, evidence, reference corpus, or oracle path. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
 
 ## Development Check
 

@@ -13,7 +13,7 @@ One root TypeScript application lives under `src/`. One Python distribution unde
 
 ## Experiment Configuration
 
-The five-entry `experiments/blocks.json` catalog owns scientific block inputs. One strict schema-version-2 YAML manifest freezes the complete study protocol. Both reject unknown fields before build or attempt side effects.
+The five-entry `experiments/blocks.json` catalog owns scientific block inputs. One strict schema-version-3 YAML manifest freezes the complete study protocol. Both reject unknown fields before build or attempt side effects.
 
 ```text
 study.yaml
@@ -113,7 +113,7 @@ Lease creation and every command share bounded deadlines under the attempt's glo
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Reviewer-selected evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals, then uses a separate short-lived container with a clean checkout of the selected workspace's assigned frozen Git origin, complete ciphertext, and temporary storage. The reviewer selects only the workspace; the evaluator records and runs the canonical `python3 solver.py` command and `reconstruction.txt` output path.
+Checker and reviewer-selected evaluation share one published-solver boundary. The trusted host resolves the assigned origin's literal `refs/heads/main` to an exact commit, exports that complete tree outside every agent workspace, removes Git metadata, and records the commit. A separate short-lived container mounts only the exported tree read-only, assigned ciphertext read-only, one writable output directory, and bounded temporary storage. It receives no Git origin, agent workspace, private evidence, reference corpus, oracle path, credential, or host sibling. Checking assembles released ciphertext on the host; evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals and uses complete ciphertext. The reviewer selects only the workspace; command and output remain canonical.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
@@ -158,11 +158,11 @@ The architecture preserves the strongest local durable boundary available: exclu
 
 ## Verification
 
-The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, optional public-message ordering and tracing, shared visibility, isolated non-observability, published-main-only checking, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
+The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, optional public-message ordering and tracing, shared visibility, isolated non-observability, exact-main Git-free checking, symbolic-HEAD resistance, output containment, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
 
 ## Study Conditions And Frozen Protocol
 
-Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage. Feature 016 adds a manifest-controlled shared discussion room while retaining Git as the only solver publication and grading boundary.
+Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage. Feature 016 adds a manifest-controlled shared discussion room while retaining Git as the only solver publication boundary and makes the exported selected-main commit the sole checker and grading artifact.
 
 Canonical acceptance is:
 

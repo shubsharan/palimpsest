@@ -263,7 +263,7 @@
       "required": ["metricId", "reviewerSelectionId"],
       "properties": {
         "metricId": { "const": "normalized-positional-word-v1" },
-        "reviewerSelectionId": { "const": "manual-workspace-command-output-v1" }
+        "reviewerSelectionId": { "const": "selected-workspace-main-snapshot-v1" }
       }
     },
     "rubric": {

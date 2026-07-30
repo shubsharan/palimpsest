@@ -88,7 +88,7 @@ export interface StudyOrders {
 
 export interface StudyScoring {
   metricId: "normalized-positional-word-v1";
-  reviewerSelectionId: "manual-workspace-command-output-v1";
+  reviewerSelectionId: "selected-workspace-main-snapshot-v1";
 }
 
 export interface StudyRubric {

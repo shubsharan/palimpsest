@@ -44,8 +44,9 @@ This feature is done when the complete five-block by four-condition fixture prot
 - Give enabled shared-condition agents one public append-only room for strategy and ideas; keep it entirely absent from isolated conditions.
 - Retain accepted messages in the attempt trace and wake peers through the existing activity surface.
 - Keep pushed `origin/main:solver.py` as the only checkable and gradeable artifact.
+- Resolve and record the exact selected `refs/heads/main` commit, export its Git-free tree, and use one isolated execution boundary for checking and grading.
 
-This feature is done when enabled shared messaging, disabled Git-only parity, isolated non-observability, protocol provenance, and provider-free verification pass without prescribing how or when agents communicate.
+This feature is done when enabled shared messaging, disabled Git-only parity, isolated non-observability, protocol provenance, exact-main snapshot grading, output containment, and provider-free verification pass without prescribing how or when agents communicate.
 
 ## Boundaries
 

@@ -47,3 +47,27 @@
 **Rationale**: Both modified contracts gain a new required identity field and intentionally reject undeclared legacy inputs. Existing whole-manifest and design digests bind the mode automatically.
 
 **Alternatives considered**: An optional field or implicit disabled default was rejected because old and new tests would be ambiguous. Compatibility decoding was rejected by the project's greenfield contract policy.
+
+## Published Code As An Exported Commit Snapshot
+
+**Decision**: Resolve the assigned origin's `refs/heads/main` to an exact commit on the trusted host, export that commit's complete tree without Git metadata, and make the exported tree the sole code input to checker and evaluation execution.
+
+**Rationale**: A clone inside an agent workspace can observe unpublished siblings, while a clone of a bare repository can follow mutable symbolic `HEAD` or expose other refs at runtime. An exported exact commit is the smallest artifact that directly represents the declared submission.
+
+**Alternatives considered**: More path guards around the in-workspace checker were rejected because the live agent filesystem would remain inside the grading boundary. A `--branch main` clone retaining the origin mount was rejected because submitted code could still inspect other Git objects. A permanent duplicate submission tree was rejected because the sealed frozen repository already provides durable source provenance.
+
+## One Short-Lived Solver Execution Profile
+
+**Decision**: Both checking and evaluation use one host-owned runner and the existing short-lived Docker sandbox implementation. The container receives a read-only submission tree, read-only ciphertext, one writable output directory, read-only root filesystem, bounded `/tmp`, no network, and no Git, evidence, reference, workspace-parent, oracle, or credential mounts.
+
+**Rationale**: Checker and evaluation differ only in ciphertext scope and scoring hook. One execution primitive prevents their visibility and output rules from drifting.
+
+**Alternatives considered**: The persistent agent lease was rejected because it intentionally exposes private evidence, reference material, Git, and the live workspace. A separate grader image or service was rejected because the existing puzzle sandbox already contains the required runtime and limits.
+
+## Exact Commit And Honest Boundary Identity
+
+**Decision**: Checker feedback reports the exact captured commit. Final selection and result records retain the reviewer workspace, assigned repository, canonical main ref, and captured commit. The immutable scoring declaration uses `selected-workspace-main-snapshot-v1`.
+
+**Rationale**: The old `manual-workspace-command-output-v1` identifier describes controls the evaluator no longer accepts. A new frozen identifier makes the changed scientific boundary explicit and invalidates stale design receipts through the existing digest.
+
+**Alternatives considered**: A compatibility alias was rejected because it would misstate the executed protocol. Renaming the manifest field was rejected because `reviewerSelectionId` still accurately names the operator's workspace choice and changing the field adds no validity.

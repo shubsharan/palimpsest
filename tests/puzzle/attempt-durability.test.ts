@@ -14,6 +14,7 @@ import type { ConditionId } from "../../src/condition.js";
 import { evaluateFrozenAttempt } from "../../src/evaluate.js";
 import { runGit } from "../../src/git.js";
 import { appendTraceEvent } from "../../src/python.js";
+import { resolvePublishedSolver } from "../../src/published-solver.js";
 import { finalizeAttempt } from "../../src/run.js";
 import { sealTree } from "../../src/seal.js";
 import { FakeCommandSandbox, TEST_TREE_SEAL, testAttemptSummary } from "../../src/test-helpers.js";
@@ -77,6 +78,18 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
     ...repositories.map(({ path }) => runGit(["init", "--bare", "--initial-branch=main", path])),
     ...workspaces.map(({ path }) => mkdir(path, { recursive: true })),
   ]);
+  await Promise.all(
+    repositories.map(async (repository) => {
+      const seed = join(root, `.seed-${repository.repositoryId}`);
+      await runGit(["clone", repository.path, seed]);
+      await runGit(["config", "user.name", "Palimpsest Test"], seed);
+      await runGit(["config", "user.email", "test@palimpsest.invalid"], seed);
+      await writeFile(join(seed, "solver.py"), "print('fixture')\n", "utf8");
+      await runGit(["add", "solver.py"], seed);
+      await runGit(["commit", "-m", "Publish solver"], seed);
+      await runGit(["push", "origin", "HEAD:main"], seed);
+    }),
+  );
   const tracePath = join(attemptRoot, "trace.jsonl");
   const traceMetadataPath = join(attemptRoot, "trace.meta.json");
   await Promise.all([
@@ -227,12 +240,8 @@ describe("post-freeze attempt durability", () => {
       ).toEqual([]);
 
       const sandbox = new FakeCommandSandbox(async (request) => {
-        if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-        await writeFile(
-          join(request.workspacePath, request.outputPath),
-          "reconstruction\n",
-          "utf8",
-        );
+        if (request.profile !== "solver") throw new Error("Expected solver profile.");
+        await writeFile(join(request.outputRoot, request.outputPath), "reconstruction\n", "utf8");
         return SUCCESS;
       });
       const evaluation = await evaluateFrozenAttempt({
@@ -240,13 +249,20 @@ describe("post-freeze attempt durability", () => {
         evaluationRoot: join(fixture.attemptRoot, "evaluation"),
         ciphertextPath: join(fixture.buildRoot, "ciphertext.txt"),
         sandbox,
-        selection: { command: "sh solve.sh", outputPath: "reconstruction.txt" },
+        selection: {
+          workspace: "agent-1",
+          repositoryId: selectedRepository.repositoryId,
+          ...(await resolvePublishedSolver(selectedRepository.path)),
+          command: "sh solve.sh",
+          outputPath: "reconstruction.txt",
+        },
         score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
       });
       expect(evaluation).toMatchObject({ status: "scored" });
       expect(sandbox.requests).toContainEqual(
-        expect.objectContaining({ gitOriginPath: selectedRepository.path }),
+        expect.objectContaining({ profile: "solver", outputPath: "reconstruction.txt" }),
       );
+      expect(JSON.stringify(sandbox.requests)).not.toContain(selectedRepository.path);
       await expect(
         readFile(join(selectedWorkspace.path, "frozen-input.txt"), "utf8"),
       ).resolves.toBe("still here\n");

@@ -129,34 +129,38 @@ describe("sandbox Docker image and arguments", () => {
     expect(execArgs.at(-1)).toBe("git status");
   });
 
-  it("gives evaluation only ciphertext, frozen Git, and a contained output path", async () => {
+  it("gives solver execution only a read-only submission, ciphertext, and output root", async () => {
     const root = await temporaryRoot();
-    const workspace = join(root, "workspace");
-    const frozenGit = join(root, "agent-1.git");
+    const submission = join(root, "submission");
+    const output = join(root, "output");
     const ciphertext = join(root, "ciphertext.txt");
-    await Promise.all([mkdir(workspace), mkdir(frozenGit), writeFile(ciphertext, "ciphertext\n")]);
+    await Promise.all([mkdir(submission), mkdir(output), writeFile(ciphertext, "ciphertext\n")]);
     const args = await buildDockerCreateArguments(
       {
-        profile: "evaluation",
+        profile: "solver",
         command: "sh solve.sh",
         timeoutMs: 1_000,
-        workspacePath: workspace,
+        submissionPath: submission,
         ciphertextPath: ciphertext,
-        gitOriginPath: frozenGit,
+        outputRoot: output,
         outputPath: "out/answer.txt",
       },
       TEST_IDENTITY,
-      "palimpsest-evaluation-test",
+      "palimpsest-solver-test",
       { uid: 501, gid: 20 },
     );
     const joined = args.join("\n");
-    const resolvedFrozenGit = await realpath(frozenGit);
+    const resolvedSubmission = await realpath(submission);
+    const resolvedOutput = await realpath(output);
 
+    expect(joined).toContain(`source=${resolvedSubmission},target=/submission,readonly`);
     expect(joined).toContain("target=/input/ciphertext.txt,readonly");
-    expect(joined).toContain(`source=${resolvedFrozenGit},target=/git/origin.git,readonly`);
-    expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
+    expect(joined).toContain(`source=${resolvedOutput},target=/output`);
     expect(joined).toContain("PALIMPSEST_CIPHERTEXT=/input/ciphertext.txt");
-    expect(joined).toContain("PALIMPSEST_OUTPUT=/workspace/out/answer.txt");
+    expect(joined).toContain("PALIMPSEST_OUTPUT=/output/out/answer.txt");
+    expect(joined).toContain("--workdir\n/submission");
+    expect(joined).not.toContain("/workspace");
+    expect(joined).not.toContain("/git");
     expect(joined).not.toContain("/evidence");
     expect(joined).not.toContain("/reference");
   });

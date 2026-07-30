@@ -204,30 +204,39 @@ describe("real Docker command containment", () => {
     });
   });
 
-  it("gives evaluation only the ciphertext, frozen Git, and writable workspace", async () => {
+  it("gives solver execution only the submission, ciphertext, and writable output", async () => {
     const fixture = await agentFixture();
     const ciphertext = join(fixture.root, "ciphertext.txt");
-    await writeFile(ciphertext, "complete-ciphertext\n");
+    const submission = join(fixture.root, "submission");
+    const output = join(fixture.root, "output");
+    await Promise.all([
+      writeFile(ciphertext, "complete-ciphertext\n"),
+      mkdir(submission),
+      mkdir(output),
+    ]);
     const sandbox = await createDockerCommandSandbox();
     const result = await sandbox.execute({
-      profile: "evaluation",
+      profile: "solver",
       command: [
         'test "$(cat "$PALIMPSEST_CIPHERTEXT")" = complete-ciphertext',
-        "git fetch origin",
         'cp "$PALIMPSEST_CIPHERTEXT" "$PALIMPSEST_OUTPUT"',
+        "test ! -e .git",
+        "test ! -e /git",
+        "test ! -e /evidence",
+        "test ! -e /reference",
         `test ! -e ${shellQuote(fixture.oracle)}`,
         `test ! -e ${shellQuote(fixture.hostSentinel)}`,
         'test -z "${OPENAI_API_KEY+x}"',
       ].join(" && "),
       timeoutMs: 30_000,
-      workspacePath: fixture.workspace,
+      submissionPath: submission,
       ciphertextPath: ciphertext,
-      gitOriginPath: fixture.repository.path,
+      outputRoot: output,
       outputPath: "reconstruction.txt",
     });
 
     expect(result.exitCode).toBe(0);
-    expect(await readFile(join(fixture.workspace, "reconstruction.txt"), "utf8")).toBe(
+    expect(await readFile(join(output, "reconstruction.txt"), "utf8")).toBe(
       "complete-ciphertext\n",
     );
     await assertNoSandboxContainers(sandbox.containerLabelValue);

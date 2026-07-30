@@ -48,7 +48,7 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
     "",
     "Recover the plaintext of the complete word-substitution cipher as accurately as you can.",
     "A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.",
-    "The checker and final grader run python3 solver.py from a clean checkout. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.",
+    "The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.",
     "",
     `Additional private evidence may appear during the attempt. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,

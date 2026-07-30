@@ -32,7 +32,7 @@ orders:
     - [IR, CS, IS, CR]
 scoring:
   metricId: normalized-positional-word-v1
-  reviewerSelectionId: manual-workspace-command-output-v1
+  reviewerSelectionId: selected-workspace-main-snapshot-v1
 rubric:
   rubricId: fixture-behavior-review-v1
   path: tests/fixtures/config/behavior-rubric.md

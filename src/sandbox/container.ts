@@ -9,7 +9,7 @@ import {
   type AgentSandboxLeaseRequest,
   type BaseSandboxCommand,
   type CommandSandbox,
-  type EvaluationSandboxCommand,
+  type SolverSandboxCommand,
   type SandboxCommandResult,
   type SandboxIdentity,
   validateAgentSandboxLeaseRequest,
@@ -457,7 +457,7 @@ export class DockerCommandSandbox implements CommandSandbox {
     };
   }
 
-  async execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult> {
+  async execute(request: SolverSandboxCommand): Promise<SandboxCommandResult> {
     validateSandboxCommand(request);
     if (request.signal?.aborted) throw abortError();
     const deadline = performance.now() + request.timeoutMs;

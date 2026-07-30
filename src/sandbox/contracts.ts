@@ -6,6 +6,8 @@ export const SANDBOX_CONTAINER_LABEL = "org.palimpsest.puzzle-sandbox.command";
 
 export const SANDBOX_PATHS = {
   workspace: "/workspace",
+  submission: "/submission",
+  output: "/output",
   evidence: "/evidence",
   reference: "/reference",
   gitOrigin: "/git/origin.git",
@@ -45,15 +47,15 @@ export interface AgentSandboxCommand extends BaseSandboxCommand {
   gitOriginPath: string;
 }
 
-export interface EvaluationSandboxCommand extends BaseSandboxCommand {
-  profile: "evaluation";
-  workspacePath: string;
+export interface SolverSandboxCommand extends BaseSandboxCommand {
+  profile: "solver";
+  submissionPath: string;
   ciphertextPath: string;
-  gitOriginPath: string;
+  outputRoot: string;
   outputPath: string;
 }
 
-export type SandboxCommand = AgentSandboxCommand | EvaluationSandboxCommand;
+export type SandboxCommand = AgentSandboxCommand | SolverSandboxCommand;
 
 export interface SandboxCommandResult {
   exitCode: number | null;
@@ -75,7 +77,7 @@ export interface SandboxIdentity {
 export interface CommandSandbox {
   readonly identity: SandboxIdentity;
   openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease>;
-  execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult>;
+  execute(request: SolverSandboxCommand): Promise<SandboxCommandResult>;
 }
 
 export interface AgentSandboxLease {

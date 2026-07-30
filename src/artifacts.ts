@@ -2721,7 +2721,22 @@ function decodeSelection(value: unknown): EvaluationSelection {
     record.notes === undefined
       ? undefined
       : nonEmptyString(record.notes, "Evaluation selection notes");
+  const repositoryId: EvaluationSelection["repositoryId"] =
+    record.repositoryId === "shared"
+      ? "shared"
+      : agentId(record.repositoryId, "Evaluation selection repositoryId");
+  const commit = gitObjectId(record.commit, "Evaluation selection commit");
+  if (commit.length !== 40) {
+    throw new Error("Evaluation selection commit must be a 40-character Git object ID.");
+  }
+  if (record.ref !== "refs/heads/main") {
+    throw new Error("Evaluation selection ref must be refs/heads/main.");
+  }
   const selection = {
+    workspace: agentId(record.workspace, "Evaluation selection workspace"),
+    repositoryId,
+    ref: "refs/heads/main" as const,
+    commit,
     command: nonEmptyString(record.command, "Evaluation selection command"),
     outputPath: safeRelativePath(record.outputPath, "Evaluation selection outputPath"),
   };

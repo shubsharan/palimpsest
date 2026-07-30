@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join, posix, resolve, win32 } from "node:path";
 
 import {
   type AggregateScore,
@@ -9,18 +9,23 @@ import {
   decodeEvaluationRecord,
   selectBuildVariant,
 } from "./artifacts.js";
-import { runGit } from "./git.js";
+import type { GitRepositoryId } from "./git.js";
 import { isAgentId, type AgentId } from "./model.js";
 import {
   type CommandSandbox,
-  SANDBOX_PATHS,
   SandboxInfrastructureError,
   type SandboxCommandResult,
-  WorkspaceFileError,
 } from "./sandbox/contracts.js";
-import { resolveWorkspacePath, resolveWorkspaceRegularFile } from "./sandbox/workspace.js";
 import { requiredFlag } from "./flags.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
+import {
+  executePublishedSolver,
+  materializePublishedSolver,
+  PUBLISHED_MAIN_REF,
+  resolvePublishedSolver,
+  SOLVER_COMMAND,
+  SOLVER_OUTPUT_PATH,
+} from "./published-solver.js";
 
 import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
 import { verifyTree } from "./seal.js";
@@ -28,6 +33,10 @@ import { verifyTree } from "./seal.js";
 export type EvaluationStatus = "scored" | "not-runnable" | "no-output" | "execution-error";
 
 export interface EvaluationSelection {
+  workspace: AgentId;
+  repositoryId: GitRepositoryId;
+  ref: typeof PUBLISHED_MAIN_REF;
+  commit: string;
   command: string;
   outputPath: string;
   notes?: string;
@@ -56,23 +65,7 @@ export interface EvaluatePuzzleOptions {
   notes?: string;
 }
 
-export const SOLVER_COMMAND = "python3 solver.py";
-export const SOLVER_OUTPUT_PATH = "reconstruction.txt";
-
-function resolveOutputPath(workspacePath: string, outputPath: string): string {
-  if (outputPath.length === 0 || isAbsolute(outputPath)) {
-    throw new Error("Reviewer outputPath must be relative to the selected workspace.");
-  }
-  const resolved = resolve(workspacePath, outputPath);
-  const difference = relative(workspacePath, resolved);
-  if (
-    difference === ".." ||
-    difference.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-  ) {
-    throw new Error("Reviewer outputPath must remain inside the evaluation workspace.");
-  }
-  return resolved;
-}
+export { SOLVER_COMMAND, SOLVER_OUTPUT_PATH };
 
 function withSelection(
   status: EvaluationStatus,
@@ -99,6 +92,15 @@ async function writeEvaluationResult(
 }
 
 function validateReviewerSelection(selection: EvaluationSelection | undefined): void {
+  if (
+    selection !== undefined &&
+    (!isAgentId(selection.workspace) ||
+      (selection.repositoryId !== "shared" && !isAgentId(selection.repositoryId)) ||
+      selection.ref !== PUBLISHED_MAIN_REF ||
+      !/^[0-9a-f]{40}$/.test(selection.commit))
+  ) {
+    throw new Error("Reviewer selection must identify one captured published-main commit.");
+  }
   if (selection?.command !== undefined && selection.command.trim().length === 0) {
     throw new Error("Reviewer command must contain non-whitespace shell source.");
   }
@@ -140,13 +142,14 @@ export async function evaluateFrozenAttempt(options: {
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
-  let outputPath: string;
-  const workspacePath = join(options.evaluationRoot, "workspace");
+  const snapshotPath = join(options.evaluationRoot, ".submission");
+  const outputRoot = join(options.evaluationRoot, "output");
   try {
-    await runGit(["clone", "--no-local", options.frozenGitPath, workspacePath]);
-    await runGit(["remote", "set-url", "origin", SANDBOX_PATHS.gitOrigin], workspacePath);
-    outputPath = resolveOutputPath(workspacePath, options.selection.outputPath);
-    await resolveWorkspacePath(workspacePath, options.selection.outputPath, "Reviewer outputPath");
+    await mkdir(outputRoot);
+    await materializePublishedSolver(options.frozenGitPath, snapshotPath, {
+      ref: options.selection.ref,
+      commit: options.selection.commit,
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const result = withSelection("execution-error", options.selection, { error: detail });
@@ -157,16 +160,16 @@ export async function evaluateFrozenAttempt(options: {
     command: options.selection.command,
     outputPath: options.selection.outputPath,
   });
-  let execution: SandboxCommandResult;
+  let published: Awaited<ReturnType<typeof executePublishedSolver>>;
   try {
-    execution = await options.sandbox.execute({
-      profile: "evaluation",
-      command: options.selection.command,
-      timeoutMs: options.timeoutMs ?? 30_000,
-      workspacePath,
+    published = await executePublishedSolver({
+      snapshotPath,
       ciphertextPath: options.ciphertextPath,
-      gitOriginPath: options.frozenGitPath,
+      outputRoot,
+      sandbox: options.sandbox,
+      command: options.selection.command,
       outputPath: options.selection.outputPath,
+      timeoutMs: options.timeoutMs ?? 30_000,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -178,9 +181,17 @@ export async function evaluateFrozenAttempt(options: {
     );
     const result = withSelection("execution-error", options.selection, { error: detail });
     return writeEvaluationResult(options.evaluationRoot, result);
+  } finally {
+    await rm(snapshotPath, { recursive: true, force: true });
   }
+  const { execution, outputPath } = published;
   await options.observe?.("evaluation.completed", { execution });
-  if (execution.exitCode !== 0 || execution.timedOut) {
+  if (
+    execution.exitCode !== 0 ||
+    execution.timedOut ||
+    execution.outputExceeded ||
+    execution.indeterminate === true
+  ) {
     const result = withSelection("execution-error", options.selection, {
       execution,
       error: execution.timedOut
@@ -190,26 +201,18 @@ export async function evaluateFrozenAttempt(options: {
     return writeEvaluationResult(options.evaluationRoot, result);
   }
 
-  try {
-    outputPath = await resolveWorkspaceRegularFile(
-      workspacePath,
-      options.selection.outputPath,
-      "Reviewer outputPath",
-    );
-    if ((await readFile(outputPath)).byteLength === 0) {
+  if (published.error !== undefined) {
+    if (
+      published.error === "Published solver did not produce output." ||
+      published.error === "Published solver output is empty."
+    ) {
       const result = withSelection("no-output", options.selection, { execution, outputPath });
       return writeEvaluationResult(options.evaluationRoot, result);
     }
-  } catch (error) {
-    if (error instanceof WorkspaceFileError && error.failure === "missing") {
-      const result = withSelection("no-output", options.selection, { execution, outputPath });
-      return writeEvaluationResult(options.evaluationRoot, result);
-    }
-    const detail = error instanceof Error ? error.message : String(error);
     const result = withSelection("execution-error", options.selection, {
       execution,
       outputPath,
-      error: detail,
+      error: published.error,
     });
     return writeEvaluationResult(options.evaluationRoot, result);
   }
@@ -251,11 +254,6 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   if (!attempt.agentIds.includes(workspace)) {
     throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);
   }
-  const selection: EvaluationSelection = {
-    command: SOLVER_COMMAND,
-    outputPath: SOLVER_OUTPUT_PATH,
-    ...(options.notes === undefined ? {} : { notes: options.notes }),
-  };
   const build = decodeBuildManifest(
     await readJsonObject(join(attempt.buildRoot, "puzzle-build.json")),
   );
@@ -279,6 +277,15 @@ export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<Ev
   ) {
     throw new Error(`Frozen Git topology is inconsistent for workspace ${workspace}.`);
   }
+  const published = await resolvePublishedSolver(frozenRepository.path);
+  const selection: EvaluationSelection = {
+    workspace,
+    repositoryId: frozenRepository.repositoryId,
+    ...published,
+    command: SOLVER_COMMAND,
+    outputPath: SOLVER_OUTPUT_PATH,
+    ...(options.notes === undefined ? {} : { notes: options.notes }),
+  };
   const sandbox = await createDockerCommandSandbox({
     root,
     expectedImageId: attempt.sandbox.imageId,

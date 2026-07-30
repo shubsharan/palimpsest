@@ -49,6 +49,23 @@ A researcher can inspect the full ordered team discussion after an attempt and r
 1. **Given** multiple interleaved posts, **When** the attempt is published, **Then** every accepted message has one author, one attempt-scoped sequence, its content, and its attempt-relative time.
 2. **Given** an invalid post or channel infrastructure failure, **When** the tool call completes, **Then** the failure is explicit and no success-shaped message record is produced.
 
+---
+
+### User Story 4 - Grade the Published Main Snapshot (Priority: P1)
+
+An experiment operator can trust that checker feedback and final scoring execute one exact published `main` commit without access to unpublished workspace files, other Git refs, private references, or oracle material.
+
+**Why this priority**: A score is reproducible only when the executed submission is an explicit immutable artifact rather than a checkout living inside an agent-controlled filesystem.
+
+**Independent Test**: Publish different solvers on `main`, another branch, and an uncommitted workspace; repoint the bare repository's symbolic `HEAD`; then verify that checking and evaluation execute the captured `refs/heads/main` commit in a fresh environment containing only its exported tree, the assigned ciphertext, and a contained output directory.
+
+**Acceptance Scenarios**:
+
+1. **Given** unpublished workspace files and another branch, **When** an agent checks its solver, **Then** the checker executes only an exported snapshot of the exact current `refs/heads/main` commit.
+2. **Given** a frozen repository whose symbolic `HEAD` names another branch, **When** final evaluation starts, **Then** evaluation resolves and records `refs/heads/main` and executes that exact commit.
+3. **Given** a solver that probes parent paths, Git objects, private evidence, or reference material, **When** checking or evaluation runs it, **Then** none of those resources is present in the execution environment.
+4. **Given** a solver that writes a missing, empty, escaping, symbolic-link, directory, or oversized result, **When** execution finishes, **Then** scoring is withheld and the failure is explicit.
+
 ### Edge Cases
 
 - Two agents post near-simultaneously.
@@ -57,6 +74,10 @@ A researcher can inspect the full ordered team discussion after an attempt and r
 - A caller supplies message-tool arguments when the channel is disabled.
 - A waiting agent is awakened by a team message while a stage or Git event is also published.
 - The attempt reaches its wall-time cutoff while an agent is reading or posting.
+- The published `main` ref is missing, malformed, or changes after its commit was resolved.
+- The bare repository's symbolic `HEAD` points at a non-main branch.
+- The published tree contains helper modules in addition to `solver.py`.
+- Concurrent agents request checker feedback while `main` advances.
 
 ## Puzzle & Observation Boundaries _(mandatory)_
 
@@ -64,13 +85,13 @@ A researcher can inspect the full ordered team discussion after an attempt and r
 
 **Agent Instructions & Tools**: Enabled shared-condition prompts state that agents may use the team channel for strategy and ideas and Git for the graded solver. Agents receive simple post and read tools with no assigned roles, turns, required messages, consensus rule, or coordination cadence. Disabled and isolated sessions receive no direct-message tools. `origin/main:solver.py` remains the sole checkable and gradeable artifact.
 
-**Environmental Constraints**: Every accepted message is visible to all agents in the same enabled shared-condition attempt and to no other attempt. There are no private messages. Isolated conditions expose no peer messages or message activity even when the manifest enables the optional channel. Existing evidence, Git topology, sandbox, network, secret, schedule, token, and wall-time boundaries remain unchanged.
+**Environmental Constraints**: Every accepted message is visible to all agents in the same enabled shared-condition attempt and to no other attempt. There are no private messages. Isolated conditions expose no peer messages or message activity even when the manifest enables the optional channel. Checker and evaluation execution receive a read-only exported published-main tree, read-only assigned ciphertext, and one writable output directory; no agent workspace, Git repository, private evidence, reference corpus, or oracle path is mounted. Existing evidence, Git topology, network, secret, schedule, token, and wall-time boundaries otherwise remain unchanged.
 
-**Observable Outcomes**: Durable traces retain the declared channel mode, accepted message sequence, author, content, time, reads, tool failures, wake activity, Git/checker behavior, model responses, usage, and termination. Choosing not to post, ignoring messages, duplicating discussion in Git, disagreement, and unsuccessful coordination remain model outcomes.
+**Observable Outcomes**: Durable traces retain the declared channel mode, accepted message sequence, author, content, time, reads, tool failures, wake activity, Git/checker behavior, captured published ref and commit, model responses, usage, and termination. Choosing not to post, ignoring messages, duplicating discussion in Git, disagreement, and unsuccessful coordination remain model outcomes.
 
 **Infrastructure Failures**: Invalid configuration, channel construction failure, trace publication failure, or inconsistent prompt/tool/artifact declarations fail explicitly. Empty or oversized messages and invalid cursors are ordinary tool errors. Lack of messages or poor use of the channel is not an infrastructure failure.
 
-**Verification Boundary**: Provider-free fixtures verify enabled delivery, disabled absence, isolated non-observability, wake behavior, ordered tracing, prompt disclosure, and unchanged Git grading. Advisory development checks remain non-authorizing. A clean receipt-bound preflight is required before a paid or findings-bearing run and binds the selected channel mode, prompts, source revision, and sandbox identity.
+**Verification Boundary**: Provider-free fixtures verify enabled delivery, disabled absence, isolated non-observability, wake behavior, ordered tracing, prompt disclosure, exact `refs/heads/main` selection, Git-free submission execution, output containment, and unchanged deterministic scoring. Advisory development checks remain non-authorizing. A clean receipt-bound preflight is required before a paid or findings-bearing run and binds the selected channel mode, prompts, source revision, sandbox identity, and published-main snapshot boundary.
 
 **Out-of-Scope Claims**: This feature does not claim that direct discussion improves scores, proves collaboration, exposes hidden reasoning, produces consensus, or isolates the causal effect of communication without paired runs. It adds no private messaging, service, account, database, automated moderator, summarizer, role assignment, or post-hoc solver merge.
 
@@ -91,12 +112,21 @@ A researcher can inspect the full ordered team discussion after an attempt and r
 - **FR-011**: Invalid mode values, invalid message authorship, empty or oversized content, and invalid read cursors MUST be rejected explicitly.
 - **FR-012**: The feature MUST preserve the existing cipher inputs, private evidence allocation, release schedule, Git topology, solver scaffold, checker, evaluation interface, token budget, cutoff, sandbox, and provider behavior.
 - **FR-013**: The feature MUST NOT add private messages, external services, accounts, databases, automated summaries, moderators, required responses, roles, rounds, or post-hoc merging.
+- **FR-014**: Checking and final evaluation MUST resolve the selected origin's `refs/heads/main` to one exact commit without consulting the repository's symbolic `HEAD`.
+- **FR-015**: The resolved commit's complete tree MUST be materialized outside every live agent workspace without Git metadata and MUST remain the only submitted code visible during execution.
+- **FR-016**: Published solver execution MUST occur in a fresh sandbox exposing only the read-only submission tree, read-only assigned ciphertext, a writable output directory, and the standard bounded temporary filesystem.
+- **FR-017**: The checker MUST assemble the caller's released ciphertext from trusted release records outside the agent sandbox and MUST NOT expose private reference or unreleased evidence to the solver.
+- **FR-018**: Checker feedback and final evaluation records MUST identify the exact captured published commit; final evaluation provenance MUST also identify the reviewer-selected workspace, assigned repository, and `refs/heads/main`.
+- **FR-019**: Scoring MUST accept only a non-empty, size-bounded regular output file whose resolved path remains inside the dedicated output directory.
+- **FR-020**: The immutable study scoring declaration MUST name the selected-workspace published-main snapshot boundary rather than reviewer-selected commands or output paths.
 
 ### Key Entities
 
 - **Team Channel Mode**: The explicit per-test selection of `enabled` or `disabled`, bound into configuration and attempt provenance.
 - **Team Message**: One accepted attempt-scoped post with sequence, author, content, and publication time.
 - **Team Channel Activity**: A peer-visible wake event indicating that at least one new message can be read.
+- **Published Solver Snapshot**: The exact commit identity and Git-free complete tree exported from one assigned origin's `refs/heads/main`.
+- **Solver Execution Boundary**: The fresh checker/evaluation environment containing only the snapshot, assigned ciphertext, bounded temporary storage, and contained output directory.
 
 ## Success Criteria _(mandatory)_
 
@@ -108,6 +138,9 @@ A researcher can inspect the full ordered team discussion after an attempt and r
 - **SC-004**: Waiting peers become able to observe a newly posted message without polling Git or waiting for the next evidence stage.
 - **SC-005**: Enabled and disabled attempt records are unambiguously distinguishable while their non-channel puzzle, resource, sandbox, and grading inputs remain identical.
 - **SC-006**: The complete repository verification suite and a clean receipt-bound preflight pass without a live provider call.
+- **SC-007**: Adversarial provider-free probes show zero successful reads of unpublished workspace state, non-main refs, Git metadata, private evidence, reference material, or oracle paths during checking and evaluation.
+- **SC-008**: Every successful checker and final score identifies exactly one 40-character commit captured from the selected origin's `refs/heads/main`.
+- **SC-009**: All escaping or non-regular output probes are rejected before the scorer is called.
 
 ## Assumptions
 

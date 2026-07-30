@@ -52,7 +52,7 @@ orders:
 
 scoring:
   metricId: normalized-positional-word-v1
-  reviewerSelectionId: manual-workspace-command-output-v1
+  reviewerSelectionId: selected-workspace-main-snapshot-v1
 
 rubric:
   rubricId: fixture-behavior-review-v1

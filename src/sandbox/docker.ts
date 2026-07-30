@@ -124,19 +124,16 @@ export async function buildDockerCreateArguments(
   containerLabelValue = "1",
 ): Promise<string[]> {
   validateSandboxCommand(request);
-  const workspace = await requireMountSource(request.workspacePath, "directory", "workspace");
-  const mounts: Array<{ source: string; target: string; readOnly: boolean }> = [
-    { source: workspace, target: SANDBOX_PATHS.workspace, readOnly: false },
-  ];
-  const environment = [
-    "HOME=/workspace",
-    "LANG=C.UTF-8",
-    "LC_ALL=C.UTF-8",
-    "TMPDIR=/tmp",
-    "GIT_TERMINAL_PROMPT=0",
-  ];
+  const mounts: Array<{ source: string; target: string; readOnly: boolean }> = [];
+  const environment = ["LANG=C.UTF-8", "LC_ALL=C.UTF-8", "TMPDIR=/tmp"];
+  let workdir: string;
 
   if (request.profile === "agent") {
+    mounts.push({
+      source: await requireMountSource(request.workspacePath, "directory", "workspace"),
+      target: SANDBOX_PATHS.workspace,
+      readOnly: false,
+    });
     mounts.push(
       {
         source: await requireMountSource(request.evidencePath, "directory", "evidence"),
@@ -158,24 +155,34 @@ export async function buildDockerCreateArguments(
         readOnly: false,
       },
     );
+    environment.unshift("HOME=/workspace");
+    environment.push("GIT_TERMINAL_PROMPT=0");
+    workdir = SANDBOX_PATHS.workspace;
   } else {
     validateRelativeWorkspacePath(request.outputPath, "Reviewer outputPath");
     mounts.push(
+      {
+        source: await requireMountSource(request.submissionPath, "directory", "submission"),
+        target: SANDBOX_PATHS.submission,
+        readOnly: true,
+      },
       {
         source: await requireMountSource(request.ciphertextPath, "file", "ciphertext"),
         target: SANDBOX_PATHS.ciphertext,
         readOnly: true,
       },
       {
-        source: await requireMountSource(request.gitOriginPath, "directory", "frozen Git origin"),
-        target: SANDBOX_PATHS.gitOrigin,
-        readOnly: true,
+        source: await requireMountSource(request.outputRoot, "directory", "output"),
+        target: SANDBOX_PATHS.output,
+        readOnly: false,
       },
     );
+    environment.unshift("HOME=/tmp");
     environment.push(
       `PALIMPSEST_CIPHERTEXT=${SANDBOX_PATHS.ciphertext}`,
-      `PALIMPSEST_OUTPUT=${posix.join(SANDBOX_PATHS.workspace, request.outputPath)}`,
+      `PALIMPSEST_OUTPUT=${posix.join(SANDBOX_PATHS.output, request.outputPath)}`,
     );
+    workdir = SANDBOX_PATHS.submission;
   }
 
   const args = [
@@ -207,7 +214,7 @@ export async function buildDockerCreateArguments(
   }
   args.push(
     "--workdir",
-    SANDBOX_PATHS.workspace,
+    workdir,
     identity.imageId,
     "/usr/bin/env",
     "-i",

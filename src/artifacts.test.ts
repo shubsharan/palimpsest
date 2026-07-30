@@ -320,7 +320,14 @@ function overlapResult(): Record<string, unknown> {
 function evaluationRecord(): Record<string, unknown> {
   return {
     status: "scored",
-    selection: { command: "sh solve.sh", outputPath: "reconstruction.txt" },
+    selection: {
+      workspace: "agent-1",
+      repositoryId: "shared",
+      ref: "refs/heads/main",
+      commit: "a".repeat(40),
+      command: "sh solve.sh",
+      outputPath: "reconstruction.txt",
+    },
     execution: {
       exitCode: 0,
       stdout: "",

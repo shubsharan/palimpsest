@@ -607,11 +607,17 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
 
     sessionPromises = config.agentIds.map((agentId) => {
       const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
+      const repository = git.repositories.find(
+        (candidate) => candidate.repositoryId === workspace?.repositoryId,
+      );
+      const evidencePath = evidencePaths[agentId];
       const released = releasedStages[agentId];
       const runtime = agents[agentId];
       const lease = openedLeases[agentId];
       if (
         workspace === undefined ||
+        repository === undefined ||
+        evidencePath === undefined ||
         released === undefined ||
         runtime === undefined ||
         lease === undefined
@@ -620,8 +626,10 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       }
       const tools = createAgentTools({
         agentId,
-        workspacePath: workspace.path,
         sandbox: lease,
+        solverSandbox: options.sandbox,
+        repositoryPath: repository.path,
+        evidencePath,
         activity: activities[agentId]!,
         ...(teamChannel === undefined ? {} : { teamChannel }),
         checker: options.checker,

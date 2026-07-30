@@ -40,3 +40,21 @@ git diff --check
 ```
 
 After committing the feature, run `pnpm preflight` before any provider-backed attempt.
+
+## Published Solver Boundary
+
+1. Publish a valid `solver.py` and any imported helpers to the assigned origin's `main`.
+2. Leave a different candidate uncommitted and publish another candidate on a non-main branch.
+3. Repoint the bare repository's symbolic `HEAD` to the non-main branch.
+4. Run `check_published_solver` and confirm it reports the exact `refs/heads/main` commit.
+5. Freeze and evaluate the selected workspace.
+6. Confirm selection/result records identify the workspace, assigned repository, canonical main ref, and captured commit.
+7. Confirm the solver environment contains no `.git`, `/git`, `/evidence`, `/reference`, workspace parent files, oracle paths, or provider credentials.
+
+Expected result: checker and evaluation execute the exported complete tree of the exact selected main commit regardless of workspace state, other refs, or symbolic `HEAD`.
+
+## Output Containment
+
+Exercise solvers that produce no output, an empty file, an escaping symlink, a directory, and a file larger than 16 MiB.
+
+Expected result: every invalid candidate is rejected before checking or scoring. A normal contained reconstruction remains scoreable.

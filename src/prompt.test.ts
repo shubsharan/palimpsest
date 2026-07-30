@@ -35,7 +35,7 @@ describe("agent prompt", () => {
 
       Recover the plaintext of the complete word-substitution cipher as accurately as you can.
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
-      The checker and final grader run python3 solver.py from a clean checkout. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
+      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
 
       Additional private evidence may appear during the attempt. The attempt ends at 60 minutes.
       Your cumulative model-token limit is 200000.
@@ -55,7 +55,7 @@ describe("agent prompt", () => {
 
       Recover the plaintext of the complete word-substitution cipher as accurately as you can.
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
-      The checker and final grader run python3 solver.py from a clean checkout. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
+      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
 
       Additional private evidence may appear during the attempt. The attempt ends at 60 minutes.
       Your cumulative model-token limit is 200000.
@@ -107,7 +107,7 @@ describe("agent prompt", () => {
 
       Recover the plaintext of the complete word-substitution cipher as accurately as you can.
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
-      The checker and final grader run python3 solver.py from a clean checkout. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or /reference.
+      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
 
       Additional private evidence may appear during the attempt. The attempt ends at 60 minutes.
       Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
@@ -185,11 +185,14 @@ describe("agent prompt", () => {
     expect(prompt).toContain(
       "final prose, uncommitted files, other branches, and unpushed commits do not count.",
     );
-    expect(prompt).toContain("run python3 solver.py from a clean checkout");
+    expect(prompt).toContain(
+      "run python3 solver.py from a Git-free snapshot of the published main commit",
+    );
+    expect(prompt).toContain("without /evidence, /reference, or Git metadata");
     expect(prompt).not.toContain("frozen workspace");
     expect(prompt).toContain("$PALIMPSEST_CIPHERTEXT");
     expect(prompt).toContain("$PALIMPSEST_OUTPUT");
-    expect(prompt).toContain("work without /evidence or /reference");
+    expect(prompt).toContain("work without /evidence, /reference, or Git metadata");
     expect(prompt).toContain(
       "The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.",
     );
