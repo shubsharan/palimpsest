@@ -94,6 +94,8 @@ Every assigned origin begins with the same neutral `solver.py` scaffold on `main
 
 Final evaluation checks out the selected frozen Git origin and runs the same `solver.py` interface against the complete ciphertext. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. The runner prescribes no roles, commit sequence, branch strategy, or collaboration cadence.
 
+Each attempt writes an append-only canonical `trace.jsonl` and a live-readable sibling `trace.log`. The text log renders each redacted event with its elapsed time, actor, event type, and indented data; watch it during a run with `tail -F artifacts/attempt/trace.log`. When a trace is reopened, the runner regenerates `trace.log` from `trace.jsonl`.
+
 ## Development Check
 
 ```bash
