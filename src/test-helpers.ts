@@ -2,7 +2,7 @@ import {
   type AgentSandboxLease,
   type AgentSandboxLeaseRequest,
   type CommandSandbox,
-  type EvaluationSandboxCommand,
+  type SolverSandboxCommand,
   type SandboxCommand,
   type SandboxCommandResult,
   type SandboxIdentity,
@@ -65,7 +65,7 @@ export class FakeCommandSandbox implements CommandSandbox {
     };
   }
 
-  async execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult> {
+  async execute(request: SolverSandboxCommand): Promise<SandboxCommandResult> {
     this.requests.push(request);
     return this.#execute(request);
   }
@@ -213,6 +213,7 @@ export function testAttemptSummary(
     memoryBytes: 2_147_483_648,
     pids: 256,
     tmpfsBytes: 268_435_456,
+    solverOutputBytes: 16_777_216,
     maxOutputBytes: 4_194_304,
   } as const;
   const models = agentIds.map((agentId) => ({
@@ -227,7 +228,7 @@ export function testAttemptSummary(
     },
   }));
   const protocol = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     blockId: "calibration-theron-ware",
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -237,6 +238,7 @@ export function testAttemptSummary(
     releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
     cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: 200_000,
+    teamChannel: "disabled",
     models,
     prompts: agentIds.map((agentId) => ({
       agentId,

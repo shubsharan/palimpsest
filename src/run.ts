@@ -1,8 +1,8 @@
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { renameSync } from "node:fs";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { ActivityBus } from "./activity.js";
+import { AttemptRuntime } from "./attempt-runtime.js";
 import {
   ATTEMPT_CUTOFF_MS,
   hashProtocolSnapshot,
@@ -44,7 +44,6 @@ import {
   type PreflightReceipt,
 } from "./preflight.js";
 import { buildAgentPrompt } from "./prompt.js";
-import { executePublishedSolver } from "./published-solver.js";
 import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
@@ -53,13 +52,13 @@ import {
   SandboxInfrastructureError,
   type AgentSandboxLease,
   type CommandSandbox,
-  type SandboxCommandResult,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
 import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
+import type { TeamChannelMode } from "./team-channel.js";
 
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -85,6 +84,7 @@ export interface AttemptConfig {
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
   tokenBudgetPerAgent: number;
+  teamChannel: TeamChannelMode;
 }
 
 export interface AgentRuntimeBinding {
@@ -216,6 +216,10 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     throw new Error("buildId must be a build-prefixed SHA-256 digest.");
   }
   const condition = resolveCondition(value.condition);
+  const teamChannel = value.teamChannel;
+  if (teamChannel !== "enabled" && teamChannel !== "disabled") {
+    throw new Error("teamChannel must be enabled or disabled.");
+  }
   const releaseOffsetsMs = value.releaseOffsetsMs;
   if (
     !Array.isArray(releaseOffsetsMs) ||
@@ -279,6 +283,7 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
     cutoffMs,
     tokenBudgetPerAgent: requirePositiveInteger(value, "tokenBudgetPerAgent"),
+    teamChannel,
   };
 }
 
@@ -307,70 +312,11 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
   ) as Record<AgentId, AgentRuntimeBinding>;
 }
 
-function executionSummary(result: SandboxCommandResult): Readonly<Record<string, unknown>> {
-  return {
-    exitCode: result.exitCode,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    timedOut: result.timedOut,
-    outputExceeded: result.outputExceeded,
-    ...(result.indeterminate === true ? { indeterminate: true } : {}),
-  };
-}
-
-async function runPublishedSolverCheck(options: {
-  agentId: AgentId;
-  repositoryPath: string;
-  ciphertextPaths: readonly string[];
-  releasedStages: readonly number[];
-  sandbox: CommandSandbox;
-  checker: CheckerHook;
-  signal?: AbortSignal;
-}): Promise<unknown> {
-  const checkRoot = await mkdtemp(join(tmpdir(), "palimpsest-check-"));
-  try {
-    const result = await executePublishedSolver({
-      repositoryPath: options.repositoryPath,
-      ciphertextPaths: options.ciphertextPaths,
-      executionRoot: join(checkRoot, "execution"),
-      sandbox: options.sandbox,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
-    if (result.status === "checkout-error") {
-      return { error: "Published solver checkout failed." };
-    }
-    if (result.status === "execution-error") {
-      return {
-        commit: result.commit,
-        error: result.error,
-        execution: executionSummary(result.execution),
-      };
-    }
-    if (result.status === "no-output") {
-      return {
-        commit: result.commit,
-        error: "Published solver execution produced no output.",
-        execution: executionSummary(result.execution),
-      };
-    }
-    const score = await options.checker({
-      agentId: options.agentId,
-      candidatePath: result.outputPath,
-      releasedStages: options.releasedStages,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
-    return { commit: result.commit, ...score };
-  } finally {
-    await rm(checkRoot, { recursive: true, force: true });
-  }
-}
-
 async function publishStages(options: {
   config: AttemptConfig;
   evidencePaths: Record<AgentId, string>;
-  releasedStages: Record<AgentId, Set<number>>;
-  activities: Record<AgentId, ActivityBus>;
-  observationLog: JsonlObservationLog;
+  releaseStagingRoot: string;
+  runtime: AttemptRuntime;
   startedAt: number;
   clock: MonotonicClock;
   signal: AbortSignal;
@@ -392,29 +338,30 @@ async function publishStage(
     options.config.agentIds.map(async (agentId) => {
       const source = options.config.agentStages[agentId]?.[ordinal - 1];
       const evidencePath = options.evidencePaths[agentId];
-      const released = options.releasedStages[agentId];
-      if (source === undefined || evidencePath === undefined || released === undefined) {
+      if (source === undefined || evidencePath === undefined) {
         throw new Error(`Missing ${agentId} stage ${String(ordinal)}.`);
       }
       const destination = join(
         evidencePath,
         `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
       );
-      await cp(source, destination, { errorOnExist: true, force: false });
-      released.add(ordinal);
-      const activityBus = options.activities[agentId];
-      if (activityBus === undefined) {
-        throw new Error(`Missing activity bus for ${agentId}.`);
+      const agentStagingRoot = join(options.releaseStagingRoot, agentId);
+      const staged = join(agentStagingRoot, basename(destination));
+      await mkdir(agentStagingRoot, { recursive: true });
+      await cp(source, staged, { errorOnExist: true, force: false });
+      try {
+        await options.runtime.publishReleasedStage(
+          agentId,
+          {
+            ordinal,
+            sourcePath: source,
+            visiblePath: destination,
+          },
+          () => renameSync(staged, destination),
+        );
+      } finally {
+        await rm(staged, { force: true });
       }
-      const activity = activityBus.publish({
-        kind: "stage-released",
-        detail: { ordinal, path: destination },
-      });
-      await options.observationLog.append(
-        "stage.released",
-        { ordinal, path: destination, activitySequence: activity.sequence },
-        agentId,
-      );
     }),
   );
 }
@@ -502,6 +449,8 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       }),
     ),
   ) as Record<AgentId, string>;
+  const releaseStagingRoot = join(config.artifactRoot, ".release-staging");
+  await mkdir(releaseStagingRoot);
 
   const startedAt = options.clock.nowMs();
   const cutoffAt = startedAt + config.cutoffMs;
@@ -516,11 +465,12 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         agentId,
         condition: config.condition,
         tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+        teamChannel: config.teamChannel,
       }),
     ]),
   ) as Record<AgentId, string>;
   const protocol: AttemptProtocolSnapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     blockId: config.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -530,6 +480,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     releaseOffsetsMs: [...config.releaseOffsetsMs],
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+    teamChannel: config.teamChannel,
     models: config.agentIds.map((agentId) => ({
       agentId,
       model: agents[agentId]!.model,
@@ -562,6 +513,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     releaseOffsetsMs: config.releaseOffsetsMs,
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+    teamChannel: config.teamChannel,
     agentCount: config.agentIds.length,
     models: config.agentIds.map((agentId) => ({
       agentId,
@@ -579,20 +531,27 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   });
   void wallTime.catch(() => globalController.abort("wall-timer-failed"));
 
-  const activities = Object.fromEntries(
-    config.agentIds.map((agentId) => [
-      agentId,
-      new ActivityBus(() => options.clock.nowMs() - startedAt),
-    ]),
-  ) as Record<AgentId, ActivityBus>;
+  const attemptRuntime = new AttemptRuntime({
+    agentIds: config.agentIds,
+    teamChannelEnabled:
+      config.teamChannel === "enabled" && condition.communicationMode === "shared",
+    nowMs: () => options.clock.nowMs() - startedAt,
+    observe: async ({ kind, data, agentId }) => {
+      await observationLog.append(kind, data, agentId);
+    },
+    onFatal: () => {
+      globalController.abort("attempt-runtime-failed");
+    },
+  });
   const monitors = git.repositories.map(
     (repository) =>
       new GitActivityMonitor({
         repository,
-        activityFor: (agentId) => activities[agentId]!,
         pollIntervalMs: options.gitPollIntervalMs ?? 20,
-        onChange: async (repositoryId, refs) => {
-          await observationLog.append("git.changed", { repositoryId, refs });
+        onChange: (repositoryId, agentIds, refs) =>
+          attemptRuntime.recordGitChange(repositoryId, agentIds, refs),
+        onError: () => {
+          globalController.abort("git-monitor-failed");
         },
       }),
   );
@@ -610,12 +569,12 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       startedMonitors = [...startedMonitors, monitor];
     }
 
-    const releasedStages = Object.fromEntries(
-      config.agentIds.map((agentId) => [agentId, new Set<number>()]),
-    ) as Record<AgentId, Set<number>>;
-    await publishStage({ config, evidencePaths, releasedStages, activities, observationLog }, 1);
+    await publishStage({ config, evidencePaths, releaseStagingRoot, runtime: attemptRuntime }, 1);
+    const agentHandles = Object.fromEntries(
+      config.agentIds.map((agentId) => [agentId, attemptRuntime.forAgent(agentId)]),
+    ) as Record<AgentId, ReturnType<AttemptRuntime["forAgent"]>>;
     const cursors = Object.fromEntries(
-      config.agentIds.map((agentId) => [agentId, activities[agentId]!.latestSequence]),
+      config.agentIds.map((agentId) => [agentId, agentHandles[agentId]!.latestActivitySequence]),
     ) as Record<AgentId, number>;
     const openedLeases = await openAgentLeases({
       sandbox: options.sandbox,
@@ -637,14 +596,15 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     stagePublishing = publishStages({
       config,
       evidencePaths,
-      releasedStages,
-      activities,
-      observationLog,
+      releaseStagingRoot,
+      runtime: attemptRuntime,
       startedAt,
       clock: options.clock,
       signal: scheduleController.signal,
     });
-    void stagePublishing.catch(() => {});
+    void stagePublishing.catch(() => {
+      globalController.abort("stage-publication-failed");
+    });
 
     sessionPromises = config.agentIds.map((agentId) => {
       const workspace = git.workspaces.find((candidate) => candidate.agentId === agentId);
@@ -652,42 +612,26 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
         (candidate) => candidate.repositoryId === workspace?.repositoryId,
       );
       const evidencePath = evidencePaths[agentId];
-      const released = releasedStages[agentId];
+      const attempt = agentHandles[agentId];
       const runtime = agents[agentId];
       const lease = openedLeases[agentId];
       if (
         workspace === undefined ||
         repository === undefined ||
         evidencePath === undefined ||
-        released === undefined ||
+        attempt === undefined ||
         runtime === undefined ||
         lease === undefined
       ) {
         throw new Error(`Runtime resources are missing for ${agentId}.`);
       }
       const tools = createAgentTools({
+        agentId,
         sandbox: lease,
-        activity: activities[agentId]!,
-        checkPublishedSolver: (releasedStageOrdinals, signal) =>
-          runPublishedSolverCheck({
-            agentId,
-            repositoryPath: repository.path,
-            ciphertextPaths: releasedStageOrdinals.map((ordinal) => {
-              const source = config.agentStages[agentId]?.[ordinal - 1];
-              if (source === undefined) {
-                throw new Error(`Missing ${agentId} stage ${String(ordinal)}.`);
-              }
-              return join(
-                evidencePath,
-                `stage-${String(ordinal).padStart(2, "0")}-${basename(source)}`,
-              );
-            }),
-            releasedStages: releasedStageOrdinals,
-            sandbox: options.sandbox,
-            checker: options.checker,
-            ...(signal === undefined ? {} : { signal }),
-          }),
-        getReleasedStages: () => [...released].sort((left, right) => left - right),
+        solverSandbox: options.sandbox,
+        repositoryPath: repository.path,
+        attempt,
+        checker: options.checker,
         getActivityCursor: () => cursors[agentId]!,
         setActivityCursor: (sequence) => {
           cursors[agentId] = sequence;
@@ -721,11 +665,8 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   if (stagePublishing !== undefined) quiesceTasks.push(stagePublishing);
   if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
   const quiesceResults = await Promise.allSettled(quiesceTasks);
-  const activityEndReason =
-    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended";
-  for (const activity of Object.values(activities)) activity.end(activityEndReason);
-
   const releaseTasks: Promise<unknown>[] = [];
+  releaseTasks.push(rm(releaseStagingRoot, { recursive: true, force: true }));
   releaseTasks.push(
     ...startedMonitors.map((monitor) => Promise.resolve().then(() => monitor.stop())),
   );
@@ -742,8 +683,11 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     );
   }
   const releaseResults = await Promise.allSettled(releaseTasks);
-  const cleanupFailures = [...quiesceResults, ...releaseResults].flatMap((result) =>
-    result.status === "rejected" ? [result.reason] : [],
+  const activityEndReason =
+    globalController.signal.reason === "time-exhausted" ? "time-exhausted" : "sessions-ended";
+  const runtimeCloseResults = await Promise.allSettled([attemptRuntime.close(activityEndReason)]);
+  const cleanupFailures = [...quiesceResults, ...releaseResults, ...runtimeCloseResults].flatMap(
+    (result) => (result.status === "rejected" ? [result.reason] : []),
   );
   const distinctCleanupFailures = cleanupFailures.filter(
     (error, index) => error !== primaryFailure?.error && cleanupFailures.indexOf(error) === index,
@@ -834,6 +778,7 @@ export interface RunPuzzleOptions {
   condition: ConditionId;
   agents: AgentRuntimeMap;
   tokenBudgetPerAgent: number;
+  teamChannel: TeamChannelMode;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
 }
@@ -987,6 +932,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     releaseOffsetsMs: RELEASE_OFFSETS_MS,
     cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: options.tokenBudgetPerAgent,
+    teamChannel: options.teamChannel,
   };
   const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
   if (preflight) assertPreflightSandbox(preflight, sandbox.identity);

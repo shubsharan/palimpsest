@@ -167,6 +167,7 @@ async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promi
     releaseOffsetsMs: RELEASE_OFFSETS_MS,
     cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: 100,
+    teamChannel: "disabled",
   };
 }
 
@@ -313,6 +314,77 @@ describe("fixed four-condition run coordinator", () => {
     },
   );
 
+  it.each([
+    ["CS", true],
+    ["IS", false],
+  ] as const)(
+    "makes direct team discussion available in %s only when the condition is shared",
+    async (condition, channelVisible) => {
+      const root = await mkdtemp(
+        join(tmpdir(), `palimpsest-run-channel-${condition.toLowerCase()}-`),
+      );
+      const config = { ...(await fixtureConfig(root, condition)), teamChannel: "enabled" as const };
+      const toolNames = new Map<AgentId, readonly string[]>();
+      const agents = runtimes((agentId) => ({
+        openSession: ({ tools }) => {
+          toolNames.set(
+            agentId,
+            tools.map(({ name }) => name),
+          );
+          let turn = 0;
+          return {
+            respond: async () => {
+              turn += 1;
+              if (agentId === "agent-1" && channelVisible && turn === 1) {
+                return {
+                  toolCalls: [
+                    {
+                      id: "message-1",
+                      name: "post_team_message",
+                      arguments: { message: "Compare the repeated-word hypothesis." },
+                    },
+                  ],
+                  usage: { inputTokens: 1, outputTokens: 1 },
+                };
+              }
+              return {
+                toolCalls: [],
+                finalResponse: "done",
+                usage: { inputTokens: 1, outputTokens: 1 },
+              };
+            },
+          };
+        },
+      }));
+
+      const result = await runAttempt({
+        config,
+        agents,
+        sandbox: new FakeCommandSandbox(),
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        clock: new ControlledClock(),
+      });
+
+      for (const names of toolNames.values()) {
+        expect(names.includes("post_team_message")).toBe(channelVisible);
+        expect(names.includes("read_team_messages")).toBe(channelVisible);
+      }
+      const events = (await readFile(result.tracePath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { kind: string; data: unknown });
+      const messages = events.filter(({ kind }) => kind === "team.message");
+      expect(messages).toHaveLength(channelVisible ? 1 : 0);
+      if (channelVisible) {
+        expect(messages[0]?.data).toMatchObject({
+          sequence: 1,
+          author: "agent-1",
+          message: "Compare the repeated-word hypothesis.",
+        });
+      }
+    },
+  );
+
   it("rejects condition, geometry, and schedule drift before creating an attempt", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-run-invalid-"));
     const config = await fixtureConfig(root);
@@ -332,6 +404,7 @@ describe("fixed four-condition run coordinator", () => {
       [{ ...config, releaseOffsetsMs: [0, 1, 2, 3, 4, 5] }, /releaseOffsetsMs|fixed/i],
       [{ ...config, cutoffMs: ATTEMPT_CUTOFF_MS - 1 }, /cutoffMs|fixed/i],
       [{ ...config, tokenBudgetPerAgent: 0 }, /tokenBudgetPerAgent/],
+      [{ ...config, teamChannel: "sometimes" }, /teamChannel/],
     ];
 
     for (const [value, message] of cases) {
@@ -558,6 +631,7 @@ describe("fixed four-condition run coordinator", () => {
         condition: "CR",
         agents,
         tokenBudgetPerAgent: 100,
+        teamChannel: "disabled",
         sandbox: new FakeCommandSandbox(),
         clock: new ControlledClock(),
       }),
@@ -614,7 +688,7 @@ describe("fixed four-condition run coordinator", () => {
     expect(sandbox.closedLeases).toBe(3);
   });
 
-  it("records provider and command-sandbox failures without losing native frozen work", async () => {
+  it("records provider and published-checker infrastructure failures without losing frozen work", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-run-session-failures-"));
     const config = await fixtureConfig(root, "IR");
     const adapter: ModelAdapter = {
@@ -626,7 +700,7 @@ describe("fixed four-condition run coordinator", () => {
             if (agentId === "agent-2" && !called) {
               called = true;
               return {
-                toolCalls: [{ id: "command", name: "run_command", arguments: { command: "true" } }],
+                toolCalls: [{ id: "check", name: "check_published_solver", arguments: {} }],
                 usage: { inputTokens: 1, outputTokens: 1 },
               };
             }
@@ -639,8 +713,17 @@ describe("fixed four-condition run coordinator", () => {
         };
       },
     };
-    const sandbox = new FakeCommandSandbox(async () => {
-      throw new SandboxInfrastructureError("Docker daemon unavailable.");
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile === "solver") {
+        throw new SandboxInfrastructureError("Docker daemon unavailable.");
+      }
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        outputExceeded: false,
+      };
     });
 
     const result = await runAttempt({

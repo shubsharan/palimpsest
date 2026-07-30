@@ -13,7 +13,7 @@ One root TypeScript application lives under `src/`. One Python distribution unde
 
 ## Experiment Configuration
 
-The five-entry `experiments/blocks.json` catalog owns scientific block inputs. One strict schema-version-2 YAML manifest freezes the complete study protocol. Both reject unknown fields before build or attempt side effects.
+The five-entry `experiments/blocks.json` catalog owns scientific block inputs. One strict schema-version-3 YAML manifest freezes the complete study protocol. Both reject unknown fields before build or attempt side effects.
 
 ```text
 study.yaml
@@ -50,20 +50,21 @@ For fixed registered source bytes, block definition, and builder version, the wi
 
 ## Attempt Runtime
 
-`puzzle:run` uses the fixed manifest assignment and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the supplied paired build is one of the registered study blocks, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
+`puzzle:run` uses the fixed manifest assignment, its required `communication.teamChannel` mode, and one strict `CS`, `CR`, `IS`, or `IR` condition. It checks that the supplied paired build is one of the registered study blocks, derives the stationary or re-key variant and shared or isolated topology, then constructs one declared model binding and adapter per agent.
 
 Within an attempt, TypeScript:
 
 - creates one shared bare Git repository or three isolated bare repositories, seeds each with the identical neutral `solver.py` on `main`, and creates one assigned workspace per canonical agent ID;
 - creates one private evidence directory and independent persistent session per agent;
-- releases equivalent stage ordinals at 0, 5, 10, 20, 30, and 40 minutes on one monotonic schedule;
+- prepares stage bytes outside agent mounts and atomically releases equivalent ordinals at 0, 5, 10, 20, 30, and 40 minutes on one monotonic schedule;
 - exposes the same local command, file, Git, checker, and activity-waiting tool surface to every session;
+- when enabled in a shared condition, exposes one attempt-local public append-only room with bounded reads and peer activity; isolated conditions never construct or expose it;
 - enforces provider-reported cumulative input/output token budgets per session and one fixed 60-minute cutoff;
 - records requested model identity, optional actual response identity, usage, tool activity, stage activity, Git changes, and termination;
 - freezes every native Git repository and workspace without merging after all sessions end; and
 - atomically publishes `attempt.json` before optional overlap observation.
 
-Sessions in one attempt run concurrently. They share neither message history nor private evidence. The protocol declares one graded `origin/main:solver.py` interface but introduces no rounds, roles, checkpoints, commit sequence, branch strategy, or merge policy.
+Sessions in one attempt run concurrently. They share no private evidence; enabled shared sessions may explicitly exchange public room messages. One attempt runtime synchronously commits live message, Git, release, and activity views, then serializes their durable trace projection through one outbox. Trace latency therefore cannot change stage visibility; a projection failure aborts and invalidates the attempt. The protocol records the declared channel mode and still declares one graded `origin/main:solver.py` interface, with no rounds, roles, checkpoints, commit sequence, branch strategy, messaging requirement, or merge policy.
 
 Missing provider usage or a provider request failure is an infrastructure-error session rather than estimated usage or a model-quality outcome. The attempt is still frozen and published. An experiment indexes that durable attempt and then stops before launching another.
 
@@ -112,7 +113,7 @@ Lease creation and every command share bounded deadlines under the attempt's glo
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Checker feedback and reviewer-selected evaluation share one published-solver executor. It explicitly materializes the assigned origin's `refs/heads/main` tree, records the commit, removes Git metadata, and runs the tree in a fresh short-lived container with only caller-supplied ciphertext and an initially empty output directory. It never reuses the persistent agent lease or mounts an agent workspace, evidence directory, reference corpus, or Git origin. The checker supplies released ciphertext and aggregate oracle scoring; evaluation first reverifies the selected build and frozen-tree seals, then supplies complete ciphertext and deterministic final scoring. The reviewer selects only the workspace; command and output semantics remain canonical.
+Checker and reviewer-selected evaluation share one published-solver transaction. The trusted host initializes a fresh temporary repository, fetches only the assigned origin's literal `refs/heads/main` into a private ref, resolves and checks out that pinned object, removes Git metadata, and only then records the commit and invokes execution. One abort signal and absolute deadline cover capture and solver execution, while callback cleanup removes the snapshot. A separate short-lived container mounts only the exported tree and assigned ciphertext read-only, with bounded `/tmp` and a 16 MiB `/output` tmpfs. It receives no writable host bind, Git origin, agent workspace, private evidence, reference corpus, oracle path, credential, or host sibling. After exit, the host copies only the declared output into hidden staging, validates its type and size, and atomically renames a valid file into durable output. Checking assembles released ciphertext from ordered sealed-stage records rather than evidence-directory discovery; evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals and uses complete ciphertext. The reviewer selects only the workspace; command and output remain canonical.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
@@ -157,11 +158,11 @@ The architecture preserves the strongest local durable boundary available: exclu
 
 ## Verification
 
-The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, shared visibility, isolated non-observability, published-main-only checking, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
+The repository verifies pinned corpus provenance, canonical paragraph extraction, deterministic first-feasible windows, complete paragraph allocation, oracle-set geometry, paired pre-boundary identity, stationary stability, old-key degradation, all four condition mappings, prompt parity, identical scaffold commits, optional public-message ordering and tracing, shared visibility, isolated non-observability, exact-main Git-free checking, symbolic-HEAD resistance, output containment, exact stage scheduling, strict attempt decoding, native topology freezing, attempt durability, selected-origin evaluation, and Docker containment.
 
 ## Study Conditions And Frozen Protocol
 
-Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage.
+Feature 014 implements canonical `CS`, `CR`, `IS`, and `IR` conditions, isolated repositories, exact release timing, and complete native topology records. Feature 015 replaces the transitional run list with one calibration block, four validation blocks, one fixed three-model assignment, balanced orders, immutable scientific design, bounded operational adjustments, and explicit failure lineage. Feature 016 adds a manifest-controlled shared discussion room while retaining Git as the only solver publication boundary and makes the exported selected-main commit the sole checker and grading artifact.
 
 Canonical acceptance is:
 

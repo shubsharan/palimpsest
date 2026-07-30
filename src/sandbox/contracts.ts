@@ -6,6 +6,8 @@ export const SANDBOX_CONTAINER_LABEL = "org.palimpsest.puzzle-sandbox.command";
 
 export const SANDBOX_PATHS = {
   workspace: "/workspace",
+  submission: "/submission",
+  output: "/output",
   evidence: "/evidence",
   reference: "/reference",
   gitOrigin: "/git/origin.git",
@@ -18,6 +20,7 @@ export const SANDBOX_POLICY = {
   memoryBytes: 2_147_483_648,
   pids: 256,
   tmpfsBytes: 268_435_456,
+  solverOutputBytes: 16_777_216,
   maxOutputBytes: 4_194_304,
 } as const;
 
@@ -45,14 +48,15 @@ export interface AgentSandboxCommand extends BaseSandboxCommand {
   gitOriginPath: string;
 }
 
-export interface EvaluationSandboxCommand extends BaseSandboxCommand {
-  profile: "evaluation";
-  workspacePath: string;
+export interface SolverSandboxCommand extends BaseSandboxCommand {
+  profile: "solver";
+  submissionPath: string;
   ciphertextPath: string;
+  outputRoot: string;
   outputPath: string;
 }
 
-export type SandboxCommand = AgentSandboxCommand | EvaluationSandboxCommand;
+export type SandboxCommand = AgentSandboxCommand | SolverSandboxCommand;
 
 export interface SandboxCommandResult {
   exitCode: number | null;
@@ -60,6 +64,7 @@ export interface SandboxCommandResult {
   stderr: string;
   timedOut: boolean;
   outputExceeded: boolean;
+  outputFailure?: string;
   indeterminate?: true;
   sandboxGeneration?: number;
 }
@@ -74,7 +79,7 @@ export interface SandboxIdentity {
 export interface CommandSandbox {
   readonly identity: SandboxIdentity;
   openAgentLease(request: AgentSandboxLeaseRequest): Promise<AgentSandboxLease>;
-  execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult>;
+  execute(request: SolverSandboxCommand): Promise<SandboxCommandResult>;
 }
 
 export interface AgentSandboxLease {
@@ -83,8 +88,14 @@ export interface AgentSandboxLease {
   close(): Promise<void>;
 }
 
-export class SandboxInfrastructureError extends Error {
+export class InfrastructureError extends Error {
+  override readonly name: string = "InfrastructureError";
+  readonly component: string = "trusted-host";
+}
+
+export class SandboxInfrastructureError extends InfrastructureError {
   override readonly name = "SandboxInfrastructureError";
+  override readonly component = "command-sandbox";
 }
 
 export type WorkspaceFileFailure = "absolute" | "outside" | "missing" | "not-regular";

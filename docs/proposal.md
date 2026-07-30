@@ -26,11 +26,11 @@ Provider credentials are read only from named environment variables. They are no
 
 Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, schedule, limits, tools, references, and evaluation boundary.
 
-Shared conditions give the team one peer-visible Git repository and shared Git activity. Isolated conditions give each agent an independent usable repository and owner-only Git activity. Team identity and every non-communication input remain equal across paired conditions.
+Shared conditions give the team one peer-visible Git repository and shared Git activity. A manifest switch may also give shared agents one append-only public discussion room for strategy and ideas. Isolated conditions give each agent an independent usable repository and owner-only Git activity and never expose the room. Team identity and every non-communication input remain equal across paired conditions.
 
 Instructions identify the puzzle as a word-substitution cipher, make the team and currently available channel explicit, and declare the one graded interface: `origin/main:solver.py`. They do not reveal the key regime, special word sets, scoring expectations, roles, workflows, or a decoding algorithm.
 
-Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; an assigned ordinary Git origin preseeded with the same neutral `solver.py`; a published-solver checker; and a way to wait for visible activity. A waiting session may resume when private evidence or condition-visible Git state changes. Other sessions do not synchronize with it.
+Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; an assigned ordinary Git origin preseeded with the same neutral `solver.py`; a published-solver checker; and a way to wait for visible activity. In enabled shared tests they may post to and page through the public room, and accepted posts become visible activity for every teammate. Other sessions do not otherwise synchronize.
 
 Git commands remain model-chosen and unmetered, but only code pushed to the assigned origin's `main` branch can receive checker feedback or a final grade. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, or relay raw evidence; the runner does not prescribe roles, turns, commit sequences, or merge policy.
 
@@ -38,7 +38,7 @@ Git commands remain model-chosen and unmetered, but only code pushed to the assi
 
 The runner supplies an environment rather than a work plan.
 
-- Evidence stages appear on a fixed monotonic schedule independent of model turns, token use, Git activity, checker calls, or apparent progress.
+- Evidence stages are privately prepared and atomically appear on a fixed monotonic schedule independent of model turns, token use, trace latency, Git activity, checker calls, or apparent progress.
 - Sessions may take as many model responses, tool calls, checker calls, and, when available, collaboration cycles as their cumulative provider-reported token budgets and the attempt wall-time limit permit.
 - An agent's final response ends only that session. Token exhaustion ends only the affected session. The wall-time cutoff stops every active session.
 - There are no rounds, launch barriers, assigned turns, publication slots, required commits, prescribed branches, checkpoints, or submission schemas.
@@ -48,7 +48,7 @@ Private evidence lives outside Git so an agent does not commit it accidentally d
 
 ## Checking Work
 
-An agent may invoke `check_published_solver`, which captures the exact current commit on the assigned origin's `refs/heads/main`, materializes only that tree, runs `python3 solver.py` in a fresh one-shot environment against the private evidence currently visible to that agent, and scores the resulting reconstruction. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware execution error.
+An agent may invoke `check_published_solver`, which captures only the assigned origin's literal current `refs/heads/main`, runs the pinned Git-free tree against ciphertext assembled from one frozen view of ordered trusted release records, scores the reconstruction, removes the capture, and only then returns an outcome. A later force-push cannot invalidate the captured tree. The fresh execution receives no agent workspace, other Git refs, agent-writable evidence source, reference corpus, or oracle path. The checker returns the commit, aggregate matched-word count, total-word count, coverage, and accuracy, or a commit-aware submission error; trusted machinery and cleanup failures remain infrastructure failures.
 
 It never accepts a local path and never returns correct words, expected words, mismatch locations, unreleased results, peer-private results, or information about a hidden re-key. Repeated publication and checking remain behavior to observe.
 
@@ -56,15 +56,15 @@ It never accepts a local path and never returns correct words, expected words, m
 
 At the wall-time cutoff, or after all sessions have ended, the runner freezes every repository and agent workspace. It publishes the durable attempt before optional overlap observation.
 
-A reviewer selects the condition-appropriate frozen origin. Palimpsest sends its captured `refs/heads/main` tree through the same published-solver executor and declared `python3 solver.py` interface; there is no post-hoc merge or choice among uncommitted local candidates.
+A reviewer selects the condition-appropriate frozen origin. Palimpsest uses the same fetch-and-materialize transaction, records the captured `refs/heads/main` commit before running the declared `python3 solver.py` interface, and cleans the temporary tree after use; symbolic `HEAD`, later ref changes, other refs, and uncommitted local candidates cannot select or supplement graded code.
 
-The shared executor removes Git metadata and exposes only the published tree, supplied ciphertext, and a fresh output directory. Checker and grader execution therefore cannot read an agent workspace, evidence mount, reference corpus, other Git refs, provider credentials, host files, or public network. Evaluation reports a deterministic reconstruction score or a clear execution status.
+The selected code runs read-only against the complete ciphertext and writes only to bounded container tmpfs, without a writable host bind, frozen repository, oracle, peer evidence, references, provider credentials, host siblings, or public network access. After exit, the host validates one declared file in hidden staging and atomically publishes it for scoring. Evaluation reports the exact commit and a deterministic reconstruction score or clear execution status.
 
 ## Research Records
 
 A study prepares all five builds and an immutable design receipt before calibration sessions begin. Calibration executes four condition cells; validation executes sixteen cells under four balanced orders. Attempts remain sequential while the three sessions inside one attempt remain concurrent. Each phase summary records launch reservations, durable attempts, resource authorization, and explicit replacement lineage without selecting or aggregating outcomes.
 
-Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain study provenance, condition and derived treatment, selected build, fixed schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, termination, model and tool activity, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Records do not retain complete provider response payloads or credential values.
+Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain study provenance, condition and derived treatment, declared channel mode, selected build, fixed schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, termination, model and tool activity, accepted public messages, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Records do not retain complete provider response payloads or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 

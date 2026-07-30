@@ -91,6 +91,7 @@ export async function runOfflinePuzzle(
     condition: options.condition,
     agents: createFixtureAgentRuntimes(build.agentIds, "collaborative-revision"),
     tokenBudgetPerAgent: 100,
+    teamChannel: "enabled",
     clock: acceleratedClock(),
   });
   const evaluation = await evaluatePuzzle({

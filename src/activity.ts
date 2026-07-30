@@ -1,4 +1,4 @@
-export type ActivityKind = "stage-released" | "git-changed";
+export type ActivityKind = "stage-released" | "git-changed" | "team-message";
 
 export interface ActivityEvent {
   sequence: number;

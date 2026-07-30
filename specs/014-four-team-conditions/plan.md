@@ -4,7 +4,7 @@
 
 ## Summary
 
-Add one strict condition layer that derives shared/isolated Git topology and stationary/re-key build selection from `CS`, `CR`, `IS`, or `IR`. Replace arithmetic reveal timing with the fixed six-offset schedule, give each agent a condition-appropriate origin at one stable sandbox path, keep activity sequences private, and extend durable attempt records just enough to evaluate and inspect either topology without merging. A later protocol amendment seeds every origin with an identical neutral `solver.py`, makes the exact solver pushed to `origin/main` the only checkable and gradeable artifact, and routes checking and grading through one sterile published-tree executor.
+Add one strict condition layer that derives shared/isolated Git topology and stationary/re-key build selection from `CS`, `CR`, `IS`, or `IR`. Replace arithmetic reveal timing with the fixed six-offset schedule, give each agent a condition-appropriate origin at one stable sandbox path, keep activity sequences private, and extend durable attempt records just enough to evaluate and inspect either topology without merging. A later protocol amendment seeds every origin with an identical neutral `solver.py` and makes the exact solver pushed to `origin/main` the only checkable and gradeable artifact.
 
 ## Technical Context
 
@@ -61,8 +61,6 @@ src/
 ├── overlap.test.ts
 ├── evaluate.ts
 ├── evaluate.test.ts
-├── published-solver.ts
-├── published-solver.test.ts
 ├── config.ts
 ├── configured-run.ts
 ├── experiment.ts
@@ -81,7 +79,7 @@ experiments/
 └── schema.json
 ```
 
-**Structure Decision**: Keep condition derivation in one new TypeScript module because TypeScript already owns sessions, timing, Git, prompts, sandbox mounts, traces, and operator commands. Generalize the existing Git value object rather than adding parallel shared and isolated runtimes. Keep one `published-solver.ts` boundary for explicit `main` materialization, sterile one-shot execution, and fresh output validation shared by checker and grader. Keep Python puzzle generation and scoring unchanged.
+**Structure Decision**: Keep condition derivation in one new TypeScript module because TypeScript already owns sessions, timing, Git, prompts, sandbox mounts, traces, and operator commands. Generalize the existing Git value object rather than adding parallel shared and isolated runtimes. Keep Python puzzle generation and scoring unchanged.
 
 ## Phase 0 Decisions
 
@@ -136,7 +134,7 @@ The prompt is assembled from:
 
 Attempt schema version 3 records `blockId`, `condition`, derived `communicationMode` and `keyRegime`, selected `variantId` and `buildId`, exact release offsets, cutoff, token budget, protocol digest, frozen repositories/workspaces, sessions, trace, and sandbox identity. The protocol digest hashes a fixed-order secret-free snapshot of these declared attempt inputs and prompt texts; the snapshot is stored alongside the digest so it is auditable rather than magical.
 
-Overlap resolves the variant from the persisted condition, scans each frozen repository independently, prefixes isolated paths with the owning agent ID, combines findings and additive scan counts, and never affects the score. One published-solver executor explicitly materializes the assigned origin's `refs/heads/main` tree, removes Git metadata, and runs it in a fresh one-shot sandbox with only the supplied ciphertext and an empty output directory. The checker supplies the caller's released ciphertext and aggregate oracle hook; manual evaluation supplies the complete ciphertext and deterministic scorer. Neither path mounts an agent workspace, evidence directory, reference corpus, or Git origin during solver execution.
+Overlap resolves the variant from the persisted condition, scans each frozen repository independently, prefixes isolated paths with the owning agent ID, combines findings and additive scan counts, and never affects the score. The aggregate checker captures and cleanly executes only the assigned origin's current `main:solver.py`. Manual evaluation resolves the same variant and mounts only the selected workspace's assigned frozen repository. Shared evaluation therefore sees the team origin; isolated evaluation sees only the selected agent's origin.
 
 ### Failure Boundary
 

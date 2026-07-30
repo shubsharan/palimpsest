@@ -4,7 +4,7 @@
 
 ## Summary
 
-Replace the transitional schema-version-1 run list with one strict schema-version-2 five-block study manifest. Add a small local study coordinator that prepares all deterministic builds, publishes one immutable calibration design receipt, expands the exact four-cell calibration and sixteen-cell validation matrices, reserves each launch before opening sessions, and indexes only durable attempts. Keep individual attempts, native Git topology, optional overlap, and explicit evaluation unchanged. A later protocol amendment carries Feature 014's identical solver scaffold and one published-main executor shared by checker and grader through every study cell. Infrastructure replacement is an explicit appended attempt for a cited frozen session-infrastructure failure; there is no retry engine, result selection, aggregation, service, or database.
+Replace the transitional schema-version-1 run list with one strict schema-version-2 five-block study manifest. Add a small local study coordinator that prepares all deterministic builds, publishes one immutable calibration design receipt, expands the exact four-cell calibration and sixteen-cell validation matrices, reserves each launch before opening sessions, and indexes only durable attempts. Keep individual attempts, native Git topology, optional overlap, and explicit evaluation unchanged. A later protocol amendment carries Feature 014's identical solver scaffold and published-main-only checker through every study cell. Infrastructure replacement is an explicit appended attempt for a cited frozen session-infrastructure failure; there is no retry engine, result selection, aggregation, service, or database.
 
 ## Technical Context
 
@@ -68,7 +68,7 @@ experiments/
 └── behavior-rubric.md
 ```
 
-**Structure Decision**: Keep `src/study.ts` as the ownership boundary for study expansion, receipt validation, phase state, launch reservation, accounting, and explicit replacement. Add one small generic `src/seal.ts` boundary for canonical directory identity shared by construction, phase launch, attempt freeze, resume, and evaluation. Keep Feature 014's `src/published-solver.ts` as the sole checkout, isolation, and output boundary for both checking and grading. Keep one-attempt execution in `run.ts`, artifact codecs in `artifacts.ts`, manifest decoding in `config.ts`, and CLI wiring in `experiment.ts`.
+**Structure Decision**: Keep `src/study.ts` as the ownership boundary for study expansion, receipt validation, phase state, launch reservation, accounting, and explicit replacement. Add one small generic `src/seal.ts` boundary for canonical directory identity shared by construction, phase launch, attempt freeze, resume, and evaluation. Keep one-attempt execution in `run.ts`, artifact codecs in `artifacts.ts`, manifest decoding in `config.ts`, and CLI wiring in `experiment.ts`.
 
 ## Phase 0 Decisions
 

@@ -1,4 +1,7 @@
-schemaVersion: 2
+schemaVersion: 3
+
+communication:
+  teamChannel: enabled
 
 blocks:
   - blockId: calibration-theron-ware
@@ -57,7 +60,7 @@ orders:
 
 scoring:
   metricId: normalized-positional-word-v1
-  reviewerSelectionId: manual-workspace-command-output-v1
+  reviewerSelectionId: selected-workspace-main-snapshot-v1
 
 rubric:
   rubricId: palimpsest-behavior-review-v1

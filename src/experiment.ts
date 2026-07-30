@@ -214,6 +214,7 @@ export async function runStudyExperiment(
           condition: launch.cell.condition,
           agents,
           tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
+          teamChannel: study.communication.teamChannel,
           sandbox,
         });
       },

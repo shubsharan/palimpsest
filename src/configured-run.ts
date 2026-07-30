@@ -34,6 +34,7 @@ export async function runConfiguredPuzzleFromFlags(
     condition,
     agents,
     tokenBudgetPerAgent: study.budgets.tokenBudgetPerAgent,
+    teamChannel: study.communication.teamChannel,
     sandbox,
   });
 }

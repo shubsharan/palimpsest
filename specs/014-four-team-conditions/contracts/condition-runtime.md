@@ -72,7 +72,7 @@ Peer communication is unavailable. Your assigned origin is private and no peer c
 
 The remaining objective, word-substitution cipher disclosure, schedule, cutoff, token limit, tools, paths, references, published-solver checker, wait behavior, evaluation boundary, and final-response request are byte-identical. Every origin begins at the same neutral `solver.py` commit. The prompt contains no key-regime term, oracle label, expected score, assigned role, decoding algorithm, prescribed branch strategy, workflow, checkpoint, required intermediate file, or raw-sharing warning.
 
-`check_published_solver` takes no candidate path. One shared executor explicitly materializes the exact current `refs/heads/main` tree without Git metadata and runs `python3 solver.py` in a fresh one-shot sandbox containing only that tree, the caller's released ciphertext, and an initially empty output directory. It returns the commit with aggregate matched words, total words, coverage, and accuracy or an execution error. Final grading uses the same executor against the selected frozen origin and complete ciphertext. Agent workspaces, evidence directories, reference corpora, other refs, and Git origins are never mounted into either solver execution.
+`check_published_solver` takes no candidate path. It captures the exact current `origin/main` commit, checks it out cleanly, runs `python3 solver.py` against only the caller's released evidence, and returns the commit with aggregate matched words, total words, coverage, and accuracy or an execution error. Final grading uses the same interface against the complete ciphertext.
 
 ## Attempt Schema Version 3
 

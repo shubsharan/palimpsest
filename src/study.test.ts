@@ -183,6 +183,7 @@ async function publishLaunchAttempt(
     variantId: condition.variantId,
     buildId: launch.cell.buildId,
     tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
+    teamChannel: study.communication.teamChannel,
     models: protocolModels,
     prompts: study.assignment.map(({ agentId }) => ({
       agentId,
@@ -190,6 +191,7 @@ async function publishLaunchAttempt(
         agentId,
         condition: condition.id,
         tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
+        teamChannel: study.communication.teamChannel,
       }),
     })),
     sandbox: { ...TEST_SANDBOX_IDENTITY, ...SANDBOX_POLICY },

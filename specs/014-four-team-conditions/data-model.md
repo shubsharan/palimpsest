@@ -82,8 +82,7 @@ Validation: each physical repository is scanned once; shared repository is not t
 - explicit selected `agentId`
 - selected frozen workspace
 - selected assigned frozen repository
-- exact selected `refs/heads/main` commit
 - canonical `python3 solver.py` command and `reconstruction.txt` output path
 - optional notes, execution, and score
 
-Validation: the workspace and repository must be the exact pair recorded for the selected agent. The shared published-solver executor materializes only the selected `main` tree and requires a new output outside that tree. No repository merge, automatic workspace selection, reviewer-selected command, agent-workspace mount, or live Git-origin mount occurs.
+Validation: the workspace and repository must be the exact pair recorded for the selected agent. No repository merge, automatic workspace selection, or reviewer-selected command occurs.

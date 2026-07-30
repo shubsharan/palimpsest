@@ -271,7 +271,8 @@ describe("active repository boundary", () => {
     expect(schema.properties).toHaveProperty("orders");
     expect(schema.properties).toHaveProperty("failurePolicy");
     expect(schema.properties).not.toHaveProperty("runs");
-    expect(baselineSource).toContain("schemaVersion: 2");
+    expect(baselineSource).toContain("schemaVersion: 3");
+    expect(baselineSource).toContain("teamChannel: enabled");
     expect(packageManifest.scripts).toMatchObject({
       "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",
       "puzzle:build": "tsx src/cli.ts build",

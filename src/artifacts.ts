@@ -27,6 +27,7 @@ import {
 } from "./sandbox/contracts.js";
 import type { TreeSeal } from "./seal.js";
 import type { AgentSessionResult, SessionState } from "./session.js";
+import type { TeamChannelMode } from "./team-channel.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -187,6 +188,7 @@ export interface SandboxPolicy {
   memoryBytes: 2_147_483_648;
   pids: 256;
   tmpfsBytes: 268_435_456;
+  solverOutputBytes: 16_777_216;
   maxOutputBytes: 4_194_304;
 }
 
@@ -207,7 +209,7 @@ export interface AttemptProtocolPrompt {
 }
 
 export interface AttemptProtocolSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   blockId: string;
   condition: ResolvedCondition["id"];
   communicationMode: ResolvedCondition["communicationMode"];
@@ -217,6 +219,7 @@ export interface AttemptProtocolSnapshot {
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
   tokenBudgetPerAgent: number;
+  teamChannel: TeamChannelMode;
   models: readonly AttemptProtocolModel[];
   prompts: readonly AttemptProtocolPrompt[];
   sandbox: SandboxIdentity & SandboxPolicy;
@@ -1555,11 +1558,12 @@ function decodeAttemptProtocol(
     "releaseOffsetsMs",
     "cutoffMs",
     "tokenBudgetPerAgent",
+    "teamChannel",
     "models",
     "prompts",
     "sandbox",
   ]);
-  if (record.schemaVersion !== 1) {
+  if (record.schemaVersion !== 2) {
     throw new Error("Unsupported attempt protocol schema version.");
   }
   const condition = resolveCondition(record.condition);
@@ -1575,6 +1579,10 @@ function decodeAttemptProtocol(
     "Attempt protocol tokenBudgetPerAgent",
     1,
   );
+  const teamChannel = record.teamChannel;
+  if (teamChannel !== "enabled" && teamChannel !== "disabled") {
+    throw new Error("Attempt protocol teamChannel must be enabled or disabled.");
+  }
   if (
     blockId !== expected.blockId ||
     condition.id !== expected.condition.id ||
@@ -1634,7 +1642,7 @@ function decodeAttemptProtocol(
     throw new Error("Attempt protocol sandbox must match the declared attempt sandbox.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -1644,6 +1652,7 @@ function decodeAttemptProtocol(
     releaseOffsetsMs,
     cutoffMs,
     tokenBudgetPerAgent,
+    teamChannel,
     models,
     prompts,
     sandbox,
@@ -2713,7 +2722,22 @@ function decodeSelection(value: unknown): EvaluationSelection {
     record.notes === undefined
       ? undefined
       : nonEmptyString(record.notes, "Evaluation selection notes");
+  const repositoryId: EvaluationSelection["repositoryId"] =
+    record.repositoryId === "shared"
+      ? "shared"
+      : agentId(record.repositoryId, "Evaluation selection repositoryId");
+  const commit = gitObjectId(record.commit, "Evaluation selection commit");
+  if (commit.length !== 40) {
+    throw new Error("Evaluation selection commit must be a 40-character Git object ID.");
+  }
+  if (record.ref !== "refs/heads/main") {
+    throw new Error("Evaluation selection ref must be refs/heads/main.");
+  }
   const selection = {
+    workspace: agentId(record.workspace, "Evaluation selection workspace"),
+    repositoryId,
+    ref: "refs/heads/main" as const,
+    commit,
     command: nonEmptyString(record.command, "Evaluation selection command"),
     outputPath: safeRelativePath(record.outputPath, "Evaluation selection outputPath"),
   };
@@ -2727,6 +2751,10 @@ function decodeExecution(value: unknown): SandboxCommandResult {
   if (typeof record.timedOut !== "boolean" || typeof record.outputExceeded !== "boolean") {
     throw new Error("Evaluation execution flags must be booleans.");
   }
+  const outputFailure =
+    record.outputFailure === undefined
+      ? undefined
+      : nonEmptyString(record.outputFailure, "Evaluation execution outputFailure");
   return {
     exitCode,
     stdout:
@@ -2739,6 +2767,7 @@ function decodeExecution(value: unknown): SandboxCommandResult {
         : nonEmptyString(record.stderr, "Evaluation execution stderr"),
     timedOut: record.timedOut,
     outputExceeded: record.outputExceeded,
+    ...(outputFailure === undefined ? {} : { outputFailure }),
   };
 }
 
@@ -2758,7 +2787,12 @@ export function decodeAggregateScore(value: unknown): AggregateScore {
 }
 
 function executionSucceeded(execution: SandboxCommandResult): boolean {
-  return execution.exitCode === 0 && !execution.timedOut && !execution.outputExceeded;
+  return (
+    execution.exitCode === 0 &&
+    !execution.timedOut &&
+    !execution.outputExceeded &&
+    execution.outputFailure === undefined
+  );
 }
 
 export function decodeEvaluationRecord(value: unknown): EvaluationResult {

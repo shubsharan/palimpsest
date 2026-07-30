@@ -23,14 +23,14 @@ describe("study manifest", () => {
   it("parses YAML while rejecting duplicate keys and aliases", () => {
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 2
-schemaVersion: 2
+schemaVersion: 3
+schemaVersion: 3
 `),
     ).toThrow(/map keys must be unique/i);
 
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 2
+schemaVersion: 3
 value: &shared { nested: true }
 copy: *shared
 `),
@@ -45,6 +45,7 @@ copy: *shared
       { agentId: "agent-2", modelProfileId: "claude" },
       { agentId: "agent-3", modelProfileId: "gemini" },
     ]);
+    expect(study.communication).toEqual({ teamChannel: "disabled" });
     expect(
       expandPhase(study, "calibration").map(({ blockId, condition }) => [blockId, condition]),
     ).toEqual([
@@ -87,6 +88,7 @@ copy: *shared
       totalTokenCeiling: 15_000_000,
       totalMonetaryCeilingCents: 250_000,
     });
+    expect(study.immutableManifest.communication).toEqual({ teamChannel: "disabled" });
     expect(study.rubricPath).toBe(fixture("behavior-rubric.md"));
     expect(study.providers.openai).toEqual({
       driver: "openai",
@@ -137,6 +139,29 @@ copy: *shared
 
     expect(drifted.manifestDigest).not.toBe(original.manifestDigest);
     expect(drifted.immutableManifestDigest).not.toBe(original.immutableManifestDigest);
+  });
+
+  it("requires and binds an explicit team-channel mode", async () => {
+    const baseline = await validManifest();
+    const enabled = structuredClone(baseline);
+    enabled.communication.teamChannel = "enabled";
+    const [disabledStudy, enabledStudy] = await Promise.all([
+      resolveStudy(baseline, resolve(".")),
+      resolveStudy(enabled, resolve(".")),
+    ]);
+
+    expect(enabledStudy.communication.teamChannel).toBe("enabled");
+    expect(enabledStudy.manifestDigest).not.toBe(disabledStudy.manifestDigest);
+    expect(enabledStudy.immutableManifestDigest).not.toBe(disabledStudy.immutableManifestDigest);
+
+    const { communication: _, ...missing } = baseline;
+    expect(() => validateStudyManifest(missing)).toThrow(/communication|invalid/i);
+    expect(() =>
+      validateStudyManifest({
+        ...baseline,
+        communication: { teamChannel: "sometimes" },
+      }),
+    ).toThrow(/teamChannel|invalid/i);
   });
 
   it.each([

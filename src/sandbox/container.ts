@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join, posix } from "node:path";
 
 import { runProcess, type ProcessResult } from "../process.js";
 import {
   SANDBOX_IMAGE_TAG,
+  SANDBOX_PATHS,
   SANDBOX_POLICY,
   SandboxInfrastructureError,
   type AgentSandboxLease,
   type AgentSandboxLeaseRequest,
   type BaseSandboxCommand,
   type CommandSandbox,
-  type EvaluationSandboxCommand,
+  type SolverSandboxCommand,
   type SandboxCommandResult,
   type SandboxIdentity,
   validateAgentSandboxLeaseRequest,
@@ -19,6 +22,7 @@ import {
   buildAgentDockerCreateArguments,
   buildDockerCreateArguments,
   buildDockerExecArguments,
+  buildSolverDockerExecArguments,
   parseSandboxImageInspection,
   sandboxDockerfileDigest,
   validateSandboxImageInspection,
@@ -194,6 +198,119 @@ export class DockerCommandSandbox implements CommandSandbox {
       throw new SandboxInfrastructureError("The Docker sandbox requires a POSIX host UID and GID.");
     }
     return { uid: getUid(), gid: getGid() };
+  }
+
+  async #publishSolverOutput(
+    request: SolverSandboxCommand,
+    containerName: string,
+    deadline: number,
+    user: { uid: number; gid: number },
+  ): Promise<string | undefined> {
+    let outputRoot: string;
+    try {
+      outputRoot = await realpath(request.outputRoot);
+    } catch (error) {
+      throw new SandboxInfrastructureError(
+        `Solver output destination is inaccessible: ${errorDetail(error)}`,
+      );
+    }
+    let stagingRoot: string;
+    try {
+      stagingRoot = await mkdtemp(join(outputRoot, ".palimpsest-output-"));
+    } catch (error) {
+      throw new SandboxInfrastructureError(
+        `Unable to create solver output staging: ${errorDetail(error)}`,
+      );
+    }
+    const stagedOutput = join(stagingRoot, "candidate");
+    let outcome: string | undefined;
+    let operationFailure: Error | undefined;
+    try {
+      outcome = await (async () => {
+        const containerOutput = posix.join(SANDBOX_PATHS.output, request.outputPath);
+        const extracted = await this.#runDocker(
+          [
+            "exec",
+            "--workdir",
+            SANDBOX_PATHS.submission,
+            "--user",
+            `${String(user.uid)}:${String(user.gid)}`,
+            containerName,
+            "/usr/bin/env",
+            "-i",
+            `PALIMPSEST_OUTPUT=${containerOutput}`,
+            "/bin/sh",
+            "-c",
+            'if [ ! -e "$PALIMPSEST_OUTPUT" ]; then exit 40; fi; ' +
+              'if [ -L "$PALIMPSEST_OUTPUT" ] || [ ! -f "$PALIMPSEST_OUTPUT" ]; then exit 41; fi; ' +
+              'exec cat -- "$PALIMPSEST_OUTPUT"',
+          ],
+          {
+            deadline,
+            maxOutputBytes: SANDBOX_POLICY.solverOutputBytes + 1,
+            ...(request.signal === undefined ? {} : { signal: request.signal }),
+          },
+        );
+        if (extracted.cancelled) throw abortError();
+        if (extracted.timedOut) {
+          throw new SandboxInfrastructureError("Docker solver output extraction timed out.");
+        }
+        if (extracted.outputExceeded) {
+          return `Solver output exceeds ${String(SANDBOX_POLICY.solverOutputBytes)} bytes.`;
+        }
+        if (extracted.exitCode !== 0 || extracted.signal !== null) {
+          if (extracted.exitCode === 40) {
+            return "Solver did not produce the declared output file.";
+          }
+          if (extracted.exitCode === 41) {
+            return "Solver output must be a regular file.";
+          }
+          const diagnostic = processText(extracted, "stderr").trim();
+          throw new SandboxInfrastructureError(
+            `Docker solver output extraction failed: ${diagnostic || "no error detail"}`,
+          );
+        }
+
+        if (extracted.stdout.byteLength > SANDBOX_POLICY.solverOutputBytes) {
+          return `Solver output exceeds ${String(SANDBOX_POLICY.solverOutputBytes)} bytes.`;
+        }
+        if (extracted.stdout.byteLength === 0) {
+          return "Solver output is empty.";
+        }
+        await writeFile(stagedOutput, extracted.stdout, { flag: "wx" });
+        const durableOutput = join(outputRoot, request.outputPath);
+        await mkdir(dirname(durableOutput), { recursive: true });
+        await rename(stagedOutput, durableOutput);
+        return undefined;
+      })();
+    } catch (error) {
+      operationFailure =
+        error instanceof SandboxInfrastructureError ||
+        (error instanceof Error && error.name === "AbortError")
+          ? error
+          : new SandboxInfrastructureError(
+              `Unable to publish solver output: ${errorDetail(error)}`,
+            );
+    }
+    let cleanupFailure: SandboxInfrastructureError | undefined;
+    try {
+      await rm(stagingRoot, { recursive: true, force: true });
+    } catch (error) {
+      cleanupFailure = new SandboxInfrastructureError(
+        `Unable to clean solver output staging: ${errorDetail(error)}`,
+      );
+    }
+    if (operationFailure !== undefined && cleanupFailure !== undefined) {
+      throw new SandboxInfrastructureError("Solver output publication and cleanup both failed.", {
+        cause: new AggregateError(
+          [operationFailure, cleanupFailure],
+          "Solver output publication and cleanup both failed.",
+        ),
+      });
+    }
+    if (operationFailure !== undefined) throw operationFailure;
+    if (cleanupFailure !== undefined) throw cleanupFailure;
+    return outcome;
   }
 
   async #waitForDocker(deadline: number, signal?: AbortSignal): Promise<void> {
@@ -457,7 +574,7 @@ export class DockerCommandSandbox implements CommandSandbox {
     };
   }
 
-  async execute(request: EvaluationSandboxCommand): Promise<SandboxCommandResult> {
+  async execute(request: SolverSandboxCommand): Promise<SandboxCommandResult> {
     validateSandboxCommand(request);
     if (request.signal?.aborted) throw abortError();
     const deadline = performance.now() + request.timeoutMs;
@@ -553,43 +670,78 @@ export class DockerCommandSandbox implements CommandSandbox {
           outputExceeded: false,
         };
       } else {
-        const started = await this.#runDocker(["start", "--attach", containerName], {
+        const started = await this.#runDocker(["start", containerName], {
           deadline,
-          maxOutputBytes: SANDBOX_POLICY.maxOutputBytes,
           ...(request.signal === undefined ? {} : { signal: request.signal }),
         });
-        if (started.cancelled) {
-          throw abortError();
-        }
-        let exitCode: number | null = started.exitCode;
-        let resourceMessage = "";
-        if (!started.timedOut && !started.outputExceeded) {
-          const state = await this.#inspectState(containerName, {
-            deadline,
-            ...(request.signal === undefined ? {} : { signal: request.signal }),
-          });
-          if (state.Status !== "exited" || typeof state.ExitCode !== "number") {
+        if (started.cancelled) throw abortError();
+        if (started.timedOut) {
+          commandResult = {
+            exitCode: null,
+            stdout: processText(started, "stdout"),
+            stderr:
+              `${processText(started, "stderr")}\nSandbox command timed out during Docker container start.`.trim(),
+            timedOut: true,
+            outputExceeded: false,
+          };
+        } else {
+          requireSuccessfulDocker("container start", started);
+          const executed = await this.#runDocker(
+            buildSolverDockerExecArguments(request, containerName, user),
+            {
+              deadline,
+              maxOutputBytes: SANDBOX_POLICY.maxOutputBytes,
+              ...(request.signal === undefined ? {} : { signal: request.signal }),
+            },
+          );
+          if (executed.cancelled) throw abortError();
+          if (dockerRuntimeInterrupted(executed)) {
             throw new SandboxInfrastructureError(
-              `Docker did not report an exited command state: ${JSON.stringify(state)}`,
+              `Docker interrupted solver execution: ${processText(executed, "stderr").trim() || "no error detail"}`,
             );
           }
-          exitCode = state.ExitCode;
-          if (state.OOMKilled === true) {
-            resourceMessage = "\nCommand was terminated by the sandbox memory limit.";
-          } else if (typeof state.Error === "string" && state.Error.length > 0) {
-            resourceMessage = `\nSandbox runtime reported: ${state.Error}`;
+          let resourceMessage = "";
+          let state: ContainerState | undefined;
+          if (!executed.timedOut && !executed.outputExceeded) {
+            state = await this.#inspectState(containerName, {
+              deadline,
+              ...(request.signal === undefined ? {} : { signal: request.signal }),
+            });
+            if (state.OOMKilled === true) {
+              resourceMessage = "\nCommand was terminated by the sandbox memory limit.";
+            } else if (typeof state.Error === "string" && state.Error.length > 0) {
+              resourceMessage = `\nSandbox runtime reported: ${state.Error}`;
+            } else if (state.Status !== "running") {
+              resourceMessage = `\nSandbox stopped during solver execution: ${JSON.stringify(state)}`;
+            }
+          }
+          const overflowMessage = executed.outputExceeded
+            ? "\nCommand output exceeded the 4 MiB host safety limit."
+            : "";
+          commandResult = {
+            exitCode: executed.exitCode,
+            stdout: processText(executed, "stdout"),
+            stderr: `${processText(executed, "stderr")}${overflowMessage}${resourceMessage}`,
+            timedOut: executed.timedOut,
+            outputExceeded: executed.outputExceeded,
+          };
+          if (
+            commandResult.exitCode === 0 &&
+            !commandResult.timedOut &&
+            !commandResult.outputExceeded &&
+            state?.Status === "running"
+          ) {
+            const outputFailure = await this.#publishSolverOutput(
+              request,
+              containerName,
+              deadline,
+              user,
+            );
+            if (outputFailure !== undefined) {
+              commandResult = { ...commandResult, outputFailure };
+            }
           }
         }
-        const overflowMessage = started.outputExceeded
-          ? "\nCommand output exceeded the 4 MiB host safety limit."
-          : "";
-        commandResult = {
-          exitCode,
-          stdout: processText(started, "stdout"),
-          stderr: `${processText(started, "stderr")}${overflowMessage}${resourceMessage}`,
-          timedOut: started.timedOut,
-          outputExceeded: started.outputExceeded,
-        };
       }
     } catch (error) {
       primaryError = error;

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -47,22 +47,6 @@ interface FrozenFixture {
   result: AttemptResult;
 }
 
-async function seedSolver(repositoryPath: string): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), "palimpsest-durable-solver-"));
-  const checkout = join(root, "checkout");
-  try {
-    await runGit(["clone", repositoryPath, checkout]);
-    await runGit(["config", "user.name", "Palimpsest Test"], checkout);
-    await runGit(["config", "user.email", "test@palimpsest.invalid"], checkout);
-    await writeFile(join(checkout, "solver.py"), "# canonical solver\n", "utf8");
-    await runGit(["add", "solver.py"], checkout);
-    await runGit(["commit", "-m", "Publish solver"], checkout);
-    await runGit(["push", "origin", "main"], checkout);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-}
-
 async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixture> {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-attempt-durability-"));
   const attemptRoot = join(root, "attempt");
@@ -93,7 +77,18 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
     ...repositories.map(({ path }) => runGit(["init", "--bare", "--initial-branch=main", path])),
     ...workspaces.map(({ path }) => mkdir(path, { recursive: true })),
   ]);
-  await Promise.all(repositories.map(({ path }) => seedSolver(path)));
+  await Promise.all(
+    repositories.map(async (repository) => {
+      const seed = join(root, `.seed-${repository.repositoryId}`);
+      await runGit(["clone", repository.path, seed]);
+      await runGit(["config", "user.name", "Palimpsest Test"], seed);
+      await runGit(["config", "user.email", "test@palimpsest.invalid"], seed);
+      await writeFile(join(seed, "solver.py"), "print('fixture')\n", "utf8");
+      await runGit(["add", "solver.py"], seed);
+      await runGit(["commit", "-m", "Publish solver"], seed);
+      await runGit(["push", "origin", "HEAD:main"], seed);
+    }),
+  );
   const tracePath = join(attemptRoot, "trace.jsonl");
   const traceMetadataPath = join(attemptRoot, "trace.meta.json");
   await Promise.all([
@@ -107,7 +102,6 @@ async function frozenFixture(condition: ConditionId = "CR"): Promise<FrozenFixtu
       `${JSON.stringify({ sequence: 1, atMs: 0, kind: "attempt.frozen", data: {} })}\n`,
       "utf8",
     ),
-    writeFile(join(buildRoot, "ciphertext.txt"), "ciphertext\n", "utf8"),
     writeFile(join(workspaces[0]!.path, "frozen-input.txt"), "still here\n", "utf8"),
   ]);
 
@@ -245,12 +239,8 @@ describe("post-freeze attempt durability", () => {
       ).toEqual([]);
 
       const sandbox = new FakeCommandSandbox(async (request) => {
-        if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-        await writeFile(
-          join(request.workspacePath, request.outputPath),
-          "reconstruction\n",
-          "utf8",
-        );
+        if (request.profile !== "solver") throw new Error("Expected solver profile.");
+        await writeFile(join(request.outputRoot, request.outputPath), "reconstruction\n", "utf8");
         return SUCCESS;
       });
       const evaluation = await evaluateFrozenAttempt({
@@ -258,10 +248,18 @@ describe("post-freeze attempt durability", () => {
         evaluationRoot: join(fixture.attemptRoot, "evaluation"),
         ciphertextPath: join(fixture.buildRoot, "ciphertext.txt"),
         sandbox,
-        selection: { command: "python3 solver.py", outputPath: "reconstruction.txt" },
+        selection: {
+          workspace: "agent-1",
+          repositoryId: selectedRepository.repositoryId,
+          command: "sh solve.sh",
+          outputPath: "reconstruction.txt",
+        },
         score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
       });
       expect(evaluation).toMatchObject({ status: "scored" });
+      expect(sandbox.requests).toContainEqual(
+        expect.objectContaining({ profile: "solver", outputPath: "reconstruction.txt" }),
+      );
       expect(JSON.stringify(sandbox.requests)).not.toContain(selectedRepository.path);
       await expect(
         readFile(join(selectedWorkspace.path, "frozen-input.txt"), "utf8"),

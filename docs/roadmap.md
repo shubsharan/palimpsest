@@ -38,6 +38,16 @@ This feature is done when shared peer visibility, isolated non-observability, pr
 
 This feature is done when the complete five-block by four-condition fixture protocol, negative configuration cases, receipt freeze, replacement policy, prompt snapshots, focused TypeScript/Python suites, `pnpm verify`, clean-checkout `pnpm preflight`, and `git diff --check` pass without live model calls.
 
+## Feature 016: Optional Team Channel (Implemented)
+
+- Require each manifest to declare `communication.teamChannel` as `enabled` or `disabled`.
+- Give enabled shared-condition agents one public append-only room for strategy and ideas; keep it entirely absent from isolated conditions.
+- Retain accepted messages in the attempt trace and wake peers through the existing activity surface.
+- Keep pushed `origin/main:solver.py` as the only checkable and gradeable artifact.
+- Resolve and record the exact selected `refs/heads/main` commit, export its Git-free tree, and use one isolated execution boundary for checking and grading.
+
+This feature is done when enabled shared messaging, disabled Git-only parity, isolated non-observability, protocol provenance, exact-main snapshot grading, output containment, and provider-free verification pass without prescribing how or when agents communicate.
+
 ## Boundaries
 
 The geometry is fixed at three agents, six stages, and a boundary at stage four. The study uses files, direct providers, sequential attempts, fixture adapters, fake clocks, and explicit reviewer evaluation. It adds no services, databases, accounts, dashboards, automatic retries, compatibility layer, automated behavioral review, or benchmark claims.

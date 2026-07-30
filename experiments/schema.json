@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
+    "communication",
     "blocks",
     "assignment",
     "providers",
@@ -19,7 +20,8 @@
     "failurePolicy"
   ],
   "properties": {
-    "schemaVersion": { "const": 2 },
+    "schemaVersion": { "const": 3 },
+    "communication": { "$ref": "#/$defs/communication" },
     "blocks": { "$ref": "#/$defs/blocks" },
     "assignment": { "$ref": "#/$defs/assignment" },
     "providers": {
@@ -52,6 +54,14 @@
     "failurePolicy": { "$ref": "#/$defs/failurePolicy" }
   },
   "$defs": {
+    "communication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["teamChannel"],
+      "properties": {
+        "teamChannel": { "enum": ["enabled", "disabled"] }
+      }
+    },
     "identifier": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
@@ -253,7 +263,7 @@
       "required": ["metricId", "reviewerSelectionId"],
       "properties": {
         "metricId": { "const": "normalized-positional-word-v1" },
-        "reviewerSelectionId": { "const": "manual-workspace-command-output-v1" }
+        "reviewerSelectionId": { "const": "selected-workspace-main-snapshot-v1" }
       }
     },
     "rubric": {

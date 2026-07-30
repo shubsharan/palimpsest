@@ -4,18 +4,20 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { decodeEvaluationRecord } from "./artifacts.js";
 import { resolveCondition, type ConditionId } from "./condition.js";
 import {
   evaluateFrozenAttempt,
   evaluatePuzzle,
   evaluatePuzzleFromFlags,
+  type EvaluationSelection,
+  type EvaluationSelectionRequest,
   SOLVER_COMMAND,
   SOLVER_OUTPUT_PATH,
 } from "./evaluate.js";
 import { runGit } from "./git.js";
+import { PUBLISHED_MAIN_REF, PublishedSolverInfrastructureError } from "./published-solver.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
-import type { SandboxCommandResult } from "./sandbox/contracts.js";
+import { SandboxInfrastructureError, type SandboxCommandResult } from "./sandbox/contracts.js";
 import { sealTree, type TreeSeal } from "./seal.js";
 import {
   FakeCommandSandbox,
@@ -46,15 +48,20 @@ async function evaluationFixture() {
     runGit(["init", "--bare", "--initial-branch=main", frozenGitPath]),
     writeFile(ciphertextPath, "ciphertext\n"),
   ]);
-  await publishFile(frozenGitPath, "solver.py", "# canonical solver\n");
-  return { root, frozenGitPath, ciphertextPath };
+  const commit = await publishFile(frozenGitPath, "solver.py", "print('fixture')\n");
+  return {
+    root,
+    frozenGitPath,
+    ciphertextPath,
+    published: { ref: PUBLISHED_MAIN_REF, commit },
+  };
 }
 
 async function publishFile(
   repositoryPath: string,
   relativePath: string,
   content: string,
-): Promise<void> {
+): Promise<string> {
   const seedRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-seed-"));
   const checkout = join(seedRoot, "checkout");
   await runGit(["clone", repositoryPath, checkout]);
@@ -64,6 +71,20 @@ async function publishFile(
   await runGit(["add", relativePath], checkout);
   await runGit(["commit", "-m", `Publish ${relativePath}`], checkout);
   await runGit(["push", "origin", "main"], checkout);
+  return (await runGit(["rev-parse", "HEAD"], checkout)).stdout.trim();
+}
+
+function selectionFor(
+  _fixture: Awaited<ReturnType<typeof evaluationFixture>>,
+  overrides: Partial<EvaluationSelectionRequest> = {},
+): EvaluationSelectionRequest {
+  return {
+    workspace: "agent-1",
+    repositoryId: "shared",
+    command: "true",
+    outputPath: "answer.txt",
+    ...overrides,
+  };
 }
 
 async function conditionAttemptFixture(conditionId: ConditionId) {
@@ -132,8 +153,19 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
     ),
     writeFile(join(selectedWorkspace.path, "local-only.txt"), "must not be graded\n", "utf8"),
   ]);
-  await publishFile(selectedRepository.path, "solver.py", "# canonical solver\n");
-  await publishFile(selectedRepository.path, "agent-2.txt", "agent-2\n");
+  const mainCommit = await publishFile(selectedRepository.path, "agent-2.txt", "agent-2\n");
+  const alternateRoot = await mkdtemp(join(tmpdir(), "palimpsest-condition-alternate-"));
+  const alternate = join(alternateRoot, "checkout");
+  await runGit(["clone", selectedRepository.path, alternate]);
+  await runGit(["config", "user.name", "Palimpsest Test"], alternate);
+  await runGit(["config", "user.email", "test@palimpsest.invalid"], alternate);
+  await runGit(["switch", "-c", "alternate"], alternate);
+  await writeFile(join(alternate, "agent-2.txt"), "alternate\n", "utf8");
+  await writeFile(join(alternate, "alternate-only.txt"), "must not be graded\n", "utf8");
+  await runGit(["add", "."], alternate);
+  await runGit(["commit", "-m", "Publish alternate"], alternate);
+  await runGit(["push", "origin", "HEAD:refs/heads/alternate"], alternate);
+  await runGit(["symbolic-ref", "HEAD", "refs/heads/alternate"], selectedRepository.path);
   attempt.buildTreeSeal = await sealTree(buildRoot);
   frozen.treeSeal = await sealTree(frozenRoot);
   await writeFile(join(attemptRoot, "attempt.json"), `${JSON.stringify(attempt)}\n`, "utf8");
@@ -142,6 +174,7 @@ async function conditionAttemptFixture(conditionId: ConditionId) {
     attemptRoot,
     selectedWorkspace,
     selectedRepository,
+    mainCommit,
     peerRepositories: frozen.repositories.filter(
       (repository) => repository.repositoryId !== selectedRepository.repositoryId,
     ),
@@ -155,14 +188,18 @@ beforeEach(() => {
 describe("frozen attempt evaluation", () => {
   it.each([
     [undefined, "not-runnable"],
-    [{ command: SOLVER_COMMAND, outputPath: SOLVER_OUTPUT_PATH }, "no-output"],
+    [{ command: "true", outputPath: "answer.txt" }, "no-output"],
+    [{ command: "exit 7", outputPath: "answer.txt" }, "execution-error"],
   ] as const)("reports %s selection as %s", async (selection, status) => {
     const fixture = await evaluationFixture();
-    const sandbox = new FakeCommandSandbox(async () => SUCCESS);
+    const sandbox = new FakeCommandSandbox(async (request) => ({
+      ...SUCCESS,
+      exitCode: request.command === "exit 7" ? 7 : 0,
+    }));
     const result = await evaluateFrozenAttempt({
       ...fixture,
       evaluationRoot: join(fixture.root, "evaluation"),
-      selection,
+      selection: selection === undefined ? undefined : selectionFor(fixture, selection),
       sandbox,
       score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
     });
@@ -183,7 +220,7 @@ describe("frozen attempt evaluation", () => {
     await expect(
       evaluateFrozenAttempt({
         ...options,
-        selection: { command: " \t ", outputPath: "answer.txt" },
+        selection: selectionFor(fixture, { command: " \t " }),
       }),
     ).rejects.toThrow("Reviewer command must contain non-whitespace shell source.");
     await expect(access(evaluationRoot)).rejects.toMatchObject({ code: "ENOENT" });
@@ -191,7 +228,7 @@ describe("frozen attempt evaluation", () => {
     await expect(
       evaluateFrozenAttempt({
         ...options,
-        selection: { command: SOLVER_COMMAND, outputPath: SOLVER_OUTPUT_PATH },
+        selection: selectionFor(fixture),
       }),
     ).resolves.toMatchObject({ status: "no-output" });
   });
@@ -209,7 +246,7 @@ describe("frozen attempt evaluation", () => {
     await expect(
       evaluateFrozenAttempt({
         ...options,
-        selection: { command: "true", outputPath: "answer.txt", notes: " \t " },
+        selection: selectionFor(fixture, { notes: " \t " }),
       }),
     ).rejects.toThrow("Reviewer notes must contain non-whitespace text.");
     await expect(access(evaluationRoot)).rejects.toMatchObject({ code: "ENOENT" });
@@ -217,11 +254,7 @@ describe("frozen attempt evaluation", () => {
     await expect(
       evaluateFrozenAttempt({
         ...options,
-        selection: {
-          command: SOLVER_COMMAND,
-          outputPath: SOLVER_OUTPUT_PATH,
-          notes: "run the solver",
-        },
+        selection: selectionFor(fixture, { notes: "run the solver" }),
       }),
     ).resolves.toMatchObject({ status: "no-output" });
   });
@@ -239,7 +272,7 @@ describe("frozen attempt evaluation", () => {
     await expect(
       evaluateFrozenAttempt({
         ...options,
-        selection: { command: "true", outputPath: "../answer.txt" },
+        selection: selectionFor(fixture, { outputPath: "../answer.txt" }),
       }),
     ).rejects.toThrow("Reviewer outputPath must be a safe relative path.");
     await expect(access(evaluationRoot)).rejects.toMatchObject({ code: "ENOENT" });
@@ -247,24 +280,28 @@ describe("frozen attempt evaluation", () => {
     await expect(
       evaluateFrozenAttempt({
         ...options,
-        selection: { command: SOLVER_COMMAND, outputPath: SOLVER_OUTPUT_PATH },
+        selection: selectionFor(fixture),
       }),
     ).resolves.toMatchObject({ status: "no-output" });
   });
 
   it("records selection before sandbox execution and preserves the score", async () => {
     const fixture = await evaluationFixture();
-    await publishFile(fixture.frozenGitPath, "helper.txt", "published tree input\n");
+    const solverCommit = await publishFile(
+      fixture.frozenGitPath,
+      "solver.sh",
+      "printf 'answer' > \"$PALIMPSEST_OUTPUT\"\n",
+    );
     const kinds: string[] = [];
     const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-      await writeFile(join(request.workspacePath, request.outputPath), "answer");
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      await writeFile(join(request.outputRoot, request.outputPath), "answer");
       return SUCCESS;
     });
     const result = await evaluateFrozenAttempt({
       ...fixture,
       evaluationRoot: join(fixture.root, "evaluation"),
-      selection: { command: SOLVER_COMMAND, outputPath: SOLVER_OUTPUT_PATH },
+      selection: selectionFor(fixture, { command: "sh solver.sh" }),
       sandbox,
       observe: async (kind) => {
         kinds.push(kind);
@@ -283,49 +320,130 @@ describe("frozen attempt evaluation", () => {
     });
     expect(sandbox.requests).toEqual([
       expect.objectContaining({
-        profile: "evaluation",
-        ciphertextPath: expect.stringMatching(/input\/ciphertext\.txt$/),
-        outputPath: "output/reconstruction.txt",
+        profile: "solver",
+        ciphertextPath: fixture.ciphertextPath,
+        outputRoot: join(fixture.root, "evaluation", "output"),
+        outputPath: "answer.txt",
       }),
     ]);
     expect(kinds.indexOf("reviewer.selection")).toBeLessThan(kinds.indexOf("evaluation.started"));
     const recorded = JSON.parse(
       await readFile(join(fixture.root, "evaluation", "selection.json"), "utf8"),
     ) as {
-      selection: { command: string; outputPath: string };
+      selection: EvaluationSelection;
     };
     expect(recorded.selection).toEqual({
-      command: SOLVER_COMMAND,
-      outputPath: SOLVER_OUTPUT_PATH,
+      workspace: "agent-1",
+      repositoryId: "shared",
+      ref: PUBLISHED_MAIN_REF,
+      commit: solverCommit,
+      command: "sh solver.sh",
+      outputPath: "answer.txt",
     });
   });
 
-  it("converts malformed scorer output into a valid execution-error record", async () => {
+  it("executes the recorded snapshot after main advances during sandbox execution", async () => {
     const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
+    let submittedSolver = "";
     const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-      await writeFile(join(request.workspacePath, request.outputPath), "answer");
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      await publishFile(fixture.frozenGitPath, "solver.py", "print('replacement')\n");
+      submittedSolver = await readFile(join(request.submissionPath, "solver.py"), "utf8");
+      await writeFile(join(request.outputRoot, request.outputPath), "answer");
       return SUCCESS;
     });
 
     const result = await evaluateFrozenAttempt({
       ...fixture,
-      evaluationRoot,
-      selection: { command: SOLVER_COMMAND, outputPath: SOLVER_OUTPUT_PATH },
+      evaluationRoot: join(fixture.root, "evaluation"),
+      selection: selectionFor(fixture),
       sandbox,
-      score: async () => ({ accuracy: 1 }) as never,
+      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
     });
 
+    expect(submittedSolver).toBe("print('fixture')\n");
     expect(result).toMatchObject({
-      status: "execution-error",
-      error: expect.stringContaining("totalWords"),
+      status: "scored",
+      selection: fixture.published,
     });
-    expect(
-      decodeEvaluationRecord(
-        JSON.parse(await readFile(join(evaluationRoot, "result.json"), "utf8")),
-      ),
-    ).toEqual(result);
+  });
+
+  it("propagates sandbox infrastructure failure after recording commit provenance", async () => {
+    const fixture = await evaluationFixture();
+    const evaluationRoot = join(fixture.root, "evaluation");
+    const sandbox = new FakeCommandSandbox(async () => {
+      throw new SandboxInfrastructureError("Docker daemon unavailable.");
+    });
+
+    await expect(
+      evaluateFrozenAttempt({
+        ...fixture,
+        evaluationRoot,
+        selection: selectionFor(fixture),
+        sandbox,
+        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
+      }),
+    ).rejects.toThrow(SandboxInfrastructureError);
+    const recorded = JSON.parse(await readFile(join(evaluationRoot, "selection.json"), "utf8")) as {
+      selection: EvaluationSelection;
+    };
+    expect(recorded.selection.commit).toBe(fixture.published.commit);
+    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("raises a typed missing-main submission error without fabricating provenance", async () => {
+    const fixture = await evaluationFixture();
+    const evaluationRoot = join(fixture.root, "evaluation");
+    const sandbox = new FakeCommandSandbox(async () => SUCCESS);
+    await runGit(["update-ref", "-d", "refs/heads/main"], fixture.frozenGitPath);
+
+    await expect(
+      evaluateFrozenAttempt({
+        ...fixture,
+        evaluationRoot,
+        selection: selectionFor(fixture),
+        sandbox,
+        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
+      }),
+    ).rejects.toMatchObject({
+      name: "PublishedSolverSubmissionError",
+      message: "Published ref refs/heads/main must resolve to an available commit.",
+    });
+    expect(sandbox.requests).toEqual([]);
+    await expect(readFile(join(evaluationRoot, "selection.json"), "utf8")).resolves.toContain(
+      '"selection": null',
+    );
+    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("classifies malformed trusted scorer output as infrastructure without a result record", async () => {
+    const fixture = await evaluationFixture();
+    const evaluationRoot = join(fixture.root, "evaluation");
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      await writeFile(join(request.outputRoot, request.outputPath), "answer");
+      return SUCCESS;
+    });
+
+    await expect(
+      evaluateFrozenAttempt({
+        ...fixture,
+        evaluationRoot,
+        selection: selectionFor(fixture),
+        sandbox,
+        score: async () => ({ accuracy: 1 }) as never,
+      }),
+    ).rejects.toThrow(PublishedSolverInfrastructureError);
+    await expect(readFile(join(evaluationRoot, "selection.json"), "utf8")).resolves.toContain(
+      fixture.published.commit,
+    );
+    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("rejects an evaluator output symlink that escapes the workspace", async () => {
@@ -333,15 +451,15 @@ describe("frozen attempt evaluation", () => {
     const outside = join(fixture.root, "outside.txt");
     await writeFile(outside, "not an evaluator output\n");
     const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-      await symlink(outside, join(request.workspacePath, request.outputPath));
+      if (request.profile !== "solver") throw new Error("Expected solver profile.");
+      await symlink(outside, join(request.outputRoot, request.outputPath));
       return SUCCESS;
     });
     let scored = false;
     const result = await evaluateFrozenAttempt({
       ...fixture,
       evaluationRoot: join(fixture.root, "evaluation"),
-      selection: { command: SOLVER_COMMAND, outputPath: SOLVER_OUTPUT_PATH },
+      selection: selectionFor(fixture, { command: "ln -s" }),
       sandbox,
       score: async () => {
         scored = true;
@@ -400,17 +518,20 @@ describe("condition attempt evaluation", () => {
     async (conditionId, communicationMode) => {
       const fixture = await conditionAttemptFixture(conditionId);
       const sandbox = new FakeCommandSandbox(async (request) => {
-        if (request.profile !== "evaluation") throw new Error("Expected evaluation profile.");
-        expect(
-          await readFile(join(request.workspacePath, "submission", "agent-2.txt"), "utf8"),
-        ).toBe("agent-2\n");
-        await expect(
-          access(join(request.workspacePath, "submission", "agent-1.txt")),
-        ).rejects.toMatchObject({ code: "ENOENT" });
-        await expect(
-          access(join(request.workspacePath, "submission", "local-only.txt")),
-        ).rejects.toMatchObject({ code: "ENOENT" });
-        await writeFile(join(request.workspacePath, request.outputPath), "selected plaintext\n");
+        if (request.profile !== "solver") throw new Error("Expected solver profile.");
+        expect(await readFile(join(request.submissionPath, "agent-2.txt"), "utf8")).toBe(
+          "agent-2\n",
+        );
+        await expect(access(join(request.submissionPath, "agent-1.txt"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await expect(access(join(request.submissionPath, "local-only.txt"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await expect(access(join(request.submissionPath, ".git"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await writeFile(join(request.outputRoot, request.outputPath), "selected plaintext\n");
         return SUCCESS;
       });
       createSandboxMock.mockResolvedValue(
@@ -430,14 +551,20 @@ describe("condition attempt evaluation", () => {
       });
       expect(sandbox.requests).toEqual([
         expect.objectContaining({
-          profile: "evaluation",
-          command: expect.stringContaining(SOLVER_COMMAND),
-          outputPath: "output/reconstruction.txt",
+          profile: "solver",
+          command: SOLVER_COMMAND,
+          outputPath: SOLVER_OUTPUT_PATH,
         }),
       ]);
       for (const repository of fixture.peerRepositories) {
         expect(JSON.stringify(sandbox.requests)).not.toContain(repository.path);
       }
+      expect(result.selection).toMatchObject({
+        workspace: "agent-2",
+        repositoryId: fixture.selectedRepository.repositoryId,
+        ref: "refs/heads/main",
+        commit: fixture.mainCommit,
+      });
       expect(resolveCondition(conditionId).communicationMode).toBe(communicationMode);
     },
   );
