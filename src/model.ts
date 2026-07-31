@@ -15,7 +15,7 @@ export function generateAgentIds(count: number): readonly AgentId[] {
   return Array.from({ length: count }, (_, index) => `agent-${String(index + 1)}` as AgentId);
 }
 
-// Retained only as the deterministic offline fixture's declared condition.
+// Retained only as the deterministic provider-free fixture scenario.
 export const AGENT_IDS: readonly AgentId[] = generateAgentIds(3);
 
 export type ProviderDriver = "openai" | "anthropic" | "google" | "openai-compatible";

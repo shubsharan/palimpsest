@@ -6,18 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from ..serialization import canonical_json_bytes, sha256_hex
+
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-_AGENT_ID = re.compile(r"^agent-[1-9][0-9]*$")
-_FIXED_AGENT_IDS = ("agent-1", "agent-2", "agent-3")
-_FIXED_STAGE_COUNT = 6
-_FIXED_BOUNDARY_STAGE = 4
-_TIERS = ("strict", "balanced", "fallback")
-_TIER_LIMITS = {
-    "strict": (0.67, 0.60, 0.04, 0.12, 0.15, 3, 3),
-    "balanced": (0.60, 0.67, 0.07, 0.18, 0.25, 2, 2),
-    "fallback": (0.55, 0.75, 0.10, 0.25, 0.40, 2, 1),
-}
 
 
 def _record(
@@ -182,6 +174,48 @@ class ReferenceSource:
 
 
 @dataclass(frozen=True)
+class ReferenceFile:
+    source_id: str
+    source_sha256: str
+    path: Path
+    byte_length: int
+    sha256: str
+
+    def __post_init__(self) -> None:
+        _identifier(self.source_id, "Reference file sourceId")
+        _digest(self.source_sha256, "Reference file sourceSha256")
+        _relative_path(self.path.as_posix(), "Reference file path")
+        if self.byte_length < 1:
+            raise ValueError("Reference file byteLength must be positive.")
+        _digest(self.sha256, "Reference file sha256")
+
+    def to_dict(self) -> dict[str, int | str]:
+        return {
+            "sourceId": self.source_id,
+            "sourceSha256": self.source_sha256,
+            "path": self.path.as_posix(),
+            "byteLength": self.byte_length,
+            "sha256": self.sha256,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object, index: int) -> ReferenceFile:
+        name = f"Fixture reference file {index}"
+        record = _record(
+            value,
+            name,
+            fields=frozenset({"sourceId", "sourceSha256", "path", "byteLength", "sha256"}),
+        )
+        return cls(
+            source_id=_identifier(record["sourceId"], f"{name} sourceId"),
+            source_sha256=_digest(record["sourceSha256"], f"{name} sourceSha256"),
+            path=_relative_path(record["path"], f"{name} path"),
+            byte_length=_integer(record["byteLength"], f"{name} byteLength", 1),
+            sha256=_digest(record["sha256"], f"{name} sha256"),
+        )
+
+
+@dataclass(frozen=True)
 class BuildWindow:
     paragraph_start: int
     paragraph_end: int
@@ -226,8 +260,7 @@ class TierRejection:
     reasons: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if self.tier not in _TIERS:
-            raise ValueError("Rejected allocation tier is unsupported.")
+        _identifier(self.tier, "Rejected allocation tier")
         if not self.reasons:
             raise ValueError("Rejected allocation tier reasons must be non-empty.")
         for reason in self.reasons:
@@ -271,14 +304,14 @@ class AllocationMetrics:
             (self.max_control_distance, "Allocation maxControlDistance"),
         ):
             _ratio(value, name)
-        if self.anchor_count < 12:
-            raise ValueError("Allocation anchorCount must be at least 12.")
-        if self.sentinel_count < 6:
-            raise ValueError("Allocation sentinelCount must be at least 6.")
-        if set(self.specialist_counts) != set(_FIXED_AGENT_IDS):
-            raise ValueError("Allocation specialistCounts must contain exactly three agents.")
-        if any(count < 3 for count in self.specialist_counts.values()):
-            raise ValueError("Allocation specialistCounts must be at least 3 per agent.")
+        if self.anchor_count < 1 or self.sentinel_count < 1:
+            raise ValueError("Allocation anchor and sentinel counts must be positive.")
+        if not self.specialist_counts or any(
+            _IDENTIFIER.fullmatch(agent_id) is None for agent_id in self.specialist_counts
+        ):
+            raise ValueError("Allocation specialistCounts must contain canonical agents.")
+        if any(count < 1 for count in self.specialist_counts.values()):
+            raise ValueError("Allocation specialistCounts must be positive per agent.")
         if self.min_owner_occurrences_per_region < 1:
             raise ValueError("Allocation owner occurrences must be positive.")
         if self.min_sentinel_occurrences_per_agent_region < 1:
@@ -326,8 +359,8 @@ class AllocationMetrics:
             ),
         )
         counts = _record(record["specialistCounts"], f"{name} specialistCounts")
-        if set(counts) != set(_FIXED_AGENT_IDS):
-            raise ValueError(f"{name} specialistCounts must contain exactly three agents.")
+        if not counts:
+            raise ValueError(f"{name} specialistCounts must be non-empty.")
         return cls(
             region_deviation=_ratio(record["regionDeviation"], f"{name} regionDeviation"),
             stage_deviation=_ratio(record["stageDeviation"], f"{name} stageDeviation"),
@@ -339,7 +372,7 @@ class AllocationMetrics:
             sentinel_count=_integer(record["sentinelCount"], f"{name} sentinelCount"),
             specialist_counts={
                 agent_id: _integer(counts[agent_id], f"{name} specialistCounts {agent_id}")
-                for agent_id in _FIXED_AGENT_IDS
+                for agent_id in sorted(counts)
             },
             min_owner_occurrences_per_region=_integer(
                 record["minOwnerOccurrencesPerRegion"],
@@ -369,30 +402,12 @@ class AllocationSummary:
 
     def __post_init__(self) -> None:
         _prefixed_digest(self.allocation_id, "allocation-", "Allocation ID")
-        if self.tier not in _TIERS:
-            raise ValueError("Selected allocation tier is unsupported.")
-        expected_rejected = _TIERS[: _TIERS.index(self.tier)]
-        if tuple(rejection.tier for rejection in self.rejected_tiers) != expected_rejected:
-            raise ValueError("Rejected allocation tiers must contain all earlier tiers in order.")
-        (
-            min_owner,
-            max_solo,
-            max_region,
-            max_stage,
-            max_control,
-            min_owner_occurrences,
-            min_sentinel_occurrences,
-        ) = _TIER_LIMITS[self.tier]
-        if (
-            self.metrics.min_owner_share < min_owner
-            or self.metrics.solo_changed_set_coverage > max_solo
-            or self.metrics.region_deviation > max_region
-            or self.metrics.stage_deviation > max_stage
-            or self.metrics.max_control_distance > max_control
-            or self.metrics.min_owner_occurrences_per_region < min_owner_occurrences
-            or (self.metrics.min_sentinel_occurrences_per_agent_region < min_sentinel_occurrences)
-        ):
-            raise ValueError(f"Allocation metrics do not satisfy the {self.tier} tier.")
+        _identifier(self.tier, "Selected allocation tier")
+        rejected_names = tuple(rejection.tier for rejection in self.rejected_tiers)
+        if len(set(rejected_names)) != len(rejected_names) or self.tier in rejected_names:
+            raise ValueError(
+                "Rejected allocation tiers must be unique and exclude the selected tier."
+            )
         if self.path.as_posix() != "oracle/allocation.json":
             raise ValueError("Allocation path must be oracle/allocation.json.")
         _digest(self.sha256, "Allocation sha256")
@@ -497,10 +512,11 @@ class RekeyTransition:
     changed_symbols_sha256: str
 
     def __post_init__(self) -> None:
-        if self.at_stage != _FIXED_BOUNDARY_STAGE or self.key_version != 1:
-            raise ValueError("Re-key transition must introduce key version 1 at stage 4.")
-        if self.key_path.as_posix() != "oracle/keys/rekey-stage-04.json":
-            raise ValueError("Re-key transition keyPath must be oracle/keys/rekey-stage-04.json.")
+        if self.at_stage < 2 or self.key_version != 1:
+            raise ValueError("Re-key transition must introduce key version 1 after stage 1.")
+        expected_path = f"oracle/keys/rekey-stage-{self.at_stage:02d}.json"
+        if self.key_path.as_posix() != expected_path:
+            raise ValueError(f"Re-key transition keyPath must be {expected_path}.")
         _digest(self.changed_symbols_sha256, "Re-key changedSymbolsSha256")
 
     def to_dict(self) -> dict[str, Any]:
@@ -539,7 +555,7 @@ class EvidenceStage:
     sha256: str
 
     def __post_init__(self) -> None:
-        if _AGENT_ID.fullmatch(self.agent_id) is None:
+        if _IDENTIFIER.fullmatch(self.agent_id) is None:
             raise ValueError(f"Invalid puzzle agent: {self.agent_id}.")
         if self.ordinal < 1 or self.key_version < 0:
             raise ValueError("Stage ordinal must be positive and key version non-negative.")
@@ -581,68 +597,94 @@ class EvidenceStage:
 @dataclass(frozen=True)
 class BuildVariant:
     variant_id: str
+    rekey_from_stage: int | None
     build_id: str
     public_ciphertext_path: Path
+    public_ciphertext_sha256: str
     reference_corpus_path: Path
+    reference_files: tuple[ReferenceFile, ...]
     private_stage_roots: dict[str, Path]
     stages: tuple[EvidenceStage, ...]
     key_transitions: tuple[RekeyTransition, ...]
 
     def __post_init__(self) -> None:
-        if self.variant_id not in {"stationary", "rekey"}:
-            raise ValueError("Build variantId must be stationary or rekey.")
+        _identifier(self.variant_id, "Build variantId")
         _prefixed_digest(self.build_id, "build-", "Build ID")
         prefix = f"variants/{self.variant_id}"
         if self.public_ciphertext_path.as_posix() != f"{prefix}/complete/ciphertext.txt":
             raise ValueError(
                 f"Build {self.variant_id} public ciphertext path must use its variant tree."
             )
+        _digest(self.public_ciphertext_sha256, "Build publicCiphertextSha256")
         if self.reference_corpus_path.as_posix() != f"{prefix}/references":
             raise ValueError(
                 f"Build {self.variant_id} reference corpus path must use its variant tree."
             )
-        if set(self.private_stage_roots) != set(_FIXED_AGENT_IDS):
-            raise ValueError("Build privateStageRoots must contain exactly three agents.")
-        for agent_id in _FIXED_AGENT_IDS:
+        if not self.reference_files:
+            raise ValueError("Build referenceFiles must be non-empty.")
+        reference_paths = tuple(item.path for item in self.reference_files)
+        if len(set(reference_paths)) != len(reference_paths):
+            raise ValueError("Build referenceFiles paths must be unique.")
+        for reference in self.reference_files:
+            if reference.path.parent != self.reference_corpus_path:
+                raise ValueError("Build referenceFiles must use the variant reference tree.")
+        root_agent_ids = tuple(self.private_stage_roots)
+        if len(root_agent_ids) < 2 or any(
+            _IDENTIFIER.fullmatch(item) is None for item in root_agent_ids
+        ):
+            raise ValueError("Build privateStageRoots must contain canonical agents.")
+        for agent_id in root_agent_ids:
             expected_root = Path(f"{prefix}/private/{agent_id}/stages")
             if self.private_stage_roots[agent_id] != expected_root:
                 raise ValueError(
                     f"Build {self.variant_id} private stage roots must use its variant tree."
                 )
+        actual_geometry = tuple((stage.agent_id, stage.ordinal) for stage in self.stages)
+        if not actual_geometry:
+            raise ValueError("Build variant must contain ordered stages.")
+        stage_agent_ids = tuple(dict.fromkeys(stage.agent_id for stage in self.stages))
+        if set(stage_agent_ids) != set(root_agent_ids):
+            raise ValueError("Build variant stages must match its private stage roots.")
+        stage_count = max(stage.ordinal for stage in self.stages)
         expected_geometry = tuple(
             (agent_id, ordinal)
-            for agent_id in _FIXED_AGENT_IDS
-            for ordinal in range(1, _FIXED_STAGE_COUNT + 1)
+            for agent_id in stage_agent_ids
+            for ordinal in range(1, stage_count + 1)
         )
-        actual_geometry = tuple((stage.agent_id, stage.ordinal) for stage in self.stages)
         if actual_geometry != expected_geometry:
-            raise ValueError("Build variant must contain 18 ordered stages.")
+            raise ValueError("Build variant must contain complete ordered stage geometry.")
         for stage in self.stages:
             expected_path = Path(
                 f"{prefix}/private/{stage.agent_id}/stages/"
-                f"{stage_filename(stage.ordinal, _FIXED_STAGE_COUNT)}"
+                f"{stage_filename(stage.ordinal, stage_count)}"
             )
             if stage.source_path != expected_path:
                 raise ValueError("Build stage source paths must use the variant private tree.")
-            expected_version = (
-                1 if self.variant_id == "rekey" and stage.ordinal >= _FIXED_BOUNDARY_STAGE else 0
+            expected_version = int(
+                self.rekey_from_stage is not None and stage.ordinal >= self.rekey_from_stage
             )
             if stage.key_version != expected_version:
                 raise ValueError("Build variant stage key version is inconsistent.")
-        if self.variant_id == "stationary" and self.key_transitions:
+        if self.rekey_from_stage is None and self.key_transitions:
             raise ValueError("Stationary variant keyTransitions must be empty.")
-        if self.variant_id == "rekey" and len(self.key_transitions) != 1:
-            raise ValueError("Rekey variant must contain one stage-four key transition.")
+        if self.rekey_from_stage is not None and (
+            len(self.key_transitions) != 1
+            or self.key_transitions[0].at_stage != self.rekey_from_stage
+        ):
+            raise ValueError("Re-key variant must contain its declared key transition.")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "variantId": self.variant_id,
+            "rekeyFromStage": self.rekey_from_stage,
             "buildId": self.build_id,
             "publicCiphertextPath": self.public_ciphertext_path.as_posix(),
+            "publicCiphertextSha256": self.public_ciphertext_sha256,
             "referenceCorpusPath": self.reference_corpus_path.as_posix(),
+            "referenceFiles": [item.to_dict() for item in self.reference_files],
             "privateStageRoots": {
                 agent_id: self.private_stage_roots[agent_id].as_posix()
-                for agent_id in _FIXED_AGENT_IDS
+                for agent_id in self.private_stage_roots
             },
             "stages": [stage.to_dict() for stage in self.stages],
             "keyTransitions": [transition.to_dict() for transition in self.key_transitions],
@@ -657,9 +699,12 @@ class BuildVariant:
             fields=frozenset(
                 {
                     "variantId",
+                    "rekeyFromStage",
                     "buildId",
                     "publicCiphertextPath",
+                    "publicCiphertextSha256",
                     "referenceCorpusPath",
+                    "referenceFiles",
                     "privateStageRoots",
                     "stages",
                     "keyTransitions",
@@ -670,24 +715,37 @@ class BuildVariant:
         if variant_id != expected_variant:
             raise ValueError(f"{name} variantId must be {expected_variant}.")
         roots = _record(record["privateStageRoots"], f"{name} privateStageRoots")
-        if set(roots) != set(_FIXED_AGENT_IDS):
-            raise ValueError(f"{name} privateStageRoots must contain exactly three agents.")
+        if len(roots) < 2:
+            raise ValueError(f"{name} privateStageRoots must contain at least two agents.")
         raw_stages = _array(record["stages"], f"{name} stages")
+        raw_reference_files = _array(record["referenceFiles"], f"{name} referenceFiles")
         raw_transitions = _array(
             record["keyTransitions"], f"{name} keyTransitions", allow_empty=True
         )
         return cls(
             variant_id=variant_id,
+            rekey_from_stage=(
+                None
+                if record["rekeyFromStage"] is None
+                else _integer(record["rekeyFromStage"], f"{name} rekeyFromStage", 2)
+            ),
             build_id=_string(record["buildId"], f"{name} buildId"),
             public_ciphertext_path=_relative_path(
                 record["publicCiphertextPath"], f"{name} publicCiphertextPath"
             ),
+            public_ciphertext_sha256=_digest(
+                record["publicCiphertextSha256"], f"{name} publicCiphertextSha256"
+            ),
             reference_corpus_path=_relative_path(
                 record["referenceCorpusPath"], f"{name} referenceCorpusPath"
             ),
+            reference_files=tuple(
+                ReferenceFile.from_dict(item, index)
+                for index, item in enumerate(raw_reference_files, start=1)
+            ),
             private_stage_roots={
                 agent_id: _relative_path(roots[agent_id], f"{name} {agent_id} private stage root")
-                for agent_id in _FIXED_AGENT_IDS
+                for agent_id in roots
             },
             stages=tuple(
                 EvidenceStage.from_dict(stage, index)
@@ -717,13 +775,11 @@ class ManipulationCheck:
             raise ValueError("Manipulation check must confirm pre-boundary identity.")
         if self.stationary_old_key_loss != 0:
             raise ValueError("Stationary old-key loss must be zero.")
-        _ratio(self.rekey_old_key_loss, "Rekey old-key loss", 0.15)
-        if set(self.changed_token_mass_by_agent) != set(_FIXED_AGENT_IDS):
-            raise ValueError(
-                "Manipulation changedTokenMassByAgent must contain exactly three agents."
-            )
+        _ratio(self.rekey_old_key_loss, "Rekey old-key loss")
+        if len(self.changed_token_mass_by_agent) < 2:
+            raise ValueError("Manipulation changedTokenMassByAgent must contain agents.")
         for agent_id, mass in self.changed_token_mass_by_agent.items():
-            _ratio(mass, f"Manipulation changed token mass for {agent_id}", 0.15)
+            _ratio(mass, f"Manipulation changed token mass for {agent_id}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -734,7 +790,7 @@ class ManipulationCheck:
             "rekeyOldKeyLoss": self.rekey_old_key_loss,
             "changedTokenMassByAgent": {
                 agent_id: self.changed_token_mass_by_agent[agent_id]
-                for agent_id in _FIXED_AGENT_IDS
+                for agent_id in self.changed_token_mass_by_agent
             },
         }
 
@@ -756,8 +812,8 @@ class ManipulationCheck:
             ),
         )
         masses = _record(record["changedTokenMassByAgent"], f"{name} changedTokenMassByAgent")
-        if set(masses) != set(_FIXED_AGENT_IDS):
-            raise ValueError(f"{name} changedTokenMassByAgent must contain exactly three agents.")
+        if len(masses) < 2:
+            raise ValueError(f"{name} changedTokenMassByAgent must contain agents.")
         pre_boundary_identical = record["preBoundaryIdentical"]
         if type(pre_boundary_identical) is not bool:
             raise ValueError(f"{name} preBoundaryIdentical must be a boolean.")
@@ -774,39 +830,37 @@ class ManipulationCheck:
                     masses[agent_id],
                     f"{name} changedTokenMassByAgent {agent_id}",
                 )
-                for agent_id in _FIXED_AGENT_IDS
+                for agent_id in masses
             },
         )
 
 
 @dataclass(frozen=True)
-class PuzzleBuild:
-    paired_build_id: str
-    block_id: str
+class FixturePackage:
+    fixture_id: str
+    content_digest: str
     source: TargetSource
     references: tuple[ReferenceSource, ...]
     seed: int
     window: BuildWindow
     agent_ids: tuple[str, ...]
     stage_count: int
-    boundary_stage: int
     allocation: AllocationSummary
     oracle_design: OracleDesign
     base_key_path: Path
     manipulation_check: ManipulationCheck
-    stationary: BuildVariant
-    rekey: BuildVariant
+    variants: dict[str, BuildVariant]
 
     def __post_init__(self) -> None:
-        _prefixed_digest(self.paired_build_id, "paired-", "Paired build ID")
-        _identifier(self.block_id, "Puzzle blockId")
-        _safe_integer(self.seed, "Puzzle seed")
-        if self.agent_ids != _FIXED_AGENT_IDS:
-            raise ValueError("Puzzle build must contain exactly three canonical agent IDs.")
-        if self.stage_count != _FIXED_STAGE_COUNT:
-            raise ValueError("Puzzle build stageCount must be exactly 6.")
-        if self.boundary_stage != _FIXED_BOUNDARY_STAGE:
-            raise ValueError("Puzzle build boundaryStage must be exactly 4.")
+        _identifier(self.fixture_id, "Fixture package fixtureId")
+        _digest(self.content_digest, "Fixture package contentDigest")
+        _safe_integer(self.seed, "Fixture seed")
+        if len(self.agent_ids) < 2 or len(set(self.agent_ids)) != len(self.agent_ids):
+            raise ValueError("Fixture package must contain at least two unique agents.")
+        if any(_IDENTIFIER.fullmatch(agent_id) is None for agent_id in self.agent_ids):
+            raise ValueError("Fixture package agent IDs must be canonical identifiers.")
+        if self.stage_count < 2:
+            raise ValueError("Fixture package stageCount must be at least 2.")
         reference_ids = tuple(reference.source_id for reference in self.references)
         if not reference_ids:
             raise ValueError("Puzzle references must be non-empty.")
@@ -814,15 +868,53 @@ class PuzzleBuild:
             raise ValueError("Puzzle reference source IDs must be unique.")
         if self.source.source_id in reference_ids:
             raise ValueError("Puzzle target source cannot also be a reference.")
+        reference_digests = {reference.source_id: reference.sha256 for reference in self.references}
         if self.base_key_path.as_posix() != "oracle/keys/base.json":
             raise ValueError("Puzzle baseKeyPath must be oracle/keys/base.json.")
-        if self.stationary.variant_id != "stationary" or self.rekey.variant_id != "rekey":
-            raise ValueError("Puzzle variants must contain stationary and rekey records.")
-        if self.stationary.build_id == self.rekey.build_id:
-            raise ValueError("Puzzle variant build IDs must be distinct.")
-        for stationary, rekey in zip(self.stationary.stages, self.rekey.stages, strict=True):
-            if stationary.ordinal < self.boundary_stage and stationary.sha256 != rekey.sha256:
-                raise ValueError("Puzzle pre-boundary stage digests must be identical.")
+        if not self.variants or set(self.variants) != {
+            variant.variant_id for variant in self.variants.values()
+        }:
+            raise ValueError("Fixture variants must be keyed by unique variantId.")
+        if sum(variant.rekey_from_stage is None for variant in self.variants.values()) != 1:
+            raise ValueError("Fixture package must contain one stationary variant.")
+        expected_geometry = tuple(
+            (agent_id, ordinal)
+            for agent_id in self.agent_ids
+            for ordinal in range(1, self.stage_count + 1)
+        )
+        stationary = next(
+            variant for variant in self.variants.values() if variant.rekey_from_stage is None
+        )
+        if set(self.allocation.metrics.specialist_counts) != set(self.agent_ids):
+            raise ValueError("Allocation specialistCounts must match fixture agents.")
+        if set(self.manipulation_check.changed_token_mass_by_agent) != set(self.agent_ids):
+            raise ValueError("Manipulation masses must match fixture agents.")
+        for variant in self.variants.values():
+            if (
+                tuple((stage.agent_id, stage.ordinal) for stage in variant.stages)
+                != expected_geometry
+            ):
+                raise ValueError("Fixture variants must match declared stage geometry.")
+            file_digests = {
+                reference.source_id: reference.source_sha256
+                for reference in variant.reference_files
+            }
+            if (
+                len(file_digests) != len(variant.reference_files)
+                or file_digests != reference_digests
+            ):
+                raise ValueError(
+                    "Fixture variant referenceFiles must match declared reference sources."
+                )
+            if variant.rekey_from_stage is not None:
+                for baseline_stage, rekey_stage in zip(
+                    stationary.stages, variant.stages, strict=True
+                ):
+                    if (
+                        baseline_stage.ordinal < variant.rekey_from_stage
+                        and baseline_stage.sha256 != rekey_stage.sha256
+                    ):
+                        raise ValueError("Fixture variants diverge before their re-key boundary.")
 
     @property
     def agent_count(self) -> int:
@@ -832,49 +924,53 @@ class PuzzleBuild:
     def oracle_key_paths(self) -> tuple[Path, ...]:
         return (
             self.base_key_path,
-            *(transition.key_path for transition in self.rekey.key_transitions),
+            *(
+                transition.key_path
+                for variant in self.variants.values()
+                for transition in variant.key_transitions
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schemaVersion": 3,
-            "pairedBuildId": self.paired_build_id,
-            "blockId": self.block_id,
+            "schemaVersion": 1,
+            "fixtureId": self.fixture_id,
+            "contentDigest": self.content_digest,
             "source": self.source.to_dict(),
             "references": [reference.to_dict() for reference in self.references],
             "seed": self.seed,
             "window": self.window.to_dict(),
             "agentIds": list(self.agent_ids),
             "stageCount": self.stage_count,
-            "boundaryStage": self.boundary_stage,
             "allocation": self.allocation.to_dict(),
             "oracleDesign": self.oracle_design.to_dict(),
             "baseKeyPath": self.base_key_path.as_posix(),
             "manipulationCheck": self.manipulation_check.to_dict(),
-            "variants": {
-                "stationary": self.stationary.to_dict(),
-                "rekey": self.rekey.to_dict(),
-            },
+            "variants": {key: value.to_dict() for key, value in self.variants.items()},
         }
 
+    def computed_content_digest(self) -> str:
+        record = self.to_dict()
+        del record["contentDigest"]
+        return sha256_hex(canonical_json_bytes(record))
+
     @classmethod
-    def from_dict(cls, value: object) -> PuzzleBuild:
-        name = "Puzzle build manifest"
+    def from_dict(cls, value: object) -> FixturePackage:
+        name = "Fixture package manifest"
         record = _record(
             value,
             name,
             fields=frozenset(
                 {
                     "schemaVersion",
-                    "pairedBuildId",
-                    "blockId",
+                    "fixtureId",
+                    "contentDigest",
                     "source",
                     "references",
                     "seed",
                     "window",
                     "agentIds",
                     "stageCount",
-                    "boundaryStage",
                     "allocation",
                     "oracleDesign",
                     "baseKeyPath",
@@ -883,18 +979,16 @@ class PuzzleBuild:
                 }
             ),
         )
-        if _integer(record["schemaVersion"], f"{name} schemaVersion") != 3:
-            raise ValueError("Unsupported puzzle build schema version.")
+        if _integer(record["schemaVersion"], f"{name} schemaVersion") != 1:
+            raise ValueError("Unsupported fixture package schema version.")
         agent_ids = _strings(record["agentIds"], f"{name} agentIds")
         raw_references = _array(record["references"], f"{name} references")
-        variants = _record(
-            record["variants"],
-            f"{name} variants",
-            fields=frozenset({"stationary", "rekey"}),
-        )
-        return cls(
-            paired_build_id=_string(record["pairedBuildId"], f"{name} pairedBuildId"),
-            block_id=_identifier(record["blockId"], f"{name} blockId"),
+        variants = _record(record["variants"], f"{name} variants")
+        if not variants:
+            raise ValueError(f"{name} variants must be non-empty.")
+        package = cls(
+            fixture_id=_identifier(record["fixtureId"], f"{name} fixtureId"),
+            content_digest=_digest(record["contentDigest"], f"{name} contentDigest"),
             source=TargetSource.from_dict(record["source"]),
             references=tuple(
                 ReferenceSource.from_dict(reference, index)
@@ -904,11 +998,12 @@ class PuzzleBuild:
             window=BuildWindow.from_dict(record["window"]),
             agent_ids=agent_ids,
             stage_count=_integer(record["stageCount"], f"{name} stageCount", 1),
-            boundary_stage=_integer(record["boundaryStage"], f"{name} boundaryStage", 1),
             allocation=AllocationSummary.from_dict(record["allocation"]),
             oracle_design=OracleDesign.from_dict(record["oracleDesign"]),
             base_key_path=_relative_path(record["baseKeyPath"], f"{name} baseKeyPath"),
             manipulation_check=ManipulationCheck.from_dict(record["manipulationCheck"]),
-            stationary=BuildVariant.from_dict(variants["stationary"], "stationary"),
-            rekey=BuildVariant.from_dict(variants["rekey"], "rekey"),
+            variants={key: BuildVariant.from_dict(item, key) for key, item in variants.items()},
         )
+        if package.content_digest != package.computed_content_digest():
+            raise ValueError("Fixture package contentDigest does not match its content.")
+        return package

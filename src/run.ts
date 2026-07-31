@@ -3,18 +3,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { AttemptRuntime } from "./attempt-runtime.js";
-import { hashProtocolSnapshot, resolveCondition, type ConditionId } from "./condition.js";
 import { validateRunSchedule } from "./config.js";
-import {
-  decodeAttemptSummary,
-  decodeBuildManifest,
-  decodeModelBinding,
-  publishAttemptSummary,
-  selectBuildVariant,
-  type AttemptProtocolSnapshot,
-  type AttemptSummary,
-  type OverlapResult,
-} from "./artifacts.js";
 import { createChecker } from "./checker.js";
 import { createFixtureModelAdapter } from "./fixture.js";
 import {
@@ -24,52 +13,38 @@ import {
   type FrozenGitEnvironment,
   type GitEnvironment,
 } from "./git.js";
+import { loadFixturePackage, selectFixtureVariant } from "./fixture-package.js";
 import {
-  generateAgentIds,
   isAgentId,
   type AgentId,
+  type JsonObject,
   type ModelAdapter,
   type ModelBinding,
 } from "./model.js";
-import { observeOverlap } from "./overlap.js";
-import {
-  assertPreflightSandbox,
-  publishPreflightReceipt,
-  readCurrentPreflight,
-  type PreflightReceipt,
-} from "./preflight.js";
 import { buildAgentPrompt } from "./prompt.js";
-import { absoluteFrom, appendTraceEvent, readJsonObject } from "./python.js";
+import { absoluteFrom } from "./python.js";
 import { runRevealSchedule, systemMonotonicClock, type MonotonicClock } from "./reveal.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import {
-  SANDBOX_POLICY,
   SandboxInfrastructureError,
   type AgentSandboxLease,
   type CommandSandbox,
   type SandboxIdentity,
 } from "./sandbox/contracts.js";
-import { sealTree, verifyTree, type TreeSeal } from "./seal.js";
 import { runAgentSession, type AgentSessionResult } from "./session.js";
 import { createAgentTools, type CheckerHook } from "./tools.js";
 import { JsonlObservationLog } from "./trace.js";
-import type { TeamChannelMode } from "./team-channel.js";
 
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-export type AttemptStudyPhase = "standalone" | "calibration" | "validation";
-
-export interface AttemptConfig {
-  attemptId: string;
-  studyPhase: AttemptStudyPhase;
-  studyRootId?: string;
-  conditionOrderPosition?: number;
-  designDigest?: string;
-  monetaryAuthorizationCeilingCents: number;
-  replacementOfAttemptId?: string;
-  blockId: string;
-  condition: ConditionId;
+export interface RunExecutionConfig {
+  runId: string;
+  experimentId: string;
+  fixtureId: string;
+  fixtureDigest: string;
+  variantId: string;
+  spendCeilingCents: number;
   buildId: string;
   artifactRoot: string;
   buildRoot: string;
@@ -79,7 +54,9 @@ export interface AttemptConfig {
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
   tokenBudgetPerAgent: number | null;
-  teamChannel: TeamChannelMode;
+  gitVisibility: "shared" | "isolated";
+  teamRoom: "enabled" | "disabled";
+  labels: JsonObject;
 }
 
 export interface AgentRuntimeBinding {
@@ -89,27 +66,22 @@ export interface AgentRuntimeBinding {
 
 export type AgentRuntimeMap = Readonly<Record<AgentId, AgentRuntimeBinding>>;
 
-export interface AttemptResult {
-  attemptId: string;
-  studyPhase: AttemptStudyPhase;
-  studyRootId?: string;
-  conditionOrderPosition?: number;
-  designDigest?: string;
-  monetaryAuthorizationCeilingCents: number;
-  replacementOfAttemptId?: string;
-  blockId: string;
-  condition: ConditionId;
-  communicationMode: ReturnType<typeof resolveCondition>["communicationMode"];
-  keyRegime: ReturnType<typeof resolveCondition>["keyRegime"];
-  variantId: ReturnType<typeof resolveCondition>["variantId"];
+export interface RunExecutionResult {
+  runId: string;
+  experimentId: string;
+  fixtureId: string;
+  fixtureDigest: string;
+  spendCeilingCents: number;
+  gitVisibility: "shared" | "isolated";
+  teamRoom: "enabled" | "disabled";
+  variantId: string;
   buildId: string;
   buildRoot: string;
   agentIds: readonly AgentId[];
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
   tokenBudgetPerAgent: number | null;
-  protocolDigest: string;
-  protocol: AttemptProtocolSnapshot;
+  labels: JsonObject;
   sessions: readonly AgentSessionResult[];
   frozen: FrozenGitEnvironment;
   tracePath: string;
@@ -117,14 +89,13 @@ export interface AttemptResult {
   sandbox: SandboxIdentity;
 }
 
-export interface RunAttemptOptions {
-  config: AttemptConfig;
+export interface ExecuteRunOptions {
+  config: RunExecutionConfig;
   agents: AgentRuntimeMap;
   checker: CheckerHook;
   sandbox: CommandSandbox;
   clock: MonotonicClock;
   gitPollIntervalMs?: number;
-  preflight?: PreflightReceipt;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -168,22 +139,21 @@ function sameKeys(record: Record<string, unknown>, keys: readonly string[]): boo
   return Object.keys(record).length === keys.length && keys.every((key) => key in record);
 }
 
-export function validateAttemptConfig(value: unknown): AttemptConfig {
+export function validateRunExecutionConfig(value: unknown): RunExecutionConfig {
   if (!isRecord(value)) {
-    throw new Error("Attempt configuration must be an object.");
+    throw new Error("Run execution configuration must be an object.");
   }
   const agentIdsValue = value.agentIds;
   if (
     !Array.isArray(agentIdsValue) ||
-    agentIdsValue.length !== 3 ||
+    agentIdsValue.length === 0 ||
     agentIdsValue.some((agentId) => !isAgentId(agentId))
   ) {
-    throw new Error("agentIds must contain exactly three canonical agent IDs.");
+    throw new Error("agentIds must contain canonical agent IDs.");
   }
   const agentIds = [...agentIdsValue] as AgentId[];
-  const expectedAgentIds = generateAgentIds(3);
-  if (agentIds.some((agentId, index) => agentId !== expectedAgentIds[index])) {
-    throw new Error("agentIds must be ordered canonically from agent-1 through agent-N.");
+  if (new Set(agentIds).size !== agentIds.length) {
+    throw new Error("agentIds must be unique.");
   }
 
   const stagesValue = value.agentStages;
@@ -195,10 +165,10 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
       const stages = stagesValue[agentId];
       if (
         !Array.isArray(stages) ||
-        stages.length !== 6 ||
+        stages.length === 0 ||
         stages.some((stage) => typeof stage !== "string" || stage.length === 0)
       ) {
-        throw new Error(`${agentId} must have exactly 6 stages.`);
+        throw new Error(`${agentId} must have one or more stage files.`);
       }
       return [agentId, [...stages] as string[]] as const;
     }),
@@ -208,63 +178,48 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
   if (!BUILD_ID.test(buildId)) {
     throw new Error("buildId must be a build-prefixed SHA-256 digest.");
   }
-  const condition = resolveCondition(value.condition);
-  const teamChannel = value.teamChannel;
-  if (teamChannel !== "enabled" && teamChannel !== "disabled") {
-    throw new Error("teamChannel must be enabled or disabled.");
+  const fixtureDigest = requireNonEmptyString(value, "fixtureDigest");
+  if (!SHA256.test(fixtureDigest)) {
+    throw new Error("fixtureDigest must be a lowercase SHA-256 digest.");
+  }
+  const gitVisibility = value.gitVisibility;
+  if (gitVisibility !== "shared" && gitVisibility !== "isolated") {
+    throw new Error("gitVisibility must be shared or isolated.");
+  }
+  const teamRoom = value.teamRoom;
+  if (teamRoom !== "enabled" && teamRoom !== "disabled") {
+    throw new Error("teamRoom must be enabled or disabled.");
+  }
+  if (gitVisibility === "isolated" && teamRoom === "enabled") {
+    throw new Error("An isolated run cannot expose a shared team room.");
   }
   const releaseOffsetsMs = value.releaseOffsetsMs;
   if (!Array.isArray(releaseOffsetsMs)) {
     throw new Error("releaseOffsetsMs must be an array.");
   }
   const cutoffMs = requirePositiveInteger(value, "cutoffMs");
-  validateRunSchedule(releaseOffsetsMs as readonly number[], cutoffMs, 6, "Attempt configuration");
+  const stageCount = agentStages[agentIds[0]!]!.length;
+  if (agentIds.some((agentId) => agentStages[agentId]!.length !== stageCount)) {
+    throw new Error("Every agent must have the same number of ordered stages.");
+  }
+  validateRunSchedule(
+    releaseOffsetsMs as readonly number[],
+    cutoffMs,
+    stageCount,
+    "Run execution configuration",
+  );
   const tokenBudgetPerAgent =
     value.tokenBudgetPerAgent === null
       ? null
       : requirePositiveInteger(value, "tokenBudgetPerAgent");
-  const studyPhase = value.studyPhase;
-  if (studyPhase !== "standalone" && studyPhase !== "calibration" && studyPhase !== "validation") {
-    throw new Error("studyPhase must be standalone, calibration, or validation.");
-  }
-  const optionalStudyFields = [value.studyRootId, value.conditionOrderPosition, value.designDigest];
-  if (studyPhase === "standalone" && optionalStudyFields.some((field) => field !== undefined)) {
-    throw new Error("Standalone attempts cannot carry study receipt provenance.");
-  }
-  if (studyPhase === "standalone" && value.replacementOfAttemptId !== undefined) {
-    throw new Error("Standalone attempts cannot replace study attempts.");
-  }
-  let studyRootId: string | undefined;
-  let conditionOrderPosition: number | undefined;
-  let designDigest: string | undefined;
-  if (studyPhase !== "standalone") {
-    studyRootId = requireNonEmptyString(value, "studyRootId");
-    conditionOrderPosition = requirePositiveInteger(value, "conditionOrderPosition");
-    if (conditionOrderPosition > 4) {
-      throw new Error("conditionOrderPosition must be between 1 and 4.");
-    }
-    designDigest = requireNonEmptyString(value, "designDigest");
-    if (!SHA256.test(designDigest)) {
-      throw new Error("designDigest must be a lowercase SHA-256 digest.");
-    }
-  }
-  const replacementOfAttemptId =
-    value.replacementOfAttemptId === undefined
-      ? undefined
-      : requireNonEmptyString(value, "replacementOfAttemptId");
+  if (!isRecord(value.labels)) throw new Error("labels must be a JSON object.");
   return {
-    attemptId: requireNonEmptyString(value, "attemptId"),
-    studyPhase,
-    ...(studyRootId === undefined ? {} : { studyRootId }),
-    ...(conditionOrderPosition === undefined ? {} : { conditionOrderPosition }),
-    ...(designDigest === undefined ? {} : { designDigest }),
-    monetaryAuthorizationCeilingCents: requireNonNegativeInteger(
-      value,
-      "monetaryAuthorizationCeilingCents",
-    ),
-    ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
-    blockId: requireNonEmptyString(value, "blockId"),
-    condition: condition.id,
+    runId: requireNonEmptyString(value, "runId"),
+    experimentId: requireNonEmptyString(value, "experimentId"),
+    fixtureId: requireNonEmptyString(value, "fixtureId"),
+    fixtureDigest,
+    variantId: requireNonEmptyString(value, "variantId"),
+    spendCeilingCents: requireNonNegativeInteger(value, "spendCeilingCents"),
     buildId,
     artifactRoot: requireNonEmptyString(value, "artifactRoot"),
     buildRoot: requireNonEmptyString(value, "buildRoot"),
@@ -274,11 +229,16 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     releaseOffsetsMs: [...(releaseOffsetsMs as number[])],
     cutoffMs,
     tokenBudgetPerAgent,
-    teamChannel,
+    gitVisibility,
+    teamRoom,
+    labels: value.labels as JsonObject,
   };
 }
 
-function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): AgentRuntimeMap {
+function validateAgentRuntimes(
+  value: AgentRuntimeMap,
+  agentIds: readonly AgentId[],
+): AgentRuntimeMap {
   if (!isRecord(value) || !sameKeys(value, agentIds)) {
     throw new Error("Agent runtime bindings must match agentIds exactly.");
   }
@@ -295,7 +255,7 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
       return [
         agentId,
         {
-          model: decodeModelBinding(runtime.model, `Agent runtime binding for ${agentId} model`),
+          model: runtime.model,
           adapter,
         },
       ] as const;
@@ -304,7 +264,7 @@ function validateAgentRuntimes(value: unknown, agentIds: readonly AgentId[]): Ag
 }
 
 async function publishStages(options: {
-  config: AttemptConfig;
+  config: RunExecutionConfig;
   evidencePaths: Record<AgentId, string>;
   releaseStagingRoot: string;
   runtime: AttemptRuntime;
@@ -418,17 +378,13 @@ async function openAgentLeases(options: {
   return Object.fromEntries(opened) as Record<AgentId, AgentSandboxLease>;
 }
 
-export async function runAttempt(options: RunAttemptOptions): Promise<AttemptResult> {
-  const config = validateAttemptConfig(options.config);
-  const condition = resolveCondition(config.condition);
+export async function executeRun(options: ExecuteRunOptions): Promise<RunExecutionResult> {
+  const config = validateRunExecutionConfig(options.config);
   const agents = validateAgentRuntimes(options.agents, config.agentIds);
   await mkdir(config.artifactRoot, { recursive: false });
-  if (options.preflight) {
-    await publishPreflightReceipt(join(config.artifactRoot, "preflight.json"), options.preflight);
-  }
   const git = await createGitEnvironment(
     join(config.artifactRoot, "git"),
-    condition.communicationMode,
+    config.gitVisibility,
     config.agentIds,
   );
   const evidencePaths = Object.fromEntries(
@@ -454,58 +410,28 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       agentId,
       buildAgentPrompt({
         agentId,
-        condition: config.condition,
+        agentIds: config.agentIds,
+        gitVisibility: config.gitVisibility,
+        teamRoom: config.teamRoom,
         cutoffMs: config.cutoffMs,
         tokenBudgetPerAgent: config.tokenBudgetPerAgent,
-        teamChannel: config.teamChannel,
       }),
     ]),
   ) as Record<AgentId, string>;
-  const protocol: AttemptProtocolSnapshot = {
-    schemaVersion: 3,
-    blockId: config.blockId,
-    condition: condition.id,
-    communicationMode: condition.communicationMode,
-    keyRegime: condition.keyRegime,
-    variantId: condition.variantId,
-    buildId: config.buildId,
-    releaseOffsetsMs: [...config.releaseOffsetsMs],
-    cutoffMs: config.cutoffMs,
-    tokenBudgetPerAgent: config.tokenBudgetPerAgent,
-    teamChannel: config.teamChannel,
-    models: config.agentIds.map((agentId) => ({
-      agentId,
-      model: agents[agentId]!.model,
-    })),
-    prompts: config.agentIds.map((agentId) => ({
-      agentId,
-      prompt: prompts[agentId]!,
-    })),
-    sandbox: { ...options.sandbox.identity, ...SANDBOX_POLICY },
-  };
-  const protocolDigest = hashProtocolSnapshot(protocol);
-  await observationLog.append("attempt.configured", {
-    attemptId: config.attemptId,
-    studyPhase: config.studyPhase,
-    ...(config.studyRootId === undefined ? {} : { studyRootId: config.studyRootId }),
-    ...(config.conditionOrderPosition === undefined
-      ? {}
-      : { conditionOrderPosition: config.conditionOrderPosition }),
-    ...(config.designDigest === undefined ? {} : { designDigest: config.designDigest }),
-    monetaryAuthorizationCeilingCents: config.monetaryAuthorizationCeilingCents,
-    ...(config.replacementOfAttemptId === undefined
-      ? {}
-      : { replacementOfAttemptId: config.replacementOfAttemptId }),
-    blockId: config.blockId,
-    condition: condition.id,
-    communicationMode: condition.communicationMode,
-    keyRegime: condition.keyRegime,
-    variantId: condition.variantId,
+  await observationLog.append("run.configured", {
+    runId: config.runId,
+    experimentId: config.experimentId,
+    fixtureId: config.fixtureId,
+    fixtureDigest: config.fixtureDigest,
+    spendCeilingCents: config.spendCeilingCents,
+    gitVisibility: config.gitVisibility,
+    teamRoom: config.teamRoom,
+    variantId: config.variantId,
     buildId: config.buildId,
     releaseOffsetsMs: config.releaseOffsetsMs,
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
-    teamChannel: config.teamChannel,
+    labels: config.labels,
     agentCount: config.agentIds.length,
     models: config.agentIds.map((agentId) => ({
       agentId,
@@ -525,8 +451,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
 
   const attemptRuntime = new AttemptRuntime({
     agentIds: config.agentIds,
-    teamChannelEnabled:
-      config.teamChannel === "enabled" && condition.communicationMode === "shared",
+    teamChannelEnabled: config.teamRoom === "enabled" && config.gitVisibility === "shared",
     nowMs: () => options.clock.nowMs() - startedAt,
     observe: async ({ kind, data, agentId }) => {
       await observationLog.append(kind, data, agentId);
@@ -704,7 +629,7 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
     throw new Error("Attempt sessions did not produce a result.");
   }
 
-  await observationLog.append("attempt.sessions-ended", {
+  await observationLog.append("run.sessions-ended", {
     sessions: sessions.map((session) => ({
       agentId: session.agentId,
       model: session.model,
@@ -717,37 +642,28 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   await observationLog.flush();
 
   const frozen = await freezeGitEnvironment(git, join(config.artifactRoot, "frozen"));
-  await observationLog.append("attempt.frozen", {
+  await observationLog.append("run.frozen", {
     communicationMode: frozen.communicationMode,
     repositories: frozen.repositories,
     workspaces: frozen.workspaces,
   });
   await observationLog.flush();
   return {
-    attemptId: config.attemptId,
-    studyPhase: config.studyPhase,
-    ...(config.studyRootId === undefined ? {} : { studyRootId: config.studyRootId }),
-    ...(config.conditionOrderPosition === undefined
-      ? {}
-      : { conditionOrderPosition: config.conditionOrderPosition }),
-    ...(config.designDigest === undefined ? {} : { designDigest: config.designDigest }),
-    monetaryAuthorizationCeilingCents: config.monetaryAuthorizationCeilingCents,
-    ...(config.replacementOfAttemptId === undefined
-      ? {}
-      : { replacementOfAttemptId: config.replacementOfAttemptId }),
-    blockId: config.blockId,
-    condition: condition.id,
-    communicationMode: condition.communicationMode,
-    keyRegime: condition.keyRegime,
-    variantId: condition.variantId,
+    runId: config.runId,
+    experimentId: config.experimentId,
+    fixtureId: config.fixtureId,
+    fixtureDigest: config.fixtureDigest,
+    spendCeilingCents: config.spendCeilingCents,
+    gitVisibility: config.gitVisibility,
+    teamRoom: config.teamRoom,
+    variantId: config.variantId,
     buildId: config.buildId,
     buildRoot: config.buildRoot,
     agentIds: config.agentIds,
     releaseOffsetsMs: config.releaseOffsetsMs,
     cutoffMs: config.cutoffMs,
     tokenBudgetPerAgent: config.tokenBudgetPerAgent,
-    protocolDigest,
-    protocol,
+    labels: config.labels,
     sessions,
     frozen,
     tracePath,
@@ -756,103 +672,27 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
   };
 }
 
-export interface RunPuzzleOptions {
+export interface RunPreparedFixtureOptions {
   root: string;
-  buildRoot: string;
+  fixtureRoot: string;
   output: string;
-  attemptId?: string;
-  studyPhase: AttemptStudyPhase;
-  studyRootId?: string;
-  conditionOrderPosition?: number;
-  designDigest?: string;
-  monetaryAuthorizationCeilingCents: number;
-  replacementOfAttemptId?: string;
-  condition: ConditionId;
+  experimentId: string;
+  runId: string;
+  variantId: string;
+  spendCeilingCents: number;
   agents: AgentRuntimeMap;
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
   tokenBudgetPerAgent: number | null;
-  teamChannel: TeamChannelMode;
+  gitVisibility: "shared" | "isolated";
+  teamRoom: "enabled" | "disabled";
+  labels: JsonObject;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
 }
 
-export interface RunPuzzleResult extends AttemptResult {
-  attemptRoot: string;
-  overlap: OverlapResult;
-}
-
-export interface FinalizeAttemptOptions {
-  attemptRoot: string;
-  buildRoot: string;
-  buildTreeSeal: TreeSeal;
-  result: AttemptResult;
-  publishSummary: (attemptRoot: string, summary: AttemptSummary) => Promise<void>;
-  observeOverlap: () => Promise<OverlapResult>;
-  appendTrace: (tracePath: string, kind: string, data: unknown) => Promise<void>;
-}
-
-export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<OverlapResult> {
-  const infrastructureClassification = options.result.sessions.some(
-    (session) => session.state === "infrastructure-error",
-  )
-    ? "session-infrastructure-error"
-    : "none";
-  const summary = decodeAttemptSummary({
-    schemaVersion: 5,
-    attemptId: options.result.attemptId,
-    studyPhase: options.result.studyPhase,
-    ...(options.result.studyRootId === undefined
-      ? {}
-      : { studyRootId: options.result.studyRootId }),
-    ...(options.result.conditionOrderPosition === undefined
-      ? {}
-      : { conditionOrderPosition: options.result.conditionOrderPosition }),
-    ...(options.result.designDigest === undefined
-      ? {}
-      : { designDigest: options.result.designDigest }),
-    monetaryAuthorizationCeilingCents: options.result.monetaryAuthorizationCeilingCents,
-    infrastructureClassification,
-    ...(options.result.replacementOfAttemptId === undefined
-      ? {}
-      : { replacementOfAttemptId: options.result.replacementOfAttemptId }),
-    blockId: options.result.blockId,
-    condition: options.result.condition,
-    communicationMode: options.result.communicationMode,
-    keyRegime: options.result.keyRegime,
-    variantId: options.result.variantId,
-    buildId: options.result.buildId,
-    buildRoot: options.buildRoot,
-    buildTreeSeal: options.buildTreeSeal,
-    agentIds: options.result.agentIds,
-    releaseOffsetsMs: options.result.releaseOffsetsMs,
-    cutoffMs: options.result.cutoffMs,
-    tokenBudgetPerAgent: options.result.tokenBudgetPerAgent,
-    protocolDigest: options.result.protocolDigest,
-    protocol: options.result.protocol,
-    tracePath: options.result.tracePath,
-    traceMetadataPath: options.result.traceMetadataPath,
-    frozen: {
-      root: options.result.frozen.root,
-      communicationMode: options.result.frozen.communicationMode,
-      repositories: options.result.frozen.repositories,
-      workspaces: options.result.frozen.workspaces,
-      treeSeal: options.result.frozen.treeSeal,
-    },
-    sandbox: { ...options.result.sandbox, ...SANDBOX_POLICY },
-    sessions: options.result.sessions,
-  });
-  await verifyTree(options.buildRoot, options.buildTreeSeal, "Attempt build tree");
-  await options.publishSummary(options.attemptRoot, summary);
-  try {
-    return await options.observeOverlap();
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    await options
-      .appendTrace(options.result.tracePath, "overlap.failed", { error: detail })
-      .catch(() => undefined);
-    throw error;
-  }
+export interface RunPreparedFixtureResult extends RunExecutionResult {
+  runRoot: string;
 }
 
 export function createFixtureAgentRuntimes(
@@ -878,75 +718,51 @@ export function createFixtureAgentRuntimes(
   ) as Record<AgentId, AgentRuntimeBinding>;
 }
 
-export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleResult> {
+export async function runPreparedFixture(
+  options: RunPreparedFixtureOptions,
+): Promise<RunPreparedFixtureResult> {
   const root = resolve(options.root);
-  const buildRoot = resolve(options.buildRoot);
+  const fixtureRoot = resolve(options.fixtureRoot);
   const output = resolve(options.output);
-  const usesProvider = Object.values(options.agents).some(
-    (runtime) => runtime.model.provider !== "fixture",
-  );
-  const preflight = usesProvider ? await readCurrentPreflight(root) : undefined;
   await mkdir(dirname(output), { recursive: true });
-  const manifest = decodeBuildManifest(await readJsonObject(join(buildRoot, "puzzle-build.json")));
-  const buildTreeSeal = await sealTree(buildRoot);
-  const condition = resolveCondition(options.condition);
-  const variant = selectBuildVariant(manifest, condition.variantId);
+  const fixture = await loadFixturePackage(fixtureRoot);
+  const variant = selectFixtureVariant(fixture, options.variantId);
   const agentStages = Object.fromEntries(
-    manifest.agentIds.map((agentId) => [
+    fixture.agentIds.map((agentId) => [
       agentId,
       variant.stages
         .filter((stage) => stage.agentId === agentId)
         .sort((left, right) => left.ordinal - right.ordinal)
-        .map((stage) => absoluteFrom(buildRoot, stage.sourcePath)),
+        .map((stage) => absoluteFrom(fixtureRoot, stage.sourcePath)),
     ]),
   ) as Record<AgentId, readonly string[]>;
-  const attemptId =
-    options.attemptId ??
-    `attempt-standalone-${condition.id.toLowerCase()}-${variant.buildId.slice("build-".length, "build-".length + 16)}`;
-  const config: AttemptConfig = {
-    attemptId,
-    studyPhase: options.studyPhase,
-    ...(options.studyRootId === undefined ? {} : { studyRootId: options.studyRootId }),
-    ...(options.conditionOrderPosition === undefined
-      ? {}
-      : { conditionOrderPosition: options.conditionOrderPosition }),
-    ...(options.designDigest === undefined ? {} : { designDigest: options.designDigest }),
-    monetaryAuthorizationCeilingCents: options.monetaryAuthorizationCeilingCents,
-    ...(options.replacementOfAttemptId === undefined
-      ? {}
-      : { replacementOfAttemptId: options.replacementOfAttemptId }),
-    blockId: manifest.blockId,
-    condition: condition.id,
+  const config: RunExecutionConfig = {
+    runId: options.runId,
+    experimentId: options.experimentId,
+    fixtureId: fixture.fixtureId,
+    fixtureDigest: fixture.contentDigest,
+    variantId: variant.variantId,
+    spendCeilingCents: options.spendCeilingCents,
     buildId: variant.buildId,
     artifactRoot: output,
-    buildRoot,
-    referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
-    agentIds: manifest.agentIds,
+    buildRoot: fixtureRoot,
+    referenceCorpusPath: absoluteFrom(fixtureRoot, variant.referenceCorpusPath),
+    agentIds: fixture.agentIds,
     agentStages,
     releaseOffsetsMs: options.releaseOffsetsMs,
     cutoffMs: options.cutoffMs,
     tokenBudgetPerAgent: options.tokenBudgetPerAgent,
-    teamChannel: options.teamChannel,
+    gitVisibility: options.gitVisibility,
+    teamRoom: options.teamRoom,
+    labels: options.labels,
   };
   const sandbox = options.sandbox ?? (await createDockerCommandSandbox({ root }));
-  if (preflight) assertPreflightSandbox(preflight, sandbox.identity);
-  const result = await runAttempt({
+  const result = await executeRun({
     config,
     agents: options.agents,
-    checker: createChecker(root, buildRoot),
+    checker: createChecker(root, fixtureRoot, variant.variantId),
     sandbox,
     clock: options.clock ?? systemMonotonicClock,
-    ...(preflight === undefined ? {} : { preflight }),
   });
-  const overlap = await finalizeAttempt({
-    attemptRoot: output,
-    buildRoot,
-    buildTreeSeal,
-    result,
-    publishSummary: publishAttemptSummary,
-    observeOverlap: () => observeOverlap(root, buildRoot, result),
-    appendTrace: appendTraceEvent,
-  });
-  decodeAttemptSummary(await readJsonObject(join(output, "attempt.json")));
-  return { ...result, attemptRoot: output, overlap };
+  return { ...result, runRoot: output };
 }

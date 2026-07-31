@@ -1,18 +1,4 @@
-schemaVersion: 4
-
-communication: { teamChannel: disabled }
-
-blocks:
-  - { blockId: calibration-theron-ware, phase: calibration }
-  - { blockId: validation-odd-women, phase: validation }
-  - { blockId: validation-pointed-firs, phase: validation }
-  - { blockId: validation-custom-country, phase: validation }
-  - { blockId: validation-woodlanders, phase: validation }
-
-assignment:
-  - { agentId: agent-1, modelProfileId: gpt }
-  - { agentId: agent-2, modelProfileId: claude }
-  - { agentId: agent-3, modelProfileId: gemini }
+schemaVersion: 1
 
 providers:
   openai: { driver: openai, apiKeyEnv: RESEARCH_OPENAI_KEY }
@@ -32,39 +18,24 @@ models:
   gemini: { provider: google, model: gemini-research }
   local: { provider: local, model: local-research }
 
-schedule:
-  releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
-  cutoffMs: 3600000
+totalSpendCeilingCents: 25000
 
-budgets:
-  tokenBudgetPerAgent: 200000
-  perAttemptMonetaryCeilingCents: 10000
-  totalTokenCeiling: 15000000
-  totalMonetaryCeilingCents: 250000
-
-orders:
-  calibration: [CS, CR, IR, IS]
-  validation:
-    - [CS, CR, IR, IS]
-    - [CR, IS, CS, IR]
-    - [IS, IR, CR, CS]
-    - [IR, CS, IS, CR]
-
-scoring:
-  metricId: normalized-positional-word-v1
-  reviewerSelectionId: selected-workspace-main-snapshot-v1
-
-rubric:
-  rubricId: fixture-behavior-review-v1
-  path: tests/fixtures/config/behavior-rubric.md
-  sha256: 8ede239ab2c6da697f2ef138fc65db1658c50712ef40157b46d6e469a86b887f
-
-adjustableFields:
-  - budgets.tokenBudgetPerAgent
-  - budgets.perAttemptMonetaryCeilingCents
-
-failurePolicy:
-  stopOnInfrastructureFailure: true
-  automaticRetry: false
-  replacement: explicit-appended
-  eligibleClassification: session-infrastructure-error
+runs:
+  - id: shared-stationary
+    fixture: { packagePath: tests/fixtures/config/packages/three-agent.json, variant: stationary }
+    assignment: { agent-1: gpt, agent-2: claude, agent-3: gemini }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
+      cutoffMs: 3600000
+    limits: { tokenLimitPerAgent: 200000, spendCeilingCents: 10000 }
+    labels: { cohort: baseline, replicate: 1 }
+  - id: isolated-rekey
+    fixture: { packagePath: tests/fixtures/config/packages/three-agent.json, variant: rekey }
+    assignment: { agent-1: gpt, agent-2: claude, agent-3: gemini }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
+      cutoffMs: 3600000
+    limits: { tokenLimitPerAgent: 200000, spendCeilingCents: 10000 }
+    labels: { cohort: baseline, replicate: 1 }

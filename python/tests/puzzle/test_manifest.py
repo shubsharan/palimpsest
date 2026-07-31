@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 from palimpsest.puzzle.manifest import (
@@ -13,270 +10,223 @@ from palimpsest.puzzle.manifest import (
     BuildVariant,
     BuildWindow,
     EvidenceStage,
+    FixturePackage,
     ManipulationCheck,
     OracleDesign,
-    PuzzleBuild,
+    ReferenceFile,
     ReferenceSource,
     RekeyTransition,
     TargetSource,
-    TierRejection,
-    make_agent_ids,
+    stage_filename,
 )
 from palimpsest.serialization import canonical_json_bytes
 
-AGENT_IDS = ("agent-1", "agent-2", "agent-3")
-DIGEST = "a" * 64
 
-
-def _stages(variant_id: str) -> tuple[EvidenceStage, ...]:
-    post_boundary_offset = 0 if variant_id == "stationary" else 18
-    return tuple(
+def _variant(
+    variant_id: str,
+    *,
+    agent_ids: tuple[str, ...],
+    stage_count: int,
+    rekey_from_stage: int | None,
+) -> BuildVariant:
+    prefix = f"variants/{variant_id}"
+    stages = tuple(
         EvidenceStage(
             agent_id=agent_id,
             ordinal=ordinal,
-            key_version=1 if variant_id == "rekey" and ordinal >= 4 else 0,
+            key_version=int(rekey_from_stage is not None and ordinal >= rekey_from_stage),
             source_path=Path(
-                f"variants/{variant_id}/private/{agent_id}/stages/stage-{ordinal:02d}.txt"
+                f"{prefix}/private/{agent_id}/stages/{stage_filename(ordinal, stage_count)}"
             ),
-            token_count=200,
+            token_count=100,
             sha256=(
-                f"{agent_index * 6 + ordinal:064x}"
-                if ordinal < 4
-                else f"{100 + post_boundary_offset + agent_index * 6 + ordinal:064x}"
+                f"{agent_index * stage_count + ordinal:064x}"
+                if rekey_from_stage is None or ordinal < rekey_from_stage
+                else f"{1000 + agent_index * stage_count + ordinal:064x}"
             ),
         )
-        for agent_index, agent_id in enumerate(AGENT_IDS)
-        for ordinal in range(1, 7)
+        for agent_index, agent_id in enumerate(agent_ids)
+        for ordinal in range(1, stage_count + 1)
     )
-
-
-def _variant(variant_id: str) -> BuildVariant:
-    transition = (
+    transitions = (
         ()
-        if variant_id == "stationary"
+        if rekey_from_stage is None
         else (
             RekeyTransition(
-                at_stage=4,
+                at_stage=rekey_from_stage,
                 key_version=1,
-                key_path=Path("oracle/keys/rekey-stage-04.json"),
+                key_path=Path(f"oracle/keys/rekey-stage-{rekey_from_stage:02d}.json"),
                 changed_symbols_sha256="b" * 64,
             ),
         )
     )
     return BuildVariant(
         variant_id=variant_id,
-        build_id="build-" + ("c" if variant_id == "stationary" else "d") * 64,
-        public_ciphertext_path=Path(f"variants/{variant_id}/complete/ciphertext.txt"),
-        reference_corpus_path=Path(f"variants/{variant_id}/references"),
+        rekey_from_stage=rekey_from_stage,
+        build_id="build-" + ("c" if rekey_from_stage is None else "d") * 64,
+        public_ciphertext_path=Path(f"{prefix}/complete/ciphertext.txt"),
+        public_ciphertext_sha256="e" * 64,
+        reference_corpus_path=Path(f"{prefix}/references"),
+        reference_files=(
+            ReferenceFile(
+                source_id="reference",
+                source_sha256="2" * 64,
+                path=Path(f"{prefix}/references/reference-reference.txt"),
+                byte_length=128,
+                sha256="f" * 64,
+            ),
+        ),
         private_stage_roots={
-            agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
-            for agent_id in AGENT_IDS
+            agent_id: Path(f"{prefix}/private/{agent_id}/stages") for agent_id in agent_ids
         },
-        stages=_stages(variant_id),
-        key_transitions=transition,
+        stages=stages,
+        key_transitions=transitions,
     )
 
 
-def _build() -> PuzzleBuild:
-    return PuzzleBuild(
-        paired_build_id="paired-" + "e" * 64,
-        block_id="calibration-theron-ware",
-        source=TargetSource("theron-ware", "f" * 64),
-        references=(
-            ReferenceSource("middlemarch", "1" * 64),
-            ReferenceSource("moby-dick", "2" * 64),
-            ReferenceSource("jane-eyre", "3" * 64),
+def _package(
+    agent_ids: tuple[str, ...],
+    stage_count: int,
+    boundary_stage: int,
+) -> FixturePackage:
+    variants = {
+        "stationary": _variant(
+            "stationary",
+            agent_ids=agent_ids,
+            stage_count=stage_count,
+            rekey_from_stage=None,
         ),
-        seed=130013,
-        window=BuildWindow(
-            paragraph_start=10,
-            paragraph_end=80,
-            word_count=18_000,
-            sha256="4" * 64,
+        "rekey": _variant(
+            "rekey",
+            agent_ids=agent_ids,
+            stage_count=stage_count,
+            rekey_from_stage=boundary_stage,
         ),
-        agent_ids=AGENT_IDS,
-        stage_count=6,
-        boundary_stage=4,
+    }
+    package = FixturePackage(
+        fixture_id=f"fixture-{len(agent_ids)}-{stage_count}",
+        content_digest="0" * 64,
+        source=TargetSource("source", "1" * 64),
+        references=(ReferenceSource("reference", "2" * 64),),
+        seed=17,
+        window=BuildWindow(1, 180, 18_000, "3" * 64),
+        agent_ids=agent_ids,
+        stage_count=stage_count,
         allocation=AllocationSummary(
-            allocation_id="allocation-" + "5" * 64,
-            tier="balanced",
+            allocation_id="allocation-" + "4" * 64,
+            tier="declared",
             metrics=AllocationMetrics(
-                region_deviation=0.05,
-                stage_deviation=0.15,
-                solo_changed_set_coverage=0.6,
-                min_owner_share=0.61,
-                anchor_count=12,
-                sentinel_count=6,
-                specialist_counts={agent_id: 3 for agent_id in AGENT_IDS},
-                min_owner_occurrences_per_region=2,
-                min_sentinel_occurrences_per_agent_region=2,
+                region_deviation=0.1,
+                stage_deviation=0.2,
+                solo_changed_set_coverage=0.5,
+                min_owner_share=0.5,
+                anchor_count=1,
+                sentinel_count=1,
+                specialist_counts={agent_id: 1 for agent_id in agent_ids},
+                min_owner_occurrences_per_region=1,
+                min_sentinel_occurrences_per_agent_region=1,
                 unmatched_control_count=0,
-                max_control_distance=0.2,
+                max_control_distance=0.4,
             ),
-            rejected_tiers=(TierRejection("strict", ("region-deviation", "stage-deviation")),),
+            rejected_tiers=(),
             path=Path("oracle/allocation.json"),
-            sha256="6" * 64,
+            sha256="5" * 64,
         ),
         oracle_design=OracleDesign(
             path=Path("oracle/design.json"),
-            sha256="7" * 64,
-            anchors_sha256="8" * 64,
-            sentinels_sha256="9" * 64,
-            specialists_sha256="a" * 64,
-            controls_sha256="b" * 64,
+            sha256="6" * 64,
+            anchors_sha256="7" * 64,
+            sentinels_sha256="8" * 64,
+            specialists_sha256="9" * 64,
+            controls_sha256="a" * 64,
         ),
         base_key_path=Path("oracle/keys/base.json"),
         manipulation_check=ManipulationCheck(
             path=Path("oracle/manipulation-check.json"),
-            sha256="c" * 64,
+            sha256="b" * 64,
             pre_boundary_identical=True,
-            stationary_old_key_loss=0.0,
+            stationary_old_key_loss=0,
             rekey_old_key_loss=0.2,
-            changed_token_mass_by_agent={agent_id: 0.2 for agent_id in AGENT_IDS},
+            changed_token_mass_by_agent={agent_id: 0.2 for agent_id in agent_ids},
         ),
-        stationary=_variant("stationary"),
-        rekey=_variant("rekey"),
+        variants=variants,
     )
-
-
-def _manifest() -> dict[str, Any]:
-    return _build().to_dict()
-
-
-def test_make_agent_ids_is_canonical_and_numeric() -> None:
-    assert make_agent_ids(3) == AGENT_IDS
-    assert make_agent_ids(10)[-1] == "agent-10"
-    with pytest.raises(ValueError, match="at least two"):
-        make_agent_ids(1)
-
-
-def test_schema_v3_paired_manifest_round_trips_canonical_json() -> None:
-    build = _build()
-    encoded = canonical_json_bytes(build.to_dict())
-
-    decoded = PuzzleBuild.from_dict(json.loads(encoded))
-
-    assert decoded == build
-    assert decoded.to_dict()["schemaVersion"] == 3
-    assert decoded.to_dict()["variants"]["stationary"]["keyTransitions"] == []
-    assert len(decoded.stationary.stages) == 18
-    assert len(decoded.rekey.stages) == 18
+    return replace(package, content_digest=package.computed_content_digest())
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "match"),
+    ("agent_ids", "stage_count", "boundary_stage"),
     [
-        ("schemaVersion", 2, "schema version"),
-        ("agentIds", ["agent-1", "agent-2"], "exactly three"),
-        ("stageCount", 5, "exactly 6"),
-        ("boundaryStage", 3, "exactly 4"),
-        ("pairedBuildId", "paired-nope", "lowercase SHA-256"),
-        ("baseKeyPath", "../base.json", "safe relative path"),
+        (("beta", "alpha"), 3, 2),
+        (("alpha", "beta", "gamma", "delta"), 8, 5),
     ],
 )
-def test_manifest_rejects_invalid_top_level_contract(field: str, value: object, match: str) -> None:
-    manifest = _manifest()
-    manifest[field] = value
-
-    with pytest.raises(ValueError, match=match):
-        PuzzleBuild.from_dict(manifest)
-
-
-def test_schema_v3_rejects_release_timing_fields() -> None:
-    manifest = _manifest()
-    manifest["stageIntervalMs"] = 20
-
-    with pytest.raises(ValueError, match="unknown field stageIntervalMs"):
-        PuzzleBuild.from_dict(manifest)
-
-    stage = manifest["variants"]["rekey"]["stages"][0]
-    stage["releaseOffsetMs"] = 0
-    del manifest["stageIntervalMs"]
-
-    with pytest.raises(ValueError, match="unknown field releaseOffsetMs"):
-        PuzzleBuild.from_dict(manifest)
-
-
-def test_manifest_requires_ordered_rejected_tiers() -> None:
-    manifest = _manifest()
-    manifest["allocation"]["rejectedTiers"] = [{"tier": "balanced", "reasons": ["stage-deviation"]}]
-
-    with pytest.raises(ValueError, match="earlier tiers"):
-        PuzzleBuild.from_dict(manifest)
-
-
-@pytest.mark.parametrize(
-    ("mutate", "match"),
-    [
-        (
-            lambda manifest: manifest["allocation"].__setitem__(
-                "path", "variants/rekey/allocation.json"
-            ),
-            "oracle/allocation.json",
-        ),
-        (
-            lambda manifest: manifest["oracleDesign"].__setitem__("anchorsSha256", "ABC"),
-            "lowercase SHA-256",
-        ),
-        (
-            lambda manifest: manifest["manipulationCheck"]["changedTokenMassByAgent"].__setitem__(
-                "agent-1", 0.14
-            ),
-            "between 0.15 and 1",
-        ),
-    ],
-)
-def test_manifest_rejects_invalid_oracle_records(
-    mutate: Callable[[dict[str, Any]], None], match: str
+def test_fixture_package_round_trips_variable_geometry(
+    agent_ids: tuple[str, ...],
+    stage_count: int,
+    boundary_stage: int,
 ) -> None:
-    manifest = _manifest()
-    mutate(manifest)
+    package = _package(agent_ids, stage_count, boundary_stage)
 
-    with pytest.raises(ValueError, match=match):
-        PuzzleBuild.from_dict(manifest)
+    decoded = FixturePackage.from_dict(package.to_dict())
+
+    assert decoded == package
+    assert decoded.content_digest == decoded.computed_content_digest()
+    assert len(decoded.variants["stationary"].stages) == len(agent_ids) * stage_count
+    assert decoded.variants["rekey"].rekey_from_stage == boundary_stage
+    assert canonical_json_bytes(decoded.to_dict()) == canonical_json_bytes(package.to_dict())
 
 
-def test_manifest_requires_exact_variant_keys_and_paths() -> None:
-    manifest = _manifest()
-    manifest["variants"]["stationary"]["publicCiphertextPath"] = (
-        "variants/rekey/complete/ciphertext.txt"
+def test_content_digest_detects_package_metadata_drift() -> None:
+    package = _package(("alpha", "beta"), 3, 2)
+    record = package.to_dict()
+    record["seed"] = 18
+
+    with pytest.raises(ValueError, match="contentDigest"):
+        FixturePackage.from_dict(record)
+
+
+def test_variant_serializes_verifiable_public_artifacts() -> None:
+    package = _package(("alpha", "beta"), 3, 2)
+    record = package.to_dict()["variants"]["stationary"]
+
+    assert record["publicCiphertextSha256"] == "e" * 64
+    assert record["referenceFiles"] == [
+        {
+            "sourceId": "reference",
+            "sourceSha256": "2" * 64,
+            "path": "variants/stationary/references/reference-reference.txt",
+            "byteLength": 128,
+            "sha256": "f" * 64,
+        }
+    ]
+
+
+def test_variant_map_is_not_limited_to_legacy_names() -> None:
+    package = _package(("alpha", "beta"), 3, 2)
+    renamed = replace(
+        package,
+        variants={
+            "control": _variant(
+                "control",
+                agent_ids=package.agent_ids,
+                stage_count=package.stage_count,
+                rekey_from_stage=None,
+            ),
+            "shift-at-two": _variant(
+                "shift-at-two",
+                agent_ids=package.agent_ids,
+                stage_count=package.stage_count,
+                rekey_from_stage=2,
+            ),
+        },
+        content_digest="0" * 64,
     )
+    renamed = replace(renamed, content_digest=renamed.computed_content_digest())
 
-    with pytest.raises(ValueError, match="stationary public ciphertext path"):
-        PuzzleBuild.from_dict(manifest)
-
-    manifest = _manifest()
-    manifest["variants"]["extra"] = manifest["variants"]["stationary"]
-
-    with pytest.raises(ValueError, match="unknown field extra"):
-        PuzzleBuild.from_dict(manifest)
+    assert FixturePackage.from_dict(renamed.to_dict()) == renamed
 
 
-def test_manifest_requires_exact_variant_key_schedules() -> None:
-    manifest = _manifest()
-    manifest["variants"]["stationary"]["stages"][9]["keyVersion"] = 1
-
-    with pytest.raises(ValueError, match="key version"):
-        PuzzleBuild.from_dict(manifest)
-
-    manifest = _manifest()
-    manifest["variants"]["rekey"]["keyTransitions"] = []
-
-    with pytest.raises(ValueError, match="one stage-four key transition"):
-        PuzzleBuild.from_dict(manifest)
-
-
-def test_manifest_requires_pre_boundary_stage_identity() -> None:
-    manifest = _manifest()
-    manifest["variants"]["rekey"]["stages"][1]["sha256"] = "f" * 64
-
-    with pytest.raises(ValueError, match="pre-boundary stage digests"):
-        PuzzleBuild.from_dict(manifest)
-
-
-def test_selected_tier_metrics_must_satisfy_the_tier() -> None:
-    build = _build()
-    metrics = replace(build.allocation.metrics, max_control_distance=0.3)
-
-    with pytest.raises(ValueError, match="balanced tier"):
-        replace(build.allocation, metrics=metrics)
+def test_stage_filename_scales_with_declared_stage_count() -> None:
+    assert stage_filename(1, 8) == "stage-01.txt"
+    assert stage_filename(100, 120) == "stage-100.txt"

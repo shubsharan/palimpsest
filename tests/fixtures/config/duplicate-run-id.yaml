@@ -1,0 +1,21 @@
+schemaVersion: 1
+providers:
+  fixture: { driver: openai, apiKeyEnv: FIXTURE_KEY }
+models:
+  fixture: { provider: fixture, model: fixture-model }
+totalSpendCeilingCents: 200
+runs:
+  - id: duplicate
+    fixture: { packagePath: tests/fixtures/config/packages/fixture.json, variant: stationary }
+    assignment: { agent-1: fixture }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule: { releaseOffsetsMs: [0], cutoffMs: 10 }
+    limits: { tokenLimitPerAgent: 100, spendCeilingCents: 100 }
+    labels: {}
+  - id: duplicate
+    fixture: { packagePath: tests/fixtures/config/packages/fixture.json, variant: rekey }
+    assignment: { agent-1: fixture }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule: { releaseOffsetsMs: [0], cutoffMs: 10 }
+    limits: { tokenLimitPerAgent: 100, spendCeilingCents: 100 }
+    labels: {}

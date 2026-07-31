@@ -1,209 +1,156 @@
 from __future__ import annotations
 
-from hashlib import sha256
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from palimpsest.puzzle.block import (
-    TIERS,
-    AllocationTier,
-    ParagraphAssignment,
     ParagraphUnit,
+    WindowPin,
     candidate_windows,
-    decode_block_catalog,
-    design_oracle,
+    decode_fixture_catalog,
     initial_allocation,
-    make_allocation,
-    match_controls,
+    load_fixture_catalog,
 )
 
+ROOT = Path(__file__).resolve().parents[3]
 
-def catalog() -> dict[str, object]:
-    return {
+
+def _paragraph(ordinal: int, words: int = 100) -> ParagraphUnit:
+    return ParagraphUnit.from_text(
+        ordinal,
+        " ".join((f"paragraph-{ordinal}", *(["evidence"] * (words - 1)))),
+    )
+
+
+def _window():
+    return next(candidate_windows(tuple(_paragraph(index) for index in range(1, 181))))
+
+
+def test_checked_in_fixture_definitions_are_declarative_and_strict() -> None:
+    catalog = load_fixture_catalog(ROOT / "experiments/blocks.json")
+
+    assert len(catalog.fixtures) == 5
+    fixture = catalog.fixtures[0]
+    assert fixture.fixture_id == "calibration-theron-ware"
+    assert fixture.source_id == "theron-ware"
+    assert fixture.agent_ids == ("agent-1", "agent-2", "agent-3")
+    assert fixture.stage_count == 6
+    assert [(item.variant_id, item.rekey_from_stage) for item in fixture.variants] == [
+        ("stationary", None),
+        ("rekey", 4),
+    ]
+    assert fixture.rekey_from_stage == 4
+    assert fixture.allocation_constraints.minimum_changed_mass == 0.15
+    assert tuple(tier.name for tier in fixture.allocation_constraints.tiers) == (
+        "strict",
+        "balanced",
+        "fallback",
+    )
+
+    record = {
         "schemaVersion": 1,
-        "blocks": [
+        "fixtures": [
             {
-                "blockId": "calibration-theron-ware",
-                "phase": "calibration",
-                "sourceId": "theron-ware",
-                "references": ["middlemarch", "moby-dick", "jane-eyre"],
-                "seed": 130013,
-                "window": {
-                    "paragraphStart": 0,
-                    "paragraphEnd": 0,
-                    "wordCount": 0,
-                    "sha256": "",
+                "fixtureId": "invalid",
+                "source": {
+                    "sourceId": "source",
+                    "window": {
+                        "paragraphStart": 0,
+                        "paragraphEnd": 0,
+                        "wordCount": 0,
+                        "sha256": "",
+                    },
                 },
-                "boundaryStage": 4,
+                "references": ["reference"],
+                "seed": 1,
+                "agentIds": ["alpha", "beta"],
+                "stageCount": 3,
+                "variants": [
+                    {"variantId": "stationary", "rekeyFromStage": None},
+                    {"variantId": "rekey", "rekeyFromStage": 4},
+                ],
+                "allocationConstraints": {
+                    "minimumAnchors": 1,
+                    "minimumSentinels": 1,
+                    "minimumSpecialistsPerAgent": 1,
+                    "minimumChangedMass": 0.1,
+                    "tiers": [
+                        {
+                            "tier": "default",
+                            "minimumSpecialistOwnerShare": 0.5,
+                            "minimumOwnerOccurrences": 1,
+                            "minimumSentinelOccurrences": 1,
+                            "maximumSoloCoverage": 1,
+                            "maximumRegionDeviation": 1,
+                            "maximumStageDeviation": 1,
+                            "maximumControlDistance": 1,
+                        }
+                    ],
+                },
             }
         ],
     }
+    with pytest.raises(ValueError, match="exceeds stageCount"):
+        decode_fixture_catalog(record)
 
 
-def alpha(index: int) -> str:
-    letters = "abcdefghijklmnopqrstuvwxyz"
-    return letters[index // len(letters)] + letters[index % len(letters)]
-
-
-def paragraph(ordinal: int, *tokens: str) -> ParagraphUnit:
-    words = list(tokens)
-    while len(words) < 20:
-        words.append(f"filler{alpha(len(words))}")
-    return ParagraphUnit.from_text(ordinal, " ".join(words))
-
-
-def test_catalog_decoder_is_strict_and_accepts_only_complete_discovery_windows() -> None:
-    decoded = decode_block_catalog(catalog())
-
-    assert decoded.blocks[0].block_id == "calibration-theron-ware"
-    assert decoded.blocks[0].window.is_discovery
-
-    value = catalog()
-    block = value["blocks"][0]  # type: ignore[index]
-    assert isinstance(block, dict)
-    block["unknown"] = True
-    with pytest.raises(ValueError, match="unknown field"):
-        decode_block_catalog(value)
-
-    partial = catalog()
-    window = partial["blocks"][0]["window"]  # type: ignore[index]
-    assert isinstance(window, dict)
-    window["paragraphStart"] = 1
-    with pytest.raises(ValueError, match="all zero"):
-        decode_block_catalog(partial)
-
-
-def test_catalog_decoder_accepts_a_pinned_window_and_rejects_duplicates() -> None:
-    value = catalog()
-    window = value["blocks"][0]["window"]  # type: ignore[index]
-    assert isinstance(window, dict)
-    window.update(
-        {
-            "paragraphStart": 10,
-            "paragraphEnd": 900,
-            "wordCount": 18_000,
-            "sha256": "a" * 64,
-        }
-    )
-    value["blocks"].append(dict(value["blocks"][0]))  # type: ignore[union-attr,index]
-
-    with pytest.raises(ValueError, match="duplicate blockId"):
-        decode_block_catalog(value)
-
-
-def test_candidate_window_uses_first_18k_mass_and_first_half_boundary() -> None:
-    paragraphs = tuple(
-        paragraph(ordinal, *("window" for _ in range(20))) for ordinal in range(1, 901)
+@pytest.mark.parametrize(
+    ("agent_ids", "stage_count", "boundary_stage"),
+    [
+        (("alpha", "beta"), 3, 2),
+        (("alpha", "beta", "gamma", "delta"), 8, 5),
+    ],
+)
+def test_allocation_supports_declared_fixture_geometry(
+    agent_ids: tuple[str, ...],
+    stage_count: int,
+    boundary_stage: int,
+) -> None:
+    window = _window()
+    tier = (
+        load_fixture_catalog(ROOT / "experiments/blocks.json")
+        .fixtures[0]
+        .allocation_constraints.tiers[0]
     )
 
-    window = next(candidate_windows(paragraphs))
-
-    assert window.paragraph_start == 1
-    assert window.paragraph_end == 900
-    assert window.word_count == 18_000
-    assert window.boundary_index == 450
-    expected = "\n\n".join(item.text for item in paragraphs) + "\n"
-    assert window.sha256 == sha256(expected.encode()).hexdigest()
-
-
-def test_initial_allocation_is_deterministic_complete_ordered_and_nonempty() -> None:
-    paragraphs = tuple(
-        paragraph(ordinal, *("window" for _ in range(20))) for ordinal in range(1, 901)
+    first = initial_allocation(
+        window,
+        "synthetic-fixture",
+        73,
+        tier,
+        agent_ids=agent_ids,
+        stage_count=stage_count,
+        boundary_stage=boundary_stage,
     )
-    window = next(candidate_windows(paragraphs))
-
-    first = initial_allocation(window, "calibration-theron-ware", 130013, TIERS[0])
-    second = initial_allocation(window, "calibration-theron-ware", 130013, TIERS[0])
+    second = initial_allocation(
+        window,
+        "synthetic-fixture",
+        73,
+        tier,
+        agent_ids=agent_ids,
+        stage_count=stage_count,
+        boundary_stage=boundary_stage,
+    )
 
     assert first == second
-    assert sorted(item.paragraph.ordinal for item in first.assignments) == list(range(1, 901))
-    for agent_id in ("agent-1", "agent-2", "agent-3"):
-        for stage in range(1, 7):
-            ordinals = [
-                item.paragraph.ordinal
-                for item in first.assignments
-                if item.agent_id == agent_id and item.stage == stage
-            ]
-            assert ordinals
-            assert ordinals == sorted(ordinals)
-
-
-def designed_assignment() -> tuple[tuple[ParagraphUnit, ...], object]:
-    paragraphs: list[ParagraphUnit] = []
-    assignments: list[ParagraphAssignment] = []
-    ordinal = 1
-    anchors = [f"anchor{alpha(index)}" for index in range(12)]
-    sentinels = [f"sentinel{alpha(index)}" for index in range(6)]
-    sentinel_controls = [f"scontrol{alpha(index)}" for index in range(6)]
-    for agent_index, agent_id in enumerate(("agent-1", "agent-2", "agent-3")):
-        specialists = [f"specialist{alpha(agent_index)}{alpha(index)}" for index in range(3)]
-        specialist_controls = [f"pcontrol{alpha(agent_index)}{alpha(index)}" for index in range(3)]
-        for stage in range(1, 7):
-            tokens = (
-                list(anchors)
-                if stage in {1, 4}
-                else [
-                    f"padding{alpha(agent_index)}{alpha(stage)}{alpha(index)}"
-                    for index in range(len(anchors))
-                ]
-            )
-            pairs = (*zip(sentinels, sentinel_controls, strict=True),)
-            pairs += (*zip(specialists, specialist_controls, strict=True),)
-            for pair_index, (changed, control) in enumerate(pairs):
-                marker = f"marker{alpha(agent_index)}{alpha(stage)}{alpha(pair_index)}"
-                tokens.extend((marker, changed, changed, control, control, marker))
-            item = paragraph(ordinal, *tokens)
-            paragraphs.append(item)
-            assignments.append(ParagraphAssignment(paragraph=item, agent_id=agent_id, stage=stage))
-            ordinal += 1
-    return tuple(paragraphs), make_allocation(TIERS[0].name, assignments)
-
-
-def test_oracle_design_has_declared_sets_mass_and_solo_coverage() -> None:
-    paragraphs, allocation = designed_assignment()
-
-    design = design_oracle(paragraphs, allocation, TIERS[0])
-
-    assert len(design.anchors) == 12
-    assert len(design.sentinels) >= 6
-    assert {agent: len(words) for agent, words in design.specialists.items()} == {
-        "agent-1": 3,
-        "agent-2": 3,
-        "agent-3": 3,
+    assert first.agent_ids == agent_ids
+    assert first.stage_count == stage_count
+    assert first.boundary_stage == boundary_stage
+    assert {item.paragraph.ordinal for item in first.assignments} == {
+        item.ordinal for item in window.paragraphs
     }
-    assert len(design.controls) == len(design.changed_types)
-    assert max(design.metrics.solo_coverage.values()) <= TIERS[0].max_solo_coverage
-    assert min(design.metrics.post_changed_mass.values()) >= 0.15
-    assert design.metrics.min_owner_occurrences_per_region >= TIERS[0].owner_occurrences
-    assert design.metrics.min_sentinel_occurrences_per_agent_region >= TIERS[0].sentinel_occurrences
-
-
-def test_control_matching_uses_deterministic_augmenting_paths() -> None:
-    paragraphs, allocation = designed_assignment()
-    loose = AllocationTier(
-        name="test",
-        specialist_owner_share=0.5,
-        owner_occurrences=1,
-        sentinel_occurrences=1,
-        max_solo_coverage=1.0,
-        max_region_deviation=1.0,
-        max_stage_deviation=1.0,
-        max_control_distance=1.0,
-    )
-    design = design_oracle(paragraphs, allocation, loose)
-
-    first = match_controls(
-        design.changed_types,
-        design.available_control_types,
-        design.profiles,
-        loose.max_control_distance,
-    )
-    second = match_controls(
-        design.changed_types,
-        design.available_control_types,
-        design.profiles,
-        loose.max_control_distance,
+    assert all(
+        first.stage_paragraphs(agent_id, stage)
+        for agent_id in agent_ids
+        for stage in range(1, stage_count + 1)
     )
 
-    assert first == second
-    assert len({match.control_type for match in first}) == len(first)
-    assert all(match.control_type not in design.changed_types for match in first)
+
+def test_window_pin_remains_independent_of_fixture_geometry() -> None:
+    window = _window()
+    pin = window.pin()
+
+    assert pin == WindowPin(1, 180, 18_000, window.sha256)
+    assert not pin.is_discovery
+    assert replace(pin, paragraph_start=0, paragraph_end=0, word_count=0, sha256="").is_discovery

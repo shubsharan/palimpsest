@@ -1,105 +1,90 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes five blocks, a three-model assignment, four conditions, schedules, budgets, order, communication tooling, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
+Palimpsest is a local research runner for a collaborative word-substitution puzzle. Researchers declare deterministic fixtures and explicit experiment runs; concurrent model agents receive different private evidence over time and decide for themselves how to solve. The runner preserves their tools, Git activity, responses, published solvers, and scores without imposing a collaboration workflow.
 
-This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
+This is a puzzle and an observational research artifact. It is not a hosted service, an enterprise application, or a hardened benchmark.
 
 ## Read First
 
-- [Proposal](docs/proposal.md): puzzle, agent experience, evaluation, and claim boundary.
-- [Architecture](docs/architecture.md): configuration, runtime, artifacts, and failure semantics.
-- [Roadmap](docs/roadmap.md): delivery sequence and definition of done.
-- [Feature 010 specification](specs/010-agent-sandbox-lifecycle/spec.md): attempt-scoped agent sandbox and recovery behavior.
-- [Feature 012 quickstart](specs/012-simple-research-ci/quickstart.md): current development check, research preflight, and provenance flow.
-- [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
-- [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
-- [Feature 015 quickstart](specs/015-frozen-five-block-protocol/quickstart.md): frozen calibration, validation, and explicit replacement flow.
-- [Experiment schema](experiments/schema.json): strict version-4 study manifest.
-- [Block catalog](experiments/blocks.json): five pinned paired study blocks.
-- [Study manifest](experiments/config.yaml): frozen block matrix, assignment, budgets, providers, rubric, and failure policy.
-
-Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 freezes the complete five-block protocol. Feature 016 adds an optional direct team channel without changing the Git grading boundary.
+- [Proposal](docs/proposal.md): puzzle, research questions, treatments, observation, and claim boundary.
+- [Architecture](docs/architecture.md): fixture, experiment, runtime, sandbox, record, and failure boundaries.
+- [Roadmap](docs/roadmap.md): the science-focused delivery sequence and definition of done.
+- [Feature 021 specification](specs/021-lean-experiment-engine/spec.md): active requirements for the lean experiment engine.
+- [Feature 021 quickstart](specs/021-lean-experiment-engine/quickstart.md): provider-free verification and operator commands.
+- [Experiment schema](experiments/schema.json): strict manifest contract.
+- [Fixture definitions](experiments/blocks.json): historical and variable-geometry puzzle declarations.
+- [Example experiment](experiments/config.yaml): the historical five-fixture matrix expressed as explicit runs.
 
 ## Setup
 
-Use the tool versions pinned in `.tool-versions` and start Docker Engine or Docker Desktop.
+Use the versions pinned in `.tool-versions` and start Docker Engine or Docker Desktop.
 
 ```bash
 pnpm install --frozen-lockfile
 uv sync --frozen --project python
 ```
 
-The first bootstrap may use the network. Once the uv cache is populated, local checks use the locked environment offline. The sandbox image contains the Git, POSIX shell, and Python runtime used by model-authored commands and canonical solver execution. Each agent receives one attempt-scoped sandbox lease over its host-backed workspace and private evidence. Checker and final evaluation calls use separate one-shot sandboxes containing only a Git-free published-main snapshot, assigned ciphertext, and 16 MiB container-only output scratch; no writable host output path is mounted. Model calls happen on the host; provider credentials are never mounted into either sandbox.
+The first bootstrap may use the network. Model-authored commands and canonical solver execution run in Linux containers. Model calls happen on the host; provider credentials are named by environment variable and never mounted into agent or evaluator sandboxes.
 
-## Configure The Study
+## Prepare Fixtures
 
-Scientific block inputs live in `experiments/blocks.json`. The strict study manifest in `experiments/config.yaml` declares:
+`experiments/blocks.json` contains `FixtureDefinition` values. Each declares source provenance, target-excluded references, seed, agent IDs, stage count, key variants, re-key boundaries, and scientifically meaningful allocation constraints.
 
-- `blocks`: one calibration and four validation block IDs in fixed order;
-- `communication.teamChannel`: `enabled` for a shared public discussion room or `disabled` for Git-only collaboration;
-- `assignment`: one ordered three-agent model assignment used by every cell;
-- `schedule` and `budgets`: per-run reveal offsets, wall cutoff, optional token limit, and mandatory monetary authorizations;
-- `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
-- `models`: provider/model profiles and non-secret settings;
-- `orders`: one calibration and four balanced validation condition sequences; and
-- `scoring`, `rubric`, `adjustableFields`, and `failurePolicy`: the declared observation and replacement boundary.
-
-The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
-
-## Run
-
-Build both variants of one pinned block without provider access:
+Build one fixture or the complete example set without provider access:
 
 ```bash
-pnpm puzzle:build -- \
-  --block calibration-theron-ware \
-  --output artifacts/build
+pnpm puzzle:build --fixture calibration-theron-ware --output artifacts/fixtures/calibration-theron-ware
+pnpm puzzle:build --all true --output artifacts/fixtures
 ```
 
-The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
+Preparation publishes a deterministic `FixturePackage` containing agent-visible stages and variants plus trusted provenance, oracle data, manipulation checks, and scoring inputs. Trusted data stays outside agent workspaces. Adding a fixture changes declarations and corpus inputs, not runner source.
 
-Run one standalone condition with the frozen assignment:
+## Configure Experiments
+
+`experiments/config.yaml` is an `ExperimentManifest` with provider bindings, model profiles, an experiment spending ceiling, and an explicit ordered `runs` list. Every run declares:
+
+- a prepared fixture package and variant;
+- the exact agent-to-model assignment;
+- shared or isolated Git and optional shared team room;
+- release offsets, wall cutoff, optional per-agent token limit, and spend ceiling; and
+- secret-free labels for later analysis.
+
+Runs execute sequentially in manifest order; agents within one run execute concurrently. Shared runs expose ordinary peer Git and, when enabled, one public room. Isolated runs expose usable private Git and no peer evidence or activity. Git remains model-chosen and unmetered, and only the assigned origin's pushed `main:solver.py` can receive aggregate checking or final grading.
+
+The runner imposes no roles, turns, checkpoints, reports, consensus, branch workflow, commit cadence, or decoding method. It performs no automatic retry, replacement, merge, or recovery.
+
+## Validate And Run
+
+Validate the exact manifest, package digests and relationships, sandbox, and provider-free smoke path:
 
 ```bash
-pnpm puzzle:run -- \
-  --config experiments/config.yaml \
-  --condition CR \
-  --build artifacts/build \
-  --attempt-root artifacts/attempt
+pnpm puzzle:validate --config experiments/config.yaml
 ```
 
-Run calibration, then validation, under one local study root:
+Validation never resolves credentials, opens provider sessions, or creates a reusable receipt. Provider-backed execution repeats the same checks immediately before access and requires explicit spend authorization:
 
 ```bash
-pnpm puzzle:experiment -- \
-  --config experiments/config.yaml \
-  --phase calibration \
-  --study-root artifacts/study
-pnpm puzzle:experiment -- \
-  --config experiments/config.yaml \
-  --phase validation \
-  --study-root artifacts/study
+pnpm puzzle:experiment --config experiments/config.yaml \
+  --output artifacts/experiments/example --allow-spend true
+pnpm puzzle:experiment --config experiments/config.yaml \
+  --output artifacts/experiments/example-one --run theron-ware-shared-stationary --allow-spend true
 ```
 
-Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, then indexes only strict durable attempts in its `phase.json`. A frozen `session-infrastructure-error` stops the phase; one explicit `--replace <attempt-id>` command may append a cited replacement. Nothing retries automatically.
+A failed run retains its available trace and explicit status, then stops the experiment. Repeating it requires a new run ID in the manifest.
 
-After inspecting a frozen attempt, the researcher selects an agent identity. The evaluator uses that agent's assigned published Git repository:
+## Inspect And Re-evaluate
+
+Each run writes an append-only `trace.jsonl` and atomically publishes `run.json`. The `RunRecord` freezes the resolved secret-free configuration, fixture and sandbox identities, releases, requested and actual model identities, normalized usage, safe response summaries, tool and Git activity, frozen topology, infrastructure status, and evaluations.
+
+The final evaluator captures literal pushed `main`, materializes a Git-free solver tree, runs `python3 solver.py` against the complete ciphertext in an isolated container, and scores the reconstruction. Shared runs evaluate the one team origin; isolated runs evaluate every agent origin. Missing publication and missing integration remain results, and no best solver is selected.
+
+Re-evaluate a completed run without provider access:
 
 ```bash
-pnpm puzzle:evaluate -- \
-  --attempt artifacts/study/validation/attempts/<attempt-id> \
-  --workspace agent-1
+pnpm puzzle:evaluate --run-root artifacts/experiments/example/theron-ware-shared-stationary
 ```
 
-Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` captures only literal `refs/heads/main`, runs its pinned Git-free tree on ciphertext assembled from one frozen view of ordered host release records, cleans the capture, and only then reports the commit plus aggregate coverage and accuracy. The captured tree remains stable across later force-pushes. Local files, unpushed commits, other branches, agent-visible evidence mutations, private references, and agent-workspace siblings are absent from that execution.
-
-The manifest is the run-control interface. `schedule.releaseOffsetsMs` supplies six strictly increasing offsets beginning at zero, and `schedule.cutoffMs` must follow the final release. Set both `budgets.tokenBudgetPerAgent` and `budgets.totalTokenCeiling` to positive integers to enforce token termination, or set both to `null` for a wall-time-only run; provider-reported usage is still recorded. Monetary authorization remains explicit in either mode. The resolved values are frozen into each run's protocol and durable artifacts, so changing the next run means editing the manifest rather than changing runner code.
-
-When `communication.teamChannel` is `enabled`, shared-condition agents also receive one attempt-local, append-only public room through `post_team_message` and `read_team_messages`; accepted posts wake peers and are retained in the attempt trace. The runtime commits live message, Git, and release views synchronously and projects them through one ordered trace outbox, so trace I/O cannot delay scheduled evidence. Any projection failure invalidates the attempt. Isolated agents never receive that room or its activity. Set the field to `disabled` to restore the prior Git-only treatment.
-
-Final evaluation uses the same complete capture-execute-evaluate-clean operation, records the exact commit before execution, and publishes completion/results only after cleanup. Missing or invalid submissions remain explicit evaluation outcomes; trusted host-process, scorer, sandbox, mount, cleanup, and cancellation failures remain infrastructure failures. The solver writes only to bounded tmpfs; afterward the host extracts the declared regular file into hidden staging and atomically publishes it after validation. The sandbox mounts no frozen repository, agent workspace, evidence, reference corpus, oracle path, or writable host output. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
-
-Each attempt writes an append-only canonical `trace.jsonl` and a live-readable sibling `trace.log`. The text log renders each redacted event with its elapsed time, actor, event type, and indented data; watch it during a run with `tail -F artifacts/attempt/trace.log`. When a trace is reopened, the runner regenerates `trace.log` from `trace.jsonl`.
+Re-evaluation appends results atomically without changing frozen inputs or earlier evidence. A directory with a trace but no `run.json` is interrupted, not complete.
 
 ## Development Check
 
@@ -107,20 +92,10 @@ Each attempt writes an append-only canonical `trace.jsonl` and a live-readable s
 pnpm check
 ```
 
-The advisory Linux workflow runs this command for pull requests and pushes to `main`, then builds the sandbox image. It catches locked-dependency, formatting, lint, compile, and Dockerfile build failures without running unit suites, real-container behavior tests, or the offline fixture. It is intentionally not a required branch-protection check.
+Development checks are fast advisory feedback. Before paid or findings-bearing work, use `puzzle:validate` and let `puzzle:experiment` repeat exact config/package/sandbox validation before the explicit spend gate. No provider-free verification command needs credentials or a billable request.
 
-## Research Preflight
-
-Before spending money on a live experiment or producing findings for publication, commit the exact source, leave the worktree clean, start Docker, and run:
-
-```bash
-pnpm preflight
-```
-
-Preflight rebuilds the agent sandbox, runs the complete verification suite including real-container tests, and executes a fresh deterministic build-run-evaluate fixture without an external model call. Only then does it write `artifacts/preflight.json`, binding the tested commit to the immutable sandbox identity. Any failed rerun removes the old receipt.
-
-Generated runs belong under the ignored `artifacts/` directory. Provider-backed runs require the current clean checkout and sandbox to match `artifacts/preflight.json` before any model session begins. The matching receipt is copied into each attempt before its sessions start, while `attempt.json` independently records the sandbox actually used.
+Generated packages and runs belong under the ignored `artifacts/` directory.
 
 ## Scope
 
-Palimpsest deterministically constructs paired puzzle blocks and scores selected runs. Feature 013 establishes controlled information geometry, not a behavioral result. Live model decisions, provider serving behavior, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner does not certify collaboration or belief revision or provide a hardened public benchmark.
+Palimpsest deterministically constructs and scores word-substitution fixtures while preserving observable model behavior. It does not certify collaboration or belief revision, provide automatic causal analysis, exclude source recognition, or establish a general capability benchmark. Findings must remain scoped to the declared fixtures, treatments, models, and retained run records.

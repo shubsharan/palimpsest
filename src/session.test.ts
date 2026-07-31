@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decodeAttemptSummary } from "./artifacts.js";
-import { hashProtocolSnapshot } from "./condition.js";
 import type { ModelAdapter, ModelBinding, ModelSession, ModelTurn } from "./model.js";
 import { runAgentSession } from "./session.js";
-import { testAttemptSummary } from "./test-helpers.js";
 import type { AgentToolSet } from "./tools.js";
 
 function createTools(): AgentToolSet {
@@ -149,7 +146,7 @@ describe("model session lifecycle", () => {
     );
   });
 
-  it("keeps absent final text absent in the strict standalone attempt schema", async () => {
+  it("keeps absent final text absent in the session result", async () => {
     const result = await runAgentSession({
       agentId: "agent-1",
       model: binding(),
@@ -167,27 +164,7 @@ describe("model session lifecycle", () => {
     });
 
     expect(result).not.toHaveProperty("finalResponse");
-    const sessions = [
-      result,
-      { ...result, agentId: "agent-2" as const, model: binding("second-model") },
-      { ...result, agentId: "agent-3" as const, model: binding("third-model") },
-    ];
-    const base = testAttemptSummary();
-    const protocol = {
-      ...(base.protocol as Record<string, unknown>),
-      models: sessions.map((session) => ({
-        agentId: session.agentId,
-        model: session.model,
-      })),
-    };
-    const summary = decodeAttemptSummary({
-      ...base,
-      attemptId: "attempt-no-text",
-      protocol,
-      protocolDigest: hashProtocolSnapshot(protocol),
-      sessions,
-    });
-    expect(summary.sessions[0]).not.toHaveProperty("finalResponse");
+    expect(result).not.toHaveProperty("finalResponse");
   });
 
   it("stops at the cumulative model-token boundary and cancels the session", async () => {

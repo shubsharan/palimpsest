@@ -1,6 +1,7 @@
 from .manifest import (
     EvidenceStage,
-    PuzzleBuild,
+    FixturePackage,
+    ReferenceFile,
     ReferenceSource,
     RekeyTransition,
     TargetSource,
@@ -9,7 +10,8 @@ from .manifest import (
 
 __all__ = [
     "EvidenceStage",
-    "PuzzleBuild",
+    "FixturePackage",
+    "ReferenceFile",
     "ReferenceSource",
     "RekeyTransition",
     "TargetSource",

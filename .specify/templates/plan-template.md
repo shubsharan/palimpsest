@@ -40,8 +40,8 @@
 - **Environmental constraints, not workflow**: Visibility, staged evidence, resource cutoffs, and the canonical published solver are independent of model behavior; no turns, checkpoints, intermediate files, or Git sequence are imposed.
 - **Minimal reproducible mechanics**: Only generation, reveal, checking, scoring, and records needed by the current experiment are structured and deterministic.
 - **Observe outcomes honestly**: Model mistakes, workarounds, checker use, and collaboration choices remain scored observations; infrastructure failures are reported separately.
-- **Condition-defined native collaboration**: Team identity and non-treatment inputs are stable across communication-paired conditions; every origin has the same scaffold, only pushed main receives checking or grading, shared conditions expose peer Git and activity, isolated conditions expose only private Git, and Git operations remain unmetered.
-- **Risk-aligned verification**: Development CI is fast and advisory; paid or findings-bearing live experiments use a clean-checkout preflight whose source revision and sandbox identity remain with the attempt artifacts.
+- **Explicit native collaboration capabilities**: Team identity and non-treatment inputs remain stable across communication-paired runs; each run declares shared or isolated Git and team-room availability directly, and Git operations remain model-chosen and unmetered.
+- **Risk-aligned verification**: Development CI is fast and advisory; paid or findings-bearing experiments validate the exact manifest, fixture packages, sandbox, and a provider-free smoke run immediately before explicit spend authorization.
 
 ## Project Structure
 

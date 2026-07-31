@@ -5,13 +5,12 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import { parseDocument } from "yaml";
 
-import studySchema from "../experiments/schema.json" with { type: "json" };
-import { hashProtocolSnapshot, type ConditionId } from "./condition.js";
+import experimentSchema from "../experiments/schema.json" with { type: "json" };
 import type { AgentId } from "./model.js";
-import type { TeamChannelMode } from "./team-channel.js";
 
 export type ProviderDriver = "openai" | "anthropic" | "google" | "openai-compatible";
-export type StudyPhase = "calibration" | "validation";
+export type GitVisibility = "shared" | "isolated";
+export type TeamRoomAvailability = "enabled" | "disabled";
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
 
@@ -47,124 +46,73 @@ export interface ModelProfile {
   providerOptions: Record<string, JsonValue>;
 }
 
-export interface StudyModelDeclaration {
+export interface ModelDeclaration {
   provider: string;
   model: string;
   settings?: CommonModelSettings;
   providerOptions?: Record<string, JsonValue>;
 }
 
-export interface StudyBlock {
-  blockId: string;
-  phase: StudyPhase;
+export interface FixtureReference {
+  packagePath: string;
+  variant: string;
 }
 
-export interface AgentModelAssignment {
-  agentId: AgentId;
-  modelProfileId: string;
+export interface ExperimentCapabilities {
+  git: GitVisibility;
+  teamRoom: TeamRoomAvailability;
 }
 
-export interface StudySchedule {
+export interface ExperimentSchedule {
   releaseOffsetsMs: number[];
   cutoffMs: number;
 }
 
-export interface StudyBudgets {
-  tokenBudgetPerAgent: number | null;
-  perAttemptMonetaryCeilingCents: number;
-  totalTokenCeiling: number | null;
-  totalMonetaryCeilingCents: number;
+export interface ExperimentLimits {
+  tokenLimitPerAgent: number | null;
+  spendCeilingCents: number;
 }
 
-export interface StudyOrders {
-  calibration: ConditionId[];
-  validation: ConditionId[][];
+export interface ExperimentRun {
+  id: string;
+  fixture: FixtureReference;
+  assignment: Record<AgentId, string>;
+  capabilities: ExperimentCapabilities;
+  schedule: ExperimentSchedule;
+  limits: ExperimentLimits;
+  labels: JsonObject;
 }
 
-export interface StudyScoring {
-  metricId: "normalized-positional-word-v1";
-  reviewerSelectionId: "selected-workspace-main-snapshot-v1";
-}
-
-export interface StudyRubric {
-  rubricId: string;
-  path: string;
-  sha256: string;
-}
-
-export type AdjustableStudyField =
-  | "budgets.tokenBudgetPerAgent"
-  | "budgets.perAttemptMonetaryCeilingCents";
-
-export interface StudyFailurePolicy {
-  stopOnInfrastructureFailure: true;
-  automaticRetry: false;
-  replacement: "explicit-appended";
-  eligibleClassification: "session-infrastructure-error";
-}
-
-export interface StudyCommunication {
-  teamChannel: TeamChannelMode;
-}
-
-export interface StudyManifest {
-  schemaVersion: 4;
-  communication: StudyCommunication;
-  blocks: StudyBlock[];
-  assignment: AgentModelAssignment[];
+export interface ExperimentManifest {
+  schemaVersion: 1;
   providers: Record<string, ProviderConnection>;
-  models: Record<string, StudyModelDeclaration>;
-  schedule: StudySchedule;
-  budgets: StudyBudgets;
-  orders: StudyOrders;
-  scoring: StudyScoring;
-  rubric: StudyRubric;
-  adjustableFields: AdjustableStudyField[];
-  failurePolicy: StudyFailurePolicy;
+  models: Record<string, ModelDeclaration>;
+  totalSpendCeilingCents: number;
+  runs: ExperimentRun[];
 }
 
-export type ImmutableStudyManifest = Omit<StudyManifest, "budgets"> & {
-  budgets: Pick<StudyBudgets, "totalTokenCeiling" | "totalMonetaryCeilingCents">;
-};
-
-export interface PlannedStudyCell {
-  cellId: string;
-  phase: StudyPhase;
-  blockId: string;
-  condition: ConditionId;
-  conditionOrderPosition: number;
-  phasePosition: number;
+export interface ResolvedFixtureReference extends FixtureReference {
+  packagePath: string;
 }
 
-export interface ResolvedStudy {
-  schemaVersion: 4;
-  communication: Readonly<StudyCommunication>;
-  blocks: readonly StudyBlock[];
-  assignment: readonly AgentModelAssignment[];
+export interface ResolvedExperimentRun extends Omit<ExperimentRun, "fixture"> {
+  fixture: ResolvedFixtureReference;
+}
+
+export interface ResolvedExperiment {
+  schemaVersion: 1;
   providers: Readonly<Record<string, ProviderConnection>>;
   models: Readonly<Record<string, ModelProfile>>;
-  schedule: {
-    releaseOffsetsMs: readonly number[];
-    cutoffMs: number;
-  };
-  budgets: Readonly<StudyBudgets>;
-  orders: {
-    calibration: readonly ConditionId[];
-    validation: readonly (readonly ConditionId[])[];
-  };
-  scoring: Readonly<StudyScoring>;
-  rubric: Readonly<StudyRubric>;
-  rubricPath: string;
-  adjustableFields: readonly [
-    "budgets.tokenBudgetPerAgent",
-    "budgets.perAttemptMonetaryCeilingCents",
-  ];
-  failurePolicy: Readonly<StudyFailurePolicy>;
-  calibrationCells: readonly PlannedStudyCell[];
-  validationCells: readonly PlannedStudyCell[];
+  totalSpendCeilingCents: number;
+  runs: readonly ResolvedExperimentRun[];
   manifestDigest: string;
-  immutableManifestDigest: string;
-  immutableManifest: ImmutableStudyManifest;
+}
+
+/** The fixture fields needed to validate a run without coupling configuration to package internals. */
+export interface FixturePackageMetadata {
+  agentIds: readonly AgentId[];
+  stageCount: number;
+  variants: Readonly<Record<string, unknown>>;
 }
 
 const ajv = new Ajv2020({
@@ -183,29 +131,7 @@ ajv.addFormat("uri", {
     }
   },
 });
-const validateSchema: ValidateFunction = ajv.compile(studySchema);
-
-const EXPECTED_BLOCKS = [
-  { blockId: "calibration-theron-ware", phase: "calibration" },
-  { blockId: "validation-odd-women", phase: "validation" },
-  { blockId: "validation-pointed-firs", phase: "validation" },
-  { blockId: "validation-custom-country", phase: "validation" },
-  { blockId: "validation-woodlanders", phase: "validation" },
-] as const satisfies readonly StudyBlock[];
-
-const EXPECTED_CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
-const EXPECTED_VALIDATION_ORDERS = [
-  ["CS", "CR", "IR", "IS"],
-  ["CR", "IS", "CS", "IR"],
-  ["IS", "IR", "CR", "CS"],
-  ["IR", "CS", "IS", "CR"],
-] as const;
-const EXPECTED_ADJUSTABLE_FIELDS = [
-  "budgets.tokenBudgetPerAgent",
-  "budgets.perAttemptMonetaryCeilingCents",
-] as const;
-const PRIMARY_CELL_COUNT = 20;
-const AGENT_COUNT = 3;
+const validateSchema: ValidateFunction = ajv.compile(experimentSchema);
 
 function structuralError(error: ErrorObject): string {
   let path = error.instancePath || "/";
@@ -218,29 +144,29 @@ function structuralError(error: ErrorObject): string {
   return `${path} ${error.message ?? "is invalid"}`;
 }
 
-export function parseStudyYaml(source: string): unknown {
+export function parseExperimentYaml(source: string): unknown {
   const document = parseDocument(source, {
     schema: "core",
     merge: false,
     uniqueKeys: true,
   });
   if (document.errors.length > 0) {
-    throw new Error(`Study YAML is invalid: ${document.errors[0]!.message}`);
+    throw new Error(`Experiment YAML is invalid: ${document.errors[0]!.message}`);
   }
   try {
     return document.toJS({ json: true, maxAliasCount: 0 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Study YAML is invalid: ${detail}`);
+    throw new Error(`Experiment YAML is invalid: ${detail}`);
   }
 }
 
-export function validateStudyManifest(value: unknown): StudyManifest {
+export function validateExperimentManifest(value: unknown): ExperimentManifest {
   if (!validateSchema(value)) {
     const errors = validateSchema.errors?.map(structuralError).join("; ") ?? "unknown error";
-    throw new Error(`Study manifest is invalid: ${errors}`);
+    throw new Error(`Experiment manifest is invalid: ${errors}`);
   }
-  return value as StudyManifest;
+  return value as ExperimentManifest;
 }
 
 function normalizedKey(key: string): string {
@@ -287,7 +213,11 @@ function secretBearingKey(key: string): boolean {
   );
 }
 
-function validateJsonValue(value: unknown, path: string): asserts value is JsonValue {
+function validateJsonValue(
+  value: unknown,
+  path: string,
+  rejectRequestControls: boolean,
+): asserts value is JsonValue {
   if (
     value === null ||
     typeof value === "string" ||
@@ -298,7 +228,7 @@ function validateJsonValue(value: unknown, path: string): asserts value is JsonV
   }
   if (Array.isArray(value)) {
     for (const [index, child] of value.entries()) {
-      validateJsonValue(child, `${path}[${String(index)}]`);
+      validateJsonValue(child, `${path}[${String(index)}]`, rejectRequestControls);
     }
     return;
   }
@@ -313,15 +243,15 @@ function validateJsonValue(value: unknown, path: string): asserts value is JsonV
     const childPath = `${path}.${key}`;
     const normalized = normalizedKey(key);
     if (secretBearingKey(key)) {
-      throw new Error(`${childPath} is a secret-bearing provider option.`);
+      throw new Error(`${childPath} is secret-bearing.`);
     }
-    if (requestControlKeys.has(normalized)) {
+    if (rejectRequestControls && requestControlKeys.has(normalized)) {
       throw new Error(`${childPath} cannot override model request control.`);
     }
-    if (normalized === "fallback" || normalized === "fallbacks") {
+    if (rejectRequestControls && (normalized === "fallback" || normalized === "fallbacks")) {
       throw new Error(`${childPath} cannot configure provider fallback.`);
     }
-    validateJsonValue(child, childPath);
+    validateJsonValue(child, childPath, rejectRequestControls);
   }
 }
 
@@ -329,7 +259,16 @@ export function validateProviderOptions(
   value: Readonly<Record<string, unknown>>,
   path = "providerOptions",
 ): asserts value is Readonly<Record<string, JsonValue>> {
-  validateJsonValue(value, path);
+  try {
+    validateJsonValue(value, path, true);
+  } catch (error) {
+    if (error instanceof Error && error.message.endsWith(" is secret-bearing.")) {
+      throw new Error(
+        error.message.replace(/ is secret-bearing\.$/, " is a secret-bearing provider option."),
+      );
+    }
+    throw error;
+  }
 }
 
 function safeInteger(value: unknown, path: string, minimum = 0): number {
@@ -342,13 +281,16 @@ function safeInteger(value: unknown, path: string, minimum = 0): number {
 export function validateRunSchedule(
   releaseOffsetsMs: readonly number[],
   cutoffMs: number,
-  expectedStageCount = 6,
+  expectedStageCount?: number,
   path = "schedule",
 ): void {
-  if (releaseOffsetsMs.length !== expectedStageCount) {
+  if (expectedStageCount !== undefined && releaseOffsetsMs.length !== expectedStageCount) {
     throw new Error(
       `${path}.releaseOffsetsMs must contain exactly ${String(expectedStageCount)} stage offsets.`,
     );
+  }
+  if (releaseOffsetsMs.length === 0) {
+    throw new Error(`${path}.releaseOffsetsMs must contain at least one stage offset.`);
   }
   for (const [index, offset] of releaseOffsetsMs.entries()) {
     safeInteger(offset, `${path}.releaseOffsetsMs[${String(index)}]`);
@@ -365,28 +307,8 @@ export function validateRunSchedule(
   }
 }
 
-function equalJson(left: unknown, right: unknown): boolean {
-  return hashProtocolSnapshot(left) === hashProtocolSnapshot(right);
-}
-
-function assertExactProtocol(config: StudyManifest): void {
-  if (!equalJson(config.blocks, EXPECTED_BLOCKS)) {
-    throw new Error("Study manifest blocks must match the exact registered five-block order.");
-  }
-  if (
-    !equalJson(config.orders.calibration, EXPECTED_CALIBRATION_ORDER) ||
-    !equalJson(config.orders.validation, EXPECTED_VALIDATION_ORDERS)
-  ) {
-    throw new Error("Study manifest condition orders must match the exact frozen matrix.");
-  }
-  validateRunSchedule(config.schedule.releaseOffsetsMs, config.schedule.cutoffMs);
-  if (!equalJson(config.adjustableFields, EXPECTED_ADJUSTABLE_FIELDS)) {
-    throw new Error("Study manifest adjustableFields must contain exactly the two budget paths.");
-  }
-}
-
-function assertReferences(config: StudyManifest): void {
-  for (const [name, provider] of Object.entries(config.providers)) {
+function assertProviderReferences(manifest: ExperimentManifest): void {
+  for (const [name, provider] of Object.entries(manifest.providers)) {
     if (provider.driver !== "openai-compatible") continue;
     const endpoint = new URL(provider.baseURL);
     if (endpoint.username.length > 0 || endpoint.password.length > 0) {
@@ -399,80 +321,69 @@ function assertReferences(config: StudyManifest): void {
       );
     }
   }
-  for (const [name, model] of Object.entries(config.models)) {
-    if (!(model.provider in config.providers)) {
+  for (const [name, model] of Object.entries(manifest.models)) {
+    if (!(model.provider in manifest.providers)) {
       throw new Error(`models.${name}.provider references unknown provider ${model.provider}.`);
     }
     validateProviderOptions(model.providerOptions ?? {}, `models.${name}.providerOptions`);
   }
-  for (const [index, assignment] of config.assignment.entries()) {
-    if (!(assignment.modelProfileId in config.models)) {
-      throw new Error(
-        `assignment[${String(index)}].modelProfileId references unknown model profile ${assignment.modelProfileId}.`,
-      );
+}
+
+function assertRuns(manifest: ExperimentManifest): void {
+  const ids = new Set<string>();
+  let authorizedSpend = 0;
+  for (const [index, run] of manifest.runs.entries()) {
+    const path = `runs[${String(index)}]`;
+    if (ids.has(run.id)) {
+      throw new Error(`${path}.id duplicates experiment run id ${run.id}.`);
     }
-  }
-}
-
-function multiplyAuthorization(left: number, right: number, path: string): number {
-  const value = left * right;
-  if (!Number.isSafeInteger(value)) {
-    throw new Error(`${path} must be a safe integer.`);
-  }
-  return value;
-}
-
-function assertAuthorizationCeilings(config: StudyManifest): void {
-  const tokenBudget =
-    config.budgets.tokenBudgetPerAgent === null
-      ? null
-      : safeInteger(config.budgets.tokenBudgetPerAgent, "budgets.tokenBudgetPerAgent", 1);
-  const attemptMoney = safeInteger(
-    config.budgets.perAttemptMonetaryCeilingCents,
-    "budgets.perAttemptMonetaryCeilingCents",
-  );
-  const totalTokens =
-    config.budgets.totalTokenCeiling === null
-      ? null
-      : safeInteger(config.budgets.totalTokenCeiling, "budgets.totalTokenCeiling", 1);
-  const totalMoney = safeInteger(
-    config.budgets.totalMonetaryCeilingCents,
-    "budgets.totalMonetaryCeilingCents",
-  );
-  if ((tokenBudget === null) !== (totalTokens === null)) {
-    throw new Error(
-      "budgets.tokenBudgetPerAgent and budgets.totalTokenCeiling must both be numeric or both be null.",
-    );
-  }
-  const authorizedTokens =
-    tokenBudget === null
-      ? null
-      : multiplyAuthorization(
-          multiplyAuthorization(tokenBudget, AGENT_COUNT, "Primary authorized token total"),
-          PRIMARY_CELL_COUNT,
-          "Primary authorized token total",
+    ids.add(run.id);
+    for (const [agentId, modelProfileId] of Object.entries(run.assignment)) {
+      if (!(modelProfileId in manifest.models)) {
+        throw new Error(
+          `${path}.assignment.${agentId} references unknown model profile ${modelProfileId}.`,
         );
-  const authorizedMoney = multiplyAuthorization(
-    attemptMoney,
-    PRIMARY_CELL_COUNT,
-    "Primary authorized monetary total",
-  );
-  if (authorizedTokens !== null && totalTokens !== null && authorizedTokens > totalTokens) {
-    throw new Error(
-      `budgets.totalTokenCeiling must cover the ${String(authorizedTokens)}-token primary authorization.`,
+      }
+    }
+    validateRunSchedule(
+      run.schedule.releaseOffsetsMs,
+      run.schedule.cutoffMs,
+      undefined,
+      `${path}.schedule`,
     );
+    if (run.limits.tokenLimitPerAgent !== null) {
+      safeInteger(run.limits.tokenLimitPerAgent, `${path}.limits.tokenLimitPerAgent`, 1);
+    }
+    const runSpend = safeInteger(run.limits.spendCeilingCents, `${path}.limits.spendCeilingCents`);
+    authorizedSpend += runSpend;
+    if (!Number.isSafeInteger(authorizedSpend)) {
+      throw new Error("The sum of run spend ceilings must be a safe integer.");
+    }
+    validateJsonValue(run.labels, `${path}.labels`, false);
   }
-  if (authorizedMoney > totalMoney) {
+  const totalSpend = safeInteger(manifest.totalSpendCeilingCents, "totalSpendCeilingCents");
+  if (authorizedSpend > totalSpend) {
     throw new Error(
-      `budgets.totalMonetaryCeilingCents must cover the ${String(authorizedMoney)}-cent primary authorization.`,
+      `totalSpendCeilingCents must cover the ${String(authorizedSpend)}-cent run authorization.`,
     );
   }
 }
 
-function assertSemanticRelationships(config: StudyManifest): void {
-  assertExactProtocol(config);
-  assertReferences(config);
-  assertAuthorizationCeilings(config);
+function resolvedPackagePath(repositoryRoot: string, configuredPath: string, path: string): string {
+  if (isAbsolute(configuredPath)) {
+    throw new Error(`${path} must be relative to the repository.`);
+  }
+  const absolutePath = resolve(repositoryRoot, configuredPath);
+  const difference = relative(repositoryRoot, absolutePath);
+  if (
+    difference.length === 0 ||
+    difference === ".." ||
+    difference.startsWith(`..${sep}`) ||
+    isAbsolute(difference)
+  ) {
+    throw new Error(`${path} must remain inside the repository.`);
+  }
+  return absolutePath;
 }
 
 function cloneProvider(provider: ProviderConnection): ProviderConnection {
@@ -485,7 +396,7 @@ function cloneProvider(provider: ProviderConnection): ProviderConnection {
   };
 }
 
-function cloneModels(models: Record<string, StudyModelDeclaration>): Record<string, ModelProfile> {
+function cloneModels(models: Record<string, ModelDeclaration>): Record<string, ModelProfile> {
   return Object.fromEntries(
     Object.entries(models).map(([name, model]) => [
       name,
@@ -499,68 +410,17 @@ function cloneModels(models: Record<string, StudyModelDeclaration>): Record<stri
   );
 }
 
-function cellsFor(
-  phase: StudyPhase,
-  blocks: readonly StudyBlock[],
-  orders: readonly (readonly ConditionId[])[],
-): PlannedStudyCell[] {
-  let phasePosition = 0;
-  return blocks.flatMap((block, blockIndex) =>
-    orders[blockIndex]!.map((condition, conditionIndex) => {
-      phasePosition += 1;
-      return {
-        cellId: `${phase}-${String(phasePosition)}-${block.blockId}-${condition}`,
-        phase,
-        blockId: block.blockId,
-        condition,
-        conditionOrderPosition: conditionIndex + 1,
-        phasePosition,
-      };
-    }),
-  );
-}
-
-function immutableProjection(manifest: StudyManifest): ImmutableStudyManifest {
-  return {
-    ...structuredClone(manifest),
-    budgets: {
-      totalTokenCeiling: manifest.budgets.totalTokenCeiling,
-      totalMonetaryCeilingCents: manifest.budgets.totalMonetaryCeilingCents,
-    },
-  };
-}
-
-function rubricPath(repositoryRoot: string, configuredPath: string): string {
-  if (isAbsolute(configuredPath)) {
-    throw new Error("rubric.path must be relative to the repository.");
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`)
+      .join(",")}}`;
   }
-  const path = resolve(repositoryRoot, configuredPath);
-  const difference = relative(repositoryRoot, path);
-  if (
-    difference.length === 0 ||
-    difference === ".." ||
-    difference.startsWith(`..${sep}`) ||
-    isAbsolute(difference)
-  ) {
-    throw new Error("rubric.path must remain inside the repository.");
-  }
-  return path;
-}
-
-async function verifyRubric(repositoryRoot: string, rubric: StudyRubric): Promise<string> {
-  const path = rubricPath(repositoryRoot, rubric.path);
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(path);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`rubric.path could not be read: ${detail}`);
-  }
-  const actualDigest = createHash("sha256").update(bytes).digest("hex");
-  if (actualDigest !== rubric.sha256) {
-    throw new Error("Study rubric digest does not match the declared rubric bytes.");
-  }
-  return path;
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) throw new Error("Cannot hash a non-JSON experiment value.");
+  return encoded;
 }
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -570,64 +430,78 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   return Object.freeze(value);
 }
 
-export async function resolveStudy(
+export function validateRunAgainstFixture(
+  run: ExperimentRun | ResolvedExperimentRun,
+  fixture: FixturePackageMetadata,
+): void {
+  safeInteger(fixture.stageCount, "fixture.stageCount", 1);
+  const assignedAgents = Object.keys(run.assignment).sort();
+  const fixtureAgents = [...fixture.agentIds].sort();
+  if (
+    assignedAgents.length !== fixtureAgents.length ||
+    assignedAgents.some((agentId, index) => agentId !== fixtureAgents[index])
+  ) {
+    throw new Error(
+      `Run ${run.id} assignment must contain exactly the fixture agents: ${fixtureAgents.join(", ")}.`,
+    );
+  }
+  if (!(run.fixture.variant in fixture.variants)) {
+    throw new Error(`Run ${run.id} references unknown fixture variant ${run.fixture.variant}.`);
+  }
+  validateRunSchedule(
+    run.schedule.releaseOffsetsMs,
+    run.schedule.cutoffMs,
+    fixture.stageCount,
+    `Run ${run.id} schedule`,
+  );
+}
+
+export function resolveExperiment(
   value: unknown,
   repositoryRoot = resolve("."),
-): Promise<ResolvedStudy> {
-  const manifest = structuredClone(validateStudyManifest(value));
-  assertSemanticRelationships(manifest);
+): ResolvedExperiment {
+  const manifest = structuredClone(validateExperimentManifest(value));
+  assertProviderReferences(manifest);
+  assertRuns(manifest);
   const root = resolve(repositoryRoot);
-  const resolvedRubricPath = await verifyRubric(root, manifest.rubric);
-  const immutableManifest = immutableProjection(manifest);
-  const calibrationBlocks = manifest.blocks.filter((block) => block.phase === "calibration");
-  const validationBlocks = manifest.blocks.filter((block) => block.phase === "validation");
-  const calibrationCells = cellsFor("calibration", calibrationBlocks, [
-    manifest.orders.calibration,
-  ]);
-  const validationCells = cellsFor("validation", validationBlocks, manifest.orders.validation);
 
   return deepFreeze({
-    schemaVersion: 4,
-    communication: { ...manifest.communication },
-    blocks: manifest.blocks.map((block) => ({ ...block })),
-    assignment: manifest.assignment.map((assignment) => ({ ...assignment })),
+    schemaVersion: 1,
     providers: Object.fromEntries(
       Object.entries(manifest.providers).map(([name, provider]) => [name, cloneProvider(provider)]),
     ),
     models: cloneModels(manifest.models),
-    schedule: {
-      releaseOffsetsMs: [...manifest.schedule.releaseOffsetsMs],
-      cutoffMs: manifest.schedule.cutoffMs,
-    },
-    budgets: { ...manifest.budgets },
-    orders: {
-      calibration: [...manifest.orders.calibration],
-      validation: manifest.orders.validation.map((order) => [...order]),
-    },
-    scoring: { ...manifest.scoring },
-    rubric: { ...manifest.rubric },
-    rubricPath: resolvedRubricPath,
-    adjustableFields: [...EXPECTED_ADJUSTABLE_FIELDS],
-    failurePolicy: { ...manifest.failurePolicy },
-    calibrationCells,
-    validationCells,
-    manifestDigest: hashProtocolSnapshot(manifest),
-    immutableManifestDigest: hashProtocolSnapshot(immutableManifest),
-    immutableManifest,
+    totalSpendCeilingCents: manifest.totalSpendCeilingCents,
+    runs: manifest.runs.map((run, index) => ({
+      id: run.id,
+      fixture: {
+        packagePath: resolvedPackagePath(
+          root,
+          run.fixture.packagePath,
+          `runs[${String(index)}].fixture.packagePath`,
+        ),
+        variant: run.fixture.variant,
+      },
+      assignment: { ...run.assignment },
+      capabilities: { ...run.capabilities },
+      schedule: {
+        releaseOffsetsMs: [...run.schedule.releaseOffsetsMs],
+        cutoffMs: run.schedule.cutoffMs,
+      },
+      limits: { ...run.limits },
+      labels: structuredClone(run.labels),
+    })),
+    manifestDigest: createHash("sha256").update(canonicalJson(manifest)).digest("hex"),
   });
 }
 
-export function expandPhase(study: ResolvedStudy, phase: StudyPhase): readonly PlannedStudyCell[] {
-  return phase === "calibration" ? study.calibrationCells : study.validationCells;
+export async function loadExperimentManifest(path: string): Promise<ExperimentManifest> {
+  return validateExperimentManifest(parseExperimentYaml(await readFile(path, "utf8")));
 }
 
-export async function loadStudyManifest(path: string): Promise<StudyManifest> {
-  return validateStudyManifest(parseStudyYaml(await readFile(path, "utf8")));
-}
-
-export async function loadResolvedStudy(
+export async function loadResolvedExperiment(
   path: string,
   repositoryRoot = resolve("."),
-): Promise<ResolvedStudy> {
-  return resolveStudy(await loadStudyManifest(path), repositoryRoot);
+): Promise<ResolvedExperiment> {
+  return resolveExperiment(await loadExperimentManifest(path), repositoryRoot);
 }

@@ -1,16 +1,16 @@
 <!--
 Sync Impact Report
-- Version change: 5.0.0 -> 6.0.0
+- Version change: 6.0.0 -> 7.0.0
 - Modified principles:
-  - Puzzle Behavior Before Process: permits one declared final solver interface
-  - Environmental Constraints, Not Workflow: permits one canonical published solver entrypoint
-  - Condition-Defined Native Collaboration: aligns checking and grading with pushed Git state
+  - Minimal Reproducible Mechanics: names fixture packages and run records as the lean durable boundary
+- Modified governance:
+  - Development Workflow and Quality Gates: replaces revision-bound preflight receipts with exact experiment validation and explicit spend authorization
 - Added sections: none
 - Removed sections: none
 - Templates:
-  - updated: .specify/templates/plan-template.md
-  - updated: .specify/templates/spec-template.md
-  - updated: .specify/templates/tasks-template.md
+  - pending in Feature 021: .specify/templates/plan-template.md
+  - pending in Feature 021: .specify/templates/spec-template.md
+  - pending in Feature 021: .specify/templates/tasks-template.md
   - reviewed, no change: .specify/templates/checklist-template.md
   - reviewed, no change: .specify/templates/constitution-template.md
   - command templates absent; installed extension commands reviewed, no change
@@ -44,7 +44,7 @@ Rationale: A single shared deliverable aligns feedback with evaluation. Leaving 
 
 ### III. Minimal Reproducible Mechanics
 
-Puzzle generation, staged reveal, partial re-keying, checker results, and final scoring MUST be deterministic for fixed scientific inputs. Public interfaces and stored records MUST be only as structured as required to run, inspect, and score an attempt. New schemas, manifests, hashes, replay systems, isolation layers, or services MUST solve a current experimental need rather than anticipate a hypothetical release or adversary.
+Puzzle generation, staged reveal, partial re-keying, checker results, and final scoring MUST be deterministic for fixed scientific inputs. Public interfaces and stored records MUST be only as structured as required to prepare a fixture, run an experiment, inspect model behavior, and score every canonical origin. One validated fixture package, one explicit experiment manifest, one append-only trace, and one run record are the default durable boundary. New schemas, hashes, replay systems, isolation layers, or services MUST solve a current experimental need rather than anticipate a hypothetical release or adversary.
 
 Rationale: Reproducible puzzle mechanics matter; exhaustive infrastructure provenance does not improve the model behavior being observed.
 
@@ -79,8 +79,8 @@ Rationale: Communication availability remains the treatment, while a common publ
 4. Each plan MUST pass the Constitution Check before research and after design. Any new process requirement or safeguard requires a concrete current experimental need and an explanation of why a simpler observation is insufficient.
 5. Tests MUST cover deterministic mechanics, agent independence, condition-defined communication visibility, identical scaffolded origins, published-solver checking, identical non-treatment inputs, resource cutoffs, checker disclosure, scoring, and the absence of prescribed coordination workflow. Verification MUST be proportional to the claim; red-team and replay suites are not default completion requirements.
 6. Automated development checks MUST provide fast advisory feedback on proposed changes and the primary branch. They MAY build the sandbox definition as a smoke check, but MUST NOT be required branch-protection gates or run the real-container behavior suite or deterministic end-to-end fixture.
-7. A clean-checkout `pnpm preflight` MUST pass immediately before any live-model experiment that spends money or may support published findings. It MUST rebuild and verify the agent sandbox, exercise the fresh deterministic build-run-evaluate path without external model calls, and bind the successful receipt to the tested source revision and sandbox identity.
-8. Paid attempt artifacts MUST retain the matching preflight provenance. Publication claims MUST identify the tested runner revision and experimental sandbox from those artifacts. Exact host tool patch versions MUST NOT substitute for behavior checks or agent-visible environment identity.
+7. Immediately before any live-model experiment that spends money or may support published findings, the runner MUST validate the exact experiment manifest and every referenced fixture package, verify their digests and relationships, probe the configured sandbox, and complete a provider-free smoke path. The operator MUST explicitly authorize spend before any provider session opens; a reusable repository or clean-checkout receipt MUST NOT substitute for these checks.
+8. Each paid run record MUST retain the resolved secret-free configuration, fixture-package identity, sandbox identity, and validation outcome used at execution. Publication claims MUST identify those experimental inputs and the runner used to execute them. Exact host tool patch versions MUST NOT substitute for behavior checks or agent-visible environment identity.
 
 ## Governance
 
@@ -90,4 +90,4 @@ Amendments require explicit rationale, affected principles and artifacts, compat
 
 Feature plans and pull requests MUST record constitution compliance. Reviewers MUST check the actual agent prompt, tool surface, runner behavior, and produced trace rather than relying on intended neutrality. Exceptions require an owner, scope, and removal condition; no exception may justify overstating empirical evidence.
 
-**Version**: 6.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-29
+**Version**: 7.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-07-31

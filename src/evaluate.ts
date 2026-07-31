@@ -1,23 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { basename, dirname, join, posix, resolve, win32 } from "node:path";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 
-import {
-  type AggregateScore,
-  decodeAggregateScore,
-  decodeAttemptSummary,
-  decodeBuildManifest,
-  decodeEvaluationRecord,
-  selectBuildVariant,
-} from "./artifacts.js";
-import type { GitRepositoryId } from "./git.js";
-import { isAgentId, type AgentId } from "./model.js";
-import {
-  type CommandSandbox,
-  InfrastructureError,
-  type SandboxCommandResult,
-} from "./sandbox/contracts.js";
+import { loadFixturePackage, selectFixtureVariant } from "./fixture-package.js";
 import { requiredFlag } from "./flags.js";
-import { createDockerCommandSandbox } from "./sandbox/container.js";
+import type { FrozenGitEnvironment, GitRepository } from "./git.js";
+import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
 import {
   PUBLISHED_MAIN_REF,
   PublishedSolverSubmissionError,
@@ -25,312 +12,243 @@ import {
   SOLVER_COMMAND,
   SOLVER_OUTPUT_PATH,
 } from "./published-solver.js";
-
-import { appendTraceEvent, readJsonObject, runPythonJson } from "./python.js";
+import type { RunEvaluation, RunRecord } from "./records.js";
+import { createDockerCommandSandbox } from "./sandbox/container.js";
+import type { CommandSandbox, SandboxCommandResult } from "./sandbox/contracts.js";
 import { verifyTree } from "./seal.js";
 
-export type EvaluationStatus = "scored" | "not-runnable" | "no-output" | "execution-error";
+const EVALUATION_TIMEOUT_MS = 30_000;
 
-export interface EvaluationSelection {
-  workspace: AgentId;
-  repositoryId: GitRepositoryId;
-  ref: typeof PUBLISHED_MAIN_REF;
-  commit: string;
-  command: string;
-  outputPath: string;
-  notes?: string;
-}
+type AggregateScore = NonNullable<RunEvaluation["score"]>;
 
-export type EvaluationSelectionRequest = Omit<EvaluationSelection, "ref" | "commit">;
-
-export type ScoreHook = (request: {
-  outputPath: string;
-  ciphertextPath: string;
-}) => Promise<AggregateScore>;
-
-export interface EvaluationResult {
-  status: EvaluationStatus;
-  selection?: EvaluationSelection;
-  execution?: SandboxCommandResult;
-  outputPath?: string;
-  score?: AggregateScore;
-  error?: string;
-}
-
-export type EvaluationObserver = (kind: string, data: unknown) => void | Promise<void>;
-
-export interface EvaluatePuzzleOptions {
+export interface EvaluateCanonicalOriginsOptions {
   root: string;
-  attempt: string;
-  workspace?: AgentId;
-  notes?: string;
-}
-
-export { SOLVER_COMMAND, SOLVER_OUTPUT_PATH };
-
-function withSelection(
-  status: EvaluationStatus,
-  selection: EvaluationSelection | undefined,
-  extra: Omit<EvaluationResult, "status" | "selection"> = {},
-): EvaluationResult {
-  return selection === undefined ? { status, ...extra } : { status, selection, ...extra };
-}
-
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-  });
-}
-
-async function writeEvaluationResult(
-  evaluationRoot: string,
-  value: EvaluationResult,
-): Promise<EvaluationResult> {
-  const result = decodeEvaluationRecord(value);
-  await writeJson(join(evaluationRoot, "result.json"), result);
-  return result;
-}
-
-function validateReviewerSelection(selection: EvaluationSelectionRequest | undefined): void {
-  if (
-    selection !== undefined &&
-    (!isAgentId(selection.workspace) ||
-      (selection.repositoryId !== "shared" && !isAgentId(selection.repositoryId)))
-  ) {
-    throw new Error("Reviewer selection must identify one published-main repository.");
-  }
-  if (selection?.command !== undefined && selection.command.trim().length === 0) {
-    throw new Error("Reviewer command must contain non-whitespace shell source.");
-  }
-  if (selection?.notes !== undefined && selection.notes.trim().length === 0) {
-    throw new Error("Reviewer notes must contain non-whitespace text.");
-  }
-  if (selection !== undefined) {
-    const parts = selection.outputPath.split(/[\\/]/);
-    if (
-      posix.isAbsolute(selection.outputPath) ||
-      win32.isAbsolute(selection.outputPath) ||
-      selection.outputPath.includes("\0") ||
-      parts.some((part) => part.length === 0 || part === "." || part === "..")
-    ) {
-      throw new Error("Reviewer outputPath must be a safe relative path.");
-    }
-  }
-}
-
-export async function evaluateFrozenAttempt(options: {
-  frozenGitPath: string;
-  evaluationRoot: string;
-  ciphertextPath: string;
+  runRoot: string;
+  fixtureRoot: string;
+  variantId: string;
+  frozen: FrozenGitEnvironment;
   sandbox: CommandSandbox;
-  selection: EvaluationSelectionRequest | undefined;
-  score: ScoreHook;
-  observe?: EvaluationObserver;
-  timeoutMs?: number;
-}): Promise<EvaluationResult> {
-  validateReviewerSelection(options.selection);
-  await mkdir(options.evaluationRoot, { recursive: false });
-  if (options.selection === undefined || options.selection.command.trim().length === 0) {
-    await writeJson(join(options.evaluationRoot, "selection.json"), {
-      selectedAt: new Date().toISOString(),
-      selection: null,
-    });
-    await options.observe?.("reviewer.selection", { selection: null });
-    const result = withSelection("not-runnable", undefined);
-    return writeEvaluationResult(options.evaluationRoot, result);
+  tracePath?: string;
+}
+
+function decodeAggregateScore(value: Record<string, unknown>): AggregateScore {
+  const matchedWords = value.matchedWords;
+  const totalWords = value.totalWords;
+  const coverage = value.coverage;
+  const accuracy = value.accuracy;
+  if (
+    !Number.isSafeInteger(matchedWords) ||
+    !Number.isSafeInteger(totalWords) ||
+    (matchedWords as number) < 0 ||
+    (totalWords as number) < 0 ||
+    (matchedWords as number) > (totalWords as number) ||
+    typeof coverage !== "number" ||
+    !Number.isFinite(coverage) ||
+    coverage < 0 ||
+    coverage > 1 ||
+    typeof accuracy !== "number" ||
+    !Number.isFinite(accuracy) ||
+    accuracy < 0 ||
+    accuracy > 1
+  ) {
+    throw new Error("Evaluator returned an invalid aggregate score.");
+  }
+  return {
+    matchedWords: matchedWords as number,
+    totalWords: totalWords as number,
+    coverage,
+    accuracy,
+  };
+}
+
+function assertCanonicalTopology(frozen: FrozenGitEnvironment, agentIds: readonly string[]): void {
+  if (frozen.communicationMode === "shared") {
+    const repository = frozen.repositories[0];
+    if (
+      frozen.repositories.length !== 1 ||
+      repository?.repositoryId !== "shared" ||
+      repository.agentIds.join("\0") !== agentIds.join("\0")
+    ) {
+      throw new Error(
+        "Shared frozen Git must contain one canonical origin for every fixture agent.",
+      );
+    }
+    return;
   }
 
-  const selectionRequest = options.selection;
+  if (
+    frozen.repositories.map(({ repositoryId }) => repositoryId).join("\0") !==
+      agentIds.join("\0") ||
+    frozen.repositories.some(
+      (repository) =>
+        repository.agentIds.length !== 1 || repository.agentIds[0] !== repository.repositoryId,
+    )
+  ) {
+    throw new Error("Isolated frozen Git must contain one canonical origin per fixture agent.");
+  }
+}
+
+function executionError(execution: SandboxCommandResult, fallback: string): string {
+  if (execution.timedOut) return "Published solver timed out.";
+  if (execution.exitCode !== 0) {
+    return `Published solver exited ${String(execution.exitCode)}.`;
+  }
+  return fallback;
+}
+
+async function evaluateOrigin(options: {
+  root: string;
+  runRoot: string;
+  fixtureRoot: string;
+  ciphertextPath: string;
+  repository: GitRepository;
+  evaluationRoot: string;
+  sandbox: CommandSandbox;
+}): Promise<RunEvaluation> {
   const outputRoot = join(options.evaluationRoot, "output");
-  const deadline = performance.now() + (options.timeoutMs ?? 30_000);
-  let recordedSelection = false;
-  let selection: EvaluationSelection | undefined;
+  await mkdir(outputRoot, { recursive: true });
   try {
-    await mkdir(outputRoot);
     const published = await runPublishedSolver({
-      repositoryPath: options.frozenGitPath,
+      repositoryPath: options.repository.path,
       ciphertextPath: options.ciphertextPath,
       outputRoot,
       sandbox: options.sandbox,
-      command: selectionRequest.command,
-      outputPath: selectionRequest.outputPath,
-      deadline,
-      onCaptured: async (identity) => {
-        selection = {
-          ...selectionRequest,
-          ref: identity.ref,
-          commit: identity.commit,
-        };
-        await writeJson(join(options.evaluationRoot, "selection.json"), {
-          selectedAt: new Date().toISOString(),
-          selection,
-        });
-        recordedSelection = true;
-        await options.observe?.("reviewer.selection", { selection });
-        await options.observe?.("evaluation.started", {
-          command: selection.command,
-          outputPath: selection.outputPath,
-        });
-      },
+      command: SOLVER_COMMAND,
+      outputPath: SOLVER_OUTPUT_PATH,
+      deadline: performance.now() + EVALUATION_TIMEOUT_MS,
       evaluate: async ({ outputPath }) =>
         decodeAggregateScore(
-          await options.score({
+          await runPythonJson(options.root, "palimpsest.evaluation.score", [
+            "--truth",
+            join(options.fixtureRoot, "oracle", "plaintext.txt"),
+            "--candidate",
             outputPath,
-            ciphertextPath: options.ciphertextPath,
-          }),
+          ]),
         ),
     });
-    if (selection === undefined) {
-      throw new InfrastructureError("Published solver completed without captured provenance.");
-    }
-    const { execution, outputPath } = published;
-    await options.observe?.("evaluation.completed", { execution });
-    if (published.kind === "submission-error") {
-      if (
-        published.error === "Published solver did not produce output." ||
-        published.error === "Published solver output is empty."
-      ) {
-        return writeEvaluationResult(
-          options.evaluationRoot,
-          withSelection("no-output", selection, { execution, outputPath }),
-        );
-      }
-      return writeEvaluationResult(
-        options.evaluationRoot,
-        withSelection("execution-error", selection, {
-          execution,
-          outputPath,
-          error: execution.timedOut
-            ? "Reviewer-selected command timed out."
-            : execution.exitCode !== 0
-              ? `Reviewer-selected command exited ${String(execution.exitCode)}.`
-              : published.error,
-        }),
-      );
-    }
-    await options.observe?.("evaluation.scored", { score: published.value });
-    return writeEvaluationResult(
-      options.evaluationRoot,
-      withSelection("scored", selection, {
-        execution,
+    const outputPath = relative(options.runRoot, published.outputPath);
+    if (published.kind === "succeeded") {
+      return {
+        repositoryId: options.repository.repositoryId,
+        agentIds: options.repository.agentIds,
+        status: "scored",
+        commit: published.identity.commit,
         outputPath,
         score: published.value,
-      }),
-    );
+      };
+    }
+    const status =
+      published.error === "Published solver did not produce output." ||
+      published.error === "Published solver output is empty."
+        ? "no-output"
+        : "execution-error";
+    return {
+      repositoryId: options.repository.repositoryId,
+      agentIds: options.repository.agentIds,
+      status,
+      commit: published.identity.commit,
+      outputPath,
+      ...(status === "execution-error"
+        ? { error: executionError(published.execution, published.error) }
+        : {}),
+    };
   } catch (error) {
     if (error instanceof PublishedSolverSubmissionError) {
-      if (!recordedSelection) {
-        await writeJson(join(options.evaluationRoot, "selection.json"), {
-          selectedAt: new Date().toISOString(),
-          selection: null,
-        });
-        await options.observe?.("reviewer.selection", { selection: null });
-      }
-      await options.observe?.("evaluation.error", { error: error.message });
-    } else if (error instanceof InfrastructureError) {
-      await options.observe?.("evaluation.infrastructure-error", {
+      return {
+        repositoryId: options.repository.repositoryId,
+        agentIds: options.repository.agentIds,
+        status: "not-runnable",
         error: error.message,
-      });
+      };
     }
     throw error;
   }
 }
 
-function attemptRootFrom(path: string): string {
-  const resolved = resolve(path);
-  return basename(resolved) === "frozen" ? dirname(resolved) : resolved;
-}
-
-export async function evaluatePuzzle(options: EvaluatePuzzleOptions): Promise<EvaluationResult> {
+export async function evaluateCanonicalOrigins(
+  options: EvaluateCanonicalOriginsOptions,
+): Promise<RunEvaluation[]> {
   const root = resolve(options.root);
-  const attemptRoot = attemptRootFrom(options.attempt);
-  if (options.workspace === undefined) {
-    throw new Error("Reviewer workspace must be provided for evaluation.");
+  const runRoot = resolve(options.runRoot);
+  const fixtureRoot = resolve(options.fixtureRoot);
+  const fixture = await loadFixturePackage(fixtureRoot);
+  const variant = selectFixtureVariant(fixture, options.variantId);
+  assertCanonicalTopology(options.frozen, fixture.agentIds);
+  await verifyTree(options.frozen.root, options.frozen.treeSeal, "Frozen Git tree");
+
+  const evaluationsRoot = join(runRoot, "evaluations");
+  await mkdir(evaluationsRoot, { recursive: true });
+  const batchRoot = await mkdtemp(join(evaluationsRoot, "batch-"));
+  const evaluations: RunEvaluation[] = [];
+  for (const repository of options.frozen.repositories) {
+    const evaluation = await evaluateOrigin({
+      root,
+      runRoot,
+      fixtureRoot,
+      ciphertextPath: join(fixtureRoot, variant.publicCiphertextPath),
+      repository,
+      evaluationRoot: join(batchRoot, repository.repositoryId),
+      sandbox: options.sandbox,
+    });
+    evaluations.push(evaluation);
+    if (options.tracePath !== undefined) {
+      await appendTraceEvent(options.tracePath, "evaluation.completed", evaluation);
+    }
   }
-  const attempt = decodeAttemptSummary(await readJsonObject(join(attemptRoot, "attempt.json")));
-  await Promise.all([
-    verifyTree(attempt.buildRoot, attempt.buildTreeSeal, "Attempt build tree"),
-    verifyTree(attempt.frozen.root, attempt.frozen.treeSeal, "Attempt frozen tree"),
-  ]);
-  const workspace = options.workspace;
-  if (!attempt.agentIds.includes(workspace)) {
-    throw new Error(`Workspace ${workspace} is not declared by attempt ${attempt.attemptId}.`);
-  }
-  const build = decodeBuildManifest(
-    await readJsonObject(join(attempt.buildRoot, "puzzle-build.json")),
-  );
-  const variant = selectBuildVariant(build, attempt.variantId);
-  if (variant.buildId !== attempt.buildId) {
-    throw new Error("Attempt build identity does not match the selected paired-build variant.");
-  }
-  const frozenWorkspace = attempt.frozen.workspaces.find(
-    (candidate) => candidate.agentId === workspace,
-  );
-  if (frozenWorkspace === undefined) {
-    throw new Error(`Frozen workspace ${workspace} is missing from attempt ${attempt.attemptId}.`);
-  }
-  const frozenRepository = attempt.frozen.repositories.find(
-    (candidate) => candidate.repositoryId === frozenWorkspace.repositoryId,
-  );
-  if (
-    frozenRepository === undefined ||
-    !frozenRepository.agentIds.includes(workspace) ||
-    frozenWorkspace.path !== join(attempt.frozen.root, "workspaces", workspace)
-  ) {
-    throw new Error(`Frozen Git topology is inconsistent for workspace ${workspace}.`);
-  }
-  const selection: EvaluationSelectionRequest = {
-    workspace,
-    repositoryId: frozenRepository.repositoryId,
-    command: SOLVER_COMMAND,
-    outputPath: SOLVER_OUTPUT_PATH,
-    ...(options.notes === undefined ? {} : { notes: options.notes }),
-  };
-  const sandbox = await createDockerCommandSandbox({
-    root,
-    expectedImageId: attempt.sandbox.imageId,
-  });
-  await evaluateFrozenAttempt({
-    frozenGitPath: frozenRepository.path,
-    evaluationRoot: join(attemptRoot, "evaluation"),
-    ciphertextPath: join(attempt.buildRoot, variant.publicCiphertextPath),
-    sandbox,
-    selection,
-    score: async ({ outputPath }) =>
-      decodeAggregateScore(
-        await runPythonJson(root, "palimpsest.evaluation.score", [
-          "--truth",
-          join(attempt.buildRoot, "oracle", "plaintext.txt"),
-          "--candidate",
-          outputPath,
-        ]),
-      ),
-    observe: async (kind, data) => appendTraceEvent(attempt.tracePath, kind, data),
-  });
-  return decodeEvaluationRecord(
-    await readJsonObject(join(attemptRoot, "evaluation", "result.json")),
-  );
+  return evaluations;
 }
 
-export function evaluatePuzzleFromFlags(
+export async function reevaluateRun(options: {
+  root: string;
+  runRoot: string;
+  sandbox?: CommandSandbox;
+}): Promise<readonly RunEvaluation[]> {
+  const root = resolve(options.root);
+  const runRoot = resolve(options.runRoot);
+  const value = await readJsonObject(join(runRoot, "run.json"));
+  if (
+    value.schemaVersion !== 1 ||
+    typeof value.run !== "object" ||
+    value.run === null ||
+    typeof value.frozen !== "object" ||
+    value.frozen === null
+  ) {
+    throw new Error("Run record is invalid or unsupported.");
+  }
+  const record = value as unknown as RunRecord;
+  const sandbox =
+    options.sandbox ??
+    (await createDockerCommandSandbox({
+      root,
+      expectedImageId: record.sandbox.imageId,
+    }));
+  const evaluations = await evaluateCanonicalOrigins({
+    root,
+    runRoot,
+    fixtureRoot: record.run.fixture.packagePath,
+    variantId: record.run.fixture.variant,
+    frozen: record.frozen,
+    sandbox,
+  });
+  const historyRoot = join(runRoot, "evaluations", "history");
+  await mkdir(historyRoot, { recursive: true });
+  const path = join(historyRoot, `${new Date().toISOString().replaceAll(":", "-")}.json`);
+  await writeFile(
+    path,
+    `${JSON.stringify({ evaluatedAt: new Date().toISOString(), evaluations }, null, 2)}\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  return evaluations;
+}
+
+export function evaluateRunFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
-): Promise<EvaluationResult> {
-  const workspace = flags.get("--workspace");
-  if (workspace !== undefined && !isAgentId(workspace)) {
-    throw new Error("--workspace must be a canonical agent-N identifier.");
+): Promise<readonly RunEvaluation[]> {
+  for (const flag of flags.keys()) {
+    if (flag !== "--run-root") throw new Error(`Unknown evaluation option ${flag}.`);
   }
-  if (flags.has("--command") || flags.has("--output-path")) {
-    throw new Error(
-      "Evaluation always runs origin/main:solver.py; --command and --output-path are not accepted.",
-    );
-  }
-  const notes = flags.get("--notes");
-  return evaluatePuzzle({
-    root,
-    attempt: requiredFlag(flags, "--attempt"),
-    ...(workspace === undefined ? {} : { workspace }),
-    ...(notes === undefined ? {} : { notes }),
-  });
+  return reevaluateRun({ root, runRoot: requiredFlag(flags, "--run-root") });
 }
+
+export { PUBLISHED_MAIN_REF, SOLVER_COMMAND, SOLVER_OUTPUT_PATH };

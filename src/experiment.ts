@@ -1,62 +1,41 @@
-import { resolve } from "node:path";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
-import type { BuildManifest, DesignReceipt, PhaseSummary } from "./artifacts.js";
 import {
-  loadResolvedStudy,
-  type AgentModelAssignment,
+  loadResolvedExperiment,
+  validateRunAgainstFixture,
   type ModelProfile,
   type ProviderConnection,
-  type ResolvedStudy,
-  type StudyPhase,
+  type ResolvedExperiment,
+  type ResolvedExperimentRun,
 } from "./config.js";
+import { evaluateCanonicalOrigins } from "./evaluate.js";
 import { requiredFlag } from "./flags.js";
+import { loadFixturePackage, type FixturePackage } from "./fixture-package.js";
 import type { ModelAdapter, ModelBinding } from "./model.js";
 import { createAiSdkModelAdapter, type CreateAiSdkModelAdapterOptions } from "./provider.js";
-import {
-  assertPreflightSandbox,
-  readCurrentPreflight,
-  type PreflightReceipt,
-} from "./preflight.js";
-import {
-  runPuzzle,
-  type AgentRuntimeBinding,
-  type AgentRuntimeMap,
-  type RunPuzzleOptions,
-} from "./run.js";
+import { publishRunRecord, type RunRecord } from "./records.js";
+import type { MonotonicClock } from "./reveal.js";
+import { createFixtureAgentRuntimes, runPreparedFixture, type AgentRuntimeMap } from "./run.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import type { CommandSandbox } from "./sandbox/contracts.js";
-import {
-  executeStudyPhase,
-  prepareStudyDesign,
-  type ExecuteStudyPhaseOptions,
-  type PrepareStudyDesignOptions,
-} from "./study.js";
 
 function bindingFor(
-  study: ResolvedStudy,
-  assignment: AgentModelAssignment,
-): {
-  profile: ModelProfile;
-  provider: ProviderConnection;
-  binding: ModelBinding;
-} {
-  const profile = study.models[assignment.modelProfileId];
-  if (profile === undefined) {
-    throw new Error(
-      `Agent ${assignment.agentId} references unknown model profile ${assignment.modelProfileId}.`,
-    );
-  }
-  const provider = study.providers[profile.provider];
+  experiment: ResolvedExperiment,
+  profileId: string,
+): { profile: ModelProfile; provider: ProviderConnection; binding: ModelBinding } {
+  const profile = experiment.models[profileId];
+  if (profile === undefined) throw new Error(`Unknown model profile ${profileId}.`);
+  const provider = experiment.providers[profile.provider];
   if (provider === undefined) {
-    throw new Error(
-      `Model profile ${assignment.modelProfileId} references unknown provider ${profile.provider}.`,
-    );
+    throw new Error(`Model profile ${profileId} references unknown provider ${profile.provider}.`);
   }
   return {
     profile,
     provider,
     binding: {
-      profile: assignment.modelProfileId,
+      profile: profileId,
       provider: profile.provider,
       driver: provider.driver,
       requestedModel: profile.model,
@@ -66,187 +45,351 @@ function bindingFor(
   };
 }
 
-function configuredAgent(
-  study: ResolvedStudy,
-  assignment: AgentModelAssignment,
-  createAdapter: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter,
-  env: NodeJS.ProcessEnv | undefined,
-): AgentRuntimeBinding {
-  const { profile, provider, binding } = bindingFor(study, assignment);
-  return {
-    model: binding,
-    adapter: createAdapter({
-      providerId: profile.provider,
-      provider,
-      model: profile.model,
-      settings: profile.settings,
-      providerOptions: profile.providerOptions,
-      ...(env === undefined ? {} : { env }),
-    }),
-  };
-}
-
-export interface CreateConfiguredStudyAgentsOptions {
-  env?: NodeJS.ProcessEnv;
-  createAdapter?: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter;
-}
-
-export function createConfiguredStudyAgents(
-  study: ResolvedStudy,
-  options: CreateConfiguredStudyAgentsOptions = {},
+export function createConfiguredAgents(
+  experiment: ResolvedExperiment,
+  run: ResolvedExperimentRun,
+  options: {
+    env?: NodeJS.ProcessEnv;
+    createAdapter?: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter;
+  } = {},
 ): AgentRuntimeMap {
-  const [agentOne, agentTwo, agentThree] = study.assignment;
-  if (
-    agentOne?.agentId !== "agent-1" ||
-    agentTwo?.agentId !== "agent-2" ||
-    agentThree?.agentId !== "agent-3" ||
-    study.assignment.length !== 3
-  ) {
-    throw new Error("Study assignment must contain agent-1 through agent-3 in order.");
-  }
   const createAdapter = options.createAdapter ?? createAiSdkModelAdapter;
+  return Object.fromEntries(
+    Object.entries(run.assignment).map(([agentId, profileId]) => {
+      const { profile, provider, binding } = bindingFor(experiment, profileId);
+      return [
+        agentId,
+        {
+          model: binding,
+          adapter: createAdapter({
+            providerId: profile.provider,
+            provider,
+            model: profile.model,
+            settings: profile.settings,
+            providerOptions: profile.providerOptions,
+            ...(options.env === undefined ? {} : { env: options.env }),
+          }),
+        },
+      ];
+    }),
+  ) as AgentRuntimeMap;
+}
+
+function acceleratedClock(): MonotonicClock {
+  let now = 0;
+  let pending = false;
+  const waits = new Set<{
+    deadline: number;
+    signal: AbortSignal;
+    finish: (reached: boolean) => void;
+    abort: () => void;
+  }>();
+  const advance = () => {
+    if (pending || waits.size < 2) return;
+    pending = true;
+    queueMicrotask(() => {
+      pending = false;
+      const active = [...waits].filter(({ signal }) => !signal.aborted);
+      if (active.length < 2) return;
+      now = Math.max(now, Math.min(...active.map(({ deadline }) => deadline)));
+      for (const wait of active) {
+        if (wait.deadline > now) continue;
+        waits.delete(wait);
+        wait.signal.removeEventListener("abort", wait.abort);
+        wait.finish(true);
+      }
+      advance();
+    });
+  };
   return {
-    "agent-1": configuredAgent(study, agentOne, createAdapter, options.env),
-    "agent-2": configuredAgent(study, agentTwo, createAdapter, options.env),
-    "agent-3": configuredAgent(study, agentThree, createAdapter, options.env),
+    nowMs: () => now,
+    waitUntil(deadline, signal) {
+      if (signal.aborted) return Promise.resolve(false);
+      if (deadline <= now) return Promise.resolve(true);
+      return new Promise((finish) => {
+        const wait = {
+          deadline,
+          signal,
+          finish,
+          abort: () => {
+            waits.delete(wait);
+            finish(false);
+          },
+        };
+        waits.add(wait);
+        signal.addEventListener("abort", wait.abort, { once: true });
+        advance();
+      });
+    },
   };
 }
 
-export function assertBuildMatchesStudy(manifest: BuildManifest, study: ResolvedStudy): void {
-  if (!study.blocks.some((block) => block.blockId === manifest.blockId)) {
-    throw new Error(
-      `Puzzle build ${manifest.blockId} is not one of the five registered study blocks.`,
-    );
+async function makeValidationScratchRemovable(path: string): Promise<void> {
+  let entries;
+  try {
+    await chmod(path, 0o700);
+    entries = await readdir(path, { withFileTypes: true });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
   }
+  await Promise.all(
+    entries.map(async (entry) => {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) {
+        await makeValidationScratchRemovable(child);
+      } else {
+        await chmod(child, 0o600);
+      }
+    }),
+  );
+}
+
+export interface ExperimentValidation {
+  experiment: ResolvedExperiment;
+  fixtures: ReadonlyMap<string, FixturePackage>;
+  sandbox: CommandSandbox;
+}
+
+export interface ExperimentValidationReport {
+  manifestDigest: string;
+  runIds: readonly string[];
+  fixtures: readonly {
+    packagePath: string;
+    fixtureId: string;
+    contentDigest: string;
+    agentIds: readonly string[];
+    stageCount: number;
+  }[];
+  sandbox: CommandSandbox["identity"];
 }
 
 export interface ExperimentDependencies {
-  loadStudy: typeof loadResolvedStudy;
+  loadExperiment: typeof loadResolvedExperiment;
+  loadFixture: typeof loadFixturePackage;
   createSandbox: (root: string) => Promise<CommandSandbox>;
-  prepareDesign: (options: PrepareStudyDesignOptions) => Promise<DesignReceipt>;
-  executePhase: (options: ExecuteStudyPhaseOptions) => Promise<PhaseSummary>;
-  readPreflight: (root: string) => Promise<PreflightReceipt>;
+  run: typeof runPreparedFixture;
+  evaluate: typeof evaluateCanonicalOrigins;
   createAdapter: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter;
-  run: (options: RunPuzzleOptions) => Promise<unknown>;
 }
 
 const defaultDependencies: ExperimentDependencies = {
-  loadStudy: loadResolvedStudy,
+  loadExperiment: loadResolvedExperiment,
+  loadFixture: loadFixturePackage,
   createSandbox: async (root) => createDockerCommandSandbox({ root }),
-  prepareDesign: prepareStudyDesign,
-  executePhase: executeStudyPhase,
-  readPreflight: readCurrentPreflight,
+  run: runPreparedFixture,
+  evaluate: evaluateCanonicalOrigins,
   createAdapter: createAiSdkModelAdapter,
-  run: runPuzzle,
 };
 
-function experimentDependencies(
-  overrides: Partial<ExperimentDependencies> | undefined,
-): ExperimentDependencies {
+function dependencies(overrides?: Partial<ExperimentDependencies>): ExperimentDependencies {
   return { ...defaultDependencies, ...overrides };
 }
 
-export interface RunStudyExperimentOptions {
+export async function validateExperimentExecution(options: {
   root: string;
   configPath: string;
-  studyRoot: string;
-  phase: StudyPhase;
-  replaceAttemptId?: string;
+  smoke?: boolean;
+  dependencies?: Partial<ExperimentDependencies>;
+}): Promise<ExperimentValidation> {
+  const root = resolve(options.root);
+  const service = dependencies(options.dependencies);
+  const experiment = await service.loadExperiment(resolve(root, options.configPath), root);
+  const fixtures = new Map<string, FixturePackage>();
+  for (const run of experiment.runs) {
+    let fixture = fixtures.get(run.fixture.packagePath);
+    if (fixture === undefined) {
+      fixture = await service.loadFixture(run.fixture.packagePath);
+      fixtures.set(run.fixture.packagePath, fixture);
+    }
+    validateRunAgainstFixture(run, fixture);
+  }
+  const sandbox = await service.createSandbox(root);
+  if (options.smoke !== false) {
+    const run = experiment.runs[0]!;
+    const fixture = fixtures.get(run.fixture.packagePath)!;
+    const scratch = await mkdtemp(join(tmpdir(), "palimpsest-validation-"));
+    try {
+      await service.run({
+        root,
+        fixtureRoot: run.fixture.packagePath,
+        output: join(scratch, run.id),
+        experimentId: experiment.manifestDigest,
+        runId: `${run.id}-validation`,
+        variantId: run.fixture.variant,
+        spendCeilingCents: 0,
+        agents: createFixtureAgentRuntimes(fixture.agentIds),
+        releaseOffsetsMs: run.schedule.releaseOffsetsMs,
+        cutoffMs: run.schedule.cutoffMs,
+        tokenBudgetPerAgent: run.limits.tokenLimitPerAgent,
+        gitVisibility: run.capabilities.git,
+        teamRoom: run.capabilities.teamRoom,
+        labels: run.labels,
+        sandbox,
+        clock: acceleratedClock(),
+      });
+    } finally {
+      await makeValidationScratchRemovable(scratch);
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+  return { experiment, fixtures, sandbox };
+}
+
+export async function runExperiment(options: {
+  root: string;
+  configPath: string;
+  output: string;
+  runId?: string;
+  allowSpend: boolean;
   env?: NodeJS.ProcessEnv;
   dependencies?: Partial<ExperimentDependencies>;
-}
-
-export async function runStudyExperiment(
-  options: RunStudyExperimentOptions,
-): Promise<PhaseSummary> {
+}): Promise<readonly RunRecord[]> {
   const root = resolve(options.root);
-  const configPath = resolve(root, options.configPath);
-  const studyRoot = resolve(root, options.studyRoot);
-  const dependencies = experimentDependencies(options.dependencies);
-  const study = await dependencies.loadStudy(configPath, root);
-  const sandbox = await dependencies.createSandbox(root);
-  const receipt = await dependencies.prepareDesign({
+  const output = resolve(root, options.output);
+  const service = dependencies(options.dependencies);
+  const validated = await validateExperimentExecution({
     root,
-    studyRoot,
-    study,
-    phase: options.phase,
-    dependencies: {
-      sandboxIdentity: async () => sandbox.identity,
-    },
+    configPath: options.configPath,
+    dependencies: service,
   });
-
-  return dependencies.executePhase({
-    studyRoot,
-    study,
-    receipt,
-    phase: options.phase,
-    ...(options.replaceAttemptId === undefined
-      ? {}
-      : { replaceAttemptId: options.replaceAttemptId }),
-    dependencies: {
-      beforeLaunch: async () => {
-        const preflight = await dependencies.readPreflight(root);
-        if (preflight.testedCommit !== receipt.sourceRevision) {
-          throw new Error(
-            "Research preflight commit does not match the receipt-bound source revision.",
-          );
-        }
-        assertPreflightSandbox(preflight, sandbox.identity);
+  if (!options.allowSpend) {
+    throw new Error("Provider-backed execution requires --allow-spend true.");
+  }
+  const selected =
+    options.runId === undefined
+      ? validated.experiment.runs
+      : validated.experiment.runs.filter(({ id }) => id === options.runId);
+  if (selected.length === 0) throw new Error(`Unknown experiment run ${options.runId}.`);
+  await mkdir(dirname(output), { recursive: true });
+  await mkdir(output, { recursive: false });
+  const records: RunRecord[] = [];
+  for (const run of selected) {
+    const fixture = validated.fixtures.get(run.fixture.packagePath)!;
+    const agents = createConfiguredAgents(validated.experiment, run, {
+      createAdapter: service.createAdapter,
+      ...(options.env === undefined ? {} : { env: options.env }),
+    });
+    const result = await service.run({
+      root,
+      fixtureRoot: run.fixture.packagePath,
+      output: join(output, run.id),
+      experimentId: validated.experiment.manifestDigest,
+      runId: run.id,
+      variantId: run.fixture.variant,
+      spendCeilingCents: run.limits.spendCeilingCents,
+      agents,
+      releaseOffsetsMs: run.schedule.releaseOffsetsMs,
+      cutoffMs: run.schedule.cutoffMs,
+      tokenBudgetPerAgent: run.limits.tokenLimitPerAgent,
+      gitVisibility: run.capabilities.git,
+      teamRoom: run.capabilities.teamRoom,
+      labels: run.labels,
+      sandbox: validated.sandbox,
+    });
+    const evaluations = await service.evaluate({
+      root,
+      runRoot: result.runRoot,
+      fixtureRoot: run.fixture.packagePath,
+      variantId: run.fixture.variant,
+      frozen: result.frozen,
+      sandbox: validated.sandbox,
+      tracePath: result.tracePath,
+    });
+    const record: RunRecord = {
+      schemaVersion: 1,
+      experimentId: validated.experiment.manifestDigest,
+      run: {
+        id: run.id,
+        fixture: {
+          id: fixture.fixtureId,
+          packagePath: run.fixture.packagePath,
+          digest: fixture.contentDigest,
+          variant: run.fixture.variant,
+        },
+        assignment: run.assignment,
+        capabilities: run.capabilities,
+        schedule: run.schedule,
+        limits: run.limits,
+        labels: run.labels,
       },
-      runCell: async (launch) => {
-        const agents = createConfiguredStudyAgents(study, {
-          createAdapter: dependencies.createAdapter,
-          ...(options.env === undefined ? {} : { env: options.env }),
-        });
-        await dependencies.run({
-          root,
-          buildRoot: launch.cell.buildRoot,
-          output: launch.attemptRoot,
-          attemptId: launch.attemptId,
-          studyPhase: options.phase,
-          studyRootId: launch.studyRootId,
-          conditionOrderPosition: launch.cell.conditionOrderPosition,
-          designDigest: launch.designDigest,
-          monetaryAuthorizationCeilingCents: launch.monetaryAuthorizationCeilingCents,
-          ...(launch.replacementOfAttemptId === undefined
-            ? {}
-            : { replacementOfAttemptId: launch.replacementOfAttemptId }),
-          condition: launch.cell.condition,
-          agents,
-          releaseOffsetsMs: study.schedule.releaseOffsetsMs,
-          cutoffMs: study.schedule.cutoffMs,
-          tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
-          teamChannel: study.communication.teamChannel,
-          sandbox,
-        });
+      models: result.agentIds.map((agentId) => ({ agentId, binding: agents[agentId]!.model })),
+      sessions: result.sessions,
+      trace: { path: result.tracePath, metadataPath: result.traceMetadataPath },
+      frozen: result.frozen,
+      sandbox: result.sandbox,
+      evaluations,
+      status: result.sessions.some(({ state }) => state === "infrastructure-error")
+        ? "infrastructure-error"
+        : "completed",
+    };
+    await publishRunRecord(result.runRoot, record);
+    records.push(record);
+    if (record.status === "infrastructure-error") {
+      throw new Error(`Run ${run.id} ended with an infrastructure error.`);
+    }
+  }
+  await writeFile(
+    join(output, "experiment.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        manifestDigest: validated.experiment.manifestDigest,
+        runs: records.map(({ run }) => ({ id: run.id, path: `${run.id}/run.json` })),
       },
-    },
-  });
+      null,
+      2,
+    )}\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
+  return records;
 }
 
-const EXPERIMENT_FLAGS = new Set(["--config", "--phase", "--study-root", "--replace"]);
-
-function studyPhase(value: string): StudyPhase {
-  if (value !== "calibration" && value !== "validation") {
-    throw new Error("--phase must be calibration or validation.");
+export async function validateExperimentFromFlags(
+  flags: ReadonlyMap<string, string>,
+  root = resolve("."),
+): Promise<ExperimentValidationReport> {
+  for (const flag of flags.keys()) {
+    if (flag !== "--config") throw new Error(`Unknown validation option ${flag}.`);
   }
-  return value;
+  const validated = await validateExperimentExecution({
+    root,
+    configPath: requiredFlag(flags, "--config"),
+  });
+  return {
+    manifestDigest: validated.experiment.manifestDigest,
+    runIds: validated.experiment.runs.map(({ id }) => id),
+    fixtures: [...validated.fixtures.entries()].map(([packagePath, fixture]) => ({
+      packagePath,
+      fixtureId: fixture.fixtureId,
+      contentDigest: fixture.contentDigest,
+      agentIds: fixture.agentIds,
+      stageCount: fixture.stageCount,
+    })),
+    sandbox: validated.sandbox.identity,
+  };
 }
 
 export function runExperimentFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
-): Promise<PhaseSummary> {
+): Promise<readonly RunRecord[]> {
   for (const flag of flags.keys()) {
-    if (!EXPERIMENT_FLAGS.has(flag)) {
-      throw new Error(`Unsupported experiment flag ${flag}.`);
+    if (!["--config", "--output", "--run", "--allow-spend"].includes(flag)) {
+      throw new Error(`Unknown experiment option ${flag}.`);
     }
   }
-  return runStudyExperiment({
+  const allowSpend = flags.get("--allow-spend");
+  if (allowSpend !== "true" && allowSpend !== "false") {
+    throw new Error("--allow-spend must be exactly true or false.");
+  }
+  return runExperiment({
     root,
     configPath: requiredFlag(flags, "--config"),
-    studyRoot: requiredFlag(flags, "--study-root"),
-    phase: studyPhase(requiredFlag(flags, "--phase")),
-    ...(flags.has("--replace") ? { replaceAttemptId: requiredFlag(flags, "--replace") } : {}),
+    output: requiredFlag(flags, "--output"),
+    allowSpend: allowSpend === "true",
+    ...(flags.has("--run") ? { runId: requiredFlag(flags, "--run") } : {}),
   });
 }

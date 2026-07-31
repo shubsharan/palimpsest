@@ -1,550 +1,129 @@
 from __future__ import annotations
 
+import hashlib
 import json
-import shutil
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
-import palimpsest.puzzle.block as block_module
-import palimpsest.puzzle.build as build_module
 import pytest
-from palimpsest.puzzle.block import (
-    BlockDefinition,
-    InfeasibleDesignError,
-    ParagraphUnit,
-    WindowPin,
-    candidate_windows,
-    design_block,
-    load_block_catalog,
-)
-from palimpsest.puzzle.cipher import apply_mapping
-from palimpsest.puzzle.corpus import (
-    load_paragraphs,
-    load_source_registry,
-    serialize_paragraphs,
-)
-from palimpsest.puzzle.manifest import PuzzleBuild
-from palimpsest.puzzle.text import word_tokens
+from palimpsest.puzzle import build as build_module
+from palimpsest.puzzle.block import load_fixture_catalog
+from palimpsest.puzzle.manifest import FixturePackage
 
 ROOT = Path(__file__).resolve().parents[3]
-BLOCK_IDS = (
-    "calibration-theron-ware",
-    "validation-odd-women",
-    "validation-pointed-firs",
-    "validation-custom-country",
-    "validation-woodlanders",
-)
-AGENT_IDS = ("agent-1", "agent-2", "agent-3")
+EXPECTED_ARTIFACT_DIGESTS = {
+    "calibration-theron-ware": "350c3c2f63eefb23206babd11578a318a9fe15ac241928734134c5893876258d",
+    "validation-custom-country": "9ad2e36c4087feb2aee03b6962c9aec468dbef1d3d002c2015474847f6066e97",
+    "validation-odd-women": "9c97c2f38c4a93929f9eba95a3915b734897c35021d61fff7754eb1980cb49dd",
+    "validation-pointed-firs": "6205b280c5e7e9b1e8d8299f658cb4061d26217ddf8afee8d18d2e039de711d9",
+    "validation-woodlanders": "d1e167ed82dd4fbcfeaab8a117244406e606139c3b638d4f265a7fa89bf2b64f",
+}
 
 
-def _files(root: Path) -> dict[Path, bytes]:
-    return {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
-
-
-def _json(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    assert isinstance(value, dict)
-    return value
-
-
-def _copy_fixture_root(
-    destination: Path,
-    mutate_catalog: Callable[[dict[str, Any]], None],
-) -> Path:
-    root = destination / "root"
-    corpus = root / "fixtures/corpus"
-    corpus.mkdir(parents=True)
-    for source in (ROOT / "fixtures/corpus").iterdir():
-        if source.is_file():
-            shutil.copy2(source, corpus / source.name)
-    experiments = root / "experiments"
-    experiments.mkdir()
-    catalog = _json(ROOT / "experiments/blocks.json")
-    mutate_catalog(catalog)
-    (experiments / "blocks.json").write_text(
-        json.dumps(catalog, ensure_ascii=False, sort_keys=True),
-        encoding="utf-8",
-    )
-    return root
-
-
-def _catalog_entry(catalog: dict[str, Any], block_id: str) -> dict[str, Any]:
-    blocks = catalog["blocks"]
-    assert isinstance(blocks, list)
-    return next(block for block in blocks if block["blockId"] == block_id)
-
-
-def _zero_window(catalog: dict[str, Any], block_id: str) -> None:
-    _catalog_entry(catalog, block_id)["window"] = {
-        "paragraphStart": 0,
-        "paragraphEnd": 0,
-        "wordCount": 0,
-        "sha256": "",
-    }
-
-
-def _wrong_window(catalog: dict[str, Any], block_id: str) -> None:
-    window = _catalog_entry(catalog, block_id)["window"]
-    assert isinstance(window, dict)
-    window["sha256"] = "0" * 64
-
-
-def _paragraphs(count: int = 700, words: int = 100) -> tuple[ParagraphUnit, ...]:
-    def letters(value: int) -> str:
-        result = ""
-        while value:
-            value, remainder = divmod(value - 1, 26)
-            result = chr(ord("a") + remainder) + result
-        return result
-
-    return tuple(
-        ParagraphUnit.from_text(
-            ordinal,
-            " ".join((f"paragraph{letters(ordinal)}", *(["word"] * (words - 1)))),
-        )
-        for ordinal in range(1, count + 1)
-    )
-
-
-def _stage_map(build: PuzzleBuild, variant: str) -> dict[tuple[str, int], Path]:
-    record = build.stationary if variant == "stationary" else build.rekey
-    return {(stage.agent_id, stage.ordinal): stage.source_path for stage in record.stages}
-
-
-def _normalized_words(value: str) -> tuple[str, ...]:
-    return tuple(token.normalized for token in word_tokens(value) if token.normalized is not None)
-
-
-@dataclass(frozen=True)
-class BuiltBlock:
-    build: PuzzleBuild
-    first_root: Path
-    second_root: Path
+def _artifact_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(
+        item for item in root.rglob("*") if item.is_file() and item.name != "fixture.json"
+    ):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 @pytest.fixture(scope="module")
-def built_blocks(tmp_path_factory: pytest.TempPathFactory) -> Mapping[str, BuiltBlock]:
-    catalog = load_block_catalog(ROOT / "experiments/blocks.json")
-    output_root = tmp_path_factory.mktemp("paired-blocks")
-    built: dict[str, BuiltBlock] = {}
-    for block_id in BLOCK_IDS:
-        block = catalog.block(block_id)
-        assert not block.window.is_discovery, f"{block_id} must have a committed window"
-        first_root = output_root / block_id / "first"
-        second_root = output_root / block_id / "second"
-        first = build_module.build_puzzle(ROOT, first_root, block_id)
-        second = build_module.build_puzzle(ROOT, second_root, block_id)
-        assert first == second
-        assert _files(first_root) == _files(second_root)
-        built[block_id] = BuiltBlock(first, first_root, second_root)
-    return built
+def built_fixtures(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Mapping[str, tuple[FixturePackage, Path]]:
+    output = tmp_path_factory.mktemp("fixture-packages")
+    result: dict[str, tuple[FixturePackage, Path]] = {}
+    for definition in load_fixture_catalog(ROOT / "experiments/blocks.json").fixtures:
+        destination = output / definition.fixture_id
+        package = build_module.build_fixture(ROOT, destination, definition.fixture_id)
+        result[definition.fixture_id] = package, destination
+    return result
 
 
-def test_candidate_windows_use_exact_first_end_and_boundary_order() -> None:
-    windows = candidate_windows(_paragraphs(count=181))
-    first = next(windows)
-    second = next(windows)
-
-    assert (
-        first.paragraph_start,
-        first.paragraph_end,
-        first.word_count,
-        first.boundary_index,
-    ) == (1, 180, 18_000, 90)
-    assert (
-        second.paragraph_start,
-        second.paragraph_end,
-        second.word_count,
-        second.boundary_index,
-    ) == (2, 181, 18_000, 90)
-
-
-def test_design_search_stops_after_512_window_starts(
-    monkeypatch: pytest.MonkeyPatch,
+def test_existing_fixtures_retain_stable_scientific_artifacts(
+    built_fixtures: Mapping[str, tuple[FixturePackage, Path]],
 ) -> None:
-    starts: list[int] = []
-
-    def reject(window: object, block_id: str, seed: int) -> object:
-        del block_id, seed
-        starts.append(window.paragraph_start)  # type: ignore[attr-defined]
-        raise InfeasibleDesignError(("synthetic-infeasible",))
-
-    monkeypatch.setattr(block_module, "allocate_window", reject)
-    block = BlockDefinition(
-        block_id="synthetic-block",
-        phase="calibration",
-        source_id="synthetic",
-        references=("reference",),
-        seed=17,
-        window=WindowPin(0, 0, 0, ""),
-        boundary_stage=4,
-    )
-
-    with pytest.raises(InfeasibleDesignError, match="no-feasible-window"):
-        design_block(_paragraphs(), block, discover=True)
-
-    assert starts == list(range(1, 513))
-
-
-def test_normal_design_revalidates_the_first_feasible_pin(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paragraphs = _paragraphs(count=181)
-    first = next(candidate_windows(paragraphs))
-    allocation = object()
-    monkeypatch.setattr(block_module, "allocate_window", lambda *args: allocation)
-    block = BlockDefinition(
-        block_id="synthetic-block",
-        phase="calibration",
-        source_id="synthetic",
-        references=("reference",),
-        seed=17,
-        window=first.pin(),
-        boundary_stage=4,
-    )
-
-    assert design_block(paragraphs, block, discover=False).window == first
-
-    stale = replace(block, window=replace(first.pin(), sha256="0" * 64))
-    with pytest.raises(ValueError, match="not the first deterministic feasible window"):
-        design_block(paragraphs, stale, discover=False)
-
-
-def test_discovery_writes_only_the_first_feasible_record(tmp_path: Path) -> None:
-    committed = load_block_catalog(ROOT / "experiments/blocks.json").block(BLOCK_IDS[0])
-    assert not committed.window.is_discovery
-    normal_output = tmp_path / "normal-build"
-    build_module.build_puzzle(ROOT, normal_output, committed.block_id)
-    root = _copy_fixture_root(
-        tmp_path,
-        lambda catalog: _zero_window(catalog, committed.block_id),
-    )
-    output = tmp_path / "discovery"
-
-    result = build_module.discover_block(root, output, committed.block_id)
-
-    assert result is not None
-    assert tuple(_files(output)) == (Path("discovery.json"),)
-    discovery = _json(output / "discovery.json")
-    assert set(discovery) == {
-        "schemaVersion",
-        "blockId",
-        "window",
-        "allocation",
-        "manipulationCheck",
-    }
-    assert discovery["blockId"] == committed.block_id
-    assert discovery["window"] == {
-        "paragraphStart": committed.window.paragraph_start,
-        "paragraphEnd": committed.window.paragraph_end,
-        "wordCount": committed.window.word_count,
-        "sha256": committed.window.sha256,
-    }
-    assert discovery["allocation"] == _json(normal_output / "oracle/allocation.json")
-    assert discovery["manipulationCheck"] == _json(normal_output / "oracle/manipulation-check.json")
-
-    with pytest.raises(ValueError, match="discovered and pinned"):
-        build_module.build_puzzle(root, tmp_path / "unpinned", committed.block_id)
-    assert not (tmp_path / "unpinned").exists()
-
-
-def test_discovery_pair_validation_failure_publishes_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    block_id = BLOCK_IDS[0]
-    root = _copy_fixture_root(tmp_path, lambda catalog: _zero_window(catalog, block_id))
-    output = tmp_path / "discovery"
-
-    def fail_pair(**kwargs: object) -> None:
-        del kwargs
-        raise ValueError("invalid manipulation")
-
-    monkeypatch.setattr(build_module, "validate_pair", fail_pair)
-
-    with pytest.raises(ValueError, match="invalid manipulation"):
-        build_module.discover_block(root, output, block_id)
-
-    assert not output.exists()
-
-
-def test_normal_build_rejects_a_stale_committed_pin_without_publication(
-    tmp_path: Path,
-) -> None:
-    block_id = BLOCK_IDS[0]
-    root = _copy_fixture_root(
-        tmp_path,
-        lambda catalog: _wrong_window(catalog, block_id),
-    )
-    output = tmp_path / "build"
-
-    with pytest.raises(ValueError, match="first deterministic feasible window"):
-        build_module.build_puzzle(root, output, block_id)
-
-    assert not output.exists()
-
-
-def test_discovery_rejects_a_committed_block_without_publication(
-    tmp_path: Path,
-) -> None:
-    output = tmp_path / "discovery"
-
-    with pytest.raises(ValueError, match="committed discovery window"):
-        build_module.discover_block(ROOT, output, BLOCK_IDS[0])
-
-    assert not output.exists()
-
-
-def test_validate_pair_rejects_twin_divergence_and_weak_manipulation() -> None:
-    stationary = {
-        (agent_id, ordinal): f"{agent_id}:{ordinal}".encode()
-        for agent_id in AGENT_IDS
-        for ordinal in range(1, 7)
-    }
-    rekey = dict(stationary)
-    valid = {
-        "boundary_stage": 4,
-        "stationary_old_key_loss": 0.0,
-        "rekey_old_key_loss": 0.2,
-        "changed_token_mass_by_agent": {agent_id: 0.2 for agent_id in AGENT_IDS},
-    }
-    build_module.validate_pair(
-        stationary_stage_bytes=stationary,
-        rekey_stage_bytes=rekey,
-        **valid,
-    )
-
-    divergent = dict(rekey)
-    divergent[("agent-2", 3)] = b"different"
-    with pytest.raises(ValueError, match="before the manipulation boundary"):
-        build_module.validate_pair(
-            stationary_stage_bytes=stationary,
-            rekey_stage_bytes=divergent,
-            **valid,
+    assert set(built_fixtures) == set(EXPECTED_ARTIFACT_DIGESTS)
+    for fixture_id, (package, root) in built_fixtures.items():
+        assert _artifact_digest(root) == EXPECTED_ARTIFACT_DIGESTS[fixture_id]
+        decoded = FixturePackage.from_dict(
+            json.loads((root / "fixture.json").read_text(encoding="utf-8"))
         )
-
-    with pytest.raises(ValueError, match="Stationary"):
-        build_module.validate_pair(
-            stationary_stage_bytes=stationary,
-            rekey_stage_bytes=rekey,
-            **{**valid, "stationary_old_key_loss": 0.01},
-        )
-
-    with pytest.raises(ValueError, match="old-key loss"):
-        build_module.validate_pair(
-            stationary_stage_bytes=stationary,
-            rekey_stage_bytes=rekey,
-            **{**valid, "rekey_old_key_loss": 0.149},
-        )
-
-    weak_mass = {agent_id: 0.2 for agent_id in AGENT_IDS}
-    weak_mass["agent-3"] = 0.149
-    with pytest.raises(ValueError, match="changed mass"):
-        build_module.validate_pair(
-            stationary_stage_bytes=stationary,
-            rekey_stage_bytes=rekey,
-            **{**valid, "changed_token_mass_by_agent": weak_mass},
-        )
+        assert decoded == package
+        assert decoded.fixture_id == fixture_id
+        assert decoded.content_digest == decoded.computed_content_digest()
+        assert decoded.agent_ids == ("agent-1", "agent-2", "agent-3")
+        assert decoded.stage_count == 6
+        reference_sources = {
+            reference.source_id: reference.sha256 for reference in decoded.references
+        }
+        for variant in decoded.variants.values():
+            ciphertext = (root / variant.public_ciphertext_path).read_bytes()
+            assert hashlib.sha256(ciphertext).hexdigest() == variant.public_ciphertext_sha256
+            assert {
+                reference.source_id: reference.source_sha256
+                for reference in variant.reference_files
+            } == reference_sources
+            for reference in variant.reference_files:
+                content = (root / reference.path).read_bytes()
+                assert len(content) == reference.byte_length
+                assert hashlib.sha256(content).hexdigest() == reference.sha256
 
 
-@pytest.mark.parametrize("reason", ["all-tiers-infeasible", "unmatched-controls"])
-def test_design_failures_publish_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    reason: str,
+def test_declared_variants_share_plaintext_and_diverge_only_at_rekey(
+    built_fixtures: Mapping[str, tuple[FixturePackage, Path]],
 ) -> None:
-    output = tmp_path / reason
+    package, root = built_fixtures["calibration-theron-ware"]
+    stationary = package.variants["stationary"]
+    rekey = package.variants["rekey"]
 
-    def fail_design(*args: object, **kwargs: object) -> object:
-        del args, kwargs
-        raise InfeasibleDesignError((reason,))
+    assert stationary.rekey_from_stage is None
+    assert rekey.rekey_from_stage == 4
+    for baseline, changed in zip(stationary.stages, rekey.stages, strict=True):
+        assert (baseline.agent_id, baseline.ordinal) == (changed.agent_id, changed.ordinal)
+        if baseline.ordinal < 4:
+            assert baseline.sha256 == changed.sha256
+            assert (root / baseline.source_path).read_bytes() == (
+                root / changed.source_path
+            ).read_bytes()
 
-    monkeypatch.setattr(build_module, "design_block", fail_design)
+    manipulation = json.loads((root / package.manipulation_check.path).read_text(encoding="utf-8"))
+    assert manipulation["preBoundaryIdentical"] is True
+    assert manipulation["stationaryOldKeyLoss"] == 0
+    assert manipulation["rekeyOldKeyLoss"] >= 0.15
+    assert set(manipulation["changedTokenMassByAgent"]) == set(package.agent_ids)
 
-    with pytest.raises(InfeasibleDesignError, match=reason):
-        build_module.build_puzzle(ROOT, output, BLOCK_IDS[0])
 
-    assert not output.exists()
-
-
-@pytest.mark.parametrize("message", ["pre-boundary divergence", "insufficient old-key loss"])
-def test_pair_validation_failures_publish_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    message: str,
+def test_agent_visible_variant_trees_exclude_oracle_data(
+    built_fixtures: Mapping[str, tuple[FixturePackage, Path]],
 ) -> None:
-    output = tmp_path / message.replace(" ", "-")
-
-    def fail_pair(**kwargs: object) -> None:
-        del kwargs
-        raise ValueError(message)
-
-    monkeypatch.setattr(
-        build_module,
-        "revise_explicit_types",
-        lambda *, prior_key, **kwargs: prior_key,
+    forbidden = (
+        b'"anchors"',
+        b'"sentinels"',
+        b'"specialists"',
+        b'"controls"',
+        b'"preBoundaryIdentical"',
+        b'"rekeyOldKeyLoss"',
+        b"oracle/",
     )
-    monkeypatch.setattr(build_module, "validate_pair", fail_pair)
+    for _, root in built_fixtures.values():
+        visible = [path for path in (root / "variants").rglob("*") if path.is_file()]
+        assert visible
+        assert all(path.suffix != ".json" for path in visible)
+        assert all(not any(marker in path.read_bytes() for marker in forbidden) for path in visible)
 
-    with pytest.raises(ValueError, match=message):
-        build_module.build_puzzle(ROOT, output, BLOCK_IDS[0])
 
-    assert not output.exists()
-
-
-def test_build_refuses_an_existing_nonempty_destination(tmp_path: Path) -> None:
+def test_build_refuses_to_overwrite_nonempty_output(tmp_path: Path) -> None:
     output = tmp_path / "occupied"
     output.mkdir()
     sentinel = output / "keep.txt"
     sentinel.write_text("user data\n", encoding="utf-8")
 
     with pytest.raises(FileExistsError, match="non-empty"):
-        build_module.build_puzzle(ROOT, output, BLOCK_IDS[0])
+        build_module.build_fixture(ROOT, output, "calibration-theron-ware")
 
     assert sentinel.read_text(encoding="utf-8") == "user data\n"
-    assert tuple(_files(output)) == (Path("keep.txt"),)
-
-
-def test_all_five_committed_blocks_rebuild_byte_identically(
-    built_blocks: Mapping[str, BuiltBlock],
-) -> None:
-    assert tuple(built_blocks) == BLOCK_IDS
-    for block_id, built in built_blocks.items():
-        manifest = _json(built.first_root / "puzzle-build.json")
-        assert PuzzleBuild.from_dict(manifest) == built.build
-        assert manifest["schemaVersion"] == 3
-        assert built.build.block_id == block_id
-        assert built.build.agent_ids == AGENT_IDS
-        assert built.build.stage_count == 6
-        assert built.build.boundary_stage == 4
-
-
-def test_calibration_pair_has_exact_union_and_verified_key_manipulation(
-    built_blocks: Mapping[str, BuiltBlock],
-) -> None:
-    built = built_blocks[BLOCK_IDS[0]]
-    build = built.build
-    root = built.first_root
-    stationary_paths = _stage_map(build, "stationary")
-    rekey_paths = _stage_map(build, "rekey")
-    base_key = _json(root / build.base_key_path)
-    revised_key = _json(root / build.rekey.key_transitions[0].key_path)
-    design = _json(root / build.oracle_design.path)
-    allocation = _json(root / build.allocation.path)
-
-    changed = {
-        *design["sentinels"],
-        *(word for specialist_words in design["specialists"].values() for word in specialist_words),
-    }
-    controls = {match["controlType"] for match in design["controls"]}
-    assert changed
-    assert changed.isdisjoint(controls)
-    assert set(base_key) == set(base_key.values()) == set(revised_key) == set(revised_key.values())
-    assert all(revised_key[word] != base_key[word] for word in changed)
-    assert all(revised_key[word] != word for word in changed)
-    assert all(revised_key[word] == base_key[word] for word in controls)
-
-    for geometry, stationary_path in stationary_paths.items():
-        agent_id, ordinal = geometry
-        rekey_path = rekey_paths[geometry]
-        stationary_bytes = (root / stationary_path).read_bytes()
-        rekey_bytes = (root / rekey_path).read_bytes()
-        if ordinal < 4:
-            assert stationary_bytes == rekey_bytes
-        plaintext = (root / f"oracle/checker/{agent_id}/stage-{ordinal:02d}.txt").read_text(
-            encoding="utf-8"
-        )
-        assert (root / stationary_path).read_text(encoding="utf-8") == apply_mapping(
-            plaintext,
-            base_key,
-        )
-        expected_rekey_key = revised_key if ordinal >= 4 else base_key
-        assert (root / rekey_path).read_text(encoding="utf-8") == apply_mapping(
-            plaintext,
-            expected_rekey_key,
-        )
-
-    registry = load_source_registry(ROOT)
-    paragraphs = load_paragraphs(registry[build.source.source_id])
-    selected = paragraphs[build.window.paragraph_start - 1 : build.window.paragraph_end]
-    plaintext = serialize_paragraphs(selected)
-    assert (root / build.stationary.public_ciphertext_path).read_text(
-        encoding="utf-8"
-    ) == apply_mapping(plaintext, base_key)
-
-    assignments = allocation["assignments"]
-    assert isinstance(assignments, list)
-    assignment_by_ordinal = {
-        assignment["paragraphOrdinal"]: assignment for assignment in assignments
-    }
-    expected_ordinals = list(range(build.window.paragraph_start, build.window.paragraph_end + 1))
-    assert sorted(assignment_by_ordinal) == expected_ordinals
-    for agent_id in AGENT_IDS:
-        for ordinal in range(1, 7):
-            stage_ordinals = [
-                assignment["paragraphOrdinal"]
-                for assignment in assignments
-                if assignment["agentId"] == agent_id and assignment["stage"] == ordinal
-            ]
-            assert stage_ordinals
-            assert stage_ordinals == sorted(stage_ordinals)
-
-    expected_rekey = serialize_paragraphs(
-        tuple(
-            apply_mapping(
-                paragraph,
-                revised_key if assignment_by_ordinal[source_ordinal]["stage"] >= 4 else base_key,
-            )
-            for source_ordinal, paragraph in zip(expected_ordinals, selected, strict=True)
-        )
-    )
-    assert (root / build.rekey.public_ciphertext_path).read_text(encoding="utf-8") == expected_rekey
-
-    post_words_by_agent = {
-        agent_id: tuple(
-            word
-            for ordinal in range(4, 7)
-            for word in _normalized_words(
-                (root / f"oracle/checker/{agent_id}/stage-{ordinal:02d}.txt").read_text(
-                    encoding="utf-8"
-                )
-            )
-        )
-        for agent_id in AGENT_IDS
-    }
-    changed_mass = {
-        agent_id: sum(word in changed for word in words) / len(words)
-        for agent_id, words in post_words_by_agent.items()
-    }
-    assert changed_mass == pytest.approx(build.manipulation_check.changed_token_mass_by_agent)
-    all_post_words = tuple(word for words in post_words_by_agent.values() for word in words)
-    assert sum(word in changed for word in all_post_words) / len(all_post_words) == pytest.approx(
-        build.manipulation_check.rekey_old_key_loss
-    )
-    assert build.manipulation_check.stationary_old_key_loss == 0
-    assert build.manipulation_check.rekey_old_key_loss >= 0.15
-
-
-def test_agent_visible_variant_trees_contain_no_oracle_records(
-    built_blocks: Mapping[str, BuiltBlock],
-) -> None:
-    forbidden_labels = (
-        b'"anchors"',
-        b'"sentinels"',
-        b'"specialists"',
-        b'"controls"',
-        b'"rejectedTiers"',
-        b'"preBoundaryIdentical"',
-        b'"rekeyOldKeyLoss"',
-        b'"changedTokenMassByAgent"',
-        b"oracle/",
-    )
-    for built in built_blocks.values():
-        visible = _files(built.first_root / "variants")
-        assert visible
-        assert all(path.suffix != ".json" for path in visible)
-        assert all("oracle" not in path.parts for path in visible)
-        for content in visible.values():
-            assert not any(label in content for label in forbidden_labels)

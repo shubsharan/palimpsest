@@ -2,63 +2,47 @@
 
 ## Direction
 
-Features 011 and 012 provide the local provider-neutral runner and its receipt-bound verification boundary. The active series turns that runner into one frozen five-block study without changing its character: it remains a puzzle runner, not an experiment service or prescribed multi-agent workflow.
+Palimpsest develops only what is needed to ask and evaluate word-substitution puzzle questions. The active architecture is the direct flow `FixtureDefinition -> FixturePackage -> ExperimentManifest -> RunRecord`; historical feature machinery remains available through Git history rather than the working tree.
 
-Each feature starts from its completed predecessor and follows the full Spec Kit workflow. A later slice does not begin while its predecessor has material analysis findings or failing checks.
+## Lean Experiment Engine
 
-## Feature 013: Engineered Paired Puzzle Blocks (Implemented)
+### Flexible Fixtures
 
-- Replace contiguous slicing with deterministic paragraph-preserving allocation across three agents and six stages.
-- Select a target window and key boundary deterministically, then use a bounded seeded search across three declared feasibility tiers.
-- Co-design shared anchors, owner-weighted specialist sets, universal sentinels, bounded solo coverage, balanced token mass, and matched stable controls.
-- Derive stationary and re-key twins from one base key and allocation, keeping all labels and oracle data out of agent-visible artifacts.
-- Pin one calibration and four validation targets with committed provenance and deterministic windows.
+- Declare source, references, seed, agents, stages, variants, re-key boundaries, and scientific allocation constraints in one definition.
+- Prepare immutable packages with deterministic agent-visible evidence, trusted oracle data, provenance, manipulation checks, and scoring inputs.
+- Verify 2-agent/3-stage, 3-agent/6-stage, and 4-agent/8-stage fixtures without source changes.
 
-This feature is done when rebuilds are byte-identical, paragraph order and union coverage hold, tier fallback is explicit, pre-boundary twins are identical, and the changed key measurably degrades old-key decoding after the boundary.
+Done means repeated preparation is byte-stable, trusted data stays hidden, and new fixture geometry needs only declarations and corpus inputs.
 
-## Feature 014: Four Team Conditions (Implemented)
+### Explicit Experiments
 
-- Add canonical `CS`, `CR`, `IS`, and `IR` conditions and derive communication mode and key regime from those identifiers.
-- Keep the agent objective concise and vary only channel availability and the disclosed schedule, limits, tools, references, and evaluation boundary.
-- Give shared conditions one ordinary peer Git repository; give isolated conditions independent usable repositories with no peer evidence or activity; seed every origin with the same neutral `solver.py`.
-- Make only the exact solver pushed to the assigned origin's `main` branch checkable and gradeable, while leaving roles, Git operations, branches, and coordination cadence to the agents.
-- Freeze every visible repository, workspace, response, activity trace, Git state, session outcome, sandbox identity, block, condition, and protocol digest before optional observation.
-- Keep reviewer-selected `puzzle:evaluate`; add no automated behavioral review, outcome aggregation, or post-hoc merging.
+- Declare concrete ordered runs with exact fixture variants, model assignments, communication capabilities, schedules, limits, spend ceilings, and analysis labels.
+- Execute runs sequentially and agents within a run concurrently.
+- Preserve shared ordinary Git and an optional team room, or isolated usable private Git, without prescribing model workflow.
+- Stop on failure without retry, replacement, phase, reservation, or resume machinery.
 
-This feature is done when shared peer visibility, isolated non-observability, private Git usability, identical scaffolds, published-main-only checking, prompt parity, and the declared fake-time release schedule and cutoff pass without prescribing agent workflow.
+Done means two manifests can vary fixtures, geometry, schedules, models, and communication without runner edits, and every invalid or unauthorized path stops before provider access.
 
-## Feature 015: Frozen Five-Block Protocol (Implemented)
+### Complete Evidence
 
-- Replace schema v1 and its obsolete `runs` shape with one strict schema-v2 YAML manifest for five blocks, one three-model assignment, four conditions, schedules, budgets, providers, order, failure policy, rubric, and total ceilings.
-- Keep `puzzle:build --block`, add `puzzle:run --condition`, and expand `puzzle:experiment --phase calibration|validation` into sequential attempts.
-- Use the four balanced validation orders: `CS CR IR IS`, `CR IS CS IR`, `IS IR CR CS`, and `IR CS IS CR`.
-- Write a calibration design receipt before attempts. Require it for validation, freeze scientific fields, and permit changes only to declared adjustable operational fields.
-- Stop nonzero on infrastructure failure. Permit only an explicit appended replacement that cites a frozen attempt already classified under the declared infrastructure-failure policy.
-- Keep provider-backed phases behind the existing clean receipt-bound preflight; implementation and acceptance remain provider-free.
+- Publish one secret-free `RunRecord` plus an append-only behavioral trace.
+- Freeze and evaluate the one shared origin or every isolated agent origin; retain missing publication and integration as outcomes.
+- Permit provider-free re-evaluation and optional post-publication overlap analysis without changing frozen evidence or scores.
 
-This feature is done when the complete five-block by four-condition fixture protocol, negative configuration cases, receipt freeze, replacement policy, prompt snapshots, focused TypeScript/Python suites, `pnpm verify`, clean-checkout `pnpm preflight`, and `git diff --check` pass without live model calls.
+Done means a reviewer can reconstruct the declared conditions, inspect the observed behavior, and reproduce scoring from the frozen record without a live provider session.
 
-## Feature 016: Optional Team Channel (Implemented)
+### Research Validation
 
-- Require each manifest to declare `communication.teamChannel` as `enabled` or `disabled`.
-- Give enabled shared-condition agents one public append-only room for strategy and ideas; keep it entirely absent from isolated conditions.
-- Retain accepted messages in the attempt trace and wake peers through the existing activity surface.
-- Keep pushed `origin/main:solver.py` as the only checkable and gradeable artifact.
-- Resolve and record the exact selected `refs/heads/main` commit, export its Git-free tree, and use one isolated execution boundary for checking and grading.
+- Keep ordinary development checks fast and advisory.
+- Immediately before paid or findings-bearing execution, validate the exact manifest and fixture packages, probe the sandbox, complete the provider-free smoke path, and require explicit spend authorization.
+- Retain the resolved fixture, configuration, sandbox, and validation identities with the run rather than maintaining a repository-wide preflight receipt.
 
-This feature is done when enabled shared messaging, disabled Git-only parity, isolated non-observability, protocol provenance, exact-main snapshot grading, output containment, and provider-free verification pass without prescribing how or when agents communicate.
-
-## Feature 019: Configurable Run Controls
-
-- Treat the manifest's release offsets and wall cutoff as validated inputs rather than runner constants.
-- Allow the cumulative token policy to be explicitly enabled with numeric ceilings or disabled with paired `null` values while always recording provider-reported usage.
-- Keep monetary authorization mandatory and freeze every resolved control into receipts, protocols, reservations, and attempts.
-- Preserve exact provider-returned reasoning-summary items as a safe evidence subset without retaining hidden reasoning or complete response bodies.
-
-This feature is done when multiple clock profiles and both token-policy modes pass through the same runner and durable artifact path without source edits or provider-backed spend.
+Done means no provider request can occur on invalid, drifted, sandbox-failing, or unauthorized inputs.
 
 ## Boundaries
 
-The geometry is fixed at three agents, six stages, and a boundary at stage four. The study uses files, direct providers, sequential attempts, fixture adapters, fake clocks, and explicit reviewer evaluation. It adds no services, databases, accounts, dashboards, automatic retries, compatibility layer, automated behavioral review, or benchmark claims.
+Palimpsest remains a local word-substitution research environment. It adds no hosted service, database, account system, arbitrary puzzle plugin framework, automatic statistical conclusions, workflow roles, checkpoints, consensus, or hidden recovery system.
 
-Palimpsest claims controlled opportunities and recorded outcomes only. It does not claim guaranteed collaboration, belief revision, construct validity, or reproducible live model behavior.
+The historical five-fixture, twenty-run design remains a checked-in example expressed through the lean declarations. It is a preset, not the runner architecture or the only valid experiment.
+
+Palimpsest claims controlled opportunities and recorded outcomes only. It does not claim deterministic live behavior, guaranteed collaboration, belief revision, causal effects from one run, construct validity, adversarial security, or general benchmark status.

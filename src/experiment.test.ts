@@ -1,209 +1,252 @@
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { decodeBuildManifest, type DesignReceipt, type PhaseSummary } from "./artifacts.js";
-import { loadResolvedStudy } from "./config.js";
-import {
-  assertBuildMatchesStudy,
-  createConfiguredStudyAgents,
-  runExperimentFromFlags,
-  runStudyExperiment,
-} from "./experiment.js";
-import type { ModelAdapter } from "./model.js";
-import { FakeCommandSandbox, TEST_SANDBOX_IDENTITY, testBuildManifest } from "./test-helpers.js";
+import type { ResolvedExperiment } from "./config.js";
+import { runExperiment, runExperimentFromFlags } from "./experiment.js";
+import type { FixturePackage } from "./fixture-package.js";
+import type { AgentId, ModelAdapter, ModelBinding } from "./model.js";
+import type { RunPreparedFixtureOptions, RunPreparedFixtureResult } from "./run.js";
+import { FakeCommandSandbox } from "./test-helpers.js";
 
-const root = resolve(".");
-const sourceRevision = "1".repeat(40);
+const agentIds = ["agent-1", "agent-2"] as const satisfies readonly AgentId[];
+const binding: ModelBinding = {
+  profile: "research",
+  provider: "provider",
+  driver: "openai-compatible",
+  requestedModel: "model",
+  settings: {},
+  providerOptions: {},
+};
 
-function adapter(): ModelAdapter {
+function fixture(): FixturePackage {
   return {
-    openSession() {
-      throw new Error("Orchestration tests never open provider sessions.");
+    schemaVersion: 1,
+    fixtureId: "fixture",
+    contentDigest: "a".repeat(64),
+    agentIds,
+    stageCount: 1,
+    variants: {
+      stationary: {
+        variantId: "stationary",
+        rekeyFromStage: null,
+        buildId: `build-${"b".repeat(64)}`,
+        publicCiphertextPath: "variants/stationary/ciphertext.txt",
+        publicCiphertextSha256: "e".repeat(64),
+        referenceCorpusPath: "variants/stationary/references",
+        referenceFiles: [
+          {
+            sourceId: "reference",
+            sourceSha256: "f".repeat(64),
+            path: "variants/stationary/references/reference.txt",
+            byteLength: 1,
+            sha256: "f".repeat(64),
+          },
+        ],
+        stages: agentIds.map((agentId) => ({
+          agentId,
+          ordinal: 1,
+          sourcePath: `variants/stationary/private/${agentId}/stage-01.txt`,
+          sha256: "1".repeat(64),
+        })),
+      },
     },
   };
 }
 
-function receipt(): DesignReceipt {
-  return { sourceRevision } as DesignReceipt;
-}
-
-function stoppedPhase(): PhaseSummary {
-  return { phase: "calibration", state: "blocked" } as PhaseSummary;
-}
-
-describe("study experiment orchestration", () => {
-  it("constructs the frozen assignment and accepts only registered builds", async () => {
-    const study = await loadResolvedStudy("experiments/config.yaml", root);
-    const models: string[] = [];
-    const agents = createConfiguredStudyAgents(study, {
-      createAdapter(options) {
-        models.push(options.model);
-        return adapter();
-      },
-    });
-
-    expect(models).toEqual(["gpt-5.6-sol", "gpt-5.6-sol", "gpt-5.6-sol"]);
-    expect(agents["agent-1"]!.model.profile).toBe("sol");
-    expect(agents["agent-2"]!.model.profile).toBe("sol");
-    expect(agents["agent-3"]!.model.profile).toBe("sol");
-    const manifest = decodeBuildManifest(testBuildManifest());
-    expect(() => assertBuildMatchesStudy(manifest, study)).not.toThrow();
-    expect(() =>
-      assertBuildMatchesStudy({ ...manifest, blockId: "not-a-study-block" }, study),
-    ).toThrow(/five registered study blocks/);
+function experiment(packagePath: string): ResolvedExperiment {
+  const run = (id: string) => ({
+    id,
+    fixture: { packagePath, variant: "stationary" },
+    assignment: { "agent-1": "research", "agent-2": "research" },
+    capabilities: { git: "shared" as const, teamRoom: "disabled" as const },
+    schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
+    limits: { tokenLimitPerAgent: null, spendCeilingCents: 10 },
+    labels: { treatment: id },
   });
+  return {
+    schemaVersion: 1,
+    providers: {
+      provider: { driver: "openai-compatible", baseURL: "https://provider.invalid/v1" },
+    },
+    models: {
+      research: {
+        provider: "provider",
+        model: "model",
+        settings: {},
+        providerOptions: {},
+      },
+    },
+    totalSpendCeilingCents: 20,
+    runs: [run("run-a"), run("run-b")],
+    manifestDigest: "c".repeat(64),
+  };
+}
 
-  it("checks the clean preflight before constructing any provider adapter", async () => {
-    const study = await loadResolvedStudy("experiments/config.yaml", root);
-    const events: string[] = [];
-    let observedTeamChannel: string | undefined;
+function adapter(): ModelAdapter {
+  return {
+    openSession: () => ({
+      respond: async () => ({ toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 } }),
+    }),
+  };
+}
+
+async function fakeResult(
+  options: RunPreparedFixtureOptions,
+  sandbox: FakeCommandSandbox,
+): Promise<RunPreparedFixtureResult> {
+  await mkdir(options.output, { recursive: true });
+  const repository = {
+    repositoryId: "shared" as const,
+    path: join(options.output, "frozen", "shared.git"),
+    agentIds,
+  };
+  return {
+    runRoot: options.output,
+    runId: options.runId,
+    experimentId: options.experimentId,
+    fixtureId: "fixture",
+    fixtureDigest: "a".repeat(64),
+    spendCeilingCents: options.spendCeilingCents,
+    gitVisibility: options.gitVisibility,
+    teamRoom: options.teamRoom,
+    variantId: options.variantId,
+    buildId: `build-${"b".repeat(64)}`,
+    buildRoot: options.fixtureRoot,
+    agentIds,
+    releaseOffsetsMs: options.releaseOffsetsMs,
+    cutoffMs: options.cutoffMs,
+    tokenBudgetPerAgent: options.tokenBudgetPerAgent,
+    labels: options.labels,
+    sessions: agentIds.map((agentId) => ({
+      agentId,
+      model: binding,
+      state: "finished" as const,
+      inputTokens: 1,
+      outputTokens: 1,
+      activityCursor: 0,
+      terminationReason: "voluntary final response",
+    })),
+    frozen: {
+      frozen: true,
+      root: join(options.output, "frozen"),
+      communicationMode: "shared",
+      repositories: [repository],
+      workspaces: agentIds.map((agentId) => ({
+        agentId,
+        path: join(options.output, "frozen", "workspaces", agentId),
+        repositoryId: "shared" as const,
+      })),
+      treeSeal: { schemaVersion: 1, digest: "d".repeat(64), fileCount: 1, byteCount: 1 },
+    },
+    tracePath: join(options.output, "trace.jsonl"),
+    traceMetadataPath: join(options.output, "trace.meta.json"),
+    sandbox: sandbox.identity,
+  };
+}
+
+describe("experiment orchestration", () => {
+  it("validates provider-free and checks spend authorization before adapters", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
     const sandbox = new FakeCommandSandbox();
-
-    const result = await runStudyExperiment({
-      root,
-      configPath: "experiments/config.yaml",
-      studyRoot: "/tmp/palimpsest-experiment-order",
-      phase: "calibration",
-      dependencies: {
-        loadStudy: async () => study,
-        createSandbox: async () => sandbox,
-        prepareDesign: async () => receipt(),
-        readPreflight: async () => {
-          events.push("preflight");
-          return {
-            schemaVersion: 1,
-            testedCommit: sourceRevision,
-            sourceClean: true,
-            completedAt: "2026-07-29T12:00:00.000Z",
-            sandbox: TEST_SANDBOX_IDENTITY,
-          };
-        },
-        createAdapter: () => {
-          events.push("adapter");
-          return adapter();
-        },
-        run: async (request) => {
-          events.push("run");
-          observedTeamChannel = request.teamChannel;
-        },
-        executePhase: async (options) => {
-          await options.dependencies.beforeLaunch({
-            cell: {
-              cellId: "calibration-001-calibration-theron-ware-CS",
-              phase: "calibration",
-              blockId: "calibration-theron-ware",
-              condition: "CS",
-              conditionOrderPosition: 1,
-              phasePosition: 1,
-              buildRoot: "/tmp/palimpsest/build",
-              pairedBuildId: `paired-${"2".repeat(64)}`,
-              buildId: `build-${"3".repeat(64)}`,
-            },
-            attemptId: "attempt-calibration-01-001",
-            attemptRoot: "/tmp/palimpsest/attempt",
-            studyRootId: "study-fixture",
-            designDigest: "4".repeat(64),
-            tokenBudgetPerAgent: 200_000,
-            monetaryAuthorizationCeilingCents: 10_000,
-          });
-          await options.dependencies.runCell({
-            cell: {
-              cellId: "calibration-001-calibration-theron-ware-CS",
-              phase: "calibration",
-              blockId: "calibration-theron-ware",
-              condition: "CS",
-              conditionOrderPosition: 1,
-              phasePosition: 1,
-              buildRoot: "/tmp/palimpsest/build",
-              pairedBuildId: `paired-${"2".repeat(64)}`,
-              buildId: `build-${"3".repeat(64)}`,
-            },
-            attemptId: "attempt-calibration-01-001",
-            attemptRoot: "/tmp/palimpsest/attempt",
-            studyRootId: "study-fixture",
-            designDigest: "4".repeat(64),
-            tokenBudgetPerAgent: 200_000,
-            monetaryAuthorizationCeilingCents: 10_000,
-          });
-          return stoppedPhase();
-        },
-      },
-    });
-
-    expect(events).toEqual(["preflight", "adapter", "adapter", "adapter", "run"]);
-    expect(observedTeamChannel).toBe("enabled");
-    expect(result.state).toBe("blocked");
-  });
-
-  it("fails preflight without constructing an adapter", async () => {
-    const study = await loadResolvedStudy("experiments/config.yaml", root);
     let adapterCalls = 0;
+    let smokeCalls = 0;
 
     await expect(
-      runStudyExperiment({
+      runExperiment({
         root,
-        configPath: "experiments/config.yaml",
-        studyRoot: "/tmp/palimpsest-experiment-preflight",
-        phase: "calibration",
+        configPath: "manifest.yaml",
+        output: "experiment",
+        allowSpend: false,
         dependencies: {
-          loadStudy: async () => study,
-          createSandbox: async () => new FakeCommandSandbox(),
-          prepareDesign: async () => receipt(),
-          readPreflight: async () => {
-            throw new Error("receipt is stale");
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => fixture(),
+          createSandbox: async () => sandbox,
+          run: async (options) => {
+            smokeCalls += 1;
+            return fakeResult(options, sandbox);
           },
           createAdapter: () => {
             adapterCalls += 1;
             return adapter();
           },
-          executePhase: async (options) => {
-            await options.dependencies.beforeLaunch({
-              cell: {
-                cellId: "calibration-001-calibration-theron-ware-CS",
-                phase: "calibration",
-                blockId: "calibration-theron-ware",
-                condition: "CS",
-                conditionOrderPosition: 1,
-                phasePosition: 1,
-                buildRoot: "/tmp/palimpsest/build",
-                pairedBuildId: `paired-${"2".repeat(64)}`,
-                buildId: `build-${"3".repeat(64)}`,
-              },
-              attemptId: "attempt-calibration-01-001",
-              attemptRoot: "/tmp/palimpsest/attempt",
-              studyRootId: "study-fixture",
-              designDigest: "4".repeat(64),
-              tokenBudgetPerAgent: 200_000,
-              monetaryAuthorizationCeilingCents: 10_000,
-            });
-            return stoppedPhase();
-          },
         },
       }),
-    ).rejects.toThrow(/receipt is stale/);
+    ).rejects.toThrow(/allow-spend true/i);
+    expect(smokeCalls).toBe(1);
     expect(adapterCalls).toBe(0);
   });
 
-  it("accepts only the phase study-root and optional replacement flags", () => {
+  it("executes declared runs sequentially and publishes one record per run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    const sandbox = new FakeCommandSandbox();
+    const calls: string[] = [];
+    const records = await runExperiment({
+      root,
+      configPath: "manifest.yaml",
+      output: "experiment",
+      allowSpend: true,
+      dependencies: {
+        loadExperiment: async () => experiment(packagePath),
+        loadFixture: async () => fixture(),
+        createSandbox: async () => sandbox,
+        createAdapter: () => adapter(),
+        run: async (options) => {
+          calls.push(options.runId);
+          return fakeResult(options, sandbox);
+        },
+        evaluate: async () => [
+          { repositoryId: "shared", agentIds, status: "not-runnable" as const },
+        ],
+      },
+    });
+
+    expect(calls).toEqual(["run-a-validation", "run-a", "run-b"]);
+    expect(records.map(({ run }) => run.id)).toEqual(["run-a", "run-b"]);
+    await expect(
+      readFile(join(root, "experiment", "run-a", "run.json"), "utf8"),
+    ).resolves.toContain('"id": "run-a"');
+  });
+
+  it("stops at the first failed run without replacement or retry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    const sandbox = new FakeCommandSandbox();
+    const calls: string[] = [];
+    await expect(
+      runExperiment({
+        root,
+        configPath: "manifest.yaml",
+        output: "experiment",
+        allowSpend: true,
+        dependencies: {
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => fixture(),
+          createSandbox: async () => sandbox,
+          createAdapter: () => adapter(),
+          run: async (options) => {
+            calls.push(options.runId);
+            if (options.runId === "run-a") throw new Error("run failed");
+            return fakeResult(options, sandbox);
+          },
+        },
+      }),
+    ).rejects.toThrow("run failed");
+    expect(calls).toEqual(["run-a-validation", "run-a"]);
+  });
+
+  it("requires an explicit boolean spend decision at the CLI", () => {
     expect(() =>
       runExperimentFromFlags(
         new Map([
-          ["--config", "experiments/config.yaml"],
-          ["--phase", "pilot"],
-          ["--study-root", "artifacts/study"],
+          ["--config", "manifest.yaml"],
+          ["--output", "experiment"],
         ]),
       ),
-    ).toThrow(/calibration or validation/);
-    expect(() =>
-      runExperimentFromFlags(
-        new Map([
-          ["--config", "experiments/config.yaml"],
-          ["--phase", "calibration"],
-          ["--study-root", "artifacts/study"],
-          ["--condition", "CS"],
-        ]),
-      ),
-    ).toThrow(/Unsupported experiment flag/);
+    ).toThrow(/allow-spend must be exactly true or false/i);
   });
 });

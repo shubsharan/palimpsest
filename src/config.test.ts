@@ -3,285 +3,167 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  expandPhase,
-  loadResolvedStudy,
-  loadStudyManifest,
-  parseStudyYaml,
-  resolveStudy,
+  loadExperimentManifest,
+  loadResolvedExperiment,
+  parseExperimentYaml,
+  resolveExperiment,
+  validateExperimentManifest,
   validateProviderOptions,
-  validateStudyManifest,
-  type StudyManifest,
+  validateRunAgainstFixture,
+  type ExperimentManifest,
 } from "./config.js";
 
 const fixture = (name: string): string => resolve("tests", "fixtures", "config", name);
 
-async function validManifest(): Promise<StudyManifest> {
-  return loadStudyManifest(fixture("valid.yaml"));
+async function validManifest(): Promise<ExperimentManifest> {
+  return loadExperimentManifest(fixture("valid.yaml"));
 }
 
-describe("study manifest", () => {
+describe("experiment manifest", () => {
   it("parses YAML while rejecting duplicate keys and aliases", () => {
     expect(() =>
-      parseStudyYaml(`
-schemaVersion: 4
-schemaVersion: 4
+      parseExperimentYaml(`
+schemaVersion: 1
+schemaVersion: 1
 `),
     ).toThrow(/map keys must be unique/i);
 
     expect(() =>
-      parseStudyYaml(`
-schemaVersion: 4
+      parseExperimentYaml(`
+schemaVersion: 1
 value: &shared { nested: true }
 copy: *shared
 `),
     ).toThrow(/alias/i);
   });
 
-  it("resolves the exact five-block matrix without reading credentials", async () => {
-    const study = await resolveStudy(await validManifest(), resolve("."));
+  it("resolves explicit ordered runs without reading credentials or fixture packages", async () => {
+    const experiment = resolveExperiment(await validManifest(), resolve("."));
 
-    expect(study.assignment).toEqual([
-      { agentId: "agent-1", modelProfileId: "gpt" },
-      { agentId: "agent-2", modelProfileId: "claude" },
-      { agentId: "agent-3", modelProfileId: "gemini" },
-    ]);
-    expect(study.communication).toEqual({ teamChannel: "disabled" });
-    expect(
-      expandPhase(study, "calibration").map(({ blockId, condition }) => [blockId, condition]),
-    ).toEqual([
-      ["calibration-theron-ware", "CS"],
-      ["calibration-theron-ware", "CR"],
-      ["calibration-theron-ware", "IR"],
-      ["calibration-theron-ware", "IS"],
-    ]);
-    expect(
-      expandPhase(study, "validation").map(({ blockId, condition }) => [blockId, condition]),
-    ).toEqual([
-      ["validation-odd-women", "CS"],
-      ["validation-odd-women", "CR"],
-      ["validation-odd-women", "IR"],
-      ["validation-odd-women", "IS"],
-      ["validation-pointed-firs", "CR"],
-      ["validation-pointed-firs", "IS"],
-      ["validation-pointed-firs", "CS"],
-      ["validation-pointed-firs", "IR"],
-      ["validation-custom-country", "IS"],
-      ["validation-custom-country", "IR"],
-      ["validation-custom-country", "CR"],
-      ["validation-custom-country", "CS"],
-      ["validation-woodlanders", "IR"],
-      ["validation-woodlanders", "CS"],
-      ["validation-woodlanders", "IS"],
-      ["validation-woodlanders", "CR"],
-    ]);
-    expect(study.calibrationCells.map((cell) => cell.phasePosition)).toEqual([1, 2, 3, 4]);
-    expect(study.validationCells.map((cell) => cell.phasePosition)).toEqual(
-      Array.from({ length: 16 }, (_, index) => index + 1),
-    );
-    expect(study.validationCells[4]).toMatchObject({
-      cellId: "validation-5-validation-pointed-firs-CR",
-      conditionOrderPosition: 1,
+    expect(experiment.runs.map((run) => run.id)).toEqual(["shared-stationary", "isolated-rekey"]);
+    expect(experiment.runs[0]).toMatchObject({
+      fixture: {
+        packagePath: fixture("packages/three-agent.json"),
+        variant: "stationary",
+      },
+      assignment: {
+        "agent-1": "gpt",
+        "agent-2": "claude",
+        "agent-3": "gemini",
+      },
+      capabilities: { git: "shared", teamRoom: "enabled" },
+      limits: { tokenLimitPerAgent: 200_000, spendCeilingCents: 10_000 },
+      labels: { cohort: "baseline", replicate: 1 },
     });
-    expect(study.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(study.immutableManifestDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(study.immutableManifest.budgets).toEqual({
-      totalTokenCeiling: 15_000_000,
-      totalMonetaryCeilingCents: 250_000,
+    expect(experiment.models.gpt).toEqual({
+      provider: "openai",
+      model: "gpt-research",
+      settings: { maxOutputTokens: 4096, temperature: 0.2, topP: 0.9, seed: 7 },
+      providerOptions: {},
     });
-    expect(study.immutableManifest.communication).toEqual({ teamChannel: "disabled" });
-    expect(study.rubricPath).toBe(fixture("behavior-rubric.md"));
-    expect(study.providers.openai).toEqual({
-      driver: "openai",
-      apiKeyEnv: "RESEARCH_OPENAI_KEY",
-    });
-    expect(JSON.stringify(study)).not.toContain("secret");
-    expect(Object.isFrozen(study)).toBe(true);
-    expect(Object.isFrozen(study.validationCells)).toBe(true);
+    expect(experiment.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(experiment)).not.toContain("RESEARCH_OPENAI_KEY_VALUE");
+    expect(Object.isFrozen(experiment)).toBe(true);
+    expect(Object.isFrozen(experiment.runs)).toBe(true);
+    expect(Object.isFrozen(experiment.runs[0]!.labels)).toBe(true);
   });
 
-  it("loads and verifies the checked-in manifest and rubric", async () => {
-    const study = await loadResolvedStudy(resolve("experiments", "config.yaml"), resolve("."));
+  it("accepts a materially different fixture geometry and resource policy", async () => {
+    const experiment = await loadResolvedExperiment(fixture("varied.yaml"), resolve("."));
+    const run = experiment.runs[0]!;
 
-    expect(study.blocks).toHaveLength(5);
-    expect(study.calibrationCells).toHaveLength(4);
-    expect(study.validationCells).toHaveLength(16);
-    expect(study.rubric.rubricId).toBe("palimpsest-behavior-review-v1");
+    expect(run.assignment).toEqual({ "agent-1": "local", "agent-2": "local" });
+    expect(run.schedule).toEqual({ releaseOffsetsMs: [0, 500, 1_500], cutoffMs: 2_500 });
+    expect(run.limits).toEqual({ tokenLimitPerAgent: null, spendCeilingCents: 0 });
+    expect(run.capabilities).toEqual({ git: "isolated", teamRoom: "disabled" });
   });
 
-  it("changes only the complete manifest digest for either adjustable budget", async () => {
-    const baseline = await validManifest();
-    const tokenAdjustment = structuredClone(baseline);
-    tokenAdjustment.budgets.tokenBudgetPerAgent = 210_000;
-    const monetaryAdjustment = structuredClone(baseline);
-    monetaryAdjustment.budgets.perAttemptMonetaryCeilingCents = 11_000;
-
-    const [original, changedTokens, changedMoney] = await Promise.all([
-      resolveStudy(baseline, resolve(".")),
-      resolveStudy(tokenAdjustment, resolve(".")),
-      resolveStudy(monetaryAdjustment, resolve(".")),
-    ]);
-
-    expect(changedTokens.manifestDigest).not.toBe(original.manifestDigest);
-    expect(changedMoney.manifestDigest).not.toBe(original.manifestDigest);
-    expect(changedTokens.immutableManifestDigest).toBe(original.immutableManifestDigest);
-    expect(changedMoney.immutableManifestDigest).toBe(original.immutableManifestDigest);
-  });
-
-  it("accepts alternate valid clocks and freezes them into the resolved study", async () => {
-    const manifest = structuredClone(await validManifest());
-    manifest.schedule.releaseOffsetsMs = [0, 1_000, 2_500, 4_000, 7_500, 9_000];
-    manifest.schedule.cutoffMs = 12_000;
-
-    const study = await resolveStudy(manifest, resolve("."));
-
-    expect(study.schedule).toEqual({
-      releaseOffsetsMs: [0, 1_000, 2_500, 4_000, 7_500, 9_000],
-      cutoffMs: 12_000,
-    });
-    expect(Object.isFrozen(study.schedule)).toBe(true);
-    expect(Object.isFrozen(study.schedule.releaseOffsetsMs)).toBe(true);
-  });
-
-  it("accepts an explicitly disabled token policy while keeping monetary authorization", async () => {
-    const manifest = structuredClone(await validManifest());
-    manifest.budgets.tokenBudgetPerAgent = null;
-    manifest.budgets.totalTokenCeiling = null;
-
-    const study = await resolveStudy(manifest, resolve("."));
-
-    expect(study.budgets).toMatchObject({
-      tokenBudgetPerAgent: null,
-      totalTokenCeiling: null,
-      perAttemptMonetaryCeilingCents: 10_000,
-      totalMonetaryCeilingCents: 250_000,
-    });
-  });
-
-  it("rejects partially disabled token policies", async () => {
-    const missingTotal = structuredClone(await validManifest());
-    missingTotal.budgets.tokenBudgetPerAgent = null;
-    expect(() => resolveStudy(missingTotal, resolve("."))).rejects.toThrow(
-      /tokenBudgetPerAgent.*totalTokenCeiling|both be numeric or both be null/i,
+  it("loads the checked-in explicit-run preset", async () => {
+    const experiment = await loadResolvedExperiment(
+      resolve("experiments", "config.yaml"),
+      resolve("."),
     );
 
-    const missingPerAgent = structuredClone(await validManifest());
-    missingPerAgent.budgets.totalTokenCeiling = null;
-    expect(() => resolveStudy(missingPerAgent, resolve("."))).rejects.toThrow(
-      /tokenBudgetPerAgent.*totalTokenCeiling|both be numeric or both be null/i,
+    expect(experiment.runs).toHaveLength(20);
+    expect(new Set(experiment.runs.map((run) => run.fixture.packagePath))).toHaveProperty(
+      "size",
+      5,
     );
+    expect(experiment.runs.every((run) => Object.keys(run.assignment).length === 3)).toBe(true);
   });
 
-  it("changes the immutable digest when any scientific field changes", async () => {
-    const baseline = await validManifest();
-    const changed = structuredClone(baseline);
-    changed.models.gpt!.model = "different-model";
+  it("validates each run against decoded fixture package metadata", async () => {
+    const manifest = await validManifest();
+    const run = manifest.runs[0]!;
+    const metadata = {
+      agentIds: ["agent-1", "agent-2", "agent-3"] as const,
+      stageCount: 6,
+      variants: { stationary: {}, rekey: {} },
+    };
 
-    const [original, drifted] = await Promise.all([
-      resolveStudy(baseline, resolve(".")),
-      resolveStudy(changed, resolve(".")),
-    ]);
-
-    expect(drifted.manifestDigest).not.toBe(original.manifestDigest);
-    expect(drifted.immutableManifestDigest).not.toBe(original.immutableManifestDigest);
-  });
-
-  it("requires and binds an explicit team-channel mode", async () => {
-    const baseline = await validManifest();
-    const enabled = structuredClone(baseline);
-    enabled.communication.teamChannel = "enabled";
-    const [disabledStudy, enabledStudy] = await Promise.all([
-      resolveStudy(baseline, resolve(".")),
-      resolveStudy(enabled, resolve(".")),
-    ]);
-
-    expect(enabledStudy.communication.teamChannel).toBe("enabled");
-    expect(enabledStudy.manifestDigest).not.toBe(disabledStudy.manifestDigest);
-    expect(enabledStudy.immutableManifestDigest).not.toBe(disabledStudy.immutableManifestDigest);
-
-    const { communication: _, ...missing } = baseline;
-    expect(() => validateStudyManifest(missing)).toThrow(/communication|invalid/i);
+    expect(() => validateRunAgainstFixture(run, metadata)).not.toThrow();
     expect(() =>
-      validateStudyManifest({
-        ...baseline,
-        communication: { teamChannel: "sometimes" },
-      }),
-    ).toThrow(/teamChannel|invalid/i);
+      validateRunAgainstFixture(
+        { ...run, assignment: { "agent-1": "gpt", "agent-2": "claude" } },
+        metadata,
+      ),
+    ).toThrow(/exactly the fixture agents/i);
+    expect(() =>
+      validateRunAgainstFixture(
+        { ...run, fixture: { ...run.fixture, variant: "missing" } },
+        metadata,
+      ),
+    ).toThrow(/unknown fixture variant/i);
+    expect(() =>
+      validateRunAgainstFixture(
+        { ...run, schedule: { releaseOffsetsMs: [0, 1], cutoffMs: 2 } },
+        metadata,
+      ),
+    ).toThrow(/exactly 6 stage offsets/i);
   });
 
   it.each([
-    ["schema-v1-runs.yaml", /schemaVersion|unsupported|invalid/i],
-    ["schedule-drift.yaml", /releaseOffsetsMs|invalid/i],
-    ["order-drift.yaml", /condition orders/i],
+    ["schedule-drift.yaml", /releaseOffsetsMs.*strictly increasing/i],
+    ["duplicate-run-id.yaml", /duplicates experiment run id/i],
     ["secret-bearing.yaml", /secret-bearing provider option/i],
-    ["ceiling-overflow.yaml", /totalTokenCeiling/i],
+    ["secret-label.yaml", /labels.*secret-bearing/i],
+    ["ceiling-overflow.yaml", /totalSpendCeilingCents.*run authorization/i],
   ])("rejects the %s fixture", async (name, error) => {
     await expect(
-      loadStudyManifest(fixture(name)).then((manifest) => resolveStudy(manifest, resolve("."))),
+      loadExperimentManifest(fixture(name)).then((manifest) => resolveExperiment(manifest)),
     ).rejects.toThrow(error);
   });
 
   it("rejects compatibility and unknown structural fields", async () => {
     const manifest = await validManifest();
 
-    expect(() => validateStudyManifest({ ...manifest, schemaVersion: 1 })).toThrow(
+    expect(() => validateExperimentManifest({ ...manifest, schemaVersion: 4 })).toThrow(
       /schemaVersion|invalid/i,
     );
-    expect(() => validateStudyManifest({ ...manifest, runs: [] })).toThrow(/runs|invalid/i);
-    expect(() => validateStudyManifest({ ...manifest, unexpected: true })).toThrow(
-      /unexpected|invalid/i,
+    expect(() => validateExperimentManifest({ ...manifest, blocks: [] })).toThrow(
+      /blocks|invalid/i,
     );
-  });
-
-  it("rejects reordered blocks, assignments, and failure-policy drift", async () => {
-    const reorderedBlocks = structuredClone(await validManifest());
-    [reorderedBlocks.blocks[1], reorderedBlocks.blocks[2]] = [
-      reorderedBlocks.blocks[2]!,
-      reorderedBlocks.blocks[1]!,
-    ];
-    expect(() => validateStudyManifest(reorderedBlocks)).toThrow(/blocks|invalid/i);
-
-    const reorderedAssignment = structuredClone(await validManifest());
-    [reorderedAssignment.assignment[0], reorderedAssignment.assignment[1]] = [
-      reorderedAssignment.assignment[1]!,
-      reorderedAssignment.assignment[0]!,
-    ];
-    expect(() => validateStudyManifest(reorderedAssignment)).toThrow(/assignment|invalid/i);
-
-    const manifest = await validManifest();
-    const changedFailurePolicy = {
-      ...manifest,
-      failurePolicy: { ...manifest.failurePolicy, automaticRetry: true },
-    };
-    expect(() => validateStudyManifest(changedFailurePolicy)).toThrow(/automaticRetry|invalid/i);
-  });
-
-  it("checks token and monetary primary authorization independently", async () => {
-    const manifest = structuredClone(await validManifest());
-    manifest.budgets.totalMonetaryCeilingCents = 199_999;
-
-    await expect(resolveStudy(manifest, resolve("."))).rejects.toThrow(
-      /totalMonetaryCeilingCents/i,
-    );
+    expect(() => validateExperimentManifest({ ...manifest, runs: [] })).toThrow(/runs|invalid/i);
   });
 
   it.each([
     {
       name: "unknown model provider",
-      change(manifest: StudyManifest) {
+      change(manifest: ExperimentManifest) {
         manifest.models.gpt!.provider = "missing";
       },
       error: /models\.gpt\.provider.*missing/i,
     },
     {
       name: "unknown assigned model profile",
-      change(manifest: StudyManifest) {
-        manifest.assignment[1]!.modelProfileId = "missing";
+      change(manifest: ExperimentManifest) {
+        manifest.runs[0]!.assignment["agent-2"] = "missing";
       },
-      error: /assignment\[1\].*missing/i,
+      error: /runs\[0\].*agent-2.*missing/i,
     },
     {
       name: "credential-bearing provider URL",
-      change(manifest: StudyManifest) {
+      change(manifest: ExperimentManifest) {
         const provider = manifest.providers.local!;
         if (provider.driver === "openai-compatible") {
           provider.baseURL = "https://literal:secret@example.invalid/v1";
@@ -290,31 +172,24 @@ copy: *shared
       error: /baseURL.*literal credentials/i,
     },
     {
-      name: "rubric digest mismatch",
-      change(manifest: StudyManifest) {
-        manifest.rubric.sha256 = "a".repeat(64);
+      name: "fixture outside the repository",
+      change(manifest: ExperimentManifest) {
+        manifest.runs[0]!.fixture.packagePath = "../fixture.json";
       },
-      error: /rubric.*digest/i,
+      error: /packagePath.*repository/i,
     },
     {
-      name: "rubric outside the repository",
-      change(manifest: StudyManifest) {
-        manifest.rubric.path = "../behavior-rubric.md";
+      name: "unsafe spend arithmetic",
+      change(manifest: ExperimentManifest) {
+        manifest.totalSpendCeilingCents = Number.MAX_SAFE_INTEGER;
+        manifest.runs[0]!.limits.spendCeilingCents = Number.MAX_SAFE_INTEGER;
       },
-      error: /rubric\.path.*repository/i,
-    },
-    {
-      name: "unsafe token arithmetic",
-      change(manifest: StudyManifest) {
-        manifest.budgets.tokenBudgetPerAgent = Number.MAX_SAFE_INTEGER;
-        manifest.budgets.totalTokenCeiling = Number.MAX_SAFE_INTEGER;
-      },
-      error: /authorized token total.*safe integer/i,
+      error: /sum of run spend ceilings.*safe integer/i,
     },
   ])("rejects $name", async ({ change, error }) => {
     const manifest = structuredClone(await validManifest());
     change(manifest);
-    await expect(resolveStudy(manifest, resolve("."))).rejects.toThrow(error);
+    expect(() => resolveExperiment(manifest, resolve("."))).toThrow(error);
   });
 
   it.each([

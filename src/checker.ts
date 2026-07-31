@@ -1,7 +1,7 @@
 import { runPythonJson } from "./python.js";
 import type { CheckerHook } from "./tools.js";
 
-export function createChecker(root: string, buildRoot: string): CheckerHook {
+export function createChecker(root: string, fixtureRoot: string, variantId: string): CheckerHook {
   return async (request) => {
     if (request.releasedStages.length === 0) {
       return { matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 };
@@ -10,8 +10,10 @@ export function createChecker(root: string, buildRoot: string): CheckerHook {
       root,
       "palimpsest.evaluation.checker",
       [
-        "--build",
-        buildRoot,
+        "--fixture",
+        fixtureRoot,
+        "--variant",
+        variantId,
         "--agent",
         request.agentId,
         "--released",

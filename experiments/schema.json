@@ -1,29 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://palimpsest.local/study.schema.json",
-  "title": "Palimpsest Study",
+  "$id": "https://palimpsest.local/experiment.schema.json",
+  "title": "Palimpsest Experiment",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "communication",
-    "blocks",
-    "assignment",
-    "providers",
-    "models",
-    "schedule",
-    "budgets",
-    "orders",
-    "scoring",
-    "rubric",
-    "adjustableFields",
-    "failurePolicy"
-  ],
+  "required": ["schemaVersion", "providers", "models", "totalSpendCeilingCents", "runs"],
   "properties": {
-    "schemaVersion": { "const": 4 },
-    "communication": { "$ref": "#/$defs/communication" },
-    "blocks": { "$ref": "#/$defs/blocks" },
-    "assignment": { "$ref": "#/$defs/assignment" },
+    "schemaVersion": { "const": 1 },
     "providers": {
       "type": "object",
       "minProperties": 1,
@@ -36,257 +19,35 @@
       "propertyNames": { "$ref": "#/$defs/identifier" },
       "additionalProperties": { "$ref": "#/$defs/model" }
     },
-    "schedule": { "$ref": "#/$defs/schedule" },
-    "budgets": { "$ref": "#/$defs/budgets" },
-    "orders": { "$ref": "#/$defs/orders" },
-    "scoring": { "$ref": "#/$defs/scoring" },
-    "rubric": { "$ref": "#/$defs/rubric" },
-    "adjustableFields": {
+    "totalSpendCeilingCents": { "$ref": "#/$defs/nonNegativeSafeInteger" },
+    "runs": {
       "type": "array",
-      "prefixItems": [
-        { "const": "budgets.tokenBudgetPerAgent" },
-        { "const": "budgets.perAttemptMonetaryCeilingCents" }
-      ],
-      "items": false,
-      "minItems": 2,
-      "maxItems": 2
-    },
-    "failurePolicy": { "$ref": "#/$defs/failurePolicy" }
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/run" }
+    }
   },
   "$defs": {
-    "communication": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["teamChannel"],
-      "properties": {
-        "teamChannel": { "enum": ["enabled", "disabled"] }
-      }
-    },
     "identifier": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
-    "digest": {
+    "agentId": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^agent-[1-9][0-9]*$"
     },
     "environmentName": {
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
-    "block": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["blockId", "phase"],
-      "properties": {
-        "blockId": { "$ref": "#/$defs/identifier" },
-        "phase": { "enum": ["calibration", "validation"] }
-      }
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
     },
-    "blocks": {
-      "type": "array",
-      "prefixItems": [
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "calibration-theron-ware" },
-                "phase": { "const": "calibration" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-odd-women" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-pointed-firs" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-custom-country" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-woodlanders" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        }
-      ],
-      "items": false,
-      "minItems": 5,
-      "maxItems": 5
-    },
-    "assignmentEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["agentId", "modelProfileId"],
-      "properties": {
-        "agentId": { "type": "string" },
-        "modelProfileId": { "$ref": "#/$defs/identifier" }
-      }
-    },
-    "assignment": {
-      "type": "array",
-      "prefixItems": [
-        {
-          "allOf": [
-            { "$ref": "#/$defs/assignmentEntry" },
-            { "type": "object", "properties": { "agentId": { "const": "agent-1" } } }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/assignmentEntry" },
-            { "type": "object", "properties": { "agentId": { "const": "agent-2" } } }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/assignmentEntry" },
-            { "type": "object", "properties": { "agentId": { "const": "agent-3" } } }
-          ]
-        }
-      ],
-      "items": false,
-      "minItems": 3,
-      "maxItems": 3
-    },
-    "conditionOrder": {
-      "type": "array",
-      "prefixItems": [
-        { "enum": ["CS", "CR", "IS", "IR"] },
-        { "enum": ["CS", "CR", "IS", "IR"] },
-        { "enum": ["CS", "CR", "IS", "IR"] },
-        { "enum": ["CS", "CR", "IS", "IR"] }
-      ],
-      "items": false,
-      "minItems": 4,
-      "maxItems": 4,
-      "uniqueItems": true
-    },
-    "schedule": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["releaseOffsetsMs", "cutoffMs"],
-      "properties": {
-        "releaseOffsetsMs": {
-          "type": "array",
-          "items": { "type": "integer", "minimum": 0 },
-          "minItems": 6,
-          "maxItems": 6
-        },
-        "cutoffMs": { "type": "integer", "minimum": 1 }
-      }
-    },
-    "budgets": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "tokenBudgetPerAgent",
-        "perAttemptMonetaryCeilingCents",
-        "totalTokenCeiling",
-        "totalMonetaryCeilingCents"
-      ],
-      "properties": {
-        "tokenBudgetPerAgent": {
-          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
-        },
-        "perAttemptMonetaryCeilingCents": { "type": "integer", "minimum": 0 },
-        "totalTokenCeiling": {
-          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
-        },
-        "totalMonetaryCeilingCents": { "type": "integer", "minimum": 0 }
-      }
-    },
-    "orders": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["calibration", "validation"],
-      "properties": {
-        "calibration": { "$ref": "#/$defs/conditionOrder" },
-        "validation": {
-          "type": "array",
-          "prefixItems": [
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" }
-          ],
-          "items": false,
-          "minItems": 4,
-          "maxItems": 4
-        }
-      }
-    },
-    "scoring": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["metricId", "reviewerSelectionId"],
-      "properties": {
-        "metricId": { "const": "normalized-positional-word-v1" },
-        "reviewerSelectionId": { "const": "selected-workspace-main-snapshot-v1" }
-      }
-    },
-    "rubric": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["rubricId", "path", "sha256"],
-      "properties": {
-        "rubricId": { "$ref": "#/$defs/identifier" },
-        "path": { "type": "string", "minLength": 1 },
-        "sha256": { "$ref": "#/$defs/digest" }
-      }
-    },
-    "failurePolicy": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "stopOnInfrastructureFailure",
-        "automaticRetry",
-        "replacement",
-        "eligibleClassification"
-      ],
-      "properties": {
-        "stopOnInfrastructureFailure": { "const": true },
-        "automaticRetry": { "const": false },
-        "replacement": { "const": "explicit-appended" },
-        "eligibleClassification": { "const": "session-infrastructure-error" }
-      }
+    "nonNegativeSafeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "provider": {
       "oneOf": [
@@ -327,16 +88,99 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "maxOutputTokens": { "type": "integer", "minimum": 1 },
+            "maxOutputTokens": { "$ref": "#/$defs/safeInteger" },
             "temperature": { "type": "number", "minimum": 0 },
             "topP": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-            "seed": { "type": "integer" }
+            "seed": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
           }
         },
         "providerOptions": {
           "type": "object",
           "additionalProperties": true
         }
+      }
+    },
+    "fixtureReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packagePath", "variant"],
+      "properties": {
+        "packagePath": { "type": "string", "minLength": 1 },
+        "variant": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/agentId" },
+      "additionalProperties": { "$ref": "#/$defs/identifier" }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git", "teamRoom"],
+      "properties": {
+        "git": { "enum": ["shared", "isolated"] },
+        "teamRoom": { "enum": ["enabled", "disabled"] }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseOffsetsMs", "cutoffMs"],
+      "properties": {
+        "releaseOffsetsMs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonNegativeSafeInteger" }
+        },
+        "cutoffMs": { "$ref": "#/$defs/safeInteger" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokenLimitPerAgent", "spendCeilingCents"],
+      "properties": {
+        "tokenLimitPerAgent": {
+          "oneOf": [{ "$ref": "#/$defs/safeInteger" }, { "type": "null" }]
+        },
+        "spendCeilingCents": { "$ref": "#/$defs/nonNegativeSafeInteger" }
+      }
+    },
+    "jsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fixture", "assignment", "capabilities", "schedule", "limits", "labels"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "fixture": { "$ref": "#/$defs/fixtureReference" },
+        "assignment": { "$ref": "#/$defs/assignment" },
+        "capabilities": { "$ref": "#/$defs/capabilities" },
+        "schedule": { "$ref": "#/$defs/schedule" },
+        "limits": { "$ref": "#/$defs/limits" },
+        "labels": { "$ref": "#/$defs/labels" }
       }
     }
   }

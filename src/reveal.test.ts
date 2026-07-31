@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { RELEASE_OFFSETS_MS } from "./condition.js";
 import { runRevealSchedule, type MonotonicClock } from "./reveal.js";
+
+const RELEASE_OFFSETS_MS = [0, 300_000, 600_000, 1_200_000, 1_800_000, 2_400_000];
 
 class ControlledClock implements MonotonicClock {
   currentMs: number;
