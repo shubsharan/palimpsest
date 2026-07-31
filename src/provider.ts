@@ -6,6 +6,7 @@ import {
   generateText,
   jsonSchema,
   tool,
+  wrapLanguageModel,
   type JSONValue as AiJsonValue,
   type LanguageModel,
   type ModelMessage,
@@ -24,6 +25,8 @@ import type {
   ModelSessionContext,
   ModelToolCall,
   ModelTurn,
+  ReturnedReasoningSummary,
+  ReturnedReasoningSummaryItem,
 } from "./model.js";
 
 export interface AiSdkModelAdapterOptions {
@@ -92,6 +95,49 @@ function languageModelProvider(model: LanguageModel): string | undefined {
     return model.provider;
   }
   return undefined;
+}
+
+function openAiReturnedReasoningSummary(body: unknown): ReturnedReasoningSummary {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { status: "response-body-unavailable" };
+  }
+  const output = (body as { output?: unknown }).output;
+  if (!Array.isArray(output)) {
+    return { status: "response-body-unavailable" };
+  }
+
+  const items: ReturnedReasoningSummaryItem[] = [];
+  for (const part of output) {
+    if (
+      typeof part !== "object" ||
+      part === null ||
+      Array.isArray(part) ||
+      (part as { type?: unknown }).type !== "reasoning"
+    ) {
+      continue;
+    }
+    const item = part as { id?: unknown; summary?: unknown };
+    if (typeof item.id !== "string" || item.id.length === 0 || !Array.isArray(item.summary)) {
+      throw new Error("OpenAI Responses reasoning summary item is invalid.");
+    }
+    const summary = item.summary.map((entry) => {
+      if (
+        typeof entry !== "object" ||
+        entry === null ||
+        Array.isArray(entry) ||
+        (entry as { type?: unknown }).type !== "summary_text" ||
+        typeof (entry as { text?: unknown }).text !== "string"
+      ) {
+        throw new Error("OpenAI Responses reasoning summary entry is invalid.");
+      }
+      return {
+        type: "summary_text" as const,
+        text: (entry as { text: string }).text,
+      };
+    });
+    items.push({ id: item.id, summary });
+  }
+  return { status: "captured", items };
 }
 
 function requireToolArguments(value: unknown, name: string): Readonly<Record<string, unknown>> {
@@ -245,8 +291,27 @@ export class AiSdkModelAdapter implements ModelAdapter {
         }
 
         try {
+          const baseModel = this.#model;
+          const actualProvider = languageModelProvider(baseModel);
+          let returnedReasoningSummary: ReturnedReasoningSummary | undefined;
+          const model =
+            actualProvider === "openai.responses" && typeof baseModel !== "string"
+              ? wrapLanguageModel({
+                  model: baseModel,
+                  middleware: {
+                    specificationVersion: "v4",
+                    wrapGenerate: async ({ doGenerate }) => {
+                      const generated = await doGenerate();
+                      returnedReasoningSummary = openAiReturnedReasoningSummary(
+                        generated.response?.body,
+                      );
+                      return generated;
+                    },
+                  },
+                })
+              : baseModel;
           const result = await generateText({
-            model: this.#model,
+            model,
             messages: requestMessages,
             tools,
             maxRetries: 0,
@@ -284,7 +349,6 @@ export class AiSdkModelAdapter implements ModelAdapter {
           messages = [...requestMessages, ...result.responseMessages];
           pending = nextPending;
           started = true;
-          const actualProvider = languageModelProvider(this.#model);
           const reasoningSummary = result.finalStep.reasoningText;
           const common = {
             toolCalls,
@@ -294,6 +358,7 @@ export class AiSdkModelAdapter implements ModelAdapter {
               actualModel: result.response.modelId,
             },
             ...(reasoningSummary === undefined ? {} : { reasoningSummary }),
+            ...(returnedReasoningSummary === undefined ? {} : { returnedReasoningSummary }),
           };
           return result.text.length === 0 ? common : { ...common, finalResponse: result.text };
         } catch (error) {

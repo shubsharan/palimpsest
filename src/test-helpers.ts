@@ -200,11 +200,18 @@ export function testAttemptSummary(
     studyPhase?: "standalone" | "calibration" | "validation";
     infrastructureAgentId?: AgentId;
     replacementOfAttemptId?: string;
+    releaseOffsetsMs?: readonly number[];
+    cutoffMs?: number;
+    tokenBudgetPerAgent?: number | null;
   } = {},
 ): Record<string, unknown> {
   const agentIds = options.agentIds ?? generateAgentIds(3);
   const condition = resolveCondition(options.condition ?? "CR");
   const studyPhase = options.studyPhase ?? "standalone";
+  const releaseOffsetsMs = options.releaseOffsetsMs ?? RELEASE_OFFSETS_MS;
+  const cutoffMs = options.cutoffMs ?? ATTEMPT_CUTOFF_MS;
+  const tokenBudgetPerAgent =
+    options.tokenBudgetPerAgent === undefined ? 200_000 : options.tokenBudgetPerAgent;
   const buildId = `build-${condition.variantId === "stationary" ? "b".repeat(64) : TEST_DIGEST}`;
   const sandbox = {
     ...TEST_SANDBOX_IDENTITY,
@@ -228,16 +235,16 @@ export function testAttemptSummary(
     },
   }));
   const protocol = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     blockId: "calibration-theron-ware",
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,
     variantId: condition.variantId,
     buildId,
-    releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
-    cutoffMs: ATTEMPT_CUTOFF_MS,
-    tokenBudgetPerAgent: 200_000,
+    releaseOffsetsMs: [...releaseOffsetsMs],
+    cutoffMs,
+    tokenBudgetPerAgent,
     teamChannel: "disabled",
     models,
     prompts: agentIds.map((agentId) => ({
@@ -261,7 +268,7 @@ export function testAttemptSummary(
           agentIds: [agentId],
         }));
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     attemptId: "attempt-fixture",
     studyPhase,
     ...(studyPhase === "standalone"
@@ -286,9 +293,9 @@ export function testAttemptSummary(
     buildRoot: "/tmp/palimpsest/build",
     buildTreeSeal: TEST_TREE_SEAL,
     agentIds,
-    releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
-    cutoffMs: ATTEMPT_CUTOFF_MS,
-    tokenBudgetPerAgent: 200_000,
+    releaseOffsetsMs: [...releaseOffsetsMs],
+    cutoffMs,
+    tokenBudgetPerAgent,
     protocolDigest: hashProtocolSnapshot(protocol),
     protocol,
     tracePath: "/tmp/palimpsest/attempt/trace.jsonl",

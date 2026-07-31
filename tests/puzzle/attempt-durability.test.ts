@@ -199,7 +199,7 @@ describe("post-freeze attempt durability", () => {
 
       const summary = await readSummary(join(fixture.attemptRoot, "attempt.json"));
       expect(summary).toMatchObject({
-        schemaVersion: 4,
+        schemaVersion: 5,
         attemptId: fixture.result.attemptId,
         studyPhase: "standalone",
         monetaryAuthorizationCeilingCents: 0,

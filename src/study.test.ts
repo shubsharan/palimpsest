@@ -113,13 +113,18 @@ async function temporaryRoot(): Promise<string> {
   return path;
 }
 
-async function prepareFixture(): Promise<{
+async function prepareFixture(options: { disableTokenLimit?: boolean } = {}): Promise<{
   studyRoot: string;
   study: ResolvedStudy;
   receipt: Awaited<ReturnType<typeof prepareStudyDesign>>;
 }> {
   const studyRoot = await temporaryRoot();
-  const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
+  const manifest = await loadStudyManifest("experiments/config.yaml");
+  if (options.disableTokenLimit === true) {
+    manifest.budgets.tokenBudgetPerAgent = null;
+    manifest.budgets.totalTokenCeiling = null;
+  }
+  const study = await resolveStudy(manifest, root);
   const receipt = await prepareStudyDesign({
     root,
     studyRoot,
@@ -164,6 +169,9 @@ async function publishLaunchAttempt(
   const base = testAttemptSummary({
     condition: condition.id,
     studyPhase: launch.cell.phase,
+    releaseOffsetsMs: study.schedule.releaseOffsetsMs,
+    cutoffMs: study.schedule.cutoffMs,
+    tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
     ...(infrastructureFailure ? { infrastructureAgentId: "agent-1" } : {}),
     ...(launch.replacementOfAttemptId === undefined
       ? {}
@@ -190,6 +198,7 @@ async function publishLaunchAttempt(
       prompt: buildAgentPrompt({
         agentId,
         condition: condition.id,
+        cutoffMs: study.schedule.cutoffMs,
         tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
         teamChannel: study.communication.teamChannel,
       }),
@@ -279,6 +288,33 @@ async function publishLaunchAttempt(
 }
 
 describe("frozen study state", () => {
+  it("freezes and accounts a time-only phase without inventing token authorization", async () => {
+    const { studyRoot, study, receipt } = await prepareFixture({ disableTokenLimit: true });
+
+    const phase = await executeStudyPhase({
+      studyRoot,
+      study,
+      receipt,
+      phase: "calibration",
+      dependencies: {
+        beforeLaunch: async () => {},
+        runCell: async (launch) => {
+          expect(launch.tokenBudgetPerAgent).toBeNull();
+          await publishLaunchAttempt(launch, study, false);
+        },
+      },
+    });
+
+    expect(receipt.baselineBudgets.tokenBudgetPerAgent).toBeNull();
+    expect(receipt.totalCeilings.tokens).toBeNull();
+    expect(phase.cumulativeAuthorizedTokens).toBeNull();
+    expect(phase.reservations).toHaveLength(4);
+    expect(phase.reservations.every(({ authorizedTokens }) => authorizedTokens === null)).toBe(
+      true,
+    );
+    expect(phase.attempts).toHaveLength(4);
+  }, 60_000);
+
   it("binds five build bytes and accepts only declared validation budget changes", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
     expect(receipt.builds).toHaveLength(5);

@@ -80,6 +80,7 @@ async function publishFixtureAttempt(
       prompt: buildAgentPrompt({
         agentId,
         condition: condition.id,
+        cutoffMs: request.cutoffMs,
         tokenBudgetPerAgent: request.tokenBudgetPerAgent,
         teamChannel: request.teamChannel,
       }),

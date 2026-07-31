@@ -1,4 +1,4 @@
-import { ATTEMPT_CUTOFF_MS, resolveCondition, type ConditionId } from "./condition.js";
+import { resolveCondition, type ConditionId } from "./condition.js";
 import type { AgentId } from "./model.js";
 import { SANDBOX_PATHS } from "./sandbox/contracts.js";
 import type { TeamChannelMode } from "./team-channel.js";
@@ -6,7 +6,8 @@ import type { TeamChannelMode } from "./team-channel.js";
 export interface AgentPromptOptions {
   agentId: AgentId;
   condition: ConditionId;
-  tokenBudgetPerAgent: number;
+  cutoffMs: number;
+  tokenBudgetPerAgent: number | null;
   teamChannel?: TeamChannelMode;
 }
 
@@ -23,6 +24,7 @@ export type AgentPromptTemplateSnapshot = Readonly<
 >;
 
 export const TOKEN_BUDGET_PLACEHOLDER = "{{tokenBudgetPerAgent}}";
+export const CUTOFF_MS_PLACEHOLDER = "{{cutoffMs}}";
 
 function validatePromptAgentId(agentId: AgentId): asserts agentId is PromptAgentId {
   if (!/^agent-[123]$/.test(agentId)) {
@@ -50,7 +52,7 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
     "A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.",
     "The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.",
     "",
-    `Additional private evidence may appear during the attempt. The attempt ends at ${String(ATTEMPT_CUTOFF_MS / 60_000)} minutes.`,
+    `Additional private evidence may appear during the attempt. The attempt ends after ${CUTOFF_MS_PLACEHOLDER} milliseconds.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,
     "",
     "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.",
@@ -87,11 +89,20 @@ export function snapshotAgentPromptTemplates(
 
 export function buildAgentPrompt(options: AgentPromptOptions): string {
   validatePromptAgentId(options.agentId);
-  if (!Number.isSafeInteger(options.tokenBudgetPerAgent) || options.tokenBudgetPerAgent <= 0) {
+  if (!Number.isSafeInteger(options.cutoffMs) || options.cutoffMs <= 0) {
+    throw new Error("Agent prompt cutoff must be a positive safe integer.");
+  }
+  if (
+    options.tokenBudgetPerAgent !== null &&
+    (!Number.isSafeInteger(options.tokenBudgetPerAgent) || options.tokenBudgetPerAgent <= 0)
+  ) {
     throw new Error("Agent prompt token budget must be a positive safe integer.");
   }
-  return buildAgentPromptTemplate(options).replace(
-    TOKEN_BUDGET_PLACEHOLDER,
-    String(options.tokenBudgetPerAgent),
-  );
+  const tokenPolicy =
+    options.tokenBudgetPerAgent === null
+      ? "disabled; provider-reported usage is observed only"
+      : String(options.tokenBudgetPerAgent);
+  return buildAgentPromptTemplate(options)
+    .replace(CUTOFF_MS_PLACEHOLDER, String(options.cutoffMs))
+    .replace(TOKEN_BUDGET_PLACEHOLDER, tokenPolicy);
 }

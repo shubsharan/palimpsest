@@ -6,12 +6,7 @@ import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.
 import { parseDocument } from "yaml";
 
 import studySchema from "../experiments/schema.json" with { type: "json" };
-import {
-  ATTEMPT_CUTOFF_MS,
-  RELEASE_OFFSETS_MS,
-  hashProtocolSnapshot,
-  type ConditionId,
-} from "./condition.js";
+import { hashProtocolSnapshot, type ConditionId } from "./condition.js";
 import type { AgentId } from "./model.js";
 import type { TeamChannelMode } from "./team-channel.js";
 
@@ -75,9 +70,9 @@ export interface StudySchedule {
 }
 
 export interface StudyBudgets {
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   perAttemptMonetaryCeilingCents: number;
-  totalTokenCeiling: number;
+  totalTokenCeiling: number | null;
   totalMonetaryCeilingCents: number;
 }
 
@@ -113,7 +108,7 @@ export interface StudyCommunication {
 }
 
 export interface StudyManifest {
-  schemaVersion: 3;
+  schemaVersion: 4;
   communication: StudyCommunication;
   blocks: StudyBlock[];
   assignment: AgentModelAssignment[];
@@ -142,7 +137,7 @@ export interface PlannedStudyCell {
 }
 
 export interface ResolvedStudy {
-  schemaVersion: 3;
+  schemaVersion: 4;
   communication: Readonly<StudyCommunication>;
   blocks: readonly StudyBlock[];
   assignment: readonly AgentModelAssignment[];
@@ -344,6 +339,32 @@ function safeInteger(value: unknown, path: string, minimum = 0): number {
   return value as number;
 }
 
+export function validateRunSchedule(
+  releaseOffsetsMs: readonly number[],
+  cutoffMs: number,
+  expectedStageCount = 6,
+  path = "schedule",
+): void {
+  if (releaseOffsetsMs.length !== expectedStageCount) {
+    throw new Error(
+      `${path}.releaseOffsetsMs must contain exactly ${String(expectedStageCount)} stage offsets.`,
+    );
+  }
+  for (const [index, offset] of releaseOffsetsMs.entries()) {
+    safeInteger(offset, `${path}.releaseOffsetsMs[${String(index)}]`);
+    if (index === 0 && offset !== 0) {
+      throw new Error(`${path}.releaseOffsetsMs must begin at zero.`);
+    }
+    if (index > 0 && offset <= releaseOffsetsMs[index - 1]!) {
+      throw new Error(`${path}.releaseOffsetsMs must be strictly increasing.`);
+    }
+  }
+  safeInteger(cutoffMs, `${path}.cutoffMs`, 1);
+  if (cutoffMs <= releaseOffsetsMs.at(-1)!) {
+    throw new Error(`${path}.cutoffMs must be after the final stage release.`);
+  }
+}
+
 function equalJson(left: unknown, right: unknown): boolean {
   return hashProtocolSnapshot(left) === hashProtocolSnapshot(right);
 }
@@ -358,12 +379,7 @@ function assertExactProtocol(config: StudyManifest): void {
   ) {
     throw new Error("Study manifest condition orders must match the exact frozen matrix.");
   }
-  if (
-    !equalJson(config.schedule.releaseOffsetsMs, RELEASE_OFFSETS_MS) ||
-    config.schedule.cutoffMs !== ATTEMPT_CUTOFF_MS
-  ) {
-    throw new Error("Study manifest schedule must match the fixed condition runtime.");
-  }
+  validateRunSchedule(config.schedule.releaseOffsetsMs, config.schedule.cutoffMs);
   if (!equalJson(config.adjustableFields, EXPECTED_ADJUSTABLE_FIELDS)) {
     throw new Error("Study manifest adjustableFields must contain exactly the two budget paths.");
   }
@@ -407,31 +423,41 @@ function multiplyAuthorization(left: number, right: number, path: string): numbe
 }
 
 function assertAuthorizationCeilings(config: StudyManifest): void {
-  const tokenBudget = safeInteger(
-    config.budgets.tokenBudgetPerAgent,
-    "budgets.tokenBudgetPerAgent",
-    1,
-  );
+  const tokenBudget =
+    config.budgets.tokenBudgetPerAgent === null
+      ? null
+      : safeInteger(config.budgets.tokenBudgetPerAgent, "budgets.tokenBudgetPerAgent", 1);
   const attemptMoney = safeInteger(
     config.budgets.perAttemptMonetaryCeilingCents,
     "budgets.perAttemptMonetaryCeilingCents",
   );
-  const totalTokens = safeInteger(config.budgets.totalTokenCeiling, "budgets.totalTokenCeiling", 1);
+  const totalTokens =
+    config.budgets.totalTokenCeiling === null
+      ? null
+      : safeInteger(config.budgets.totalTokenCeiling, "budgets.totalTokenCeiling", 1);
   const totalMoney = safeInteger(
     config.budgets.totalMonetaryCeilingCents,
     "budgets.totalMonetaryCeilingCents",
   );
-  const authorizedTokens = multiplyAuthorization(
-    multiplyAuthorization(tokenBudget, AGENT_COUNT, "Primary authorized token total"),
-    PRIMARY_CELL_COUNT,
-    "Primary authorized token total",
-  );
+  if ((tokenBudget === null) !== (totalTokens === null)) {
+    throw new Error(
+      "budgets.tokenBudgetPerAgent and budgets.totalTokenCeiling must both be numeric or both be null.",
+    );
+  }
+  const authorizedTokens =
+    tokenBudget === null
+      ? null
+      : multiplyAuthorization(
+          multiplyAuthorization(tokenBudget, AGENT_COUNT, "Primary authorized token total"),
+          PRIMARY_CELL_COUNT,
+          "Primary authorized token total",
+        );
   const authorizedMoney = multiplyAuthorization(
     attemptMoney,
     PRIMARY_CELL_COUNT,
     "Primary authorized monetary total",
   );
-  if (authorizedTokens > totalTokens) {
+  if (authorizedTokens !== null && totalTokens !== null && authorizedTokens > totalTokens) {
     throw new Error(
       `budgets.totalTokenCeiling must cover the ${String(authorizedTokens)}-token primary authorization.`,
     );
@@ -561,7 +587,7 @@ export async function resolveStudy(
   const validationCells = cellsFor("validation", validationBlocks, manifest.orders.validation);
 
   return deepFreeze({
-    schemaVersion: 3,
+    schemaVersion: 4,
     communication: { ...manifest.communication },
     blocks: manifest.blocks.map((block) => ({ ...block })),
     assignment: manifest.assignment.map((assignment) => ({ ...assignment })),

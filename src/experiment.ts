@@ -213,6 +213,8 @@ export async function runStudyExperiment(
             : { replacementOfAttemptId: launch.replacementOfAttemptId }),
           condition: launch.cell.condition,
           agents,
+          releaseOffsetsMs: study.schedule.releaseOffsetsMs,
+          cutoffMs: study.schedule.cutoffMs,
           tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
           teamChannel: study.communication.teamChannel,
           sandbox,

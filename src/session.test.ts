@@ -39,6 +39,20 @@ describe("model session lifecycle", () => {
       {
         toolCalls: [{ id: "call-1", name: "wait_for_activity", arguments: { afterSequence: 0 } }],
         reasoningSummary: "I should inspect new activity before proceeding.",
+        returnedReasoningSummary: {
+          status: "captured",
+          items: [
+            {
+              id: "rs_1",
+              summary: [
+                {
+                  type: "summary_text",
+                  text: "I should inspect new activity before proceeding.",
+                },
+              ],
+            },
+          ],
+        },
         usage: {
           inputTokens: 3,
           outputTokens: 2,
@@ -116,12 +130,26 @@ describe("model session lifecycle", () => {
           actualModel: "routed-model-2026-07",
         },
         reasoningSummary: "I should inspect new activity before proceeding.",
+        returnedReasoningSummary: {
+          status: "captured",
+          items: [
+            {
+              id: "rs_1",
+              summary: [
+                {
+                  type: "summary_text",
+                  text: "I should inspect new activity before proceeding.",
+                },
+              ],
+            },
+          ],
+        },
       }),
       "agent-1",
     );
   });
 
-  it("keeps absent final text absent in strict standalone attempt schema v4", async () => {
+  it("keeps absent final text absent in the strict standalone attempt schema", async () => {
     const result = await runAgentSession({
       agentId: "agent-1",
       model: binding(),
@@ -192,6 +220,49 @@ describe("model session lifecycle", () => {
     });
     expect(tools.execute).not.toHaveBeenCalled();
     expect(cancel).toHaveBeenCalledWith("token-exhausted");
+  });
+
+  it("observes token usage without terminating when the token budget is disabled", async () => {
+    const tools = createTools();
+    const turns: ModelTurn[] = [
+      {
+        toolCalls: [{ id: "inspect-1", name: "inspect", arguments: {} }],
+        usage: { inputTokens: 600_000, outputTokens: 400_000 },
+      },
+      {
+        toolCalls: [],
+        finalResponse: "finished after the observed high-usage turn",
+        usage: { inputTokens: 2, outputTokens: 1 },
+      },
+    ];
+    const cancel = vi.fn();
+
+    await expect(
+      runAgentSession({
+        agentId: "agent-2",
+        model: binding(),
+        prompt: "solve",
+        adapter: adapterWith({
+          respond: async () => {
+            const turn = turns.shift();
+            if (turn === undefined) throw new Error("Unexpected model turn.");
+            return turn;
+          },
+          cancel,
+        }),
+        tools,
+        tokenBudget: null,
+        signal: new AbortController().signal,
+        getActivityCursor: () => 0,
+      }),
+    ).resolves.toMatchObject({
+      state: "finished",
+      inputTokens: 600_002,
+      outputTokens: 400_001,
+      terminationReason: "voluntary final response",
+    });
+    expect(tools.execute).toHaveBeenCalledOnce();
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("aborts a pending model response at the wall-time boundary", async () => {

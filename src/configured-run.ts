@@ -33,6 +33,8 @@ export async function runConfiguredPuzzleFromFlags(
     monetaryAuthorizationCeilingCents: study.budgets.perAttemptMonetaryCeilingCents,
     condition,
     agents,
+    releaseOffsetsMs: study.schedule.releaseOffsetsMs,
+    cutoffMs: study.schedule.cutoffMs,
     tokenBudgetPerAgent: study.budgets.tokenBudgetPerAgent,
     teamChannel: study.communication.teamChannel,
     sandbox,
