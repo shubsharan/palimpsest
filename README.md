@@ -14,7 +14,7 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
 - [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
 - [Feature 015 quickstart](specs/015-frozen-five-block-protocol/quickstart.md): frozen calibration, validation, and explicit replacement flow.
-- [Experiment schema](experiments/schema.json): strict version-3 study manifest.
+- [Experiment schema](experiments/schema.json): strict version-4 study manifest.
 - [Block catalog](experiments/blocks.json): five pinned paired study blocks.
 - [Study manifest](experiments/config.yaml): frozen block matrix, assignment, budgets, providers, rubric, and failure policy.
 
@@ -38,7 +38,7 @@ Scientific block inputs live in `experiments/blocks.json`. The strict study mani
 - `blocks`: one calibration and four validation block IDs in fixed order;
 - `communication.teamChannel`: `enabled` for a shared public discussion room or `disabled` for Git-only collaboration;
 - `assignment`: one ordered three-agent model assignment used by every cell;
-- `schedule` and `budgets`: the fixed reveal/cutoff values plus per-attempt and study-wide authorizations;
+- `schedule` and `budgets`: per-run reveal offsets, wall cutoff, optional token limit, and mandatory monetary authorizations;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
 - `models`: provider/model profiles and non-secret settings;
 - `orders`: one calibration and four balanced validation condition sequences; and
@@ -92,6 +92,8 @@ pnpm puzzle:evaluate -- \
 ```
 
 Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` captures only literal `refs/heads/main`, runs its pinned Git-free tree on ciphertext assembled from one frozen view of ordered host release records, cleans the capture, and only then reports the commit plus aggregate coverage and accuracy. The captured tree remains stable across later force-pushes. Local files, unpushed commits, other branches, agent-visible evidence mutations, private references, and agent-workspace siblings are absent from that execution.
+
+The manifest is the run-control interface. `schedule.releaseOffsetsMs` supplies six strictly increasing offsets beginning at zero, and `schedule.cutoffMs` must follow the final release. Set both `budgets.tokenBudgetPerAgent` and `budgets.totalTokenCeiling` to positive integers to enforce token termination, or set both to `null` for a wall-time-only run; provider-reported usage is still recorded. Monetary authorization remains explicit in either mode. The resolved values are frozen into each run's protocol and durable artifacts, so changing the next run means editing the manifest rather than changing runner code.
 
 When `communication.teamChannel` is `enabled`, shared-condition agents also receive one attempt-local, append-only public room through `post_team_message` and `read_team_messages`; accepted posts wake peers and are retained in the attempt trace. The runtime commits live message, Git, and release views synchronously and projects them through one ordered trace outbox, so trace I/O cannot delay scheduled evidence. Any projection failure invalidates the attempt. Isolated agents never receive that room or its activity. Set the field to `disabled` to restore the prior Git-only treatment.
 

@@ -401,8 +401,9 @@ describe("fixed four-condition run coordinator", () => {
         },
         /exactly 6 stages/i,
       ],
-      [{ ...config, releaseOffsetsMs: [0, 1, 2, 3, 4, 5] }, /releaseOffsetsMs|fixed/i],
-      [{ ...config, cutoffMs: ATTEMPT_CUTOFF_MS - 1 }, /cutoffMs|fixed/i],
+      [{ ...config, releaseOffsetsMs: [1, 2, 3, 4, 5, 6] }, /begin at zero/i],
+      [{ ...config, releaseOffsetsMs: [0, 1, 2, 2, 4, 5] }, /strictly increasing/i],
+      [{ ...config, cutoffMs: RELEASE_OFFSETS_MS.at(-1) }, /after the final stage/i],
       [{ ...config, tokenBudgetPerAgent: 0 }, /tokenBudgetPerAgent/],
       [{ ...config, teamChannel: "sometimes" }, /teamChannel/],
     ];
@@ -413,6 +414,19 @@ describe("fixed four-condition run coordinator", () => {
     expect(config).not.toHaveProperty("maxTurns");
     expect(config).not.toHaveProperty("maxGitBytes");
     expect(config).not.toHaveProperty("wallTimeMs");
+
+    expect(
+      validateAttemptConfig({
+        ...config,
+        releaseOffsetsMs: [0, 1, 2, 3, 4, 5],
+        cutoffMs: 6,
+        tokenBudgetPerAgent: null,
+      }),
+    ).toMatchObject({
+      releaseOffsetsMs: [0, 1, 2, 3, 4, 5],
+      cutoffMs: 6,
+      tokenBudgetPerAgent: null,
+    });
     expect(config).not.toHaveProperty("stageIntervalMs");
   });
 
@@ -547,7 +561,7 @@ describe("fixed four-condition run coordinator", () => {
     },
   );
 
-  it("stops active sessions at the fixed 60-minute cutoff using monotonic time", async () => {
+  it("stops active sessions at the configured cutoff using monotonic time", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-run-cutoff-"));
     const config = await fixtureConfig(root);
     const clock = new ControlledClock();
@@ -630,6 +644,8 @@ describe("fixed four-condition run coordinator", () => {
         monetaryAuthorizationCeilingCents: 0,
         condition: "CR",
         agents,
+        releaseOffsetsMs: RELEASE_OFFSETS_MS,
+        cutoffMs: ATTEMPT_CUTOFF_MS,
         tokenBudgetPerAgent: 100,
         teamChannel: "disabled",
         sandbox: new FakeCommandSandbox(),
@@ -640,7 +656,7 @@ describe("fixed four-condition run coordinator", () => {
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("bounds stalled lease setup by the fixed cutoff without a real-time wait", async () => {
+  it("bounds stalled lease setup by the configured cutoff without a real-time wait", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-run-lease-cutoff-"));
     const config = await fixtureConfig(root);
     const clock = new ControlledClock();

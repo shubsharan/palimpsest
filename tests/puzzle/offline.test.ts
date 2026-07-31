@@ -117,7 +117,7 @@ describe("offline behavior-neutral runner", () => {
         },
       });
       expect(attemptSummary).toMatchObject({
-        schemaVersion: 4,
+        schemaVersion: 5,
         attemptId: result.run.attemptId,
         studyPhase: "standalone",
         monetaryAuthorizationCeilingCents: 0,

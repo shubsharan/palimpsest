@@ -2,7 +2,12 @@ import { resolve } from "node:path";
 
 import { decodeBuildResult, decodeEvaluationRecord, decodeOverlapResult } from "./artifacts.js";
 import { buildPuzzle, type BuildPuzzleResult } from "./build.js";
-import { resolveCondition, type ConditionId } from "./condition.js";
+import {
+  ATTEMPT_CUTOFF_MS,
+  RELEASE_OFFSETS_MS,
+  resolveCondition,
+  type ConditionId,
+} from "./condition.js";
 import { evaluatePuzzle } from "./evaluate.js";
 import { requiredFlag } from "./flags.js";
 import type { MonotonicClock } from "./reveal.js";
@@ -90,6 +95,8 @@ export async function runOfflinePuzzle(
     monetaryAuthorizationCeilingCents: 0,
     condition: options.condition,
     agents: createFixtureAgentRuntimes(build.agentIds, "collaborative-revision"),
+    releaseOffsetsMs: RELEASE_OFFSETS_MS,
+    cutoffMs: ATTEMPT_CUTOFF_MS,
     tokenBudgetPerAgent: 100,
     teamChannel: "enabled",
     clock: acceleratedClock(),

@@ -25,7 +25,7 @@ This feature is done when rebuilds are byte-identical, paragraph order and union
 - Freeze every visible repository, workspace, response, activity trace, Git state, session outcome, sandbox identity, block, condition, and protocol digest before optional observation.
 - Keep reviewer-selected `puzzle:evaluate`; add no automated behavioral review, outcome aggregation, or post-hoc merging.
 
-This feature is done when shared peer visibility, isolated non-observability, private Git usability, identical scaffolds, published-main-only checking, prompt parity, the declared fake-time release schedule, and the 60-minute cutoff pass without prescribing agent workflow.
+This feature is done when shared peer visibility, isolated non-observability, private Git usability, identical scaffolds, published-main-only checking, prompt parity, and the declared fake-time release schedule and cutoff pass without prescribing agent workflow.
 
 ## Feature 015: Frozen Five-Block Protocol (Implemented)
 
@@ -47,6 +47,15 @@ This feature is done when the complete five-block by four-condition fixture prot
 - Resolve and record the exact selected `refs/heads/main` commit, export its Git-free tree, and use one isolated execution boundary for checking and grading.
 
 This feature is done when enabled shared messaging, disabled Git-only parity, isolated non-observability, protocol provenance, exact-main snapshot grading, output containment, and provider-free verification pass without prescribing how or when agents communicate.
+
+## Feature 019: Configurable Run Controls
+
+- Treat the manifest's release offsets and wall cutoff as validated inputs rather than runner constants.
+- Allow the cumulative token policy to be explicitly enabled with numeric ceilings or disabled with paired `null` values while always recording provider-reported usage.
+- Keep monetary authorization mandatory and freeze every resolved control into receipts, protocols, reservations, and attempts.
+- Preserve exact provider-returned reasoning-summary items as a safe evidence subset without retaining hidden reasoning or complete response bodies.
+
+This feature is done when multiple clock profiles and both token-policy modes pass through the same runner and durable artifact path without source edits or provider-backed spend.
 
 ## Boundaries
 

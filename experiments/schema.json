@@ -20,7 +20,7 @@
     "failurePolicy"
   ],
   "properties": {
-    "schemaVersion": { "const": 3 },
+    "schemaVersion": { "const": 4 },
     "communication": { "$ref": "#/$defs/communication" },
     "blocks": { "$ref": "#/$defs/blocks" },
     "assignment": { "$ref": "#/$defs/assignment" },
@@ -206,19 +206,11 @@
       "properties": {
         "releaseOffsetsMs": {
           "type": "array",
-          "prefixItems": [
-            { "const": 0 },
-            { "const": 300000 },
-            { "const": 600000 },
-            { "const": 1200000 },
-            { "const": 1800000 },
-            { "const": 2400000 }
-          ],
-          "items": false,
+          "items": { "type": "integer", "minimum": 0 },
           "minItems": 6,
           "maxItems": 6
         },
-        "cutoffMs": { "const": 3600000 }
+        "cutoffMs": { "type": "integer", "minimum": 1 }
       }
     },
     "budgets": {
@@ -231,9 +223,13 @@
         "totalMonetaryCeilingCents"
       ],
       "properties": {
-        "tokenBudgetPerAgent": { "type": "integer", "minimum": 1 },
+        "tokenBudgetPerAgent": {
+          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+        },
         "perAttemptMonetaryCeilingCents": { "type": "integer", "minimum": 0 },
-        "totalTokenCeiling": { "type": "integer", "minimum": 1 },
+        "totalTokenCeiling": {
+          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+        },
         "totalMonetaryCeilingCents": { "type": "integer", "minimum": 0 }
       }
     },

@@ -23,14 +23,14 @@ describe("study manifest", () => {
   it("parses YAML while rejecting duplicate keys and aliases", () => {
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 3
-schemaVersion: 3
+schemaVersion: 4
+schemaVersion: 4
 `),
     ).toThrow(/map keys must be unique/i);
 
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 3
+schemaVersion: 4
 value: &shared { nested: true }
 copy: *shared
 `),
@@ -125,6 +125,50 @@ copy: *shared
     expect(changedMoney.manifestDigest).not.toBe(original.manifestDigest);
     expect(changedTokens.immutableManifestDigest).toBe(original.immutableManifestDigest);
     expect(changedMoney.immutableManifestDigest).toBe(original.immutableManifestDigest);
+  });
+
+  it("accepts alternate valid clocks and freezes them into the resolved study", async () => {
+    const manifest = structuredClone(await validManifest());
+    manifest.schedule.releaseOffsetsMs = [0, 1_000, 2_500, 4_000, 7_500, 9_000];
+    manifest.schedule.cutoffMs = 12_000;
+
+    const study = await resolveStudy(manifest, resolve("."));
+
+    expect(study.schedule).toEqual({
+      releaseOffsetsMs: [0, 1_000, 2_500, 4_000, 7_500, 9_000],
+      cutoffMs: 12_000,
+    });
+    expect(Object.isFrozen(study.schedule)).toBe(true);
+    expect(Object.isFrozen(study.schedule.releaseOffsetsMs)).toBe(true);
+  });
+
+  it("accepts an explicitly disabled token policy while keeping monetary authorization", async () => {
+    const manifest = structuredClone(await validManifest());
+    manifest.budgets.tokenBudgetPerAgent = null;
+    manifest.budgets.totalTokenCeiling = null;
+
+    const study = await resolveStudy(manifest, resolve("."));
+
+    expect(study.budgets).toMatchObject({
+      tokenBudgetPerAgent: null,
+      totalTokenCeiling: null,
+      perAttemptMonetaryCeilingCents: 10_000,
+      totalMonetaryCeilingCents: 250_000,
+    });
+  });
+
+  it("rejects partially disabled token policies", async () => {
+    const missingTotal = structuredClone(await validManifest());
+    missingTotal.budgets.tokenBudgetPerAgent = null;
+    expect(() => resolveStudy(missingTotal, resolve("."))).rejects.toThrow(
+      /tokenBudgetPerAgent.*totalTokenCeiling|both be numeric or both be null/i,
+    );
+
+    const missingPerAgent = structuredClone(await validManifest());
+    missingPerAgent.budgets.totalTokenCeiling = null;
+    expect(() => resolveStudy(missingPerAgent, resolve("."))).rejects.toThrow(
+      /tokenBudgetPerAgent.*totalTokenCeiling|both be numeric or both be null/i,
+    );
   });
 
   it("changes the immutable digest when any scientific field changes", async () => {

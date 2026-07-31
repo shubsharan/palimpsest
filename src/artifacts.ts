@@ -2,12 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix, relative, sep, win32 } from "node:path";
 
-import {
-  ATTEMPT_CUTOFF_MS,
-  hashProtocolSnapshot,
-  RELEASE_OFFSETS_MS,
-  resolveCondition,
-} from "./condition.js";
+import { hashProtocolSnapshot, resolveCondition } from "./condition.js";
+import { validateRunSchedule } from "./config.js";
 import {
   generateAgentIds,
   isAgentId,
@@ -209,7 +205,7 @@ export interface AttemptProtocolPrompt {
 }
 
 export interface AttemptProtocolSnapshot {
-  schemaVersion: 2;
+  schemaVersion: 3;
   blockId: string;
   condition: ResolvedCondition["id"];
   communicationMode: ResolvedCondition["communicationMode"];
@@ -218,7 +214,7 @@ export interface AttemptProtocolSnapshot {
   buildId: string;
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   teamChannel: TeamChannelMode;
   models: readonly AttemptProtocolModel[];
   prompts: readonly AttemptProtocolPrompt[];
@@ -250,7 +246,7 @@ export type AttemptStudyPhase = "standalone" | StudyPhase;
 export type InfrastructureClassification = "none" | "session-infrastructure-error";
 
 interface AttemptSummaryBase {
-  schemaVersion: 4;
+  schemaVersion: 5;
   attemptId: string;
   blockId: string;
   condition: ResolvedCondition["id"];
@@ -263,7 +259,7 @@ interface AttemptSummaryBase {
   agentIds: readonly AgentId[];
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   protocolDigest: string;
   protocol: AttemptProtocolSnapshot;
   tracePath: string;
@@ -343,17 +339,17 @@ export interface DesignFailurePolicy {
 }
 
 export interface DesignTotalCeilings {
-  tokens: number;
+  tokens: number | null;
   monetaryAuthorizationCents: number;
 }
 
 export interface DesignBaselineBudgets {
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   perAttemptMonetaryCeilingCents: number;
 }
 
 export interface DesignReceipt {
-  schemaVersion: 1;
+  schemaVersion: 2;
   createdAt: string;
   sourceRevision: string;
   sandbox: SandboxIdentity & SandboxPolicy;
@@ -394,7 +390,7 @@ export interface LaunchReservation {
   reservedAt: string;
   kind: LaunchKind;
   replacementOfAttemptId?: string;
-  authorizedTokens: number;
+  authorizedTokens: number | null;
   monetaryAuthorizationCeilingCents: number;
   state: LaunchReservationState;
   attemptId?: string;
@@ -402,8 +398,8 @@ export interface LaunchReservation {
 
 export interface PhaseAdjustment {
   fieldPath: "budgets.tokenBudgetPerAgent" | "budgets.perAttemptMonetaryCeilingCents";
-  priorValue: number;
-  resolvedValue: number;
+  priorValue: number | null;
+  resolvedValue: number | null;
   priorManifestDigest: string;
   currentManifestDigest: string;
 }
@@ -428,7 +424,7 @@ export interface PhaseFailure {
 export type PhaseState = "ready" | "running" | "blocked" | "complete";
 
 export interface PhaseSummary {
-  schemaVersion: 1;
+  schemaVersion: 2;
   phase: StudyPhase;
   state: PhaseState;
   manifestDigest: string;
@@ -438,7 +434,7 @@ export interface PhaseSummary {
   adjustments: readonly PhaseAdjustment[];
   reservations: readonly LaunchReservation[];
   attempts: readonly PhaseAttemptReference[];
-  cumulativeAuthorizedTokens: number;
+  cumulativeAuthorizedTokens: number | null;
   cumulativeAuthorizedMonetaryCents: number;
   cumulativeActualTokens: number;
   failure?: PhaseFailure;
@@ -523,6 +519,10 @@ function integer(value: unknown, name: string, minimum = 0): number {
     throw new Error(`${name} must be a safe integer of at least ${String(minimum)}.`);
   }
   return value;
+}
+
+function nullableInteger(value: unknown, name: string, minimum = 0): number | null {
+  return value === null ? null : integer(value, name, minimum);
 }
 
 function safeInteger(value: unknown, name: string): number {
@@ -621,14 +621,11 @@ function decodeAttemptAgentIds(value: unknown, name: string): readonly AgentId[]
 }
 
 function decodeReleaseOffsets(value: unknown, name: string): readonly number[] {
-  if (
-    !Array.isArray(value) ||
-    value.length !== RELEASE_OFFSETS_MS.length ||
-    value.some((offset, index) => offset !== RELEASE_OFFSETS_MS[index])
-  ) {
-    throw new Error(`${name} must match the fixed condition release schedule.`);
+  if (!Array.isArray(value)) {
+    throw new Error(`${name} must be an array.`);
   }
-  return [...RELEASE_OFFSETS_MS];
+  const offsets = value.map((offset, index) => integer(offset, `${name}[${String(index)}]`));
+  return offsets;
 }
 
 function assertNestedPath(root: string, path: string, name: string): void {
@@ -1537,7 +1534,7 @@ interface AttemptProtocolExpectations {
   buildId: string;
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   agentIds: readonly AgentId[];
   sandbox: SandboxIdentity & SandboxPolicy;
   sessions: readonly AttemptSession[];
@@ -1563,7 +1560,7 @@ function decodeAttemptProtocol(
     "prompts",
     "sandbox",
   ]);
-  if (record.schemaVersion !== 2) {
+  if (record.schemaVersion !== 3) {
     throw new Error("Unsupported attempt protocol schema version.");
   }
   const condition = resolveCondition(record.condition);
@@ -1574,7 +1571,7 @@ function decodeAttemptProtocol(
     "Attempt protocol releaseOffsetsMs",
   );
   const cutoffMs = integer(record.cutoffMs, "Attempt protocol cutoffMs", 1);
-  const tokenBudgetPerAgent = integer(
+  const tokenBudgetPerAgent = nullableInteger(
     record.tokenBudgetPerAgent,
     "Attempt protocol tokenBudgetPerAgent",
     1,
@@ -1642,7 +1639,7 @@ function decodeAttemptProtocol(
     throw new Error("Attempt protocol sandbox must match the declared attempt sandbox.");
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -1691,7 +1688,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     ],
     ["studyRootId", "conditionOrderPosition", "designDigest", "replacementOfAttemptId"],
   );
-  if (record.schemaVersion !== 4) throw new Error("Unsupported attempt schema version.");
+  if (record.schemaVersion !== 5) throw new Error("Unsupported attempt schema version.");
   const agentIds = decodeAttemptAgentIds(record.agentIds, "Attempt summary agentIds");
   if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
@@ -1714,10 +1711,8 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     "Attempt summary releaseOffsetsMs",
   );
   const cutoffMs = integer(record.cutoffMs, "Attempt summary cutoffMs", 1);
-  if (cutoffMs !== ATTEMPT_CUTOFF_MS) {
-    throw new Error("Attempt summary cutoffMs must match the fixed condition cutoff.");
-  }
-  const tokenBudgetPerAgent = integer(
+  validateRunSchedule(releaseOffsetsMs, cutoffMs, 6, "Attempt summary");
+  const tokenBudgetPerAgent = nullableInteger(
     record.tokenBudgetPerAgent,
     "Attempt summary tokenBudgetPerAgent",
     1,
@@ -1756,7 +1751,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     );
   }
   const common: AttemptSummaryBase = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     attemptId,
     blockId,
     condition: condition.id,
@@ -1988,7 +1983,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "baselineBudgets",
     "totalCeilings",
   ]);
-  if (record.schemaVersion !== 1) {
+  if (record.schemaVersion !== 2) {
     throw new Error("Unsupported design receipt schema version.");
   }
   if (!Array.isArray(record.builds) || record.builds.length !== REGISTERED_BLOCK_IDS.length) {
@@ -2056,7 +2051,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   );
   assertSecretFreeJson(immutableManifest, "Design receipt immutableManifest");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAt: timestamp(record.createdAt, "Design receipt createdAt"),
     sourceRevision: gitObjectId(record.sourceRevision, "Design receipt sourceRevision"),
     sandbox: decodeSandbox(record.sandbox),
@@ -2090,7 +2085,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
       replacement: "explicit-appended",
     },
     baselineBudgets: {
-      tokenBudgetPerAgent: integer(
+      tokenBudgetPerAgent: nullableInteger(
         baselineBudgets.tokenBudgetPerAgent,
         "Design receipt baseline token budget per agent",
         1,
@@ -2101,7 +2096,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
       ),
     },
     totalCeilings: {
-      tokens: integer(totalCeilings.tokens, "Design receipt total token ceiling", 1),
+      tokens: nullableInteger(totalCeilings.tokens, "Design receipt total token ceiling", 1),
       monetaryAuthorizationCents: integer(
         totalCeilings.monetaryAuthorizationCents,
         "Design receipt total monetary authorization ceiling",
@@ -2199,7 +2194,7 @@ export function decodeLaunchReservation(
     reservedAt: timestamp(record.reservedAt, `${name} reservedAt`),
     kind: record.kind,
     ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
-    authorizedTokens: integer(record.authorizedTokens, `${name} authorizedTokens`, 1),
+    authorizedTokens: nullableInteger(record.authorizedTokens, `${name} authorizedTokens`, 1),
     monetaryAuthorizationCeilingCents: integer(
       record.monetaryAuthorizationCeilingCents,
       `${name} monetaryAuthorizationCeilingCents`,
@@ -2227,8 +2222,14 @@ function decodePhaseAdjustment(value: unknown, index: number): PhaseAdjustment {
   const minimum = record.fieldPath === "budgets.tokenBudgetPerAgent" ? 1 : 0;
   return {
     fieldPath: record.fieldPath,
-    priorValue: integer(record.priorValue, `${name} priorValue`, minimum),
-    resolvedValue: integer(record.resolvedValue, `${name} resolvedValue`, minimum),
+    priorValue:
+      record.fieldPath === "budgets.tokenBudgetPerAgent"
+        ? nullableInteger(record.priorValue, `${name} priorValue`, minimum)
+        : integer(record.priorValue, `${name} priorValue`, minimum),
+    resolvedValue:
+      record.fieldPath === "budgets.tokenBudgetPerAgent"
+        ? nullableInteger(record.resolvedValue, `${name} resolvedValue`, minimum)
+        : integer(record.resolvedValue, `${name} resolvedValue`, minimum),
     priorManifestDigest: digest(record.priorManifestDigest, `${name} priorManifestDigest`),
     currentManifestDigest: digest(record.currentManifestDigest, `${name} currentManifestDigest`),
   };
@@ -2342,7 +2343,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     ],
     ["failure"],
   );
-  if (record.schemaVersion !== 1) {
+  if (record.schemaVersion !== 2) {
     throw new Error("Unsupported phase summary schema version.");
   }
   const phase = decodeStudyPhase(record.phase, "Phase summary phase");
@@ -2467,7 +2468,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     }
     replacementSources.add(source.attemptId);
   }
-  const cumulativeAuthorizedTokens = integer(
+  const cumulativeAuthorizedTokens = nullableInteger(
     record.cumulativeAuthorizedTokens,
     "Phase summary cumulativeAuthorizedTokens",
   );
@@ -2479,9 +2480,23 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     record.cumulativeActualTokens,
     "Phase summary cumulativeActualTokens",
   );
+  const hasNullTokenAuthorization = reservations.some(
+    (reservation) => reservation.authorizedTokens === null,
+  );
   if (
-    cumulativeAuthorizedTokens !==
-      reservations.reduce((sum, reservation) => sum + reservation.authorizedTokens, 0) ||
+    hasNullTokenAuthorization &&
+    !reservations.every((reservation) => reservation.authorizedTokens === null)
+  ) {
+    throw new Error("Phase reservations cannot mix enabled and disabled token authorization.");
+  }
+  const expectedAuthorizedTokens =
+    reservations.length === 0
+      ? cumulativeAuthorizedTokens
+      : hasNullTokenAuthorization
+        ? null
+        : reservations.reduce((sum, reservation) => sum + reservation.authorizedTokens!, 0);
+  if (
+    cumulativeAuthorizedTokens !== expectedAuthorizedTokens ||
     cumulativeAuthorizedMonetaryCents !==
       reservations.reduce(
         (sum, reservation) => sum + reservation.monetaryAuthorizationCeilingCents,
@@ -2534,7 +2549,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     }
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     phase,
     state: record.state,
     manifestDigest,

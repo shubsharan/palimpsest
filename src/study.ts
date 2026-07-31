@@ -35,6 +35,7 @@ import type { AgentId } from "./model.js";
 import { readSourceState, type SourceState } from "./preflight.js";
 import {
   buildAgentPrompt,
+  CUTOFF_MS_PLACEHOLDER,
   snapshotAgentPromptTemplates,
   TOKEN_BUDGET_PLACEHOLDER,
   type PromptAgentId,
@@ -79,8 +80,10 @@ function checkedProduct(left: number, right: number, name: string): number {
   return product;
 }
 
-function authorizedTokens(tokenBudgetPerAgent: number): number {
-  return checkedProduct(tokenBudgetPerAgent, AGENT_COUNT, "Attempt token authorization");
+function authorizedTokens(tokenBudgetPerAgent: number | null): number | null {
+  return tokenBudgetPerAgent === null
+    ? null
+    : checkedProduct(tokenBudgetPerAgent, AGENT_COUNT, "Attempt token authorization");
 }
 
 function totalSessionTokens(attempt: AttemptSummary): number {
@@ -214,6 +217,7 @@ function promptBindings(
       const prompt = buildAgentPrompt({
         agentId,
         condition,
+        cutoffMs: study.schedule.cutoffMs,
         tokenBudgetPerAgent,
         teamChannel: study.communication.teamChannel,
       });
@@ -269,14 +273,14 @@ function createDesignReceiptValue(options: {
   createdAt: string;
   manifestDigest?: string;
   baselineBudgets?: {
-    tokenBudgetPerAgent: number;
+    tokenBudgetPerAgent: number | null;
     perAttemptMonetaryCeilingCents: number;
   };
 }): DesignReceipt {
   const baselineBudgets = options.baselineBudgets ?? options.study.budgets;
   const prompts = promptBindings(options.study, baselineBudgets.tokenBudgetPerAgent);
   const identity = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceRevision: options.sourceRevision,
     sandbox: { ...options.sandbox, ...SANDBOX_POLICY },
     manifestDigest: options.manifestDigest ?? options.study.manifestDigest,
@@ -317,7 +321,7 @@ function createDesignReceiptValue(options: {
 function assertPrimaryAuthorization(
   receipt: DesignReceipt,
   validationBudgets: {
-    tokenBudgetPerAgent: number;
+    tokenBudgetPerAgent: number | null;
     perAttemptMonetaryCeilingCents: number;
   },
   replacementAuthorization: { tokens: number; cents: number } = {
@@ -325,16 +329,8 @@ function assertPrimaryAuthorization(
     cents: 0,
   },
 ): void {
-  const calibrationTokens = checkedProduct(
-    CALIBRATION_CELL_COUNT,
-    authorizedTokens(receipt.baselineBudgets.tokenBudgetPerAgent),
-    "Calibration primary token authorization",
-  );
-  const validationTokens = checkedProduct(
-    VALIDATION_CELL_COUNT,
-    authorizedTokens(validationBudgets.tokenBudgetPerAgent),
-    "Validation primary token authorization",
-  );
+  const calibrationAttemptTokens = authorizedTokens(receipt.baselineBudgets.tokenBudgetPerAgent);
+  const validationAttemptTokens = authorizedTokens(validationBudgets.tokenBudgetPerAgent);
   const calibrationMoney = checkedProduct(
     CALIBRATION_CELL_COUNT,
     receipt.baselineBudgets.perAttemptMonetaryCeilingCents,
@@ -345,9 +341,27 @@ function assertPrimaryAuthorization(
     validationBudgets.perAttemptMonetaryCeilingCents,
     "Validation primary monetary authorization",
   );
+  const tokenPolicyDisabled = receipt.totalCeilings.tokens === null;
   if (
-    calibrationTokens + validationTokens + replacementAuthorization.tokens >
-    receipt.totalCeilings.tokens
+    tokenPolicyDisabled !== (calibrationAttemptTokens === null) ||
+    tokenPolicyDisabled !== (validationAttemptTokens === null)
+  ) {
+    throw new Error("Study token policy must remain consistent with its total token ceiling.");
+  }
+  if (
+    !tokenPolicyDisabled &&
+    checkedProduct(
+      CALIBRATION_CELL_COUNT,
+      calibrationAttemptTokens!,
+      "Calibration primary token authorization",
+    ) +
+      checkedProduct(
+        VALIDATION_CELL_COUNT,
+        validationAttemptTokens!,
+        "Validation primary token authorization",
+      ) +
+      replacementAuthorization.tokens >
+      receipt.totalCeilings.tokens!
   ) {
     throw new Error("Study token ceiling cannot authorize the primary matrix and replacements.");
   }
@@ -562,7 +576,7 @@ function newPhaseSummary(
   adjustments: readonly PhaseAdjustment[],
 ): PhaseSummary {
   return decodePhaseSummary({
-    schemaVersion: 1,
+    schemaVersion: 2,
     phase,
     state: "ready",
     manifestDigest: study.manifestDigest,
@@ -572,7 +586,7 @@ function newPhaseSummary(
     adjustments,
     reservations: [],
     attempts: [],
-    cumulativeAuthorizedTokens: 0,
+    cumulativeAuthorizedTokens: study.budgets.tokenBudgetPerAgent === null ? null : 0,
     cumulativeAuthorizedMonetaryCents: 0,
     cumulativeActualTokens: 0,
   });
@@ -644,7 +658,7 @@ function replacementAuthorization(summaries: readonly (PhaseSummary | undefined)
     (total, summary) => {
       for (const reservation of summary?.reservations ?? []) {
         if (reservation.kind !== "replacement") continue;
-        total.tokens += reservation.authorizedTokens;
+        total.tokens += reservation.authorizedTokens ?? 0;
         total.cents += reservation.monetaryAuthorizationCeilingCents;
       }
       return total;
@@ -663,7 +677,7 @@ async function assertReplacementHeadroom(
     await readPhaseIfPresent(studyRoot, "validation"),
   ]);
   assertPrimaryAuthorization(receipt, study.budgets, {
-    tokens: authorization.tokens + authorizedTokens(study.budgets.tokenBudgetPerAgent),
+    tokens: authorization.tokens + (authorizedTokens(study.budgets.tokenBudgetPerAgent) ?? 0),
     cents: authorization.cents + study.budgets.perAttemptMonetaryCeilingCents,
   });
 }
@@ -744,10 +758,10 @@ function reserveLaunch(options: {
       ...options.summary,
       state: "running",
       reservations,
-      cumulativeAuthorizedTokens: reservations.reduce(
-        (sum, item) => sum + item.authorizedTokens,
-        0,
-      ),
+      cumulativeAuthorizedTokens:
+        options.study.budgets.tokenBudgetPerAgent === null
+          ? null
+          : reservations.reduce((sum, item) => sum + item.authorizedTokens!, 0),
       cumulativeAuthorizedMonetaryCents: reservations.reduce(
         (sum, item) => sum + item.monetaryAuthorizationCeilingCents,
         0,
@@ -785,7 +799,7 @@ async function assertAttemptMatchesLaunch(options: {
   attemptId: string;
   replacementOfAttemptId?: string;
   budgets?: {
-    tokenBudgetPerAgent: number;
+    tokenBudgetPerAgent: number | null;
     perAttemptMonetaryCeilingCents: number;
   };
 }): Promise<void> {
@@ -819,19 +833,26 @@ async function assertAttemptMatchesLaunch(options: {
         candidate.agentId === agentId &&
         candidate.communicationMode === condition.communicationMode,
     );
-    if (template === undefined || template.template.split(TOKEN_BUDGET_PLACEHOLDER).length !== 2) {
+    if (
+      template === undefined ||
+      template.template.split(TOKEN_BUDGET_PLACEHOLDER).length !== 2 ||
+      template.template.split(CUTOFF_MS_PLACEHOLDER).length !== 2
+    ) {
       throw new Error(`Receipt prompt template for ${agentId} is invalid.`);
     }
     return {
       agentId,
-      prompt: template.template.replace(
-        TOKEN_BUDGET_PLACEHOLDER,
-        String(budgets.tokenBudgetPerAgent),
-      ),
+      prompt: buildAgentPrompt({
+        agentId,
+        condition: condition.id,
+        cutoffMs: options.study.schedule.cutoffMs,
+        tokenBudgetPerAgent: budgets.tokenBudgetPerAgent,
+        teamChannel: options.study.communication.teamChannel,
+      }),
     };
   });
   const expectedProtocol = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     blockId: options.cell.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -1037,7 +1058,7 @@ export interface StudyCellLaunch {
   attemptRoot: string;
   studyRootId: string;
   designDigest: string;
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   monetaryAuthorizationCeilingCents: number;
   replacementOfAttemptId?: string;
 }

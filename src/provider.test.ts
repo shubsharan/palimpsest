@@ -35,6 +35,127 @@ function adapterWith(
 }
 
 describe("AI SDK provider", () => {
+  it("retains exact OpenAI Responses reasoning summary items separately from normalized text", async () => {
+    const model = new MockLanguageModelV4({
+      provider: "openai.responses",
+      modelId: "gpt-5.6-sol",
+      doGenerate: {
+        content: [
+          { type: "reasoning", text: "Inspect the repository." },
+          { type: "reasoning", text: "Then test the solver." },
+          { type: "text", text: "done" },
+        ],
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(5, 4),
+        warnings: [],
+        response: {
+          id: "response-1",
+          modelId: "gpt-5.6-sol",
+          timestamp: new Date(0),
+          body: {
+            id: "response-1",
+            output: [
+              {
+                type: "reasoning",
+                id: "rs_1",
+                encrypted_content: "must-not-be-retained",
+                summary: [
+                  { type: "summary_text", text: "Inspect the repository." },
+                  { type: "summary_text", text: "Then test the solver." },
+                ],
+              },
+              { type: "message", id: "msg_1", content: [{ type: "output_text", text: "done" }] },
+              {
+                type: "reasoning",
+                id: "rs_2",
+                summary: [{ type: "summary_text", text: "" }],
+              },
+            ],
+          },
+        },
+      },
+    });
+    const session = adapterWith(model).openSession({
+      agentId: "agent-1",
+      tools: TOOL_DEFINITIONS,
+    });
+
+    const turn = await session.respond({
+      prompt: "solve",
+      toolResults: [],
+      signal: new AbortController().signal,
+    });
+
+    expect(turn.reasoningSummary).toBe("Inspect the repository.Then test the solver.");
+    expect(turn.returnedReasoningSummary).toEqual({
+      status: "captured",
+      items: [
+        {
+          id: "rs_1",
+          summary: [
+            { type: "summary_text", text: "Inspect the repository." },
+            { type: "summary_text", text: "Then test the solver." },
+          ],
+        },
+        {
+          id: "rs_2",
+          summary: [{ type: "summary_text", text: "" }],
+        },
+      ],
+    });
+    expect(JSON.stringify(turn.returnedReasoningSummary)).not.toContain("encrypted_content");
+    expect(JSON.stringify(turn.returnedReasoningSummary)).not.toContain("must-not-be-retained");
+    expect(turn.returnedReasoningSummary).not.toHaveProperty("body");
+  });
+
+  it("distinguishes an unavailable OpenAI response body from a captured empty list", async () => {
+    const model = new MockLanguageModelV4({
+      provider: "openai.responses",
+      modelId: "gpt-5.6-sol",
+      doGenerate: [
+        {
+          content: [{ type: "text", text: "first" }],
+          finishReason: { unified: "stop", raw: "completed" },
+          usage: usage(1, 1),
+          warnings: [],
+          response: { id: "response-1", modelId: "gpt-5.6-sol", timestamp: new Date(0) },
+        },
+        {
+          content: [{ type: "text", text: "second" }],
+          finishReason: { unified: "stop", raw: "completed" },
+          usage: usage(1, 1),
+          warnings: [],
+          response: {
+            id: "response-2",
+            modelId: "gpt-5.6-sol",
+            timestamp: new Date(1),
+            body: { id: "response-2", output: [] },
+          },
+        },
+      ],
+    });
+    const firstSession = adapterWith(model).openSession({
+      agentId: "agent-1",
+      tools: TOOL_DEFINITIONS,
+    });
+    const secondSession = adapterWith(model).openSession({
+      agentId: "agent-2",
+      tools: TOOL_DEFINITIONS,
+    });
+    const signal = new AbortController().signal;
+
+    await expect(
+      firstSession.respond({ prompt: "solve", toolResults: [], signal }),
+    ).resolves.toMatchObject({
+      returnedReasoningSummary: { status: "response-body-unavailable" },
+    });
+    await expect(
+      secondSession.respond({ prompt: "solve", toolResults: [], signal }),
+    ).resolves.toMatchObject({
+      returnedReasoningSummary: { status: "captured", items: [] },
+    });
+  });
+
   it("normalizes one tool turn and continues with provider-preserving message history", async () => {
     const model = new MockLanguageModelV4({
       provider: "mock-provider",

@@ -38,9 +38,9 @@ Git commands remain model-chosen and unmetered, but only code pushed to the assi
 
 The runner supplies an environment rather than a work plan.
 
-- Evidence stages are privately prepared and atomically appear on a fixed monotonic schedule independent of model turns, token use, trace latency, Git activity, checker calls, or apparent progress.
-- Sessions may take as many model responses, tool calls, checker calls, and, when available, collaboration cycles as their cumulative provider-reported token budgets and the attempt wall-time limit permit.
-- An agent's final response ends only that session. Token exhaustion ends only the affected session. The wall-time cutoff stops every active session.
+- Evidence stages are privately prepared and atomically appear on the manifest-declared monotonic schedule independent of model turns, token use, trace latency, Git activity, checker calls, or apparent progress.
+- Sessions may take as many model responses, tool calls, checker calls, and, when available, collaboration cycles as the declared attempt wall-time and optional cumulative token limit permit.
+- An agent's final response ends only that session. When enabled, token exhaustion ends only the affected session. The wall-time cutoff stops every active session.
 - There are no rounds, launch barriers, assigned turns, publication slots, required commits, prescribed branches, checkpoints, or submission schemas.
 - Standard sandboxing and secret handling protect the host, provider credentials, prepared plaintext, and cipher keys. They do not constrain solving behavior.
 
@@ -64,7 +64,7 @@ The selected code runs read-only against the complete ciphertext and writes only
 
 A study prepares all five builds and an immutable design receipt before calibration sessions begin. Calibration executes four condition cells; validation executes sixteen cells under four balanced orders. Attempts remain sequential while the three sessions inside one attempt remain concurrent. Each phase summary records launch reservations, durable attempts, resource authorization, and explicit replacement lineage without selecting or aggregating outcomes.
 
-Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain study provenance, condition and derived treatment, declared channel mode, selected build, fixed schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, termination, model and tool activity, accepted public messages, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Records do not retain complete provider response payloads or credential values.
+Paired build records retain block identity, source window, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain study provenance, condition and derived treatment, declared channel mode, selected build, resolved schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, exact provider-returned reasoning-summary items when available, termination, model and tool activity, accepted public messages, stage releases, native frozen Git topology, overlap observations, reviewer selection, execution result, and score. Records do not retain hidden reasoning, complete provider response payloads, or credential values.
 
 This chronology supports qualitative review of how particular models used private evidence, Git, checking, and prior rules before and after contradictory evidence. It also makes the exact declared puzzle and model condition recoverable for sharing.
 

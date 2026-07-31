@@ -1,4 +1,4 @@
-schemaVersion: 3
+schemaVersion: 4
 
 communication: { teamChannel: disabled }
 blocks:
@@ -16,7 +16,7 @@ providers:
 models:
   fixture: { provider: fixture, model: fixture-model }
 schedule:
-  releaseOffsetsMs: [0, 300000, 600001, 1200000, 1800000, 2400000]
+  releaseOffsetsMs: [0, 300000, 300000, 1200000, 1800000, 2400000]
   cutoffMs: 3600000
 budgets:
   tokenBudgetPerAgent: 200000

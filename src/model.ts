@@ -78,9 +78,29 @@ export interface ModelToolResult {
   output: unknown;
 }
 
+export interface ReturnedReasoningSummaryEntry {
+  readonly type: "summary_text";
+  readonly text: string;
+}
+
+export interface ReturnedReasoningSummaryItem {
+  readonly id: string;
+  readonly summary: readonly ReturnedReasoningSummaryEntry[];
+}
+
+export type ReturnedReasoningSummary =
+  | {
+      readonly status: "captured";
+      readonly items: readonly ReturnedReasoningSummaryItem[];
+    }
+  | {
+      readonly status: "response-body-unavailable";
+    };
+
 export interface ModelTurn {
   toolCalls: readonly ModelToolCall[];
   reasoningSummary?: string;
+  returnedReasoningSummary?: ReturnedReasoningSummary;
   finalResponse?: string;
   usage: TokenUsage;
   responseIdentity?: ModelResponseIdentity;

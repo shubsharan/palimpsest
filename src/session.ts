@@ -104,7 +104,7 @@ export async function runAgentSession(options: {
   prompt: string;
   adapter: ModelAdapter;
   tools: AgentToolSet;
-  tokenBudget: number;
+  tokenBudget: number | null;
   signal: AbortSignal;
   getActivityCursor: () => number;
   observe?: SessionObserver;
@@ -186,10 +186,11 @@ export async function runAgentSession(options: {
       responseIdentity: turn.responseIdentity,
       toolCalls: turn.toolCalls.map((call) => ({ id: call.id, name: call.name })),
       reasoningSummary: turn.reasoningSummary,
+      returnedReasoningSummary: turn.returnedReasoningSummary,
       finalResponse: turn.finalResponse,
     });
 
-    if (inputTokens + outputTokens >= options.tokenBudget) {
+    if (options.tokenBudget !== null && inputTokens + outputTokens >= options.tokenBudget) {
       await transition("token-exhausted", "cumulative model-token cutoff");
       await model.cancel?.("token-exhausted");
       break;

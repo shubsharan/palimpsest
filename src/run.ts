@@ -3,13 +3,8 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { AttemptRuntime } from "./attempt-runtime.js";
-import {
-  ATTEMPT_CUTOFF_MS,
-  hashProtocolSnapshot,
-  RELEASE_OFFSETS_MS,
-  resolveCondition,
-  type ConditionId,
-} from "./condition.js";
+import { hashProtocolSnapshot, resolveCondition, type ConditionId } from "./condition.js";
+import { validateRunSchedule } from "./config.js";
 import {
   decodeAttemptSummary,
   decodeBuildManifest,
@@ -83,7 +78,7 @@ export interface AttemptConfig {
   agentStages: Readonly<Record<AgentId, readonly string[]>>;
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   teamChannel: TeamChannelMode;
 }
 
@@ -112,7 +107,7 @@ export interface AttemptResult {
   agentIds: readonly AgentId[];
   releaseOffsetsMs: readonly number[];
   cutoffMs: number;
-  tokenBudgetPerAgent: number;
+  tokenBudgetPerAgent: number | null;
   protocolDigest: string;
   protocol: AttemptProtocolSnapshot;
   sessions: readonly AgentSessionResult[];
@@ -200,12 +195,10 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
       const stages = stagesValue[agentId];
       if (
         !Array.isArray(stages) ||
-        stages.length !== RELEASE_OFFSETS_MS.length ||
+        stages.length !== 6 ||
         stages.some((stage) => typeof stage !== "string" || stage.length === 0)
       ) {
-        throw new Error(
-          `${agentId} must have exactly ${String(RELEASE_OFFSETS_MS.length)} stages.`,
-        );
+        throw new Error(`${agentId} must have exactly 6 stages.`);
       }
       return [agentId, [...stages] as string[]] as const;
     }),
@@ -221,17 +214,15 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     throw new Error("teamChannel must be enabled or disabled.");
   }
   const releaseOffsetsMs = value.releaseOffsetsMs;
-  if (
-    !Array.isArray(releaseOffsetsMs) ||
-    releaseOffsetsMs.length !== RELEASE_OFFSETS_MS.length ||
-    releaseOffsetsMs.some((offset, index) => offset !== RELEASE_OFFSETS_MS[index])
-  ) {
-    throw new Error("releaseOffsetsMs must match the fixed six-stage release schedule.");
+  if (!Array.isArray(releaseOffsetsMs)) {
+    throw new Error("releaseOffsetsMs must be an array.");
   }
   const cutoffMs = requirePositiveInteger(value, "cutoffMs");
-  if (cutoffMs !== ATTEMPT_CUTOFF_MS) {
-    throw new Error("cutoffMs must match the fixed 60-minute attempt cutoff.");
-  }
+  validateRunSchedule(releaseOffsetsMs as readonly number[], cutoffMs, 6, "Attempt configuration");
+  const tokenBudgetPerAgent =
+    value.tokenBudgetPerAgent === null
+      ? null
+      : requirePositiveInteger(value, "tokenBudgetPerAgent");
   const studyPhase = value.studyPhase;
   if (studyPhase !== "standalone" && studyPhase !== "calibration" && studyPhase !== "validation") {
     throw new Error("studyPhase must be standalone, calibration, or validation.");
@@ -280,9 +271,9 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
     agentIds,
     agentStages,
-    releaseOffsetsMs: [...RELEASE_OFFSETS_MS],
+    releaseOffsetsMs: [...(releaseOffsetsMs as number[])],
     cutoffMs,
-    tokenBudgetPerAgent: requirePositiveInteger(value, "tokenBudgetPerAgent"),
+    tokenBudgetPerAgent,
     teamChannel,
   };
 }
@@ -464,13 +455,14 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       buildAgentPrompt({
         agentId,
         condition: config.condition,
+        cutoffMs: config.cutoffMs,
         tokenBudgetPerAgent: config.tokenBudgetPerAgent,
         teamChannel: config.teamChannel,
       }),
     ]),
   ) as Record<AgentId, string>;
   const protocol: AttemptProtocolSnapshot = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     blockId: config.blockId,
     condition: condition.id,
     communicationMode: condition.communicationMode,
@@ -777,7 +769,9 @@ export interface RunPuzzleOptions {
   replacementOfAttemptId?: string;
   condition: ConditionId;
   agents: AgentRuntimeMap;
-  tokenBudgetPerAgent: number;
+  releaseOffsetsMs: readonly number[];
+  cutoffMs: number;
+  tokenBudgetPerAgent: number | null;
   teamChannel: TeamChannelMode;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
@@ -805,7 +799,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     ? "session-infrastructure-error"
     : "none";
   const summary = decodeAttemptSummary({
-    schemaVersion: 4,
+    schemaVersion: 5,
     attemptId: options.result.attemptId,
     studyPhase: options.result.studyPhase,
     ...(options.result.studyRootId === undefined
@@ -929,8 +923,8 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
     agentIds: manifest.agentIds,
     agentStages,
-    releaseOffsetsMs: RELEASE_OFFSETS_MS,
-    cutoffMs: ATTEMPT_CUTOFF_MS,
+    releaseOffsetsMs: options.releaseOffsetsMs,
+    cutoffMs: options.cutoffMs,
     tokenBudgetPerAgent: options.tokenBudgetPerAgent,
     teamChannel: options.teamChannel,
   };

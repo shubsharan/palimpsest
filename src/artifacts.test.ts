@@ -201,7 +201,7 @@ function designReceipt(): Record<string, unknown> {
     }),
   );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     createdAt: "2026-07-28T12:00:00.000Z",
     sourceRevision: "1".repeat(40),
     sandbox: attemptSummary().sandbox,
@@ -276,7 +276,7 @@ function plannedCells(phase: "calibration" | "validation"): Record<string, unkno
 
 function phaseSummary(overrides: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     phase: "calibration",
     state: "ready",
     manifestDigest: "2".repeat(64),
@@ -367,7 +367,7 @@ describe("stored artifact decoders", () => {
 
     expect(decoded).toEqual(encoded);
     expect(decoded).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       studyPhase: "standalone",
       blockId: "calibration-theron-ware",
       condition: "CR",
@@ -380,6 +380,29 @@ describe("stored artifact decoders", () => {
         communicationMode: "shared",
         repositories: [{ repositoryId: "shared" }],
       },
+    });
+  });
+
+  it("round-trips alternate run controls including disabled token termination", () => {
+    const encoded = JSON.parse(
+      JSON.stringify(
+        testAttemptSummary({
+          releaseOffsetsMs: [0, 1_000, 2_500, 4_000, 7_500, 9_000],
+          cutoffMs: 12_000,
+          tokenBudgetPerAgent: null,
+        }),
+      ),
+    ) as unknown;
+
+    const decoded = decodeAttemptSummary(encoded);
+
+    expect(decoded.releaseOffsetsMs).toEqual([0, 1_000, 2_500, 4_000, 7_500, 9_000]);
+    expect(decoded.cutoffMs).toBe(12_000);
+    expect(decoded.tokenBudgetPerAgent).toBeNull();
+    expect(decoded.protocol).toMatchObject({
+      releaseOffsetsMs: [0, 1_000, 2_500, 4_000, 7_500, 9_000],
+      cutoffMs: 12_000,
+      tokenBudgetPerAgent: null,
     });
   });
 
@@ -772,7 +795,7 @@ describe("stored artifact decoders", () => {
   it.each([
     [
       "unsupported receipt version",
-      () => decodeDesignReceipt({ ...designReceipt(), schemaVersion: 2 }),
+      () => decodeDesignReceipt({ ...designReceipt(), schemaVersion: 1 }),
     ],
     [
       "unsupported receipt field",

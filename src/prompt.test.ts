@@ -4,6 +4,7 @@ import { ATTEMPT_CUTOFF_MS, CONDITION_IDS, RELEASE_OFFSETS_MS } from "./conditio
 import {
   buildAgentPrompt,
   buildAgentPromptTemplate,
+  CUTOFF_MS_PLACEHOLDER,
   snapshotAgentPromptTemplates,
   TOKEN_BUDGET_PLACEHOLDER,
 } from "./prompt.js";
@@ -20,6 +21,7 @@ describe("agent prompt", () => {
       buildAgentPrompt({
         agentId: "agent-2",
         condition,
+        cutoffMs: ATTEMPT_CUTOFF_MS,
         tokenBudgetPerAgent: 200_000,
       }),
     ]),
@@ -37,7 +39,7 @@ describe("agent prompt", () => {
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
       The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
 
-      Additional private evidence may appear during the attempt. The attempt ends at 60 minutes.
+      Additional private evidence may appear during the attempt. The attempt ends after 3600000 milliseconds.
       Your cumulative model-token limit is 200000.
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.
@@ -57,7 +59,7 @@ describe("agent prompt", () => {
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
       The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
 
-      Additional private evidence may appear during the attempt. The attempt ends at 60 minutes.
+      Additional private evidence may appear during the attempt. The attempt ends after 3600000 milliseconds.
       Your cumulative model-token limit is 200000.
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.
@@ -89,11 +91,17 @@ describe("agent prompt", () => {
           `You are Agent ${agentId.slice("agent-".length)}, one of 3 agents`,
         );
         expect(template.split(TOKEN_BUDGET_PLACEHOLDER)).toHaveLength(2);
+        expect(template.split(CUTOFF_MS_PLACEHOLDER)).toHaveLength(2);
         expect(template).not.toContain("200000");
-        expect(template.replace(TOKEN_BUDGET_PLACEHOLDER, "200000")).toBe(
+        expect(
+          template
+            .replace(CUTOFF_MS_PLACEHOLDER, String(ATTEMPT_CUTOFF_MS))
+            .replace(TOKEN_BUDGET_PLACEHOLDER, "200000"),
+        ).toBe(
           buildAgentPrompt({
             agentId,
             condition,
+            cutoffMs: ATTEMPT_CUTOFF_MS,
             tokenBudgetPerAgent: 200_000,
           }),
         );
@@ -109,7 +117,7 @@ describe("agent prompt", () => {
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
       The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
 
-      Additional private evidence may appear during the attempt. The attempt ends at 60 minutes.
+      Additional private evidence may appear during the attempt. The attempt ends after {{cutoffMs}} milliseconds.
       Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
 
       You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.
@@ -146,12 +154,14 @@ describe("agent prompt", () => {
     const shared = buildAgentPrompt({
       agentId: "agent-2",
       condition: "CS",
+      cutoffMs: ATTEMPT_CUTOFF_MS,
       tokenBudgetPerAgent: 200_000,
       teamChannel: "enabled",
     });
     const isolated = buildAgentPrompt({
       agentId: "agent-2",
       condition: "IS",
+      cutoffMs: ATTEMPT_CUTOFF_MS,
       tokenBudgetPerAgent: 200_000,
       teamChannel: "enabled",
     });
@@ -176,7 +186,7 @@ describe("agent prompt", () => {
     );
     expect(prompt).toContain("Additional private evidence may appear during the attempt.");
     expect(prompt).not.toContain("0, 5, 10, 20, 30, and 40 minutes");
-    expect(prompt).toContain("The attempt ends at 60 minutes.");
+    expect(prompt).toContain("The attempt ends after 3600000 milliseconds.");
     expect(prompt).toContain("Your cumulative model-token limit is 200000.");
     expect(prompt).toContain("check_published_solver");
     expect(prompt).toContain("aggregate metrics");
