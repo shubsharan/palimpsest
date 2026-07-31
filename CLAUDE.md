@@ -1,6 +1,6 @@
 <!-- SPECKIT START -->
 
-Current feature plan: `specs/019-configurable-run-controls/plan.md`.
+Current feature plan: `specs/020-blind-team-evaluation/plan.md`.
 
 For additional context about technologies to be used, project structure, shell commands, and other important information, read the current feature plan selected by `.specify/feature.json`.
 
