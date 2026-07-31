@@ -57,8 +57,19 @@ This feature is done when enabled shared messaging, disabled Git-only parity, is
 
 This feature is done when multiple clock profiles and both token-policy modes pass through the same runner and durable artifact path without source edits or provider-backed spend.
 
+## Feature 020: Blind Calibration and Team-Level Evaluation
+
+- Replace correctness-bearing checker feedback with execution, output-validity, word-count, and plaintext-independent coverage feedback.
+- Evaluate the one shared canonical origin or all three isolated canonical origins without reviewer selection, repair, ranking, or synthetic integration.
+- Add post-freeze origin diagnostics, realized team-product status, collective ceiling, and nullable integration gap.
+- Separate evidence and control validity tiers, rebuild the five-block catalog with fresh calibration material, and fail closed on evidence fallback.
+- Record communication, integration, interference, belief replacement, source recognition, checker interpretation, resources, reasoning-summary coverage, and final provenance.
+- Run one fresh four-cell GPT-5.6-sol calibration under the one-hour, no-token-cutoff regime, then stop before validation.
+
+This feature is done when provider-free acceptance and clean receipt-bound preflight pass on the exact committed source, all four calibration cells receive terminal all-origin evaluation and diagnostic records, correctness remains hidden during model work, and validation has not started.
+
 ## Boundaries
 
-The geometry is fixed at three agents, six stages, and a boundary at stage four. The study uses files, direct providers, sequential attempts, fixture adapters, fake clocks, and explicit reviewer evaluation. It adds no services, databases, accounts, dashboards, automatic retries, compatibility layer, automated behavioral review, or benchmark claims.
+The geometry is fixed at three agents, six stages, and a boundary at stage four. The study uses files, direct providers, sequential attempts, fixture adapters, fake clocks, blind checking, and all-canonical-origin evaluation. It adds no services, databases, accounts, dashboards, automatic retries, compatibility layer, prescribed collaboration workflow, or benchmark claims.
 
 Palimpsest claims controlled opportunities and recorded outcomes only. It does not claim guaranteed collaboration, belief revision, construct validity, or reproducible live model behavior.

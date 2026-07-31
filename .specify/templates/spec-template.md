@@ -83,7 +83,7 @@
 
 **Environmental Constraints**: [State private evidence and peer-activity visibility, schedule, wall-time/token cutoffs, network access, secrets, and host-safety boundaries]
 
-**Observable Outcomes**: [State which scores, traces, Git/checker behavior, workarounds, and reviewer observations are retained]
+**Observable Outcomes**: [State which origin scores and diagnostics, team-product status, traces, Git/checker behavior, source recognition, resource use, workarounds, and reviewer observations are retained]
 
 **Infrastructure Failures**: [State which failures prevent execution or scoring without reclassifying model behavior]
 

@@ -29,7 +29,7 @@
 **Puzzle Contribution**: [agent-visible puzzle behavior this feature enables]
 **Agent Instructions & Tools**: [objective, stable team identity, communication availability and Git surface, canonical published solver interface, checking tools, and any requested but unenforced coordination behavior]
 **Environmental Constraints**: [evidence and peer-activity visibility, schedule, wall-time/token cutoffs, network and secret boundaries]
-**Observable Outcomes**: [scores, traces, Git/checker behavior, and reviewer observations retained]
+**Observable Outcomes**: [origin scores and diagnostics, team-product status, traces, Git/checker behavior, source recognition, resource use, and reviewer observations retained]
 **Determinism Claim**: [which puzzle mechanics and scores reproduce, and which model behavior remains stochastic]
 
 ## Constitution Check
@@ -37,10 +37,10 @@
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **Puzzle behavior before process**: Instructions state the team objective, cipher family, tools, and final solver interface without recommending algorithms, assigning roles, or requiring intermediate reasoning artifacts.
-- **Environmental constraints, not workflow**: Visibility, staged evidence, resource cutoffs, and the canonical published solver are independent of model behavior; no turns, checkpoints, intermediate files, or Git sequence are imposed.
+- **Environmental constraints, not workflow**: Visibility, staged evidence, resource cutoffs, blind checking, and the canonical published solver are independent of model behavior; correctness remains post-freeze and no turns, checkpoints, intermediate files, or Git sequence are imposed.
 - **Minimal reproducible mechanics**: Only generation, reveal, checking, scoring, and records needed by the current experiment are structured and deterministic.
-- **Observe outcomes honestly**: Model mistakes, workarounds, checker use, and collaboration choices remain scored observations; infrastructure failures are reported separately.
-- **Condition-defined native collaboration**: Team identity and non-treatment inputs are stable across communication-paired conditions; every origin has the same scaffold, only pushed main receives checking or grading, shared conditions expose peer Git and activity, isolated conditions expose only private Git, and Git operations remain unmetered.
+- **Observe outcomes honestly**: Model mistakes, workarounds, checker use, source recognition, missing integration, and collaboration choices remain scored observations; origin diagnostics, realized products, collective ceilings, and infrastructure failures are reported separately.
+- **Condition-defined native collaboration**: Team identity and non-treatment inputs are stable across communication-paired conditions; every origin has the same scaffold, only pushed main receives blind checking, every canonical final origin receives a terminal post-freeze evaluation outcome, shared conditions expose peer Git and activity, isolated conditions expose only private Git, and Git operations remain unmetered.
 - **Risk-aligned verification**: Development CI is fast and advisory; paid or findings-bearing live experiments use a clean-checkout preflight whose source revision and sandbox identity remain with the attempt artifacts.
 
 ## Project Structure

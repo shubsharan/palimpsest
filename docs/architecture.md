@@ -7,7 +7,7 @@ Palimpsest is one local research runner, not a service platform. Its architectur
 1. validate one declarative experiment before side effects;
 2. construct deterministic paired puzzle blocks;
 3. run provider-neutral concurrent model sessions inside one attempt; and
-4. preserve secret-free attempts for later reviewer-selected evaluation.
+4. preserve secret-free attempts for all-canonical-origin post-freeze evaluation.
 
 One root TypeScript application lives under `src/`. One Python distribution under `python/palimpsest/` owns deterministic puzzle and scoring algorithms. Generated runs live under ignored `artifacts/`.
 
@@ -113,7 +113,7 @@ Lease creation and every command share bounded deadlines under the attempt's glo
 
 If the Docker runtime interrupts an in-flight command and returns before its deadline, the runner replaces the affected lease and reports the command outcome as indeterminate without replaying it. The agent can inspect persistent workspace and Git state before deciding how to continue. If replacement cannot complete, the session records an infrastructure error. All leases are closed before freeze, including when staged evidence, monitoring, or other cleanup work fails.
 
-Checker and reviewer-selected evaluation share one published-solver transaction. The trusted host initializes a fresh temporary repository, fetches only the assigned origin's literal `refs/heads/main` into a private ref, resolves and checks out that pinned object, removes Git metadata, and only then records the commit and invokes execution. One abort signal and absolute deadline cover capture and solver execution, while callback cleanup removes the snapshot. A separate short-lived container mounts only the exported tree and assigned ciphertext read-only, with bounded `/tmp` and a 16 MiB `/output` tmpfs. It receives no writable host bind, Git origin, agent workspace, private evidence, reference corpus, oracle path, credential, or host sibling. After exit, the host copies only the declared output into hidden staging, validates its type and size, and atomically renames a valid file into durable output. Checking assembles released ciphertext from ordered sealed-stage records rather than evidence-directory discovery; evaluation first reverifies the complete selected-build and frozen Git/workspace tree seals and uses complete ciphertext. The reviewer selects only the workspace; command and output remain canonical.
+Blind checking and all-canonical-origin evaluation share one published-solver transaction. The trusted host initializes a fresh temporary repository, fetches only the assigned origin's literal `refs/heads/main` into a private ref, resolves and checks out that pinned object, removes Git metadata, and only then records the commit and invokes execution. One abort signal and absolute deadline cover capture and solver execution, while callback cleanup removes the snapshot. A separate short-lived container mounts only the exported tree and assigned ciphertext read-only, with bounded `/tmp` and a 16 MiB `/output` tmpfs. It receives no writable host bind, Git origin, agent workspace, private evidence, reference corpus, oracle path, credential, or host sibling. After exit, the host copies only the declared output into hidden staging, validates its type and size, and atomically renames a valid file into durable output. Checking assembles released ciphertext from ordered sealed-stage records rather than evidence-directory discovery and computes only plaintext-independent counts and coverage. Post-freeze evaluation reverifies the complete selected-build and frozen Git/workspace tree seals, uses complete ciphertext, and grades every canonical origin: one shared origin in shared conditions or all three private origins in isolated conditions. Workspace, command, notes, and output path are not evaluator inputs.
 
 The sandbox protects the local host and oracle. It is not presented as a hardened public benchmark or proof that a solver cannot exploit the puzzle.
 
@@ -142,7 +142,7 @@ pnpm puzzle:experiment -- --config experiments/config.yaml \
   --phase validation --study-root artifacts/study
 pnpm puzzle:experiment -- --config experiments/config.yaml \
   --phase validation --study-root artifacts/study --replace <attempt-id>
-pnpm puzzle:evaluate -- --attempt artifacts/attempt --workspace agent-1
+pnpm puzzle:evaluate -- --attempt artifacts/attempt
 pnpm puzzle:offline -- --condition CR --output artifacts/offline
 ```
 
