@@ -156,32 +156,6 @@ class TargetSource:
 
 
 @dataclass(frozen=True)
-class ReferenceSource:
-    source_id: str
-    sha256: str
-
-    def __post_init__(self) -> None:
-        _identifier(self.source_id, "Reference sourceId")
-        _digest(self.sha256, "Reference source sha256")
-
-    def to_dict(self) -> dict[str, str]:
-        return {"sourceId": self.source_id, "sha256": self.sha256}
-
-    @classmethod
-    def from_dict(cls, value: object, index: int) -> ReferenceSource:
-        name = f"Puzzle build reference {index}"
-        record = _record(
-            value,
-            name,
-            fields=frozenset({"sourceId", "sha256"}),
-        )
-        return cls(
-            source_id=_identifier(record["sourceId"], f"{name} sourceId"),
-            sha256=_digest(record["sha256"], f"{name} sha256"),
-        )
-
-
-@dataclass(frozen=True)
 class BuildWindow:
     paragraph_start: int
     paragraph_end: int
@@ -605,7 +579,6 @@ class BuildVariant:
     variant_id: str
     build_id: str
     public_ciphertext_path: Path
-    reference_corpus_path: Path
     private_stage_roots: dict[str, Path]
     stages: tuple[EvidenceStage, ...]
     key_transitions: tuple[RekeyTransition, ...]
@@ -618,10 +591,6 @@ class BuildVariant:
         if self.public_ciphertext_path.as_posix() != f"{prefix}/complete/ciphertext.txt":
             raise ValueError(
                 f"Build {self.variant_id} public ciphertext path must use its variant tree."
-            )
-        if self.reference_corpus_path.as_posix() != f"{prefix}/references":
-            raise ValueError(
-                f"Build {self.variant_id} reference corpus path must use its variant tree."
             )
         if set(self.private_stage_roots) != set(_FIXED_AGENT_IDS):
             raise ValueError("Build privateStageRoots must contain exactly three agents.")
@@ -661,7 +630,6 @@ class BuildVariant:
             "variantId": self.variant_id,
             "buildId": self.build_id,
             "publicCiphertextPath": self.public_ciphertext_path.as_posix(),
-            "referenceCorpusPath": self.reference_corpus_path.as_posix(),
             "privateStageRoots": {
                 agent_id: self.private_stage_roots[agent_id].as_posix()
                 for agent_id in _FIXED_AGENT_IDS
@@ -681,7 +649,6 @@ class BuildVariant:
                     "variantId",
                     "buildId",
                     "publicCiphertextPath",
-                    "referenceCorpusPath",
                     "privateStageRoots",
                     "stages",
                     "keyTransitions",
@@ -703,9 +670,6 @@ class BuildVariant:
             build_id=_string(record["buildId"], f"{name} buildId"),
             public_ciphertext_path=_relative_path(
                 record["publicCiphertextPath"], f"{name} publicCiphertextPath"
-            ),
-            reference_corpus_path=_relative_path(
-                record["referenceCorpusPath"], f"{name} referenceCorpusPath"
             ),
             private_stage_roots={
                 agent_id: _relative_path(roots[agent_id], f"{name} {agent_id} private stage root")
@@ -806,7 +770,6 @@ class PuzzleBuild:
     paired_build_id: str
     block_id: str
     source: TargetSource
-    references: tuple[ReferenceSource, ...]
     seed: int
     window: BuildWindow
     agent_ids: tuple[str, ...]
@@ -829,13 +792,6 @@ class PuzzleBuild:
             raise ValueError("Puzzle build stageCount must be exactly 6.")
         if self.boundary_stage != _FIXED_BOUNDARY_STAGE:
             raise ValueError("Puzzle build boundaryStage must be exactly 4.")
-        reference_ids = tuple(reference.source_id for reference in self.references)
-        if not reference_ids:
-            raise ValueError("Puzzle references must be non-empty.")
-        if len(set(reference_ids)) != len(reference_ids):
-            raise ValueError("Puzzle reference source IDs must be unique.")
-        if self.source.source_id in reference_ids:
-            raise ValueError("Puzzle target source cannot also be a reference.")
         if self.base_key_path.as_posix() != "oracle/keys/base.json":
             raise ValueError("Puzzle baseKeyPath must be oracle/keys/base.json.")
         if self.stationary.variant_id != "stationary" or self.rekey.variant_id != "rekey":
@@ -863,7 +819,6 @@ class PuzzleBuild:
             "pairedBuildId": self.paired_build_id,
             "blockId": self.block_id,
             "source": self.source.to_dict(),
-            "references": [reference.to_dict() for reference in self.references],
             "seed": self.seed,
             "window": self.window.to_dict(),
             "agentIds": list(self.agent_ids),
@@ -891,7 +846,6 @@ class PuzzleBuild:
                     "pairedBuildId",
                     "blockId",
                     "source",
-                    "references",
                     "seed",
                     "window",
                     "agentIds",
@@ -908,7 +862,6 @@ class PuzzleBuild:
         if _integer(record["schemaVersion"], f"{name} schemaVersion") != 4:
             raise ValueError("Unsupported puzzle build schema version.")
         agent_ids = _strings(record["agentIds"], f"{name} agentIds")
-        raw_references = _array(record["references"], f"{name} references")
         variants = _record(
             record["variants"],
             f"{name} variants",
@@ -918,10 +871,6 @@ class PuzzleBuild:
             paired_build_id=_string(record["pairedBuildId"], f"{name} pairedBuildId"),
             block_id=_identifier(record["blockId"], f"{name} blockId"),
             source=TargetSource.from_dict(record["source"]),
-            references=tuple(
-                ReferenceSource.from_dict(reference, index)
-                for index, reference in enumerate(raw_references, start=1)
-            ),
             seed=_safe_integer(record["seed"], f"{name} seed"),
             window=BuildWindow.from_dict(record["window"]),
             agent_ids=agent_ids,

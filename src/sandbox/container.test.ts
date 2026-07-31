@@ -39,12 +39,11 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
   const workspace = join(root, "workspace");
   const evidence = join(root, "evidence");
   const gitOrigin = join(root, "origin.git");
-  const reference = join(root, "reference");
   const log = join(root, "docker.log");
   const interrupted = join(root, "interrupted");
   const inspected = join(root, "inspected");
   const executable = join(root, "docker");
-  await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(gitOrigin), mkdir(reference)]);
+  await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(gitOrigin)]);
   await writeFile(
     executable,
     [
@@ -88,7 +87,6 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       timeoutMs: 1_000,
       workspacePath: workspace,
       evidencePath: evidence,
-      referenceCorpusPath: reference,
       gitOriginPath: gitOrigin,
     },
   };

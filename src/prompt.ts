@@ -50,18 +50,17 @@ export function buildAgentPromptTemplate(options: AgentPromptTemplateOptions): s
     "",
     "Recover the plaintext of the complete word-substitution cipher as accurately as you can.",
     "A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.",
-    "The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.",
+    "The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or Git metadata.",
     "",
     `Additional private evidence may appear during the attempt. The attempt ends after ${CUTOFF_MS_PLACEHOLDER} milliseconds.`,
     `Your cumulative model-token limit is ${TOKEN_BUDGET_PLACEHOLDER}.`,
     "",
-    "You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.",
+    "You can inspect your private evidence, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.",
     "Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.",
     "Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.",
     "",
     `Workspace: ${SANDBOX_PATHS.workspace}`,
     `Private evidence: ${SANDBOX_PATHS.evidence}`,
-    `Reference corpus: ${SANDBOX_PATHS.reference}`,
   ].join("\n");
 }
 

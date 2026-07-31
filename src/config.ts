@@ -197,27 +197,27 @@ const EXPECTED_BLOCKS = [
   {
     blockId: "calibration-odd-women",
     phase: "calibration",
-    sourcePath: "fixtures/corpus/chronicles-of-break-oday.txt",
+    sourcePath: "fixtures/chronicles-of-break-oday.txt",
   },
   {
     blockId: "validation-pointed-firs",
     phase: "validation",
-    sourcePath: "fixtures/corpus/367-h.htm",
+    sourcePath: "fixtures/367-h.htm",
   },
   {
     blockId: "validation-custom-country",
     phase: "validation",
-    sourcePath: "fixtures/corpus/pg11052.txt",
+    sourcePath: "fixtures/pg11052.txt",
   },
   {
     blockId: "validation-woodlanders",
     phase: "validation",
-    sourcePath: "fixtures/corpus/pg482.txt",
+    sourcePath: "fixtures/pg482.txt",
   },
   {
     blockId: "validation-silas-lapham",
     phase: "validation",
-    sourcePath: "fixtures/corpus/pg154.txt",
+    sourcePath: "fixtures/pg154.txt",
   },
 ] as const satisfies readonly StudyBlock[];
 

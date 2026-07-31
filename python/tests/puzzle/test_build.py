@@ -35,7 +35,7 @@ BLOCK_IDS = (
     "validation-woodlanders",
     "validation-silas-lapham",
 )
-CALIBRATION_SOURCE = ROOT / "fixtures/corpus/chronicles-of-break-oday.txt"
+CALIBRATION_SOURCE = ROOT / "fixtures/chronicles-of-break-oday.txt"
 AGENT_IDS = ("agent-1", "agent-2", "agent-3")
 
 
@@ -133,7 +133,6 @@ def test_design_search_stops_after_512_window_starts(
         block_id="synthetic-block",
         phase="calibration",
         source_id="synthetic",
-        references=("reference",),
         seed=17,
         window=WindowPin(0, 0, 0, ""),
         boundary_stage=4,
@@ -160,7 +159,6 @@ def test_normal_design_revalidates_the_first_feasible_pin(
         block_id="synthetic-block",
         phase="calibration",
         source_id="synthetic",
-        references=("reference",),
         seed=17,
         window=first.pin(),
         boundary_stage=4,

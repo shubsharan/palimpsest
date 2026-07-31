@@ -73,7 +73,7 @@ As a researcher, I can give the puzzle builder any local UTF-8 prose file and re
 3. **Given** a validation block, **When** it is accepted, **Then** both its evidence tier and control tier are at least balanced.
 4. **Given** a target source, **When** candidate selection runs, **Then** it begins after the first 20 percent of canonical paragraphs and selects the first 16,000-to-20,000-word window satisfying the phase gate.
 5. **Given** no qualifying window within the bounded search, **When** the build command ends, **Then** it exits nonzero and publishes no partial build rather than accepting a fallback or weakened gate.
-6. **Given** an eligible source that is not registered in provenance or a block catalog, **When** it is built, **Then** source identity and seed are derived deterministically from the supplied bytes and retained in the sealed manifest.
+6. **Given** any eligible local source, **When** it is built, **Then** source identity and seed are derived deterministically from the supplied bytes and retained in the sealed manifest.
 7. **Given** ordinary UTF-8 prose, Gutenberg text, or Gutenberg HTML, **When** it is supplied, **Then** the same command normalizes it into candidate paragraphs without a separate discover, promote, or pin workflow.
 
 ---
@@ -167,12 +167,12 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **FR-027**: A paid calibration block MUST have `evidenceTier` of at least balanced, complete controls, and an explicitly recorded control tier.
 - **FR-028**: A validation block MUST have both `evidenceTier` and `controlTier` of at least balanced.
 - **FR-029**: Provider-backed preparation MUST reject an evidence fallback before credentials are read or model adapters are created.
-- **FR-030**: `puzzle:build` MUST accept a local source path directly and MUST NOT require prior provenance registration, catalog discovery, or manual pin promotion.
+- **FR-030**: `puzzle:build` MUST accept a local source path directly with no registry, discovery, or manual promotion step.
 - **FR-031**: The builder MUST accept valid UTF-8 ordinary prose, Gutenberg text, and Gutenberg HTML and MUST reject empty, non-UTF-8, structurally insufficient, or scientifically infeasible input explicitly.
 - **FR-032**: Source identity and seed MUST be derived deterministically from the supplied bytes; the sealed build MUST retain the source digest and selected window.
 - **FR-033**: For each target, candidate inspection MUST begin after the first 20 percent of canonical paragraphs and select the first 16,000-to-20,000-word window satisfying its phase-specific gate.
 - **FR-034**: Candidate search MUST remain deterministic and bounded; absence of a qualifying window MUST stop the workflow before paid work rather than weaken a gate.
-- **FR-035**: Every sealed block MUST retain its pinned provenance, source digest, seed, selected window, allocation record, manipulation record, evidence tier, control tier, and phase-gate result.
+- **FR-035**: Every sealed block MUST retain its source digest, seed, selected window, allocation record, manipulation record, evidence tier, control tier, and phase-gate result.
 
 #### Protocol and Behavior Records
 

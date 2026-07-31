@@ -37,18 +37,17 @@ describe("agent prompt", () => {
 
       Recover the plaintext of the complete word-substitution cipher as accurately as you can.
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
-      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
+      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or Git metadata.
 
       Additional private evidence may appear during the attempt. The attempt ends after 3600000 milliseconds.
       Your cumulative model-token limit is 200000.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
+      You can inspect your private evidence, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
       Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.
       Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.
 
       Workspace: /workspace
-      Private evidence: /evidence
-      Reference corpus: /reference"
+      Private evidence: /evidence"
     `);
     expect(prompts.IS).toMatchInlineSnapshot(`
       "You are Agent 2, one of 3 agents working concurrently as one team. Each agent receives different private evidence.
@@ -57,18 +56,17 @@ describe("agent prompt", () => {
 
       Recover the plaintext of the complete word-substitution cipher as accurately as you can.
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
-      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
+      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or Git metadata.
 
       Additional private evidence may appear during the attempt. The attempt ends after 3600000 milliseconds.
       Your cumulative model-token limit is 200000.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
+      You can inspect your private evidence, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
       Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.
       Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.
 
       Workspace: /workspace
-      Private evidence: /evidence
-      Reference corpus: /reference"
+      Private evidence: /evidence"
     `);
   });
 
@@ -115,18 +113,17 @@ describe("agent prompt", () => {
 
       Recover the plaintext of the complete word-substitution cipher as accurately as you can.
       A runnable solver.py scaffold is already committed. Only origin/main:solver.py can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.
-      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence, /reference, or Git metadata.
+      The checker and final grader run python3 solver.py from a Git-free snapshot of the published main commit. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without /evidence or Git metadata.
 
       Additional private evidence may appear during the attempt. The attempt ends after {{cutoffMs}} milliseconds.
       Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
+      You can inspect your private evidence, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
       Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.
       Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.
 
       Workspace: /workspace
-      Private evidence: /evidence
-      Reference corpus: /reference"
+      Private evidence: /evidence"
     `);
   });
 
@@ -198,11 +195,11 @@ describe("agent prompt", () => {
     expect(prompt).toContain(
       "run python3 solver.py from a Git-free snapshot of the published main commit",
     );
-    expect(prompt).toContain("without /evidence, /reference, or Git metadata");
+    expect(prompt).toContain("without /evidence or Git metadata");
     expect(prompt).not.toContain("frozen workspace");
     expect(prompt).toContain("$PALIMPSEST_CIPHERTEXT");
     expect(prompt).toContain("$PALIMPSEST_OUTPUT");
-    expect(prompt).toContain("work without /evidence, /reference, or Git metadata");
+    expect(prompt).toContain("work without /evidence or Git metadata");
     expect(prompt).toContain(
       "The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.",
     );
@@ -215,7 +212,7 @@ describe("agent prompt", () => {
     expect(prompt).not.toContain("Return a final response when you are done.");
     expect(prompt).toContain("Workspace: /workspace");
     expect(prompt).toContain("Private evidence: /evidence");
-    expect(prompt).toContain("Reference corpus: /reference");
+    expect(prompt).not.toContain("Reference corpus");
     expect(prompt).not.toContain("/private/agent-2");
     expect(RELEASE_OFFSETS_MS).toHaveLength(6);
     expect(ATTEMPT_CUTOFF_MS).toBe(60 * 60 * 1_000);

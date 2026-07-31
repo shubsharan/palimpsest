@@ -129,6 +129,7 @@
 - [x] T044 [US4] Derive source identity and seed from supplied bytes and seal the selected window, allocation, manipulation, tiers, and phase result in puzzle-build v4
 - [x] T045 [US4] Enforce paid-calibration and validation phase gates before credentials or adapters in src/study.ts and src/experiment.ts
 - [x] T046 [US4] Run accepted/rejected source workflow tests plus pnpm test:py -- python/tests/puzzle/test_block.py python/tests/puzzle/test_build.py python/tests/puzzle/test_manifest.py and pnpm test:ts -- src/build.test.ts src/study.test.ts tests/puzzle/cli.test.ts tests/puzzle/experiment.test.ts
+- [x] T046a [US4] Flatten source fixtures to `fixtures/*` and remove provenance, reference-corpus build artifacts, manifest fields, prompts, and sandbox mounts
 
 **Checkpoint**: One command either publishes a complete phase-eligible sealed build or exits nonzero with no partial output.
 

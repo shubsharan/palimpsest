@@ -149,9 +149,6 @@ async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promi
       }),
     ),
   ) as Record<AgentId, readonly string[]>;
-  const referenceCorpusPath = join(root, "reference");
-  await mkdir(referenceCorpusPath);
-  await writeFile(join(referenceCorpusPath, "reference.txt"), "reference\n", "utf8");
   return {
     attemptId: `attempt-${condition.toLowerCase()}-001`,
     studyPhase: "standalone",
@@ -161,7 +158,6 @@ async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promi
     buildId: resolved.variantId === "stationary" ? STATIONARY_BUILD_ID : REKEY_BUILD_ID,
     artifactRoot: join(root, "attempt"),
     buildRoot: join(root, "build"),
-    referenceCorpusPath,
     agentIds: AGENTS,
     agentStages,
     releaseOffsetsMs: RELEASE_OFFSETS_MS,

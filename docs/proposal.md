@@ -10,7 +10,7 @@ The project is a local puzzle and an observational research artifact. It is not 
 
 Every word type in a prepared text is replaced by another word type under a hidden bijection. Punctuation, capitalization patterns, digits, and paragraph structure remain visible. The result resembles English at the token level while its vocabulary has been systematically reassigned.
 
-Five checked-in block definitions select provenance-pinned targets and references, scientific seeds, and committed natural-prose windows. A deterministic bounded search allocates whole paragraphs across exactly three agents and six stages. Every selected paragraph appears once, and its source order remains recoverable.
+Five checked-in block definitions identify the planned study cells. Each build derives source identity and seed directly from the supplied text bytes, then a deterministic bounded search selects and allocates whole paragraphs across exactly three agents and six stages. Every selected paragraph appears once, and its source order remains recoverable.
 
 Each block produces stationary and re-key twins from one paragraph allocation and base key. Their first three stages are byte-identical. The stationary twin keeps its mappings; the re-key twin changes only selected mappings beginning at stage four while matched controls remain stable.
 
@@ -24,13 +24,13 @@ The manifest declares direct provider connections, named model profiles, and one
 
 Provider credentials are read only from named environment variables. They are not valid literal configuration values and are excluded from traces, attempt records, experiment summaries, error text, and command sandboxes. The runner does not silently fall back to another provider or retry an attempt.
 
-Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, schedule, limits, tools, references, and evaluation boundary.
+Persistent model sessions begin together and remain independent. Each receives the same concise objective, team identity, schedule, limits, tools, and evaluation boundary.
 
 Shared conditions give the team one peer-visible Git repository and shared Git activity. A manifest switch may also give shared agents one append-only public discussion room for strategy and ideas. Isolated conditions give each agent an independent usable repository and owner-only Git activity and never expose the room. Team identity and every non-communication input remain equal across paired conditions.
 
 Instructions identify the puzzle as a word-substitution cipher, make the team and currently available channel explicit, and declare the one graded interface: `origin/main:solver.py`. They do not reveal the key regime, special word sets, scoring expectations, roles, workflows, or a decoding algorithm.
 
-Agents receive local file, shell, and code tools; their currently released private evidence; a target-excluded reference corpus; an assigned ordinary Git origin preseeded with the same neutral `solver.py`; a published-solver checker; and a way to wait for visible activity. In enabled shared tests they may post to and page through the public room, and accepted posts become visible activity for every teammate. Other sessions do not otherwise synchronize.
+Agents receive local file, shell, and code tools; their currently released private evidence; an assigned ordinary Git origin preseeded with the same neutral `solver.py`; a published-solver checker; and a way to wait for visible activity. In enabled shared tests they may post to and page through the public room, and accepted posts become visible activity for every teammate. Other sessions do not otherwise synchronize.
 
 Git commands remain model-chosen and unmetered, but only code pushed to the assigned origin's `main` branch can receive checker feedback or a final grade. Agents may work independently, collaborate continuously, centralize the solution, duplicate effort, create conflicts, or relay raw evidence; the runner does not prescribe roles, turns, commit sequences, or merge policy.
 
@@ -48,7 +48,7 @@ Private evidence lives outside Git so an agent does not commit it accidentally d
 
 ## Checking Work
 
-An agent may invoke `check_published_solver`, which captures only the assigned origin's literal current `refs/heads/main`, runs the pinned Git-free tree against ciphertext assembled from one frozen view of ordered trusted release records, validates its output without opening oracle plaintext or checker truth, removes the capture, and only then returns an outcome. A later force-push cannot invalidate the captured tree. The fresh execution receives no agent workspace, other Git refs, agent-writable evidence source, reference corpus, oracle path, or correctness data. The checker returns the commit, execution and output-validity status, ciphertext and output word counts, and bounded word coverage, or a commit-aware submission error; trusted machinery and cleanup failures remain infrastructure failures.
+An agent may invoke `check_published_solver`, which captures only the assigned origin's literal current `refs/heads/main`, runs the pinned Git-free tree against ciphertext assembled from one frozen view of ordered trusted release records, validates its output without opening oracle plaintext or checker truth, removes the capture, and only then returns an outcome. A later force-push cannot invalidate the captured tree. The fresh execution receives no agent workspace, other Git refs, agent-writable evidence source, oracle path, or correctness data. The checker returns the commit, execution and output-validity status, ciphertext and output word counts, and bounded word coverage, or a commit-aware submission error; trusted machinery and cleanup failures remain infrastructure failures.
 
 It never accepts a local path and never returns matched counts, accuracy, correctness deltas, correct words, expected words, mismatch locations, unreleased results, peer-private results, or information about a hidden re-key. Correct and incorrect outputs with the same length receive identical validation feedback. Repeated publication and checking remain behavior to observe.
 

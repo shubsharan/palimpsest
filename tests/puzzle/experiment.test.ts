@@ -209,7 +209,7 @@ describe("frozen calibration study", () => {
             build: async (buildOptions) =>
               buildPuzzle({
                 ...buildOptions,
-                source: join(root, "fixtures/corpus/chronicles-of-break-oday.txt"),
+                source: join(root, "fixtures/chronicles-of-break-oday.txt"),
                 phase: "calibration",
               }),
           },

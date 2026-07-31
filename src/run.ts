@@ -73,7 +73,6 @@ export interface AttemptConfig {
   buildId: string;
   artifactRoot: string;
   buildRoot: string;
-  referenceCorpusPath: string;
   agentIds: readonly AgentId[];
   agentStages: Readonly<Record<AgentId, readonly string[]>>;
   releaseOffsetsMs: readonly number[];
@@ -268,7 +267,6 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     buildId,
     artifactRoot: requireNonEmptyString(value, "artifactRoot"),
     buildRoot: requireNonEmptyString(value, "buildRoot"),
-    referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
     agentIds,
     agentStages,
     releaseOffsetsMs: [...(releaseOffsetsMs as number[])],
@@ -362,7 +360,6 @@ async function openAgentLeases(options: {
   git: GitEnvironment;
   agentIds: readonly AgentId[];
   evidencePaths: Record<AgentId, string>;
-  referenceCorpusPath: string;
   clock: MonotonicClock;
   cutoffAt: number;
   signal: AbortSignal;
@@ -387,7 +384,6 @@ async function openAgentLeases(options: {
         profile: "agent",
         workspacePath: workspace.path,
         evidencePath,
-        referenceCorpusPath: options.referenceCorpusPath,
         gitOriginPath: repository.path,
         timeoutMs: Math.min(30_000, remainingMs),
         signal: options.signal,
@@ -573,7 +569,6 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       git,
       agentIds: config.agentIds,
       evidencePaths,
-      referenceCorpusPath: config.referenceCorpusPath,
       clock: options.clock,
       cutoffAt,
       signal: globalController.signal,
@@ -920,7 +915,6 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     buildId: variant.buildId,
     artifactRoot: output,
     buildRoot,
-    referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
     agentIds: manifest.agentIds,
     agentStages,
     releaseOffsetsMs: options.releaseOffsetsMs,

@@ -49,7 +49,6 @@ export class FakeCommandSandbox implements CommandSandbox {
       profile: request.profile,
       workspacePath: request.workspacePath,
       evidencePath: request.evidencePath,
-      referenceCorpusPath: request.referenceCorpusPath,
       gitOriginPath: request.gitOriginPath,
     } as const;
     return {
@@ -99,7 +98,6 @@ export function testBuildManifest(): Record<string, unknown> {
     variantId,
     buildId: `build-${variantId === "stationary" ? "b".repeat(64) : TEST_DIGEST}`,
     publicCiphertextPath: `variants/${variantId}/complete/ciphertext.txt`,
-    referenceCorpusPath: `variants/${variantId}/references`,
     privateStageRoots: Object.fromEntries(
       agentIds.map((agentId) => [agentId, `variants/${variantId}/private/${agentId}/stages`]),
     ),
@@ -137,11 +135,6 @@ export function testBuildManifest(): Record<string, unknown> {
     pairedBuildId: `paired-${"d".repeat(64)}`,
     blockId: "calibration-odd-women",
     source: { sourceId: "odd-women", sha256: TEST_DIGEST },
-    references: [
-      { sourceId: "middlemarch", sha256: "1".repeat(64) },
-      { sourceId: "moby-dick", sha256: "2".repeat(64) },
-      { sourceId: "jane-eyre", sha256: "3".repeat(64) },
-    ],
     seed: 130013,
     window: {
       paragraphStart: 10,

@@ -16,7 +16,6 @@ from palimpsest.puzzle.manifest import (
     ManipulationCheck,
     OracleDesign,
     PuzzleBuild,
-    ReferenceSource,
     RekeyTransition,
     TargetSource,
     TierRejection,
@@ -67,7 +66,6 @@ def _variant(variant_id: str) -> BuildVariant:
         variant_id=variant_id,
         build_id="build-" + ("c" if variant_id == "stationary" else "d") * 64,
         public_ciphertext_path=Path(f"variants/{variant_id}/complete/ciphertext.txt"),
-        reference_corpus_path=Path(f"variants/{variant_id}/references"),
         private_stage_roots={
             agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
             for agent_id in AGENT_IDS
@@ -82,11 +80,6 @@ def _build() -> PuzzleBuild:
         paired_build_id="paired-" + "e" * 64,
         block_id="calibration-odd-women",
         source=TargetSource("odd-women", "f" * 64),
-        references=(
-            ReferenceSource("middlemarch", "1" * 64),
-            ReferenceSource("moby-dick", "2" * 64),
-            ReferenceSource("jane-eyre", "3" * 64),
-        ),
         seed=130013,
         window=BuildWindow(
             paragraph_start=10,
@@ -173,6 +166,7 @@ def test_schema_v4_paired_manifest_round_trips_canonical_json() -> None:
         ("boundaryStage", 3, "exactly 4"),
         ("pairedBuildId", "paired-nope", "lowercase SHA-256"),
         ("baseKeyPath", "../base.json", "safe relative path"),
+        ("references", [], "unknown field references"),
     ],
 )
 def test_manifest_rejects_invalid_top_level_contract(field: str, value: object, match: str) -> None:

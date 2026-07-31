@@ -85,7 +85,7 @@ export async function runOfflinePuzzle(
   const build = await buildPuzzle({
     root,
     output: resolve(output, "build"),
-    source: resolve(root, "fixtures/corpus/chronicles-of-break-oday.txt"),
+    source: resolve(root, "fixtures/chronicles-of-break-oday.txt"),
     phase: "calibration",
     block: OFFLINE_BLOCK,
   });

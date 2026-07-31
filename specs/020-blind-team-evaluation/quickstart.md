@@ -6,7 +6,7 @@ Drop a UTF-8 prose file anywhere local and run the single preparation command:
 
 ```bash
 pnpm puzzle:build -- \
-  --source fixtures/corpus/chronicles-of-break-oday.txt \
+  --source fixtures/chronicles-of-break-oday.txt \
   --phase calibration \
   --output artifacts/build-chronicles
 ```

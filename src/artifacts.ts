@@ -64,11 +64,6 @@ export interface BuildSource {
   sha256: string;
 }
 
-export interface BuildReference {
-  sourceId: string;
-  sha256: string;
-}
-
 export interface BuildWindow {
   paragraphStart: number;
   paragraphEnd: number;
@@ -136,7 +131,6 @@ export interface BuildVariant {
   variantId: "stationary" | "rekey";
   buildId: string;
   publicCiphertextPath: string;
-  referenceCorpusPath: string;
   privateStageRoots: Record<AgentId, string>;
   stages: readonly BuildStage[];
   keyTransitions: readonly BuildKeyTransition[];
@@ -156,7 +150,6 @@ export interface BuildManifest {
   pairedBuildId: string;
   blockId: string;
   source: BuildSource;
-  references: readonly BuildReference[];
   seed: number;
   window: BuildWindow;
   agentIds: readonly AgentId[];
@@ -893,27 +886,6 @@ function decodeBuildSource(value: unknown): BuildSource {
   };
 }
 
-function decodeBuildReferences(value: unknown, sourceId: string): readonly BuildReference[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error("Puzzle build references must be a non-empty array.");
-  }
-  const seen = new Set<string>();
-  return value.map((item, index) => {
-    const name = `Puzzle build reference ${String(index + 1)}`;
-    const record = strictObject(item, name, ["sourceId", "sha256"]);
-    const referenceId = identifier(record.sourceId, `${name} sourceId`);
-    if (referenceId === sourceId) {
-      throw new Error("Puzzle build target source cannot also be a reference.");
-    }
-    if (seen.has(referenceId)) throw new Error("Puzzle build reference source IDs must be unique.");
-    seen.add(referenceId);
-    return {
-      sourceId: referenceId,
-      sha256: digest(record.sha256, `${name} sha256`),
-    };
-  });
-}
-
 function decodeBuildWindow(value: unknown): BuildWindow {
   const name = "Puzzle build window";
   const record = strictObject(value, name, [
@@ -1202,7 +1174,6 @@ function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rek
     "variantId",
     "buildId",
     "publicCiphertextPath",
-    "referenceCorpusPath",
     "privateStageRoots",
     "stages",
     "keyTransitions",
@@ -1217,13 +1188,6 @@ function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rek
   );
   if (publicCiphertextPath !== `${prefix}/complete/ciphertext.txt`) {
     throw new Error(`Puzzle build ${expectedVariant} public ciphertext path is invalid.`);
-  }
-  const referenceCorpusPath = safeRelativePath(
-    record.referenceCorpusPath,
-    `${name} referenceCorpusPath`,
-  );
-  if (referenceCorpusPath !== `${prefix}/references`) {
-    throw new Error(`Puzzle build ${expectedVariant} reference corpus path is invalid.`);
   }
   if (!Array.isArray(record.stages) || record.stages.length !== 18) {
     throw new Error(`${name} must contain exactly 18 stages.`);
@@ -1279,7 +1243,6 @@ function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rek
     variantId: expectedVariant,
     buildId: decodeBuildId(record.buildId, `${name} buildId`),
     publicCiphertextPath,
-    referenceCorpusPath,
     privateStageRoots: decodeAgentPathMap(record.privateStageRoots, expectedVariant),
     stages,
     keyTransitions,
@@ -1293,7 +1256,6 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     "pairedBuildId",
     "blockId",
     "source",
-    "references",
     "seed",
     "window",
     "agentIds",
@@ -1342,7 +1304,6 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     ),
     blockId: identifier(record.blockId, `${name} blockId`),
     source,
-    references: decodeBuildReferences(record.references, source.sourceId),
     seed: safeInteger(record.seed, `${name} seed`),
     window: decodeBuildWindow(record.window),
     agentIds,

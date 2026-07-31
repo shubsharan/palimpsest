@@ -60,7 +60,6 @@ function buildVariant(variantId: "stationary" | "rekey"): Record<string, unknown
     variantId,
     buildId: `build-${variantId === "stationary" ? "c".repeat(64) : "d".repeat(64)}`,
     publicCiphertextPath: `variants/${variantId}/complete/ciphertext.txt`,
-    referenceCorpusPath: `variants/${variantId}/references`,
     privateStageRoots: Object.fromEntries(
       ["agent-1", "agent-2", "agent-3"].map((agentId) => [
         agentId,
@@ -88,11 +87,6 @@ function buildManifest(): Record<string, unknown> {
     pairedBuildId: `paired-${"e".repeat(64)}`,
     blockId: "calibration-odd-women",
     source: { sourceId: "odd-women", sha256: "f".repeat(64) },
-    references: [
-      { sourceId: "middlemarch", sha256: "1".repeat(64) },
-      { sourceId: "moby-dick", sha256: "2".repeat(64) },
-      { sourceId: "jane-eyre", sha256: "3".repeat(64) },
-    ],
     seed: 130013,
     window: {
       paragraphStart: 10,
@@ -468,15 +462,7 @@ describe("stored artifact decoders", () => {
       "unsupported build version",
       () => decodeBuildManifest({ ...buildManifest(), schemaVersion: 2 }),
     ],
-    [
-      "target duplicated as reference",
-      () => {
-        const value = buildManifest();
-        const references = [...(value.references as Record<string, unknown>[])];
-        references[0] = { ...references[0], sourceId: "odd-women" };
-        return decodeBuildManifest({ ...value, references });
-      },
-    ],
+    ["retired references field", () => decodeBuildManifest({ ...buildManifest(), references: [] })],
     [
       "release timing field",
       () => decodeBuildManifest({ ...buildManifest(), stageIntervalMs: 20 }),

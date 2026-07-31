@@ -30,7 +30,7 @@ Ordered `strict > balanced > fallback`. Records changed-type count, matched-cont
 
 ## Puzzle Build v4
 
-Retains paired build identity, source, references, seed, selected window, geometry, variants, oracle-design digests, manipulation check, and:
+Retains paired build identity, source digest, seed, selected window, geometry, variants, oracle-design digests, manipulation check, and:
 
 - `evidenceTier`
 - `controlTier`

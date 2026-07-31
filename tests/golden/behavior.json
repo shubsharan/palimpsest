@@ -9,7 +9,6 @@
           "end": 15
         }
       },
-      "references": ["jane-eyre", "moby-dick"],
       "seed": 17,
       "agentCount": 3,
       "stageCount": 6,
@@ -42,7 +41,6 @@
           "end": 15
         }
       },
-      "references": ["jane-eyre", "moby-dick"],
       "seed": 0,
       "agentCount": 3,
       "stageCount": 6,

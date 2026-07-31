@@ -19,7 +19,7 @@ This feature is done when rebuilds are byte-identical, paragraph order and union
 ## Feature 014: Four Team Conditions (Implemented)
 
 - Add canonical `CS`, `CR`, `IS`, and `IR` conditions and derive communication mode and key regime from those identifiers.
-- Keep the agent objective concise and vary only channel availability and the disclosed schedule, limits, tools, references, and evaluation boundary.
+- Keep the agent objective concise and vary only channel availability and the disclosed schedule, limits, tools, and evaluation boundary.
 - Give shared conditions one ordinary peer Git repository; give isolated conditions independent usable repositories with no peer evidence or activity; seed every origin with the same neutral `solver.py`.
 - Make only the exact solver pushed to the assigned origin's `main` branch checkable and gradeable, while leaving roles, Git operations, branches, and coordination cadence to the agents.
 - Freeze every visible repository, workspace, response, activity trace, Git state, session outcome, sandbox identity, block, condition, and protocol digest before optional observation.

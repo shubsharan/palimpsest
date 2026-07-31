@@ -71,19 +71,6 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
   for (const variant of Object.values(variants)) {
     const ciphertext = `ciphertext:${options.block}:${String(variant.variantId)}\n`;
     await writeArtifact(String(variant.publicCiphertextPath), ciphertext);
-    const references = await Promise.all(
-      (manifest.references as Array<Record<string, unknown>>).map(async (reference) => {
-        const path = `${String(variant.referenceCorpusPath)}/${String(reference.sourceId)}-reference.txt`;
-        const content = `reference:${options.block}:${String(reference.sourceId)}\n`;
-        return {
-          sourceId: reference.sourceId,
-          sourceSha256: reference.sha256,
-          path,
-          byteLength: Buffer.byteLength(content),
-          sha256: await writeArtifact(path, content),
-        };
-      }),
-    );
     const stages = variant.stages as Array<Record<string, unknown>>;
     for (const stage of stages) {
       const content = `stage:${options.block}:${String(stage.agentId)}:${String(stage.ordinal)}\n`;
@@ -99,7 +86,6 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
         byteLength: Buffer.byteLength(ciphertext),
         sha256: digestBytes(ciphertext),
       },
-      references,
       stages,
       keyTransitions: variant.keyTransitions,
     })}`;
@@ -385,7 +371,6 @@ describe("frozen study state", () => {
     const paths = [
       stage.sourcePath,
       variant.publicCiphertextPath,
-      `${variant.referenceCorpusPath}/${binding.manifest.references[0]!.sourceId}-reference.txt`,
       "oracle/plaintext.txt",
       `oracle/checker/${stage.agentId}/${basename(stage.sourcePath)}`,
     ];
@@ -869,13 +854,8 @@ describe("frozen study state", () => {
                 (candidate) => candidate.blockId === nextCell.blockId,
               )!;
               const variant = binding.manifest.variants.rekey;
-              const reference = binding.manifest.references[0]!;
               await writeFile(
-                join(
-                  binding.buildRoot,
-                  variant.referenceCorpusPath,
-                  `${reference.sourceId}-reference.txt`,
-                ),
+                join(binding.buildRoot, variant.publicCiphertextPath),
                 "tampered between launches\n",
               );
             }

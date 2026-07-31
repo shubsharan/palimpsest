@@ -73,7 +73,6 @@ class BlockDefinition:
     block_id: str
     phase: str
     source_id: str
-    references: tuple[str, ...]
     seed: int
     window: WindowPin
     boundary_stage: int
@@ -165,7 +164,6 @@ def decode_block_catalog(value: object) -> BlockCatalog:
                     "blockId",
                     "phase",
                     "sourceId",
-                    "references",
                     "seed",
                     "window",
                     "boundaryStage",
@@ -180,15 +178,6 @@ def decode_block_catalog(value: object) -> BlockCatalog:
         if phase not in {"calibration", "validation"}:
             raise ValueError(f"{name} phase must be calibration or validation.")
         source_id = _identifier(record["sourceId"], f"{name} sourceId")
-        raw_references = record["references"]
-        if not isinstance(raw_references, list) or not raw_references:
-            raise ValueError(f"{name} references must be a non-empty array.")
-        references = tuple(
-            _identifier(reference, f"{name} references[{reference_index}]")
-            for reference_index, reference in enumerate(raw_references)
-        )
-        if len(set(references)) != len(references) or source_id in references:
-            raise ValueError(f"{name} references must be unique and exclude the source.")
         boundary = _integer(record["boundaryStage"], f"{name} boundaryStage")
         if boundary != BOUNDARY_STAGE:
             raise ValueError(f"{name} boundaryStage must be {BOUNDARY_STAGE}.")
@@ -197,7 +186,6 @@ def decode_block_catalog(value: object) -> BlockCatalog:
                 block_id=block_id,
                 phase=phase,
                 source_id=source_id,
-                references=references,
                 seed=_integer(record["seed"], f"{name} seed"),
                 window=_decode_window(record["window"], f"{name} window"),
                 boundary_stage=boundary,

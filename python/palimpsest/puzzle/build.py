@@ -29,7 +29,6 @@ from .block import (
 from .cipher import apply_mapping, stationary_key
 from .corpus import (
     SourceDefinition,
-    build_reference_corpus,
     load_paragraphs,
     load_text_source,
     serialize_paragraphs,
@@ -42,7 +41,6 @@ from .manifest import (
     EvidenceStage,
     ManipulationCheck,
     PuzzleBuild,
-    ReferenceSource,
     RekeyTransition,
     TargetSource,
     TierRejection,
@@ -55,10 +53,6 @@ from .revision import revise_explicit_types
 from .text import word_tokens
 
 MINIMUM_MANIPULATION_MASS = 0.15
-REFERENCE_SOURCE_PATHS = (
-    Path("fixtures/corpus/middlemarch.txt"),
-    Path("fixtures/corpus/jane-eyre.txt"),
-)
 
 
 def _seed_hex(seed: int, domain: str) -> str:
@@ -341,26 +335,6 @@ def _prepare_pair(design: BlockDesign) -> PreparedPair:
     )
 
 
-def _write_references(
-    destination: Path,
-    sources: tuple[SourceDefinition, ...],
-    variant_id: str,
-) -> list[dict[str, Any]]:
-    artifacts: list[dict[str, Any]] = []
-    for document in build_reference_corpus(sources):
-        relative = Path("variants") / variant_id / "references" / f"{document.document_id}.txt"
-        content = document.content.encode("utf-8")
-        artifacts.append(
-            {
-                "sourceId": document.source_id,
-                "sourceSha256": document.sha256,
-                "path": relative.as_posix(),
-                **_write(destination / relative, content),
-            }
-        )
-    return artifacts
-
-
 def _complete_ciphertext(
     design: BlockDesign,
     *,
@@ -391,7 +365,6 @@ def _build_variant(
     stage_bytes: Mapping[tuple[str, int], bytes],
     base_key: dict[str, str],
     revised_key: dict[str, str],
-    reference_sources: tuple[SourceDefinition, ...],
     changed_symbols_sha256: str,
 ) -> BuildVariant:
     stages: list[EvidenceStage] = []
@@ -425,7 +398,6 @@ def _build_variant(
         variant_id=variant_id,
     )
     complete_record = _write(destination / complete_path, complete)
-    references = _write_references(destination, reference_sources, variant_id)
     transitions = (
         ()
         if variant_id == "stationary"
@@ -445,7 +417,6 @@ def _build_variant(
         "allocationId": design.allocation.allocation.allocation_id,
         "windowSha256": design.window.sha256,
         "complete": complete_record,
-        "references": references,
         "stages": [stage.to_dict() for stage in stages],
         "keyTransitions": [transition.to_dict() for transition in transitions],
     }
@@ -453,7 +424,6 @@ def _build_variant(
         variant_id=variant_id,
         build_id="build-" + sha256_hex(canonical_json_bytes(basis)),
         public_ciphertext_path=complete_path,
-        reference_corpus_path=Path(f"variants/{variant_id}/references"),
         private_stage_roots={
             agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
             for agent_id in AGENT_IDS
@@ -464,7 +434,6 @@ def _build_variant(
 
 
 def _build_into(
-    root: Path,
     destination: Path,
     source_path: Path,
     phase: str,
@@ -473,19 +442,11 @@ def _build_into(
     source = load_text_source(source_path)
     if phase not in {"calibration", "validation"}:
         raise ValueError("Puzzle phase must be calibration or validation.")
-    reference_sources = tuple(
-        reference
-        for relative in REFERENCE_SOURCE_PATHS
-        if (reference := load_text_source(root / relative)).sha256 != source.sha256
-    )
-    if not reference_sources:
-        raise ValueError("Puzzle source must be distinct from at least one reference text.")
     block_id = requested_block_id or source.source_id
     block = BlockDefinition(
         block_id=block_id,
         phase=phase,
         source_id=source.source_id,
-        references=tuple(reference.source_id for reference in reference_sources),
         seed=int(source.sha256[:13], 16),
         window=WindowPin(0, 0, 0, ""),
         boundary_stage=BOUNDARY_STAGE,
@@ -530,7 +491,6 @@ def _build_into(
         stage_bytes=pair.stationary_stage_bytes,
         base_key=pair.base_key,
         revised_key=pair.revised_key,
-        reference_sources=reference_sources,
         changed_symbols_sha256=changed_symbols_sha256,
     )
     rekey = _build_variant(
@@ -540,7 +500,6 @@ def _build_into(
         stage_bytes=pair.rekey_stage_bytes,
         base_key=pair.base_key,
         revised_key=pair.revised_key,
-        reference_sources=reference_sources,
         changed_symbols_sha256=changed_symbols_sha256,
     )
     allocation_summary = AllocationSummary(
@@ -586,10 +545,6 @@ def _build_into(
         paired_build_id="paired-" + sha256_hex(canonical_json_bytes(pair_basis)),
         block_id=block.block_id,
         source=TargetSource(source.source_id, source.sha256),
-        references=tuple(
-            ReferenceSource(reference.source_id, reference.sha256)
-            for reference in reference_sources
-        ),
         seed=block.seed,
         window=BuildWindow(
             design.window.paragraph_start,
@@ -620,12 +575,13 @@ def build_puzzle(
     block_id: str | None = None,
 ) -> PuzzleBuild:
     root = root.resolve()
+    source = source if source.is_absolute() else root / source
     output = output.resolve()
     _assert_available_output(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
     try:
-        build = _build_into(root, staging, source, phase, block_id)
+        build = _build_into(staging, source, phase, block_id)
         _publish_staging(staging, output)
         return build
     except BaseException:

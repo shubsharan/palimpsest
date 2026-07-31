@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
@@ -9,7 +8,6 @@ from palimpsest.puzzle.corpus import (
     SourceDefinition,
     load_chapters,
     load_paragraphs,
-    load_source_registry,
     load_text_source,
     select_chapters,
     serialize_paragraphs,
@@ -17,28 +15,6 @@ from palimpsest.puzzle.corpus import (
 from palimpsest.puzzle.text import word_tokens
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-def test_registry_rejects_digest_drift(tmp_path: Path) -> None:
-    corpus = tmp_path / "fixtures/corpus"
-    corpus.mkdir(parents=True)
-    (corpus / "source.txt").write_text("changed\n", encoding="utf-8")
-    provenance = {
-        "schemaVersion": 1,
-        "sources": [
-            {
-                "sourceId": "source",
-                "path": "fixtures/corpus/source.txt",
-                "format": "gutenberg-text",
-                "byteLength": 8,
-                "sha256": "0" * 64,
-            }
-        ],
-    }
-    (corpus / "provenance.json").write_text(json.dumps(provenance), encoding="utf-8")
-
-    with pytest.raises(ValueError, match=r"source.*digest"):
-        load_source_registry(tmp_path)
 
 
 def _source(tmp_path: Path, name: str, source_format: str, content: str) -> SourceDefinition:
@@ -129,13 +105,8 @@ def test_html_paragraphs_decode_entities_and_nested_text(tmp_path: Path) -> None
     assert load_paragraphs(source) == (f"Café & {inside}",)
 
 
-def test_present_text_sources_have_canonical_prose_paragraphs() -> None:
-    for name in (
-        "chronicles-of-break-oday.txt",
-        "middlemarch.txt",
-        "jane-eyre.txt",
-    ):
-        paragraphs = load_paragraphs(load_text_source(ROOT / "fixtures/corpus" / name))
-        assert paragraphs
-        assert all(len(word_tokens(paragraph)) >= 20 for paragraph in paragraphs)
-        assert serialize_paragraphs(paragraphs).endswith("\n")
+def test_present_text_source_has_canonical_prose_paragraphs() -> None:
+    paragraphs = load_paragraphs(load_text_source(ROOT / "fixtures/chronicles-of-break-oday.txt"))
+    assert paragraphs
+    assert all(len(word_tokens(paragraph)) >= 20 for paragraph in paragraphs)
+    assert serialize_paragraphs(paragraphs).endswith("\n")

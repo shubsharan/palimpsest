@@ -25,7 +25,6 @@ def catalog() -> dict[str, object]:
                 "blockId": "calibration-odd-women",
                 "phase": "calibration",
                 "sourceId": "odd-women",
-                "references": ["middlemarch", "moby-dick", "jane-eyre"],
                 "seed": 130013,
                 "window": {
                     "paragraphStart": 0,

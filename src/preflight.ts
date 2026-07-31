@@ -271,21 +271,14 @@ const DEFAULT_DEPENDENCIES: PreflightDependencies = {
     const probeRoot = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-probe-"));
     const workspacePath = join(probeRoot, "workspace");
     const evidencePath = join(probeRoot, "evidence");
-    const referenceCorpusPath = join(probeRoot, "reference");
     const gitOriginPath = join(probeRoot, "origin.git");
     let lease: AgentSandboxLease | undefined;
     try {
-      await Promise.all([
-        mkdir(workspacePath),
-        mkdir(evidencePath),
-        mkdir(referenceCorpusPath),
-        mkdir(gitOriginPath),
-      ]);
+      await Promise.all([mkdir(workspacePath), mkdir(evidencePath), mkdir(gitOriginPath)]);
       lease = await sandbox.openAgentLease({
         profile: "agent",
         workspacePath,
         evidencePath,
-        referenceCorpusPath,
         gitOriginPath,
         timeoutMs: 30_000,
       });
