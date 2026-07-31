@@ -91,7 +91,6 @@ interface ScoredCandidate {
   aggregate: AggregateScore;
   diagnostics: DiagnosticScore;
   correctPositions: readonly boolean[];
-  predictedWords: number;
 }
 
 export { SOLVER_COMMAND, SOLVER_OUTPUT_PATH };
@@ -126,9 +125,7 @@ function decodeScoredCandidate(value: unknown): ScoredCandidate {
   const record = value as Record<string, unknown>;
   if (
     !Array.isArray(record.correctPositions) ||
-    !record.correctPositions.every((item) => typeof item === "boolean") ||
-    !Number.isSafeInteger(record.predictedWords) ||
-    (record.predictedWords as number) < 0
+    !record.correctPositions.every((item) => typeof item === "boolean")
   ) {
     throw new Error("Diagnostic scorer position facts are invalid.");
   }
@@ -136,7 +133,6 @@ function decodeScoredCandidate(value: unknown): ScoredCandidate {
     aggregate: decodeAggregateScore(record.aggregate),
     diagnostics: decodeDiagnosticScore(record.diagnostics),
     correctPositions: record.correctPositions as boolean[],
-    predictedWords: record.predictedWords as number,
   };
 }
 
@@ -241,17 +237,14 @@ function teamEvaluation(
   const matchedWords = Array.from({ length: expectedWords }, (_, index) =>
     scored.some((item) => item.correctPositions[index] === true),
   ).filter(Boolean).length;
-  const predictedWords = Math.max(...scored.map((item) => item.predictedWords));
-  const totalWords = Math.max(expectedWords, predictedWords);
+  const totalWords = Math.min(...scored.map((item) => item.aggregate.totalWords));
+  const coverage = Math.max(...scored.map((item) => item.aggregate.coverage));
   return {
     realizedProductOriginId: communicationMode === "shared" ? "shared" : null,
     collectiveCeiling: {
       matchedWords,
       totalWords,
-      coverage:
-        expectedWords === 0
-          ? Number(predictedWords === 0)
-          : Math.min(predictedWords, expectedWords) / expectedWords,
+      coverage,
       accuracy: totalWords === 0 ? 1 : matchedWords / totalWords,
     },
     integrationGap: null,

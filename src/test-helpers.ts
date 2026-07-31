@@ -191,7 +191,7 @@ export function testAttemptSummary(
   options: {
     agentIds?: readonly AgentId[];
     condition?: "CS" | "CR" | "IS" | "IR";
-    studyPhase?: "standalone" | "calibration" | "validation";
+    studyPhase?: "standalone" | "calibration";
     infrastructureAgentId?: AgentId;
     replacementOfAttemptId?: string;
     releaseOffsetsMs?: readonly number[];
@@ -262,7 +262,7 @@ export function testAttemptSummary(
           agentIds: [agentId],
         }));
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     attemptId: "attempt-fixture",
     studyPhase,
     ...(studyPhase === "standalone"

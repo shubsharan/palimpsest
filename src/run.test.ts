@@ -456,14 +456,14 @@ describe("fixed four-condition run coordinator", () => {
     const config = await fixtureConfig(root);
     const studyConfig = {
       ...config,
-      studyPhase: "validation",
+      studyPhase: "calibration",
       studyRootId: "study-fixture",
       conditionOrderPosition: 2,
       designDigest: "a".repeat(64),
     } as const;
 
     expect(validateAttemptConfig(studyConfig)).toMatchObject({
-      studyPhase: "validation",
+      studyPhase: "calibration",
       studyRootId: "study-fixture",
       conditionOrderPosition: 2,
       designDigest: "a".repeat(64),

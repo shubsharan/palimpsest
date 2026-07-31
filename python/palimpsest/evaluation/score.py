@@ -233,7 +233,6 @@ def score_with_diagnostics(
         "aggregate": aggregate.to_dict(),
         "diagnostics": diagnostics,
         "correctPositions": correct,
-        "predictedWords": len(predicted),
     }
 
 

@@ -107,7 +107,7 @@ describe("offline behavior-neutral runner", () => {
 
       expect(buildManifest).toMatchObject({
         schemaVersion: 4,
-        blockId: "calibration-theron-ware",
+        blockId: "calibration-odd-women",
         agentIds: result.build.agentIds,
         stageCount: result.build.stageCount,
         boundaryStage: 4,
@@ -121,7 +121,7 @@ describe("offline behavior-neutral runner", () => {
         },
       });
       expect(attemptSummary).toMatchObject({
-        schemaVersion: 6,
+        schemaVersion: 7,
         attemptId: result.run.attemptId,
         studyPhase: "standalone",
         monetaryAuthorizationCeilingCents: 0,

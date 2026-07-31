@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes five blocks, a three-model assignment, four conditions, schedules, budgets, order, communication tooling, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
+Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes one calibration block, a three-model assignment, four conditions, schedules, budgets, order, communication tooling, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
@@ -14,8 +14,8 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
 - [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
 - [Feature 015 quickstart](specs/015-frozen-five-block-protocol/quickstart.md): frozen calibration, validation, and explicit replacement flow.
-- [Experiment schema](experiments/schema.json): strict version-4 study manifest.
-- [Block catalog](experiments/blocks.json): five pinned paired study blocks.
+- [Experiment schema](experiments/schema.json): strict version-6 calibration manifest.
+- [Block catalog](experiments/blocks.json): the active paired calibration block.
 - [Study manifest](experiments/config.yaml): frozen block matrix, assignment, budgets, providers, rubric, and failure policy.
 
 Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 freezes the complete five-block protocol. Feature 016 adds an optional direct team channel without changing the Git grading boundary.
@@ -35,13 +35,13 @@ The first bootstrap may use the network. Once the uv cache is populated, local c
 
 Scientific source inputs live at the `sourcePath` values in the strict study manifest, `experiments/config.yaml`, which declares:
 
-- `blocks`: one calibration and four validation block IDs in fixed order;
+- `blocks`: the one active calibration block;
 - `communication.teamChannel`: `enabled` for a shared public discussion room or `disabled` for Git-only collaboration;
 - `assignment`: one ordered three-agent model assignment used by every cell;
 - `schedule` and `budgets`: per-run reveal offsets, wall cutoff, optional token limit, and mandatory monetary authorizations;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
 - `models`: provider/model profiles and non-secret settings;
-- `orders`: one calibration and four balanced validation condition sequences; and
+- `order`: the calibration sequence `CS`, `CR`, `IR`, `IS`; and
 - `scoring`, `rubric`, `adjustableFields`, and `failurePolicy`: the declared observation and replacement boundary.
 
 The builder derives source identity and seed from each source's bytes, retains fixed three-agent/six-stage geometry, and seals the first phase-eligible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
@@ -69,26 +69,21 @@ pnpm puzzle:run -- \
   --attempt-root artifacts/attempt
 ```
 
-Run calibration, then validation, under one local study root:
+Run the four-cell calibration under one local study root:
 
 ```bash
 pnpm puzzle:experiment -- \
   --config experiments/config.yaml \
-  --phase calibration \
-  --study-root artifacts/study
-pnpm puzzle:experiment -- \
-  --config experiments/config.yaml \
-  --phase validation \
   --study-root artifacts/study
 ```
 
-Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, evaluates every canonical origin, writes `behavior-evidence.json`, and only then indexes the attempt in `phase.json`. Evaluation or evidence failure leaves the frozen attempt unindexed and stops the phase. Nothing retries automatically.
+Calibration constructs one build and publishes immutable `design.json` before the first model session. It reserves and runs one cell at a time, evaluates every canonical origin, writes `behavior-evidence.json`, and only then indexes the attempt in `phase.json`. Evaluation or evidence failure leaves the frozen attempt unindexed, reports its preserved path, and stops. The direct evaluator can diagnose that attempt, but it does not resume or repair the study. Nothing retries automatically.
 
 After an attempt freezes, the evaluator grades every condition-canonical published Git repository:
 
 ```bash
 pnpm puzzle:evaluate -- \
-  --attempt artifacts/study/validation/attempts/<attempt-id>
+  --attempt artifacts/study/calibration/attempts/<attempt-id>
 ```
 
 Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` captures only literal `refs/heads/main`, runs its pinned Git-free tree on ciphertext assembled from one frozen view of ordered host release records, cleans the capture, and only then reports the commit, execution and output validity, word counts, and plaintext-independent coverage. It never opens oracle plaintext or checker truth and never reports correctness. The captured tree remains stable across later force-pushes. Local files, unpushed commits, other branches, agent-visible evidence mutations, and agent-workspace siblings are absent from that execution.

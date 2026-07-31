@@ -142,21 +142,9 @@ function buildManifest(): Record<string, unknown> {
   };
 }
 
-const blockIds = [
-  "calibration-odd-women",
-  "validation-pointed-firs",
-  "validation-custom-country",
-  "validation-woodlanders",
-  "validation-silas-lapham",
-] as const;
+const blockIds = ["calibration-odd-women"] as const;
 
 const calibrationOrder = ["CS", "CR", "IR", "IS"] as const;
-const validationOrders = [
-  ["CS", "CR", "IR", "IS"],
-  ["CR", "IS", "CS", "IR"],
-  ["IS", "IR", "CR", "CS"],
-  ["IR", "CS", "IS", "CR"],
-] as const;
 
 function receiptBuild(blockId: string, index: number): Record<string, unknown> {
   const manifest = structuredClone(buildManifest());
@@ -196,7 +184,7 @@ function designReceipt(): Record<string, unknown> {
     }),
   );
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     createdAt: "2026-07-28T12:00:00.000Z",
     sourceRevision: "1".repeat(40),
     sandbox: attemptSummary().sandbox,
@@ -204,8 +192,8 @@ function designReceipt(): Record<string, unknown> {
     immutableManifestDigest: "3".repeat(64),
     designDigest: "4".repeat(64),
     immutableManifest: {
-      schemaVersion: 5,
-      studyId: "frozen-five-block",
+      schemaVersion: 6,
+      studyId: "calibration-only",
       providers: { openai: { apiKeyEnv: "OPENAI_API_KEY" } },
     },
     builds: blockIds.map(receiptBuild),
@@ -213,10 +201,7 @@ function designReceipt(): Record<string, unknown> {
       agentId: `agent-${String(index + 1)}`,
       modelProfileId,
     })),
-    orders: {
-      calibration: calibrationOrder,
-      validation: validationOrders,
-    },
+    order: calibrationOrder,
     rubric: {
       id: "behavior-review-v1",
       path: "experiments/behavior-rubric.md",
@@ -249,16 +234,14 @@ function designReceipt(): Record<string, unknown> {
   };
 }
 
-function plannedCells(phase: "calibration" | "validation"): Record<string, unknown>[] {
-  const phaseBlocks = phase === "calibration" ? blockIds.slice(0, 1) : blockIds.slice(1);
-  const orders = phase === "calibration" ? [calibrationOrder] : validationOrders;
-  return phaseBlocks.flatMap((blockId, blockIndex) =>
-    orders[blockIndex]!.map((condition, conditionIndex) => {
+function plannedCells(): Record<string, unknown>[] {
+  return blockIds.flatMap((blockId, blockIndex) =>
+    calibrationOrder.map((condition, conditionIndex) => {
       const phasePosition = blockIndex * 4 + conditionIndex + 1;
       const buildIndex = blockIds.indexOf(blockId);
       return {
-        cellId: `${phase}-${String(phasePosition).padStart(3, "0")}-${blockId}-${condition}`,
-        phase,
+        cellId: `calibration-${String(phasePosition).padStart(3, "0")}-${blockId}-${condition}`,
+        phase: "calibration",
         blockId,
         condition,
         conditionOrderPosition: conditionIndex + 1,
@@ -273,14 +256,13 @@ function plannedCells(phase: "calibration" | "validation"): Record<string, unkno
 
 function phaseSummary(overrides: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     phase: "calibration",
     state: "ready",
     manifestDigest: "2".repeat(64),
     immutableManifestDigest: "3".repeat(64),
     designDigest: "4".repeat(64),
-    plannedCells: plannedCells("calibration"),
-    adjustments: [],
+    plannedCells: plannedCells(),
     reservations: [],
     attempts: [],
     cumulativeAuthorizedTokens: 0,
@@ -401,7 +383,7 @@ describe("stored artifact decoders", () => {
     expect(decodeBuildManifest(buildManifest()).variants.stationary.stages).toHaveLength(18);
     expect(decodeBuildManifest(buildManifest()).variants.rekey.stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);
-    expect(decodeDesignReceipt(designReceipt()).builds).toHaveLength(5);
+    expect(decodeDesignReceipt(designReceipt()).builds).toHaveLength(1);
     expect(decodePhaseSummary(phaseSummary()).plannedCells).toHaveLength(4);
     expect(decodeOverlapResult(overlapResult()).findings).toHaveLength(1);
     expect(decodeEvaluationRecord(evaluationRecord()).origins[0]?.status).toBe("scored");
@@ -413,7 +395,7 @@ describe("stored artifact decoders", () => {
 
     expect(decoded).toEqual(encoded);
     expect(decoded).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
       studyPhase: "standalone",
       blockId: "calibration-odd-women",
       condition: "CR",
@@ -455,21 +437,21 @@ describe("stored artifact decoders", () => {
   it("accepts strict study provenance and replacement lineage", () => {
     const decoded = decodeAttemptSummary({
       ...attemptSummary(),
-      attemptId: "attempt-validation-replacement",
-      studyPhase: "validation",
-      studyRootId: "study-frozen-five-block",
+      attemptId: "attempt-calibration-replacement",
+      studyPhase: "calibration",
+      studyRootId: "study-calibration",
       conditionOrderPosition: 2,
       designDigest: "4".repeat(64),
       monetaryAuthorizationCeilingCents: 5_000,
-      replacementOfAttemptId: "attempt-validation-primary",
+      replacementOfAttemptId: "attempt-calibration-primary",
     });
 
     expect(decoded).toMatchObject({
-      studyPhase: "validation",
-      studyRootId: "study-frozen-five-block",
+      studyPhase: "calibration",
+      studyRootId: "study-calibration",
       conditionOrderPosition: 2,
       monetaryAuthorizationCeilingCents: 5_000,
-      replacementOfAttemptId: "attempt-validation-primary",
+      replacementOfAttemptId: "attempt-calibration-primary",
     });
     expect(decoded).not.toHaveProperty("runName");
     expect(decoded).not.toHaveProperty("repetition");
@@ -825,7 +807,7 @@ describe("stored artifact decoders", () => {
     expect(decode).toThrow();
   });
 
-  it("round-trips the immutable five-build design receipt", () => {
+  it("round-trips the immutable calibration design receipt", () => {
     const encoded = JSON.parse(JSON.stringify(designReceipt())) as unknown;
     expect(decodeDesignReceipt(encoded)).toEqual(encoded);
   });
@@ -931,7 +913,7 @@ describe("stored artifact decoders", () => {
     expect(decodePhaseSummary(phaseSummary())).toEqual(phaseSummary());
     const reservation = {
       reservationId: "reservation-calibration-001",
-      cellId: plannedCells("calibration")[0]!.cellId as string,
+      cellId: plannedCells()[0]!.cellId as string,
       reservedAt: "2026-07-28T12:01:00.000Z",
       kind: "primary",
       authorizedTokens: 600_000,
@@ -948,35 +930,8 @@ describe("stored artifact decoders", () => {
     expect(decodePhaseSummary(running)).toEqual(running);
   });
 
-  it("accepts only the two validation adjustment records", () => {
-    const currentManifestDigest = "6".repeat(64);
-    const validation = phaseSummary({
-      phase: "validation",
-      manifestDigest: currentManifestDigest,
-      plannedCells: plannedCells("validation"),
-      adjustments: [
-        {
-          fieldPath: "budgets.tokenBudgetPerAgent",
-          priorValue: 200_000,
-          resolvedValue: 150_000,
-          priorManifestDigest: "2".repeat(64),
-          currentManifestDigest,
-        },
-        {
-          fieldPath: "budgets.perAttemptMonetaryCeilingCents",
-          priorValue: 5_000,
-          resolvedValue: 4_000,
-          priorManifestDigest: "2".repeat(64),
-          currentManifestDigest,
-        },
-      ],
-    });
-
-    expect(decodePhaseSummary(validation).plannedCells).toHaveLength(16);
-  });
-
   it("round-trips a blocked frozen session-infrastructure attempt", () => {
-    const cellId = plannedCells("calibration")[0]!.cellId as string;
+    const cellId = plannedCells()[0]!.cellId as string;
     const blocked = phaseSummary({
       state: "blocked",
       reservations: [
@@ -1019,7 +974,7 @@ describe("stored artifact decoders", () => {
   });
 
   it("accepts one eligible failure followed by one inherited replacement", () => {
-    const cellId = plannedCells("calibration")[0]!.cellId as string;
+    const cellId = plannedCells()[0]!.cellId as string;
     const sourceReservation = {
       reservationId: "reservation-source",
       cellId,
@@ -1080,7 +1035,7 @@ describe("stored artifact decoders", () => {
     [
       "duplicate primary reservation",
       () => {
-        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const cellId = plannedCells()[0]!.cellId as string;
         const reservation = {
           reservationId: "reservation-one",
           cellId,
@@ -1121,7 +1076,7 @@ describe("stored artifact decoders", () => {
     [
       "replacement of a model outcome",
       () => {
-        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const cellId = plannedCells()[0]!.cellId as string;
         return decodePhaseSummary(
           phaseSummary({
             state: "running",
@@ -1175,7 +1130,7 @@ describe("stored artifact decoders", () => {
     [
       "reserved replacement with an absent source",
       () => {
-        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const cellId = plannedCells()[0]!.cellId as string;
         return decodePhaseSummary(
           phaseSummary({
             state: "running",
@@ -1209,7 +1164,7 @@ describe("stored artifact decoders", () => {
       reservations: [
         {
           reservationId: "reservation-calibration-001",
-          cellId: plannedCells("calibration")[0]!.cellId,
+          cellId: plannedCells()[0]!.cellId,
           reservedAt: "2026-07-28T12:01:00.000Z",
           kind: "primary",
           authorizedTokens: 600_000,

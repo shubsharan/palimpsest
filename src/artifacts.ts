@@ -39,20 +39,8 @@ const PAIRED_BUILD_ID = /^paired-[0-9a-f]{64}$/;
 const ALLOCATION_ID = /^allocation-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const REGISTERED_BLOCK_IDS = [
-  "calibration-odd-women",
-  "validation-pointed-firs",
-  "validation-custom-country",
-  "validation-woodlanders",
-  "validation-silas-lapham",
-] as const;
+const REGISTERED_BLOCK_IDS = ["calibration-odd-women"] as const;
 const CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
-const VALIDATION_ORDERS = [
-  ["CS", "CR", "IR", "IS"],
-  ["CR", "IS", "CS", "IR"],
-  ["IS", "IR", "CR", "CS"],
-  ["IR", "CS", "IS", "CR"],
-] as const;
 
 export interface BuildPuzzleResult {
   pairedBuildId: string;
@@ -242,12 +230,12 @@ export interface FrozenGitInventory {
   treeSeal: TreeSeal;
 }
 
-export type StudyPhase = "calibration" | "validation";
+export type StudyPhase = "calibration";
 export type AttemptStudyPhase = "standalone" | StudyPhase;
 export type InfrastructureClassification = "none" | "session-infrastructure-error";
 
 interface AttemptSummaryBase {
-  schemaVersion: 6;
+  schemaVersion: 7;
   attemptId: string;
   blockId: string;
   condition: ResolvedCondition["id"];
@@ -306,11 +294,6 @@ export interface DesignAgentAssignment {
   modelProfileId: string;
 }
 
-export interface DesignOrders {
-  calibration: readonly ResolvedCondition["id"][];
-  validation: readonly (readonly ResolvedCondition["id"][])[];
-}
-
 export interface DesignRubric {
   id: string;
   path: string;
@@ -358,7 +341,7 @@ export interface DesignBaselineBudgets {
 }
 
 export interface DesignReceipt {
-  schemaVersion: 3;
+  schemaVersion: 4;
   createdAt: string;
   sourceRevision: string;
   sandbox: SandboxIdentity & SandboxPolicy;
@@ -368,7 +351,7 @@ export interface DesignReceipt {
   immutableManifest: JsonObject;
   builds: readonly DesignBuildBinding[];
   assignment: readonly DesignAgentAssignment[];
-  orders: DesignOrders;
+  order: readonly ResolvedCondition["id"][];
   rubric: DesignRubric;
   checking: DesignChecking;
   scoring: DesignScoring;
@@ -406,14 +389,6 @@ export interface LaunchReservation {
   attemptId?: string;
 }
 
-export interface PhaseAdjustment {
-  fieldPath: "budgets.tokenBudgetPerAgent" | "budgets.perAttemptMonetaryCeilingCents";
-  priorValue: number | null;
-  resolvedValue: number | null;
-  priorManifestDigest: string;
-  currentManifestDigest: string;
-}
-
 export interface PhaseAttemptReference {
   attemptId: string;
   attemptRoot: string;
@@ -434,14 +409,13 @@ export interface PhaseFailure {
 export type PhaseState = "ready" | "running" | "blocked" | "complete";
 
 export interface PhaseSummary {
-  schemaVersion: 2;
+  schemaVersion: 3;
   phase: StudyPhase;
   state: PhaseState;
   manifestDigest: string;
   immutableManifestDigest: string;
   designDigest: string;
   plannedCells: readonly PlannedCell[];
-  adjustments: readonly PhaseAdjustment[];
   reservations: readonly LaunchReservation[];
   attempts: readonly PhaseAttemptReference[];
   cumulativeAuthorizedTokens: number | null;
@@ -1713,7 +1687,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     ],
     ["studyRootId", "conditionOrderPosition", "designDigest", "replacementOfAttemptId"],
   );
-  if (record.schemaVersion !== 6) throw new Error("Unsupported attempt schema version.");
+  if (record.schemaVersion !== 7) throw new Error("Unsupported attempt schema version.");
   const agentIds = decodeAttemptAgentIds(record.agentIds, "Attempt summary agentIds");
   if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
@@ -1786,7 +1760,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     );
   }
   const common: AttemptSummaryBase = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     attemptId,
     blockId,
     condition: condition.id,
@@ -1878,8 +1852,8 @@ function stringDigest(value: string): string {
 }
 
 function decodeStudyPhase(value: unknown, name: string): StudyPhase {
-  if (value === "calibration" || value === "validation") return value;
-  throw new Error(`${name} must be calibration or validation.`);
+  if (value === "calibration") return value;
+  throw new Error(`${name} must be calibration.`);
 }
 
 function decodeInfrastructureClassification(
@@ -1945,27 +1919,6 @@ function decodeDesignAssignment(value: unknown, index: number): DesignAgentAssig
   };
 }
 
-function decodeDesignOrders(value: unknown): DesignOrders {
-  const record = strictObject(value, "Design receipt orders", ["calibration", "validation"]);
-  if (!Array.isArray(record.validation) || record.validation.length !== VALIDATION_ORDERS.length) {
-    throw new Error("Design receipt validation orders must contain four block orders.");
-  }
-  return {
-    calibration: decodeConditionOrder(
-      record.calibration,
-      CALIBRATION_ORDER,
-      "Design receipt calibration order",
-    ),
-    validation: record.validation.map((order, index) =>
-      decodeConditionOrder(
-        order,
-        VALIDATION_ORDERS[index]!,
-        `Design receipt validation order ${String(index + 1)}`,
-      ),
-    ),
-  };
-}
-
 function decodeDesignPromptTemplate(value: unknown, index: number): DesignPromptTemplate {
   const name = `Design receipt prompt template ${String(index + 1)}`;
   const record = strictObject(value, name, ["agentId", "communicationMode", "template", "sha256"]);
@@ -2012,7 +1965,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "immutableManifest",
     "builds",
     "assignment",
-    "orders",
+    "order",
     "rubric",
     "checking",
     "scoring",
@@ -2022,15 +1975,11 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "baselineBudgets",
     "totalCeilings",
   ]);
-  if (record.schemaVersion !== 3) {
+  if (record.schemaVersion !== 4) {
     throw new Error("Unsupported design receipt schema version.");
   }
-  if (
-    !Array.isArray(record.builds) ||
-    record.builds.length < 1 ||
-    record.builds.length > REGISTERED_BLOCK_IDS.length
-  ) {
-    throw new Error("Design receipt must contain one to five registered builds.");
+  if (!Array.isArray(record.builds) || record.builds.length < 1 || record.builds.length !== 1) {
+    throw new Error("Design receipt must contain the calibration build.");
   }
   const builds = record.builds.map(decodeDesignBuild);
   if (
@@ -2096,7 +2045,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   );
   assertSecretFreeJson(immutableManifest, "Design receipt immutableManifest");
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     createdAt: timestamp(record.createdAt, "Design receipt createdAt"),
     sourceRevision: gitObjectId(record.sourceRevision, "Design receipt sourceRevision"),
     sandbox: decodeSandbox(record.sandbox),
@@ -2109,7 +2058,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     immutableManifest,
     builds,
     assignment,
-    orders: decodeDesignOrders(record.orders),
+    order: decodeConditionOrder(record.order, CALIBRATION_ORDER, "Design receipt order"),
     rubric: {
       id: identifier(rubric.id, "Design receipt rubric id"),
       path: safeRelativePath(rubric.path, "Design receipt rubric path"),
@@ -2266,37 +2215,6 @@ export function decodeLaunchReservation(
   };
 }
 
-function decodePhaseAdjustment(value: unknown, index: number): PhaseAdjustment {
-  const name = `Phase adjustment ${String(index + 1)}`;
-  const record = strictObject(value, name, [
-    "fieldPath",
-    "priorValue",
-    "resolvedValue",
-    "priorManifestDigest",
-    "currentManifestDigest",
-  ]);
-  if (
-    record.fieldPath !== "budgets.tokenBudgetPerAgent" &&
-    record.fieldPath !== "budgets.perAttemptMonetaryCeilingCents"
-  ) {
-    throw new Error(`${name} fieldPath is not calibration-adjustable.`);
-  }
-  const minimum = record.fieldPath === "budgets.tokenBudgetPerAgent" ? 1 : 0;
-  return {
-    fieldPath: record.fieldPath,
-    priorValue:
-      record.fieldPath === "budgets.tokenBudgetPerAgent"
-        ? nullableInteger(record.priorValue, `${name} priorValue`, minimum)
-        : integer(record.priorValue, `${name} priorValue`, minimum),
-    resolvedValue:
-      record.fieldPath === "budgets.tokenBudgetPerAgent"
-        ? nullableInteger(record.resolvedValue, `${name} resolvedValue`, minimum)
-        : integer(record.resolvedValue, `${name} resolvedValue`, minimum),
-    priorManifestDigest: digest(record.priorManifestDigest, `${name} priorManifestDigest`),
-    currentManifestDigest: digest(record.currentManifestDigest, `${name} currentManifestDigest`),
-  };
-}
-
 function decodePhaseAttemptReference(value: unknown, index: number): PhaseAttemptReference {
   const name = `Phase attempt ${String(index + 1)}`;
   const record = strictObjectWithOptional(
@@ -2360,15 +2278,14 @@ function decodePhaseFailure(value: unknown): PhaseFailure {
 }
 
 function assertPlannedMatrix(phase: StudyPhase, cells: readonly PlannedCell[]): void {
-  const expectedCount = phase === "calibration" ? 4 : 16;
+  const expectedCount = 4;
   if (cells.length !== expectedCount) {
     throw new Error(
       `Phase summary ${phase} plan must contain exactly ${String(expectedCount)} cells.`,
     );
   }
-  const expectedBlocks =
-    phase === "calibration" ? REGISTERED_BLOCK_IDS.slice(0, 1) : REGISTERED_BLOCK_IDS.slice(1);
-  const expectedOrders = phase === "calibration" ? [CALIBRATION_ORDER] : VALIDATION_ORDERS;
+  const expectedBlocks = REGISTERED_BLOCK_IDS;
+  const expectedOrders = [CALIBRATION_ORDER];
   cells.forEach((cell, index) => {
     const blockIndex = Math.floor(index / 4);
     const conditionIndex = index % 4;
@@ -2396,7 +2313,6 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
       "immutableManifestDigest",
       "designDigest",
       "plannedCells",
-      "adjustments",
       "reservations",
       "attempts",
       "cumulativeAuthorizedTokens",
@@ -2405,7 +2321,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     ],
     ["failure"],
   );
-  if (record.schemaVersion !== 2) {
+  if (record.schemaVersion !== 3) {
     throw new Error("Unsupported phase summary schema version.");
   }
   const phase = decodeStudyPhase(record.phase, "Phase summary phase");
@@ -2428,25 +2344,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
   if (new Set(cellIds).size !== cellIds.length) {
     throw new Error("Phase summary planned cell IDs must be unique.");
   }
-  if (!Array.isArray(record.adjustments)) {
-    throw new Error("Phase summary adjustments must be an array.");
-  }
-  const adjustments = record.adjustments.map(decodePhaseAdjustment);
-  if (phase === "calibration" && adjustments.length !== 0) {
-    throw new Error("Calibration phase summary must not contain adjustments.");
-  }
-  if (
-    adjustments.length > 2 ||
-    new Set(adjustments.map((adjustment) => adjustment.fieldPath)).size !== adjustments.length
-  ) {
-    throw new Error("Phase summary adjustments must contain each adjustable field at most once.");
-  }
   const manifestDigest = digest(record.manifestDigest, "Phase summary manifestDigest");
-  for (const adjustment of adjustments) {
-    if (adjustment.currentManifestDigest !== manifestDigest) {
-      throw new Error("Phase adjustment current manifest digest must match the phase summary.");
-    }
-  }
   if (!Array.isArray(record.reservations)) {
     throw new Error("Phase summary reservations must be an array.");
   }
@@ -2611,7 +2509,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     }
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     phase,
     state: record.state,
     manifestDigest,
@@ -2621,7 +2519,6 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     ),
     designDigest: digest(record.designDigest, "Phase summary designDigest"),
     plannedCells,
-    adjustments,
     reservations,
     attempts,
     cumulativeAuthorizedTokens,

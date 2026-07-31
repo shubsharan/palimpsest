@@ -65,7 +65,7 @@ def test_diagnostics_share_one_position_annotation() -> None:
         "coverage": 1.0,
     }
     assert scored["correctPositions"] == [True, False, True, True]
-    assert scored["predictedWords"] == 5
+    assert "predictedWords" not in scored
 
 
 def test_empty_partitions_are_nullable_and_missing_words_are_incorrect() -> None:

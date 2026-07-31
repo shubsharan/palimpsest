@@ -122,7 +122,6 @@ async function prepareFixture(options: { disableTokenLimit?: boolean } = {}): Pr
     root,
     studyRoot,
     study,
-    phase: "calibration",
     dependencies: {
       sourceState: async () => cleanSourceState(),
       sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -289,7 +288,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -309,7 +307,7 @@ describe("frozen study state", () => {
     expect(phase.attempts).toHaveLength(4);
   }, 60_000);
 
-  it("binds five build bytes and rejects validation without separate authorization", async () => {
+  it("binds one build and rejects receipt-bound budget drift", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
     expect(receipt.builds).toHaveLength(1);
     expect(await readDesignReceipt(studyRoot)).toEqual(receipt);
@@ -322,13 +320,12 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study: adjusted,
-        phase: "validation",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
         },
       }),
-    ).rejects.toThrow(/monetary ceiling/);
+    ).rejects.toThrow(/manifest/i);
 
     const immutableDrift = await loadStudyManifest("experiments/config.yaml");
     immutableDrift.models.sol!.model = "different-model";
@@ -337,7 +334,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study: await resolveStudy(immutableDrift, root),
-        phase: "calibration",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -354,7 +350,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "calibration",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -383,7 +378,6 @@ describe("frozen study state", () => {
           root,
           studyRoot,
           study,
-          phase: "validation",
           dependencies: {
             sourceState: async () => cleanSourceState(),
             sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -394,7 +388,7 @@ describe("frozen study state", () => {
     }
   }, 60_000);
 
-  it("recomputes the receipt baseline manifest digest during validation", async () => {
+  it("recomputes the receipt baseline manifest digest", async () => {
     const { studyRoot, study } = await prepareFixture();
     const path = join(studyRoot, "design.json");
     const receipt = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
@@ -406,7 +400,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "validation",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -426,7 +419,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "calibration",
         dependencies: {
           sourceState: async () => ({ testedCommit: sourceRevision, sourceClean: false }),
           build: async () => {
@@ -456,7 +448,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "calibration",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           build: async () => {
@@ -483,7 +474,6 @@ describe("frozen study state", () => {
       root,
       studyRoot,
       study,
-      phase: "calibration",
       dependencies: {
         sourceState: async () => {
           sourceReads += 1;
@@ -524,7 +514,6 @@ describe("frozen study state", () => {
           root,
           studyRoot,
           study,
-          phase: "calibration",
           dependencies: {
             sourceState: async () => {
               sourceReads += 1;
@@ -553,7 +542,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {},
           runCell: async (launch) => {
@@ -563,7 +551,7 @@ describe("frozen study state", () => {
           },
         },
       }),
-    ).rejects.toThrow("injected post-freeze failure");
+    ).rejects.toThrow(/injected post-freeze failure.*Preserved frozen attempt at/);
 
     expect(launches).toBe(1);
     const phase = await readPhaseSummary(studyRoot, "calibration");
@@ -571,11 +559,15 @@ describe("frozen study state", () => {
     expect(phase.attempts).toEqual([]);
     expect(phase.reservations[0]?.state).toBe("reserved");
     expect(phase.failure?.kind).toBe("unresolved-reservation");
-    await expect(
-      access(
-        join(studyRoot, "calibration", "attempts", "attempt-calibration-01-001", "attempt.json"),
-      ),
-    ).resolves.toBeUndefined();
+    const attemptRoot = join(studyRoot, "calibration", "attempts", "attempt-calibration-01-001");
+    expect(phase.failure?.detail).toContain(`Preserved frozen attempt at ${attemptRoot}.`);
+    await expect(access(join(attemptRoot, "attempt.json"))).resolves.toBeUndefined();
+    await expect(access(join(attemptRoot, "evaluation", "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(join(attemptRoot, "behavior-evidence.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await expect(access(join(studyRoot, "calibration", ".execution.lock"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -599,7 +591,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {
           firstReached();
@@ -618,7 +609,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {
             competingPreflights += 1;
@@ -656,7 +646,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {
             preflights += 1;
@@ -679,7 +668,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -698,7 +686,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {},
           runCell: async () => {},
@@ -713,7 +700,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -738,7 +724,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
       });
 
     await rm(tracePath);
@@ -774,7 +759,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -820,7 +804,6 @@ describe("frozen study state", () => {
           studyRoot,
           study,
           receipt,
-          phase: "calibration",
         }),
       ).rejects.toThrow(/does not match the frozen study protocol/);
     }
@@ -834,7 +817,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
       }),
     ).rejects.toThrow(/frozen tree has drifted/);
   }, 60_000);
@@ -848,14 +830,13 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {},
           runCell: async (launch) => {
             launches += 1;
             await publishLaunchAttempt(launch, study, false);
             if (launches === 1) {
-              const nextCell = study.calibrationCells[1]!;
+              const nextCell = study.cells[1]!;
               const binding = receipt.builds.find(
                 (candidate) => candidate.blockId === nextCell.blockId,
               )!;
@@ -892,7 +873,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toBeInstanceOf(StudyPhaseStoppedError);
@@ -909,7 +889,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toThrow(/explicit --replace/);
@@ -918,7 +897,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         replaceAttemptId: "attempt-not-current",
         dependencies,
       }),
@@ -933,7 +911,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         replaceAttemptId: finalSource,
         dependencies,
       }),
@@ -958,7 +935,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toThrow(/fixture died/);
@@ -970,7 +946,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toThrow(/use a new study root/);

@@ -58,7 +58,7 @@ import type { TeamChannelMode } from "./team-channel.js";
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-export type AttemptStudyPhase = "standalone" | "calibration" | "validation";
+export type AttemptStudyPhase = "standalone" | "calibration";
 
 export interface AttemptConfig {
   attemptId: string;
@@ -223,8 +223,8 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
       ? null
       : requirePositiveInteger(value, "tokenBudgetPerAgent");
   const studyPhase = value.studyPhase;
-  if (studyPhase !== "standalone" && studyPhase !== "calibration" && studyPhase !== "validation") {
-    throw new Error("studyPhase must be standalone, calibration, or validation.");
+  if (studyPhase !== "standalone" && studyPhase !== "calibration") {
+    throw new Error("studyPhase must be standalone or calibration.");
   }
   const optionalStudyFields = [value.studyRootId, value.conditionOrderPosition, value.designDigest];
   if (studyPhase === "standalone" && optionalStudyFields.some((field) => field !== undefined)) {
@@ -794,7 +794,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     ? "session-infrastructure-error"
     : "none";
   const summary = decodeAttemptSummary({
-    schemaVersion: 6,
+    schemaVersion: 7,
     attemptId: options.result.attemptId,
     studyPhase: options.result.studyPhase,
     ...(options.result.studyRootId === undefined

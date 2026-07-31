@@ -28,13 +28,7 @@ from palimpsest.puzzle.manifest import PuzzleBuild
 from palimpsest.puzzle.text import word_tokens
 
 ROOT = Path(__file__).resolve().parents[3]
-BLOCK_IDS = (
-    "calibration-odd-women",
-    "validation-pointed-firs",
-    "validation-custom-country",
-    "validation-woodlanders",
-    "validation-silas-lapham",
-)
+BLOCK_IDS = ("calibration-odd-women",)
 CALIBRATION_SOURCE = ROOT / "fixtures/chronicles-of-break-oday.txt"
 AGENT_IDS = ("agent-1", "agent-2", "agent-3")
 

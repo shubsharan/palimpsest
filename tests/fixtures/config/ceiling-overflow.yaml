@@ -1,16 +1,8 @@
-schemaVersion: 5
+schemaVersion: 6
 
 communication: { teamChannel: disabled }
 blocks:
-  - {
-      blockId: calibration-odd-women,
-      phase: calibration,
-      sourcePath: fixtures/chronicles-of-break-oday.txt,
-    }
-  - { blockId: validation-pointed-firs, phase: validation, sourcePath: fixtures/367-h.htm }
-  - { blockId: validation-custom-country, phase: validation, sourcePath: fixtures/pg11052.txt }
-  - { blockId: validation-woodlanders, phase: validation, sourcePath: fixtures/pg482.txt }
-  - { blockId: validation-silas-lapham, phase: validation, sourcePath: fixtures/pg154.txt }
+  - { blockId: calibration-odd-women, sourcePath: fixtures/chronicles-of-break-oday.txt }
 assignment:
   - { agentId: agent-1, modelProfileId: fixture }
   - { agentId: agent-2, modelProfileId: fixture }
@@ -27,13 +19,7 @@ budgets:
   perAttemptMonetaryCeilingCents: 10000
   totalTokenCeiling: 2399999
   totalMonetaryCeilingCents: 199999
-orders:
-  calibration: [CS, CR, IR, IS]
-  validation:
-    - [CS, CR, IR, IS]
-    - [CR, IS, CS, IR]
-    - [IS, IR, CR, CS]
-    - [IR, CS, IS, CR]
+order: [CS, CR, IR, IS]
 checking:
   feedbackId: published-runnability-coverage-v1
 scoring:
@@ -44,9 +30,6 @@ rubric:
   rubricId: fixture-behavior-review-v1
   path: tests/fixtures/config/behavior-rubric.md
   sha256: 27397411faadcf7048e6d5e832c6d799884cbb9bd2e4d66344d358429902ea5b
-adjustableFields:
-  - budgets.tokenBudgetPerAgent
-  - budgets.perAttemptMonetaryCeilingCents
 failurePolicy:
   stopOnInfrastructureFailure: true
   automaticRetry: false

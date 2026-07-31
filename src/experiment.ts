@@ -13,7 +13,6 @@ import {
   type ModelProfile,
   type ProviderConnection,
   type ResolvedStudy,
-  type StudyPhase,
 } from "./config.js";
 import { requiredFlag } from "./flags.js";
 import { evaluatePuzzle } from "./evaluate.js";
@@ -122,9 +121,7 @@ export function createConfiguredStudyAgents(
 
 export function assertBuildMatchesStudy(manifest: BuildManifest, study: ResolvedStudy): void {
   if (!study.blocks.some((block) => block.blockId === manifest.blockId)) {
-    throw new Error(
-      `Puzzle build ${manifest.blockId} is not one of the five registered study blocks.`,
-    );
+    throw new Error(`Puzzle build ${manifest.blockId} is not the registered calibration block.`);
   }
 }
 
@@ -171,7 +168,6 @@ export interface RunStudyExperimentOptions {
   root: string;
   configPath: string;
   studyRoot: string;
-  phase: StudyPhase;
   replaceAttemptId?: string;
   env?: NodeJS.ProcessEnv;
   dependencies?: Partial<ExperimentDependencies>;
@@ -190,7 +186,6 @@ export async function runStudyExperiment(
     root,
     studyRoot,
     study,
-    phase: options.phase,
     dependencies: {
       sandboxIdentity: async () => sandbox.identity,
     },
@@ -200,7 +195,6 @@ export async function runStudyExperiment(
     studyRoot,
     study,
     receipt,
-    phase: options.phase,
     ...(options.replaceAttemptId === undefined
       ? {}
       : { replaceAttemptId: options.replaceAttemptId }),
@@ -224,7 +218,7 @@ export async function runStudyExperiment(
           buildRoot: launch.cell.buildRoot,
           output: launch.attemptRoot,
           attemptId: launch.attemptId,
-          studyPhase: options.phase,
+          studyPhase: "calibration",
           studyRootId: launch.studyRootId,
           conditionOrderPosition: launch.cell.conditionOrderPosition,
           designDigest: launch.designDigest,
@@ -253,14 +247,7 @@ export async function runStudyExperiment(
   });
 }
 
-const EXPERIMENT_FLAGS = new Set(["--config", "--phase", "--study-root", "--replace"]);
-
-function studyPhase(value: string): StudyPhase {
-  if (value !== "calibration" && value !== "validation") {
-    throw new Error("--phase must be calibration or validation.");
-  }
-  return value;
-}
+const EXPERIMENT_FLAGS = new Set(["--config", "--study-root", "--replace"]);
 
 export function runExperimentFromFlags(
   flags: ReadonlyMap<string, string>,
@@ -275,7 +262,6 @@ export function runExperimentFromFlags(
     root,
     configPath: requiredFlag(flags, "--config"),
     studyRoot: requiredFlag(flags, "--study-root"),
-    phase: studyPhase(requiredFlag(flags, "--phase")),
     ...(flags.has("--replace") ? { replaceAttemptId: requiredFlag(flags, "--replace") } : {}),
   });
 }

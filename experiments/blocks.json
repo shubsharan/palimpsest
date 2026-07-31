@@ -13,58 +13,6 @@
         "sha256": "15d6f89e2c7a421a36122f15b9b15402eaeb5ab1b04a7480c363401069e3109c"
       },
       "boundaryStage": 4
-    },
-    {
-      "blockId": "validation-pointed-firs",
-      "phase": "validation",
-      "sourceId": "pointed-firs",
-      "seed": 367013,
-      "window": {
-        "paragraphStart": 0,
-        "paragraphEnd": 0,
-        "wordCount": 0,
-        "sha256": ""
-      },
-      "boundaryStage": 4
-    },
-    {
-      "blockId": "validation-custom-country",
-      "phase": "validation",
-      "sourceId": "custom-country",
-      "seed": 11052013,
-      "window": {
-        "paragraphStart": 0,
-        "paragraphEnd": 0,
-        "wordCount": 0,
-        "sha256": ""
-      },
-      "boundaryStage": 4
-    },
-    {
-      "blockId": "validation-woodlanders",
-      "phase": "validation",
-      "sourceId": "woodlanders",
-      "seed": 482013,
-      "window": {
-        "paragraphStart": 0,
-        "paragraphEnd": 0,
-        "wordCount": 0,
-        "sha256": ""
-      },
-      "boundaryStage": 4
-    },
-    {
-      "blockId": "validation-silas-lapham",
-      "phase": "validation",
-      "sourceId": "silas-lapham",
-      "seed": 154013,
-      "window": {
-        "paragraphStart": 0,
-        "paragraphEnd": 0,
-        "wordCount": 0,
-        "sha256": ""
-      },
-      "boundaryStage": 4
     }
   ]
 }

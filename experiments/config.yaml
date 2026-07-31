@@ -1,24 +1,11 @@
-schemaVersion: 5
+schemaVersion: 6
 
 communication:
   teamChannel: enabled
 
 blocks:
   - blockId: calibration-odd-women
-    phase: calibration
     sourcePath: fixtures/chronicles-of-break-oday.txt
-  - blockId: validation-pointed-firs
-    phase: validation
-    sourcePath: fixtures/367-h.htm
-  - blockId: validation-custom-country
-    phase: validation
-    sourcePath: fixtures/pg11052.txt
-  - blockId: validation-woodlanders
-    phase: validation
-    sourcePath: fixtures/pg482.txt
-  - blockId: validation-silas-lapham
-    phase: validation
-    sourcePath: fixtures/pg154.txt
 
 assignment:
   - agentId: agent-1
@@ -56,13 +43,7 @@ budgets:
   totalTokenCeiling: null
   totalMonetaryCeilingCents: 4000
 
-orders:
-  calibration: [CS, CR, IR, IS]
-  validation:
-    - [CS, CR, IR, IS]
-    - [CR, IS, CS, IR]
-    - [IS, IR, CR, CS]
-    - [IR, CS, IS, CR]
+order: [CS, CR, IR, IS]
 
 checking:
   feedbackId: published-runnability-coverage-v1
@@ -76,10 +57,6 @@ rubric:
   rubricId: palimpsest-behavior-review-v1
   path: experiments/behavior-rubric.md
   sha256: 1b84bcedd646beee7793e839579b306398801bd38e2c08208c76dda51e51f580
-
-adjustableFields:
-  - budgets.tokenBudgetPerAgent
-  - budgets.perAttemptMonetaryCeilingCents
 
 failurePolicy:
   stopOnInfrastructureFailure: true

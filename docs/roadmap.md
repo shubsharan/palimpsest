@@ -62,11 +62,11 @@ This feature is done when multiple clock profiles and both token-policy modes pa
 - Replace correctness-bearing checker feedback with execution, output-validity, word-count, and plaintext-independent coverage feedback.
 - Evaluate the one shared canonical origin or all three isolated canonical origins without reviewer selection, repair, ranking, or synthetic integration.
 - Add post-freeze origin diagnostics, realized team-product status, collective ceiling, and nullable integration gap.
-- Separate evidence and control validity tiers, rebuild the five-block catalog with fresh calibration material, and fail closed on evidence fallback.
+- Separate evidence and control validity tiers, prepare one fresh calibration block, and fail closed on evidence fallback.
 - Record communication, integration, interference, belief replacement, source recognition, checker interpretation, resources, reasoning-summary coverage, and final provenance.
-- Run one fresh four-cell GPT-5.6-sol calibration under the one-hour, no-token-cutoff regime, then stop before validation.
+- Run one fresh four-cell GPT-5.6-sol calibration under the one-hour, no-token-cutoff regime.
 
-This feature is done when provider-free acceptance and clean receipt-bound preflight pass on the exact committed source, all four calibration cells receive terminal all-origin evaluation and diagnostic records, correctness remains hidden during model work, and validation has not started.
+This feature is done when provider-free acceptance and clean receipt-bound preflight pass on the exact committed source, and all four calibration cells receive terminal all-origin evaluation and diagnostic records while correctness remains hidden during model work.
 
 ## Boundaries
 

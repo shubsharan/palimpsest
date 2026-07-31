@@ -13,15 +13,14 @@
     "models",
     "schedule",
     "budgets",
-    "orders",
+    "order",
     "checking",
     "scoring",
     "rubric",
-    "adjustableFields",
     "failurePolicy"
   ],
   "properties": {
-    "schemaVersion": { "const": 5 },
+    "schemaVersion": { "const": 6 },
     "communication": { "$ref": "#/$defs/communication" },
     "blocks": { "$ref": "#/$defs/blocks" },
     "assignment": { "$ref": "#/$defs/assignment" },
@@ -39,20 +38,10 @@
     },
     "schedule": { "$ref": "#/$defs/schedule" },
     "budgets": { "$ref": "#/$defs/budgets" },
-    "orders": { "$ref": "#/$defs/orders" },
+    "order": { "$ref": "#/$defs/conditionOrder" },
     "checking": { "$ref": "#/$defs/checking" },
     "scoring": { "$ref": "#/$defs/scoring" },
     "rubric": { "$ref": "#/$defs/rubric" },
-    "adjustableFields": {
-      "type": "array",
-      "prefixItems": [
-        { "const": "budgets.tokenBudgetPerAgent" },
-        { "const": "budgets.perAttemptMonetaryCeilingCents" }
-      ],
-      "items": false,
-      "minItems": 2,
-      "maxItems": 2
-    },
     "failurePolicy": { "$ref": "#/$defs/failurePolicy" }
   },
   "$defs": {
@@ -79,10 +68,9 @@
     "block": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["blockId", "phase", "sourcePath"],
+      "required": ["blockId", "sourcePath"],
       "properties": {
         "blockId": { "$ref": "#/$defs/identifier" },
-        "phase": { "enum": ["calibration", "validation"] },
         "sourcePath": { "type": "string", "minLength": 1 }
       }
     },
@@ -95,64 +83,15 @@
             {
               "type": "object",
               "properties": {
-                "blockId": { "const": "calibration-odd-women" },
-                "phase": { "const": "calibration" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-pointed-firs" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-custom-country" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-woodlanders" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-silas-lapham" },
-                "phase": { "const": "validation" }
+                "blockId": { "const": "calibration-odd-women" }
               }
             }
           ]
         }
       ],
       "items": false,
-      "minItems": 5,
-      "maxItems": 5
+      "minItems": 1,
+      "maxItems": 1
     },
     "assignmentEntry": {
       "type": "object",
@@ -234,26 +173,6 @@
           "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
         },
         "totalMonetaryCeilingCents": { "type": "integer", "minimum": 0 }
-      }
-    },
-    "orders": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["calibration", "validation"],
-      "properties": {
-        "calibration": { "$ref": "#/$defs/conditionOrder" },
-        "validation": {
-          "type": "array",
-          "prefixItems": [
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" }
-          ],
-          "items": false,
-          "minItems": 4,
-          "maxItems": 4
-        }
       }
     },
     "checking": {

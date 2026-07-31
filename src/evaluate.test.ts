@@ -93,7 +93,6 @@ describe("canonical origin evaluation", () => {
         aggregate: { matchedWords: 2, totalWords: 2, coverage: 1, accuracy: 1 },
         diagnostics: diagnostics(),
         correctPositions: [true, true],
-        predictedWords: 2,
       }),
       now: () => new Date(0),
     });
@@ -146,7 +145,6 @@ describe("canonical origin evaluation", () => {
           aggregate: { matchedWords: 1, totalWords: 2, coverage: 1, accuracy: 0.5 },
           diagnostics: diagnostics(),
           correctPositions: positionFacts[index++]!,
-          predictedWords: 2,
         };
       },
       now: () => new Date(0),
@@ -164,6 +162,118 @@ describe("canonical origin evaluation", () => {
       integrationGapReason: "isolated-no-realized-product",
     });
     expect(maximumActiveScores).toBe(1);
+  });
+
+  it("excludes trailing tokens when another origin ends at the expected boundary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-extra-"));
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("expected solver sandbox");
+      await writeFile(join(request.outputRoot, request.outputPath), "candidate\n", "utf8");
+      return SUCCESS;
+    });
+    let index = 0;
+    const candidates = [
+      {
+        aggregate: { matchedWords: 1, totalWords: 4, coverage: 1, accuracy: 0.25 },
+        diagnostics: diagnostics(2, 4),
+        correctPositions: [true, false],
+      },
+      {
+        aggregate: { matchedWords: 1, totalWords: 2, coverage: 1, accuracy: 0.5 },
+        diagnostics: diagnostics(),
+        correctPositions: [false, true],
+      },
+      {
+        aggregate: { matchedWords: 0, totalWords: 3, coverage: 1, accuracy: 0 },
+        diagnostics: diagnostics(2, 3),
+        correctPositions: [false, false],
+      },
+    ];
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "IR" })),
+      targets: await targets(["agent-1", "agent-2", "agent-3"]),
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
+      sandbox,
+      score: async () => candidates[index++]!,
+      now: () => new Date(0),
+    });
+
+    expect(record.team.collectiveCeiling).toEqual({
+      matchedWords: 2,
+      totalWords: 2,
+      coverage: 1,
+      accuracy: 1,
+    });
+  });
+
+  it("charges only trailing tokens present in every scoreable origin", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-all-extra-"));
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("expected solver sandbox");
+      await writeFile(join(request.outputRoot, request.outputPath), "candidate\n", "utf8");
+      return SUCCESS;
+    });
+    const totals = [4, 3, 5];
+    let index = 0;
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "IS" })),
+      targets: await targets(["agent-1", "agent-2", "agent-3"]),
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
+      sandbox,
+      score: async () => {
+        const totalWords = totals[index]!;
+        const correctPositions = index++ === 0 ? [true, false] : [false, true];
+        return {
+          aggregate: {
+            matchedWords: 1,
+            totalWords,
+            coverage: 1,
+            accuracy: 1 / totalWords,
+          },
+          diagnostics: diagnostics(2, totalWords),
+          correctPositions,
+        };
+      },
+      now: () => new Date(0),
+    });
+
+    expect(record.team.collectiveCeiling).toEqual({
+      matchedWords: 2,
+      totalWords: 3,
+      coverage: 1,
+      accuracy: 2 / 3,
+    });
+  });
+
+  it("handles an empty expected output without inventing a denominator", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-empty-"));
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("expected solver sandbox");
+      await writeFile(join(request.outputRoot, request.outputPath), "candidate\n", "utf8");
+      return SUCCESS;
+    });
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "IR" })),
+      targets: await targets(["agent-1", "agent-2", "agent-3"]),
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
+      sandbox,
+      score: async () => ({
+        aggregate: { matchedWords: 0, totalWords: 0, coverage: 1, accuracy: 1 },
+        diagnostics: diagnostics(0, 0),
+        correctPositions: [],
+      }),
+      now: () => new Date(0),
+    });
+
+    expect(record.team.collectiveCeiling).toEqual({
+      matchedWords: 0,
+      totalWords: 0,
+      coverage: 1,
+      accuracy: 1,
+    });
   });
 
   it("computes the isolated ceiling from only scoreable origins", async () => {
@@ -187,7 +297,6 @@ describe("canonical origin evaluation", () => {
         aggregate: { matchedWords: 1, totalWords: 2, coverage: 1, accuracy: 0.5 },
         diagnostics: diagnostics(),
         correctPositions: score++ === 0 ? [true, false] : [false, true],
-        predictedWords: 2,
       }),
       now: () => new Date(0),
     });

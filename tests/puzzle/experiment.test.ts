@@ -174,7 +174,7 @@ async function publishFixtureAttempt(
 }
 
 describe("frozen calibration study", () => {
-  it("runs four calibration cells sequentially and refuses validation without authorization", async () => {
+  it("runs four calibration cells sequentially", async () => {
     const studyRoot = await temporaryRoot();
     const source = await readSourceState(root);
     const sandbox = new FakeCommandSandbox();
@@ -230,10 +230,7 @@ describe("frozen calibration study", () => {
         maximumActiveAttempts = Math.max(maximumActiveAttempts, activeAttempts);
         try {
           const receipt = await readDesignReceipt(studyRoot);
-          const phase = await readPhaseSummary(
-            studyRoot,
-            request.studyPhase === "validation" ? "validation" : "calibration",
-          );
+          const phase = await readPhaseSummary(studyRoot, "calibration");
           expect(receipt.builds).toHaveLength(1);
           expect(phase.reservations.at(-1)?.state).toBe("reserved");
           launchConditions.push(
@@ -252,23 +249,12 @@ describe("frozen calibration study", () => {
       root,
       configPath: "experiments/config.yaml",
       studyRoot,
-      phase: "calibration",
       env,
       dependencies,
     });
     expect(calibration.state).toBe("complete");
     expect(calibration.attempts).toHaveLength(4);
 
-    await expect(
-      runStudyExperiment({
-        root,
-        configPath: "experiments/config.yaml",
-        studyRoot,
-        phase: "validation",
-        env,
-        dependencies,
-      }),
-    ).rejects.toThrow(/monetary ceiling/i);
     expect(maximumActiveAttempts).toBe(1);
     expect(providerRequests).toBe(0);
     expect(adapterCreations).toBe(12);

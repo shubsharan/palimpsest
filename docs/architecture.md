@@ -13,16 +13,16 @@ One root TypeScript application lives under `src/`. One Python distribution unde
 
 ## Experiment Configuration
 
-The five-entry `experiments/blocks.json` catalog owns scientific block inputs. One strict schema-version-3 YAML manifest freezes the complete study protocol. Both reject unknown fields before build or attempt side effects.
+The one-entry `experiments/blocks.json` catalog records the active scientific block. One strict schema-version-6 YAML manifest freezes the calibration protocol. Both reject unknown fields before build or attempt side effects.
 
 ```text
 study.yaml
-  blocks            one calibration and four validation IDs
+  blocks            one calibration ID
   assignment        three ordered agent/model bindings
   schedule          six release offsets and cutoff
   budgets           per-attempt values and immutable total ceilings
   providers/models  direct drivers, environment names, and model IDs
-  orders            calibration plus four balanced validation sequences
+  order             CS, CR, IR, IS
   scoring/rubric    deterministic metric and descriptive review boundary
   failurePolicy     stop, no retry, explicit cited replacement
 ```
@@ -70,7 +70,7 @@ Missing provider usage or a provider request failure is an infrastructure-error 
 
 ## Experiment Orchestration
 
-`puzzle:experiment --phase calibration|validation` expands one fixed local state machine. Calibration prepares and validates all five builds, seals each complete build tree, and binds those seals plus prompt templates, rubric, assignment, order, scoring, failure rules, and sandbox identity before exclusively publishing `design.json`. Validation requires that receipt, a completed calibration phase, and unchanged build trees.
+`puzzle:experiment` expands one four-cell calibration state machine. It prepares and validates one build, seals the complete build tree, and binds that seal plus prompt templates, rubric, assignment, order, scoring, failure rules, and sandbox identity before exclusively publishing `design.json`.
 
 ```text
 study/
@@ -83,16 +83,11 @@ study/
     attempts/
       <attempt-id>/
         attempt.json
-  validation/
-    phase.json
-    attempts/
-      <attempt-id>/
-        attempt.json
 ```
 
 Before phase initialization, the runner exclusively creates one empty phase-execution lock and holds it for the complete invocation. A competing or abandoned lock fails before preflight, reservation, adapter construction, or provider work; there is no heartbeat, lock stealing, or stale-process recovery. Immediately before opening a cell's sessions, the runner reverifies the selected receipt-bound build tree and writes one launch reservation to the phase summary. After the sessions and Git freeze complete, it reverifies the selected build and only then publishes immutable `attempt.json`, indexes the attempt, resolves the reservation, accounts its full token and monetary authorization, and continues to the next cell. A crash before durable attempt publication leaves an unresolved reservation, so resume cannot silently become a retry.
 
-A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. A post-publication overlap error remains diagnostic: the durable non-infrastructure attempt is indexed and the phase continues sequentially without manual resume. Successful resume skips every indexed cell. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, or aggregation.
+A frozen `session-infrastructure-error` attempt is indexed unchanged and stops the phase nonzero. Only `--replace <attempt-id>` can append one inherited replacement. Model outcomes, post-publication overlap/evaluation errors, pre-freeze failures, missing sources, and already-replaced attempts are ineligible. A post-publication failure preserves the frozen attempt, leaves it unindexed, reports its path for direct evaluator diagnosis, and requires a new study root. There is no rollback, provider fallback, parallel attempt scheduling, hidden retry, result selection, recovery workflow, or aggregation.
 
 ## Provider And Secret Boundary
 
@@ -121,7 +116,7 @@ The sandbox protects the local host and oracle. It is not presented as a hardene
 
 The append-only trace is validated, redacted, and sequence-ordered across run, overlap, and evaluation. Study reload requires the referenced trace and metadata to remain at their canonical attempt-root paths and validates the complete current files before accepting an indexed attempt. The trace remains mutable supporting evidence rather than receipt-bound bytes so optional overlap and explicit evaluation can append after attempt publication; coherent rewriting by the trusted operator remains out of scope. Configured events identify standalone or study phase, condition, derived treatment, selected variant build, resolved schedule and cutoff, resource authorization, and requested model bindings without exposing block order, rubric, replacement policy, oracle sets, or hidden changed symbols. Session events may record actual provider/model identity, normalized usage, and the safe provider-returned reasoning-summary subset separately from normalized summary text.
 
-`attempt.json` schema version 5 contains the block, condition, derived treatment, selected build and complete-tree seal, exact resolved schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory and complete-tree seal, trace, sandbox identity, optional token limit, monetary authorization, infrastructure classification, and optional study/replacement provenance. It is the durable evaluation boundary.
+`attempt.json` schema version 7 contains the block, condition, derived treatment, selected build and complete-tree seal, exact resolved schedule, protocol snapshot and digest, fixed three-agent set, model binding per session, usage, termination, native frozen Git inventory and complete-tree seal, trace, sandbox identity, optional token limit, monetary authorization, infrastructure classification, and optional study/replacement provenance. It is the durable evaluation boundary.
 
 The canonical tree-sealing primitive covers sorted relative paths, directories, file bytes and lengths, executable bits, and symlink targets. It replaces per-consumer artifact lists, so new builder, checker, runner, or evaluator inputs are bound automatically when they live under the published root. This is local drift detection under a trusted-operator model, not cryptographic attestation: a coherent rewrite of artifacts and their embedded seals, signatures, immutable storage, and an external transparency service are outside the project boundary.
 
@@ -137,11 +132,9 @@ pnpm puzzle:build -- --block calibration-theron-ware --output artifacts/build
 pnpm puzzle:run -- --config experiments/config.yaml \
   --condition CR --build artifacts/build --attempt-root artifacts/attempt
 pnpm puzzle:experiment -- --config experiments/config.yaml \
-  --phase calibration --study-root artifacts/study
+  --study-root artifacts/study
 pnpm puzzle:experiment -- --config experiments/config.yaml \
-  --phase validation --study-root artifacts/study
-pnpm puzzle:experiment -- --config experiments/config.yaml \
-  --phase validation --study-root artifacts/study --replace <attempt-id>
+  --study-root artifacts/study --replace <attempt-id>
 pnpm puzzle:evaluate -- --attempt artifacts/attempt
 pnpm puzzle:offline -- --condition CR --output artifacts/offline
 ```

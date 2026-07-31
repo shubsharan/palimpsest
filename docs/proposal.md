@@ -10,13 +10,13 @@ The project is a local puzzle and an observational research artifact. It is not 
 
 Every word type in a prepared text is replaced by another word type under a hidden bijection. Punctuation, capitalization patterns, digits, and paragraph structure remain visible. The result resembles English at the token level while its vocabulary has been systematically reassigned.
 
-Five checked-in block definitions identify the planned study cells. Each build derives source identity and seed directly from the supplied text bytes, then a deterministic bounded search selects and allocates whole paragraphs across exactly three agents and six stages. Every selected paragraph appears once, and its source order remains recoverable.
+One checked-in calibration block identifies the planned study cells. Its build derives source identity and seed directly from the supplied text bytes, then a deterministic bounded search selects and allocates whole paragraphs across exactly three agents and six stages. Every selected paragraph appears once, and its source order remains recoverable.
 
 Each block produces stationary and re-key twins from one paragraph allocation and base key. Their first three stages are byte-identical. The stationary twin keeps its mappings; the re-key twin changes only selected mappings beginning at stage four while matched controls remain stable.
 
 Trusted build records retain shared anchors, universal sentinels, owner-weighted specialists, matched stable controls, allocation metrics, rejected tiers, and manipulation checks. Agent-visible stages contain none of those labels, keys, expectations, or results.
 
-Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. The four-condition runtime releases them at 0, 5, 10, 20, 30, and 40 minutes and ends the attempt at 60 minutes. The frozen study protocol prepares the five deterministic block builds before calibration behavior begins.
+Ordered immutable stages are construction artifacts; their release timing belongs to the runtime. The four-condition runtime releases them at 0, 5, 10, 20, 30, and 40 minutes and ends the attempt at 60 minutes. The frozen study protocol prepares the deterministic calibration build before model behavior begins.
 
 ## The Agents
 
@@ -62,7 +62,7 @@ Each captured tree runs read-only against the complete ciphertext and writes onl
 
 ## Research Records
 
-A study prepares all five builds and an immutable design receipt before calibration sessions begin. Calibration executes four condition cells; validation executes sixteen cells under four balanced orders. Attempts remain sequential while the three sessions inside one attempt remain concurrent. Each phase summary records launch reservations, durable attempts, resource authorization, and explicit replacement lineage without selecting or aggregating outcomes.
+A study prepares one build and an immutable design receipt before calibration sessions begin. It executes `CS`, `CR`, `IR`, and `IS` sequentially while the three sessions inside one attempt remain concurrent. The phase summary records launch reservations, durable attempts, resource authorization, and explicit replacement lineage without selecting or aggregating outcomes. Any future validation uses a separate manifest and fresh receipt.
 
 Paired build records retain block identity, source window, evidence and control tiers, allocation, both variant identities, oracle metadata, and deterministic manipulation checks. Attempt records retain study provenance, condition and derived treatment, declared channel mode, selected build, resolved schedule and cutoff, secret-free protocol snapshot and digest, requested provider/model bindings, optional actual response identities, normalized provider-reported usage, exact provider-returned reasoning-summary items when available, termination, model and tool activity, accepted public messages, stage releases, native frozen Git topology, overlap observations, every canonical-origin result, diagnostics, realized team-product status, collective ceiling, nullable integration gap, behavior review, and final artifact provenance. Records do not retain hidden reasoning, complete provider response payloads, or credential values.
 

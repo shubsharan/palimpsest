@@ -20,7 +20,7 @@ import { readJsonObject } from "./python.js";
 import type { MonotonicClock } from "./reveal.js";
 import { createFixtureAgentRuntimes, runPuzzle, type RunPuzzleResult } from "./run.js";
 
-const OFFLINE_BLOCK = "calibration-theron-ware";
+const OFFLINE_BLOCK = "calibration-odd-women";
 
 export interface OfflinePuzzleOptions {
   root: string;

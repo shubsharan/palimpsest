@@ -1,6 +1,6 @@
 # Feature Specification: Blind Calibration and Team-Level Evaluation
 
-**Feature Branch**: `020-blind-team-evaluation` **Created**: 2026-07-31 **Status**: Draft **Input**: Redesign checking, evaluation, diagnostics, block validity, and behavior records, then run one fresh four-cell GPT-5.6-sol calibration without launching validation.
+**Feature Branch**: `020-blind-team-evaluation` **Created**: 2026-07-31 **Status**: Draft **Input**: Redesign checking, evaluation, diagnostics, block validity, and behavior records, then run one fresh four-cell GPT-5.6-sol calibration.
 
 ## User Scenarios & Testing _(mandatory)_
 
@@ -70,19 +70,18 @@ As a researcher, I can give the puzzle builder any local UTF-8 prose file and re
 
 1. **Given** a candidate build, **When** validity is assessed, **Then** specialist evidence geometry and stable-control quality are represented by separate evidence and control tiers.
 2. **Given** a paid calibration block, **When** it is accepted, **Then** its evidence tier is at least balanced, its stable controls are complete, and its control tier is explicitly recorded.
-3. **Given** a validation block, **When** it is accepted, **Then** both its evidence tier and control tier are at least balanced.
-4. **Given** a target source, **When** candidate selection runs, **Then** it begins after the first 20 percent of canonical paragraphs and selects the first 16,000-to-20,000-word window satisfying the phase gate.
-5. **Given** no qualifying window within the bounded search, **When** the build command ends, **Then** it exits nonzero and publishes no partial build rather than accepting a fallback or weakened gate.
-6. **Given** any eligible local source, **When** it is built, **Then** source identity and seed are derived deterministically from the supplied bytes and retained in the sealed manifest.
-7. **Given** ordinary UTF-8 prose, Gutenberg text, or Gutenberg HTML, **When** it is supplied, **Then** the same command normalizes it into candidate paragraphs without a separate discover, promote, or pin workflow.
+3. **Given** a target source, **When** candidate selection runs, **Then** it begins after the first 20 percent of canonical paragraphs and selects the first 16,000-to-20,000-word window satisfying the phase gate.
+4. **Given** no qualifying window within the bounded search, **When** the build command ends, **Then** it exits nonzero and publishes no partial build rather than accepting a fallback or weakened gate.
+5. **Given** any eligible local source, **When** it is built, **Then** source identity and seed are derived deterministically from the supplied bytes and retained in the sealed manifest.
+6. **Given** ordinary UTF-8 prose, Gutenberg text, or Gutenberg HTML, **When** it is supplied, **Then** the same command normalizes it into candidate paragraphs without a separate discover, promote, or pin workflow.
 
 ---
 
 ### User Story 5 - Run One Fresh Calibration and Stop (Priority: P2)
 
-As a researcher, I can run the redesigned instrument once across all four communication and evidence cells, automatically evaluate every final origin, and stop for review before validation.
+As a researcher, I can run the redesigned instrument once across all four communication and evidence cells and automatically evaluate every final origin.
 
-**Why this priority**: The instrument needs fresh empirical calibration evidence, but validation would be premature before the new observations are reviewed.
+**Why this priority**: The instrument needs fresh empirical calibration evidence before any separate follow-up study is designed.
 
 **Independent Test**: From the exact clean verified revision, create a fresh immutable study root and complete `CS`, `CR`, `IR`, and `IS` sequentially on `calibration-odd-women`, producing terminal evaluation, diagnostic, behavior, resource, and provenance records for every cell.
 
@@ -92,7 +91,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 2. **Given** the calibration manifest, **When** all four cells run, **Then** each uses three GPT-5.6-sol agents at medium reasoning, releases at 0, 5, 10, 20, 30, and 40 minutes, and stops at 60 minutes without a cumulative token cutoff.
 3. **Given** the communication treatment, **When** a shared cell runs, **Then** the ordinary team channel and shared Git condition are available; when an isolated cell runs, neither peer communication nor peer evidence is exposed.
 4. **Given** any completed attempt, **When** it freezes, **Then** every canonical origin receives an explicit terminal evaluation outcome and diagnostic and behavior-review records are generated automatically.
-5. **Given** the four-cell calibration has terminated, **When** the phase coordinator considers later work, **Then** it stops without launching a validation attempt.
+5. **Given** the four-cell calibration has terminated, **When** the coordinator completes `IS`, **Then** the study is complete.
 
 ### Edge Cases
 
@@ -165,7 +164,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **FR-025**: `evidenceTier` MUST summarize specialist ownership, occurrences, solo coverage, and stage and region balance.
 - **FR-026**: `controlTier` MUST summarize stable-control completeness and matching distance.
 - **FR-027**: A paid calibration block MUST have `evidenceTier` of at least balanced, complete controls, and an explicitly recorded control tier.
-- **FR-028**: A validation block MUST have both `evidenceTier` and `controlTier` of at least balanced.
+- **FR-028**: The active study MUST contain exactly one calibration block and the order `CS`, `CR`, `IR`, `IS`.
 - **FR-029**: Provider-backed preparation MUST reject an evidence fallback before credentials are read or model adapters are created.
 - **FR-030**: `puzzle:build` MUST accept a local source path directly with no registry, discovery, or manual promotion step.
 - **FR-031**: The builder MUST accept valid UTF-8 ordinary prose, Gutenberg text, and Gutenberg HTML and MUST reject empty, non-UTF-8, structurally insufficient, or scientifically infeasible input explicitly.
@@ -176,7 +175,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 
 #### Protocol and Behavior Records
 
-- **FR-036**: The strict study manifest, puzzle build, attempt summary, design receipt, and evaluation record MUST advance respectively to schema versions 5, 4, 6, 3, and 2.
+- **FR-036**: The strict study manifest, puzzle build, attempt summary, design receipt, phase summary, and evaluation record MUST use schema versions 6, 4, 7, 4, 3, and 2 respectively.
 - **FR-037**: The strict manifest MUST replace reviewer selection with checking feedback `published-runnability-coverage-v1`, primary metric `normalized-positional-word-v1`, diagnostic metric `palimpsest-diagnostics-v1`, and evaluation policy `all-canonical-main-snapshots-v1`.
 - **FR-038**: Receipts, reservations, frozen protocols, traces, attempts, and evaluation records MUST agree on the resolved checking, scoring, canonical-origin, schedule, resource, and artifact-provenance contracts.
 - **FR-039**: The behavior rubric MUST record communication use, cross-agent integration, negative interference, and conflict recovery.
@@ -196,7 +195,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **FR-050**: Actual token and monetary usage MUST be retained as evidence even though token use does not terminate sessions.
 - **FR-051**: Paid calibration MUST retain the existing $10 per-attempt authorization and MUST NOT exceed $40 across the four planned cells.
 - **FR-052**: Each frozen calibration attempt MUST automatically evaluate every canonical origin and generate diagnostic and behavior-review records.
-- **FR-053**: The workflow MUST stop after the four-cell calibration and MUST NOT launch validation.
+- **FR-053**: The experiment command MUST expose one calibration workflow and MUST reject phase selection.
 - **FR-054**: Collaboration, revision, integration, accuracy, source recognition, checker frequency, and resource consumption MUST remain measured model outcomes rather than calibration pass criteria.
 
 ### Key Entities
@@ -226,7 +225,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **SC-008**: The complete provider-free four-condition fixture, advisory local CI, repository verification, and clean receipt-bound preflight pass on one exact committed revision.
 - **SC-009**: The paid calibration produces exactly four sequential attempt records and terminal evaluation outcomes for 100 percent of their canonical origins without exceeding $40 authorization.
 - **SC-010**: All four calibration attempts retain diagnostics separating sentinel from specialist performance, behavior review including source-recognition and resource evidence, actual usage, final artifact provenance, and no correctness disclosure during model work.
-- **SC-011**: The calibration phase ends after `IS` with zero validation attempts launched, regardless of collaboration, revision, integration, recognition, or reconstruction accuracy.
+- **SC-011**: The calibration ends after `IS`, regardless of collaboration, revision, integration, recognition, or reconstruction accuracy.
 
 ## Assumptions
 
@@ -237,6 +236,6 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - The hour-only resource regime is intentional. Tokens and cost are observed, but only the clock and existing monetary authorization bound the planned calibration.
 - Natural public-domain prose remains the construct. Private or commissioned prose and a separately randomized recognition factor are outside this feature.
 - Historical Feature 017 and 018 runs and artifacts remain immutable and are not migrated to the new schemas.
-- Validation remains deferred until a human reviews the four-cell evidence and instrumentation; this feature provides no automatic validation launch.
+- Any later validation is a separate study with its own manifest, sources, and receipt.
 - A failed source gate or stale preflight blocks paid work. It does not authorize alternate material, a relaxed threshold, or an unbound live run.
 - The constitution's current oracle-backed aggregate-checker clause must be amended and synchronized with dependent guidance before implementation because blind checking intentionally changes that governed boundary.

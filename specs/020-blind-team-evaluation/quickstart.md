@@ -11,7 +11,7 @@ pnpm puzzle:build -- \
   --output artifacts/build-chronicles
 ```
 
-The command parses, scans, applies the phase gate, seals, and publishes. Calibration requires evidence tier at least balanced and complete controls; validation requires both tiers at least balanced. Any failure exits nonzero and leaves no build output. Do not substitute a fallback tier.
+The command parses, scans, applies the calibration gate, seals, and publishes. Calibration requires evidence tier at least balanced and complete controls. Any failure exits nonzero and leaves no build output. Do not substitute a fallback tier.
 
 ## 2. Exercise Blind Checking
 
@@ -61,8 +61,7 @@ Use a fresh ignored study root and the receipt-bound manifest:
 ```bash
 pnpm puzzle:experiment -- \
   --config experiments/config.yaml \
-  --phase calibration \
   --study-root artifacts/calibration-020
 ```
 
-The manifest expands `CS`, `CR`, `IR`, and `IS` sequentially with three GPT-5.6-sol medium-reasoning agents, releases at 0, 5, 10, 20, 30, and 40 minutes, a 60-minute cutoff, null token ceilings, $10 per attempt, and $40 total authorization. After `IS`, stop. Do not invoke validation.
+The manifest expands `CS`, `CR`, `IR`, and `IS` sequentially with three GPT-5.6-sol medium-reasoning agents, releases at 0, 5, 10, 20, 30, and 40 minutes, a 60-minute cutoff, null token ceilings, $10 per attempt, and $40 total authorization. After `IS`, the calibration is complete.

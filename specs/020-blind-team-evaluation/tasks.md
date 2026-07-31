@@ -163,6 +163,19 @@
 
 ---
 
+## Phase 8: Review Simplification
+
+**Purpose**: Remove the dormant validation workflow and correct review-discovered evaluation semantics without adding recovery machinery.
+
+- [x] T059 Replace manifest v5 with one-block calibration manifest v6 and remove validation sources, orders, and experiment phase selection
+- [x] T060 Advance design receipt v4, attempt summary v7, and phase summary v3 with calibration-only strict records
+- [x] T061 Compute the collective ceiling from the union of correct positions, minimum scoreable total, and maximum scoreable coverage
+- [x] T062 Remove `predictedWords` from the trusted scorer bridge and cover clean, overlong, partial, and empty candidates
+- [x] T063 Preserve post-freeze attempts unindexed on failure and include the durable attempt path in the terminal diagnostic
+- [x] T064 Run focused suites, the provider-free matrix, `pnpm verify`, `pnpm ci:local`, and `git diff --check`
+
+---
+
 ## Dependencies and Execution Order
 
 ### Phase Dependencies

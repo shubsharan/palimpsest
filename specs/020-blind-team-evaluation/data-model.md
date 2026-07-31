@@ -111,7 +111,7 @@ Extends the existing frozen attempt with checking and scoring policy identities,
 
 ## Design Receipt v3
 
-Binds manifest v5 digest, resolved run controls, five puzzle-build v4 identities and tree seals, checker/scoring/evaluation policies, behavior rubric, model assignment, schedule, null token ceilings, monetary authorization, source revision, and sandbox identity.
+Binds manifest v6 digest, resolved run controls, one puzzle-build v4 identity and tree seal, checker/scoring/evaluation policies, behavior rubric, model assignment, schedule, null token ceilings, monetary authorization, source revision, and sandbox identity.
 
 ## Behavior Review
 
@@ -124,11 +124,11 @@ operator source supplied
   -> UTF-8 parsing and bounded eligibility scan
   -> phase gate passed
   -> puzzle build v4 sealed
-  -> design receipt v3 published
+  -> design receipt v4 published
   -> attempt reserved
   -> model sessions active (blind checker only)
   -> repositories and workspaces frozen
-  -> attempt summary v6 published
+  -> attempt summary v7 published
   -> all canonical origins evaluated
   -> diagnostics and team result published
   -> behavior review published

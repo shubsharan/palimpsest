@@ -12,7 +12,7 @@ Provider-backed work rejects `fallback`.
 
 Contains tier identifier, changed count, matched-control count, completeness, maximum and mean matching distance, and threshold bounds.
 
-Calibration requires completeness and an explicit tier. Validation requires at least `balanced`.
+Calibration requires completeness and an explicit tier. The generic builder retains its validation gate for future source preparation, outside this study workflow.
 
 ## Identity
 
@@ -21,9 +21,5 @@ Paired build identity binds source digest, selected window, seed, allocation dig
 ## Active Catalog
 
 1. `calibration-odd-women`
-2. `validation-pointed-firs`
-3. `validation-custom-country`
-4. `validation-woodlanders`
-5. `validation-silas-lapham`
 
 Every sealed window is the first qualifying 16,000-to-20,000-word candidate beginning after the first 20 percent of canonical paragraphs under the bounded search order. Source identity and seed derive from the supplied bytes. The build contains no source registry, provenance file, reference list, or reference corpus; no separate discovery or pin-promotion record exists.
