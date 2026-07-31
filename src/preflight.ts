@@ -264,7 +264,12 @@ const DEFAULT_DEPENDENCIES: PreflightDependencies = {
   async runFixture(root, output) {
     const { runOfflinePuzzle } = await import("./offline.js");
     const result = await runOfflinePuzzle({ root, output, condition: "CR" });
-    return { status: result.evaluation.status, sandbox: result.run.sandbox };
+    return {
+      status: result.evaluation.origins.every(({ status }) => status === "scored")
+        ? "scored"
+        : "evaluation-failed",
+      sandbox: result.run.sandbox,
+    };
   },
   async probeSandbox(root, expectedImageId) {
     const sandbox = await createDockerCommandSandbox({ root, expectedImageId });

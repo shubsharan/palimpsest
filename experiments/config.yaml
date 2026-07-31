@@ -75,7 +75,7 @@ scoring:
 rubric:
   rubricId: palimpsest-behavior-review-v1
   path: experiments/behavior-rubric.md
-  sha256: c86123324228a33ab2e1044f48b5205c06fc7b900fd44b17ff5c4f5fbd7201c6
+  sha256: 1b84bcedd646beee7793e839579b306398801bd38e2c08208c76dda51e51f580
 
 adjustableFields:
   - budgets.tokenBudgetPerAgent

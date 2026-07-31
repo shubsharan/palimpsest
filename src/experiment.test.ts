@@ -87,6 +87,13 @@ describe("study experiment orchestration", () => {
           events.push("run");
           observedTeamChannel = request.teamChannel;
         },
+        evaluate: async () => {
+          events.push("evaluate");
+          return {} as never;
+        },
+        publishBehaviorEvidence: async () => {
+          events.push("behavior");
+        },
         executePhase: async (options) => {
           await options.dependencies.beforeLaunch({
             cell: {
@@ -131,7 +138,15 @@ describe("study experiment orchestration", () => {
       },
     });
 
-    expect(events).toEqual(["preflight", "adapter", "adapter", "adapter", "run"]);
+    expect(events).toEqual([
+      "preflight",
+      "adapter",
+      "adapter",
+      "adapter",
+      "run",
+      "evaluate",
+      "behavior",
+    ]);
     expect(observedTeamChannel).toBe("enabled");
     expect(result.state).toBe("blocked");
   });

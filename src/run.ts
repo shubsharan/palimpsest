@@ -794,7 +794,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     ? "session-infrastructure-error"
     : "none";
   const summary = decodeAttemptSummary({
-    schemaVersion: 5,
+    schemaVersion: 6,
     attemptId: options.result.attemptId,
     studyPhase: options.result.studyPhase,
     ...(options.result.studyRootId === undefined
@@ -827,6 +827,10 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     protocol: options.result.protocol,
     tracePath: options.result.tracePath,
     traceMetadataPath: options.result.traceMetadataPath,
+    canonicalOriginIds:
+      options.result.communicationMode === "shared" ? ["shared"] : options.result.agentIds,
+    evaluationPath: "evaluation/result.json",
+    behaviorEvidencePath: "behavior-evidence.json",
     frozen: {
       root: options.result.frozen.root,
       communicationMode: options.result.frozen.communicationMode,

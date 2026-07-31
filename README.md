@@ -82,7 +82,7 @@ pnpm puzzle:experiment -- \
   --study-root artifacts/study
 ```
 
-Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, then indexes only strict durable attempts in its `phase.json`. A frozen `session-infrastructure-error` stops the phase; one explicit `--replace <attempt-id>` command may append a cited replacement. Nothing retries automatically.
+Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, evaluates every canonical origin, writes `behavior-evidence.json`, and only then indexes the attempt in `phase.json`. Evaluation or evidence failure leaves the frozen attempt unindexed and stops the phase. Nothing retries automatically.
 
 After an attempt freezes, the evaluator grades every condition-canonical published Git repository:
 
@@ -100,6 +100,8 @@ When `communication.teamChannel` is `enabled`, shared-condition agents also rece
 Final evaluation uses the same complete capture-execute-evaluate-clean operation, records each exact commit before execution, and publishes completion/results only after cleanup. It evaluates the one shared origin once in shared conditions and all three private origins independently in isolated conditions; it accepts no workspace selection, notes, alternate command, or output path. Missing or invalid submissions remain explicit evaluation outcomes; trusted host-process, scorer, sandbox, mount, cleanup, and cancellation failures remain infrastructure failures. The solver writes only to bounded tmpfs; afterward the host extracts the declared regular file into hidden staging and atomically publishes it after validation. The sandbox mounts no frozen repository, agent workspace, evidence, oracle path, or writable host output. Post-freeze records retain aggregate scores, diagnostics, realized team-product status, collective ceiling, and nullable integration gap without creating a synthetic reconstruction. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
 
 Each attempt writes an append-only canonical `trace.jsonl` and a live-readable sibling `trace.log`. The text log renders each redacted event with its elapsed time, actor, event type, and indented data; watch it during a run with `tail -F artifacts/attempt/trace.log`. When a trace is reopened, the runner regenerates `trace.log` from `trace.jsonl`.
+
+`behavior-evidence.json` records only durable facts: message, checker, and Git event references; per-agent usage; returned reasoning-summary presence; final origin commits and statuses; and artifact paths. The behavior rubric remains a separate human interpretation step for integration, interference, recovery, belief replacement, and source recognition.
 
 ## Development Check
 

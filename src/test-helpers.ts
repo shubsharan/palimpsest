@@ -262,7 +262,7 @@ export function testAttemptSummary(
           agentIds: [agentId],
         }));
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     attemptId: "attempt-fixture",
     studyPhase,
     ...(studyPhase === "standalone"
@@ -294,6 +294,9 @@ export function testAttemptSummary(
     protocol,
     tracePath: "/tmp/palimpsest/attempt/trace.jsonl",
     traceMetadataPath: "/tmp/palimpsest/attempt/trace.meta.json",
+    canonicalOriginIds: condition.communicationMode === "shared" ? ["shared"] : agentIds,
+    evaluationPath: "evaluation/result.json",
+    behaviorEvidencePath: "behavior-evidence.json",
     frozen: {
       root: "/tmp/palimpsest/attempt/frozen",
       communicationMode: condition.communicationMode,

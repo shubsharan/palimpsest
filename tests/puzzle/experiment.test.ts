@@ -244,6 +244,8 @@ describe("frozen calibration study", () => {
           activeAttempts -= 1;
         }
       },
+      evaluate: async () => ({}) as never,
+      publishBehaviorEvidence: async () => {},
     };
 
     const calibration = await runStudyExperiment({

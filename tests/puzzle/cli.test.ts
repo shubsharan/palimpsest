@@ -102,7 +102,7 @@ describe("operator CLI contract", () => {
     expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
   });
 
-  it("accepts the provider-neutral build, run, phase, replacement, and evaluate flags", () => {
+  it("parses the provider-neutral build, run, phase, replacement, and attempt flags", () => {
     expect(
       parseFlags([
         "--",
@@ -126,10 +126,6 @@ describe("operator CLI contract", () => {
         "build",
         "--attempt",
         "attempt",
-        "--workspace",
-        "agent-1",
-        "--notes",
-        "reviewed",
       ]),
     ).toEqual(
       new Map([
@@ -143,8 +139,6 @@ describe("operator CLI contract", () => {
         ["--output", "attempt"],
         ["--build", "build"],
         ["--attempt", "attempt"],
-        ["--workspace", "agent-1"],
-        ["--notes", "reviewed"],
       ]),
     );
   });
@@ -239,7 +233,7 @@ describe("operator CLI contract", () => {
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("requires a workspace for evaluation", async () => {
+  it("requires a published attempt for evaluation", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-workspace-"));
     const scripts = await packageScripts();
     const command = scripts["puzzle:evaluate"]?.split(/\s+/);
@@ -252,11 +246,28 @@ describe("operator CLI contract", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Reviewer workspace must be provided for evaluation.");
+    expect(result.stderr).toContain("attempt.json");
     await expect(access(join(temporaryRoot, "attempt", "evaluation"))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
+
+  it.each(["--workspace", "--notes", "--command", "--output-path", "--branch", "--ref"])(
+    "rejects prohibited evaluator option %s",
+    async (flag) => {
+      const scripts = await packageScripts();
+      const command = scripts["puzzle:evaluate"]?.split(/\s+/);
+      const result = await execute(
+        process.execPath,
+        [tsxCli, ...(command?.slice(1) ?? []), "--attempt", "/missing", flag, "value"],
+        { cwd: root },
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(`Unknown evaluate option ${flag}.`);
+    },
+  );
 
   it("rebuilds one pinned block byte-identically", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-determinism-"));

@@ -1,7 +1,13 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
-import { decodeBuildResult, decodeEvaluationRecord, decodeOverlapResult } from "./artifacts.js";
+import {
+  decodeAttemptSummary,
+  decodeBuildResult,
+  decodeEvaluationRecord,
+  decodeOverlapResult,
+} from "./artifacts.js";
 import { buildPuzzle, type BuildPuzzleResult } from "./build.js";
+import { publishBehaviorEvidence } from "./behavior.js";
 import {
   ATTEMPT_CUTOFF_MS,
   RELEASE_OFFSETS_MS,
@@ -10,6 +16,7 @@ import {
 } from "./condition.js";
 import { evaluatePuzzle } from "./evaluate.js";
 import { requiredFlag } from "./flags.js";
+import { readJsonObject } from "./python.js";
 import type { MonotonicClock } from "./reveal.js";
 import { createFixtureAgentRuntimes, runPuzzle, type RunPuzzleResult } from "./run.js";
 
@@ -106,8 +113,11 @@ export async function runOfflinePuzzle(
   const evaluation = await evaluatePuzzle({
     root,
     attempt: run.attemptRoot,
-    workspace: "agent-1",
-    notes: "Offline fixture selects the solver published by agent-1.",
+  });
+  await publishBehaviorEvidence({
+    attempt: decodeAttemptSummary(await readJsonObject(join(run.attemptRoot, "attempt.json"))),
+    evaluation,
+    attemptRoot: run.attemptRoot,
   });
   return {
     build: decodeBuildResult(build),

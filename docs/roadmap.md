@@ -23,7 +23,7 @@ This feature is done when rebuilds are byte-identical, paragraph order and union
 - Give shared conditions one ordinary peer Git repository; give isolated conditions independent usable repositories with no peer evidence or activity; seed every origin with the same neutral `solver.py`.
 - Make only the exact solver pushed to the assigned origin's `main` branch checkable and gradeable, while leaving roles, Git operations, branches, and coordination cadence to the agents.
 - Freeze every visible repository, workspace, response, activity trace, Git state, session outcome, sandbox identity, block, condition, and protocol digest before optional observation.
-- Keep reviewer-selected `puzzle:evaluate`; add no automated behavioral review, outcome aggregation, or post-hoc merging.
+- Grade the one shared canonical origin or all three isolated canonical origins; retain mechanical evidence without automated behavioral interpretation or post-hoc merging.
 
 This feature is done when shared peer visibility, isolated non-observability, private Git usability, identical scaffolds, published-main-only checking, prompt parity, and the declared fake-time release schedule and cutoff pass without prescribing agent workflow.
 

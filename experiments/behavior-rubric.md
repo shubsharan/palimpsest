@@ -2,48 +2,40 @@
 
 **Rubric ID**: `palimpsest-behavior-review-v1`
 
-This rubric records descriptive observations from one frozen attempt. It does not score, rank, aggregate, or define expected behavior for any condition.
+`behavior-evidence.json` contains mechanical facts copied or referenced from the frozen attempt, trace, and evaluation. Those facts are not behavioral conclusions. A human reviewer applies this rubric later and cites the specific durable facts supporting each interpretation.
 
-## Evidence Rules
+## Review Rules
 
-- Review only durable attempt evidence: session and tool traces, frozen native Git, checker records, final responses, and explicit reviewer-selection or infrastructure records.
-- Classify each field independently as exactly one of `observed`, `not-observed`, `unclear`, or `not-applicable`.
-- Cite the artifact path and the narrowest available event, timestamp, command, commit, or before/after excerpt supporting each classification.
-- Use `observed` only for direct evidence. Use `not-observed` when the available record is sufficient to review the field but contains no such evidence.
-- Use `unclear` when evidence is incomplete, conflicting, or supports more than one interpretation. Use `not-applicable` only when the field genuinely does not apply, and explain why.
-- Do not infer unrecorded intent, private reasoning, or behavior from a missing trace. Record infrastructure limitations under infrastructure notes instead.
-- Treat the condition as provenance, not as an expectation. Do not change a classification because a behavior seemed more or less likely under that condition.
-- Do not combine the fields into a composite score or treatment-level conclusion.
+- Use only durable attempt artifacts and trace events.
+- Distinguish `observed`, `not-observed`, `unclear`, and `not-applicable`.
+- Cite the narrowest event, commit, output, or artifact reference supporting the judgment.
+- Do not infer intent or hidden reasoning from missing evidence.
+- Treat condition, model usage, checker calls, Git activity, and returned reasoning-summary presence as context, not outcomes.
+- Do not combine fields into a score or treatment conclusion.
 
-## Review Fields
+## Human Interpretation Fields
 
-### Communication Use
+### Integration
 
-Record direct use of an available peer-communication surface, including what was shared, requested, or read. Private Git work alone is not peer communication.
+Did an agent incorporate, revise, or materially use another agent's contribution? Cite both the contribution and the integrating action when available.
 
-### Cross-Agent Integration
+### Interference
 
-Record direct evidence that one agent incorporated, revised, or materially referenced another agent's contribution. Cite both the contributing evidence and the integrating action when available.
+Did peer activity overwrite, obstruct, distract from, or degrade useful work? Separate direct evidence from coincident timing.
 
-### Post-Boundary Revision
+### Recovery
 
-Record a material change to a reconstruction, mapping, or approach after a recorded evidence-release or interaction boundary. Cite the evidence immediately before and after the boundary; do not infer revision from the final output alone.
+Did the team or an agent identify and recover from an error, conflict, or failed approach? Cite the failure evidence and subsequent change.
 
-### Checker Use
+### Belief Replacement
 
-Record aggregate-checker invocations and, separately, any direct evidence that a returned metric informed later work.
+Did later evidence cause an agent to replace a substantive reconstruction hypothesis or strategy? Do not infer this from final output alone.
 
-### Reviewer-Selection Rationale
+### Source Recognition
 
-Record whether the explicit reviewer-selection record explains why a workspace, command, and output path were selected. Do not substitute reconstruction score for a documented rationale.
-
-### Infrastructure Notes
-
-Record infrastructure events or evidence gaps that may affect interpretation, including session, sandbox, timer, stage publication, Git, trace, freeze, overlap, or evaluation issues. Do not reinterpret these notes as model behavior.
+Did an agent identify the source text or exploit source familiarity? Distinguish explicit recognition from generic linguistic inference.
 
 ## Review Record
-
-For each field, retain:
 
 ```text
 Classification: observed | not-observed | unclear | not-applicable

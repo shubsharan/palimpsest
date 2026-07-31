@@ -66,18 +66,18 @@
 
 ### Verification for User Story 2
 
-- [ ] T019 [P] [US2] Write failing canonical-origin derivation and cardinality tests for CS, CR, IR, and IS in src/evaluate.test.ts
-- [ ] T020 [P] [US2] Write failing CLI tests proving evaluate rejects workspace, notes, command, output path, branch, and ref inputs in tests/puzzle/cli.test.ts and tests/integration/verification.test.ts
-- [ ] T021 [P] [US2] Write failing origin-terminal-status, literal-main, no-repair, output-provenance, and cleanup tests in src/evaluate.test.ts and tests/puzzle/attempt-durability.test.ts
+- [x] T019 [P] [US2] Write failing canonical-origin derivation and cardinality tests for CS, CR, IR, and IS in src/evaluate.test.ts
+- [x] T020 [P] [US2] Write failing CLI tests proving evaluate rejects workspace, notes, command, output path, branch, and ref inputs in tests/puzzle/cli.test.ts and tests/integration/verification.test.ts
+- [x] T021 [P] [US2] Write failing origin-terminal-status, literal-main, no-repair, output-provenance, and cleanup tests in src/evaluate.test.ts and tests/puzzle/attempt-durability.test.ts
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Replace EvaluationSelection with canonical origin and origin-result records in src/artifacts.ts and src/evaluate.ts
-- [ ] T023 [US2] Derive one shared or three private frozen origin targets and evaluate canonical command/output sequentially in src/evaluate.ts
-- [ ] T024 [US2] Remove reviewer selection flags and alternate evaluator inputs from src/flags.ts, src/cli.ts, src/evaluate.ts, and README.md
-- [ ] T025 [US2] Publish every terminal origin result atomically and keep trusted evaluation failures distinct in src/evaluate.ts and src/artifacts.ts
-- [ ] T026 [US2] Wire automatic all-origin evaluation after durable attempt freeze in src/study.ts, src/experiment.ts, src/offline.ts, and src/fixture.ts
-- [ ] T027 [US2] Run all-origin evaluation acceptance with pnpm test:ts -- src/evaluate.test.ts src/artifacts.test.ts tests/puzzle/cli.test.ts tests/puzzle/attempt-durability.test.ts
+- [x] T022 [US2] Replace EvaluationSelection with canonical origin and origin-result records in src/artifacts.ts and src/evaluate.ts
+- [x] T023 [US2] Derive one shared or three private frozen origin targets and evaluate canonical command/output sequentially in src/evaluate.ts
+- [x] T024 [US2] Remove reviewer selection flags and alternate evaluator inputs from src/flags.ts, src/cli.ts, src/evaluate.ts, and README.md
+- [x] T025 [US2] Publish every terminal origin result atomically and keep trusted evaluation failures distinct in src/evaluate.ts and src/artifacts.ts
+- [x] T026 [US2] Wire automatic all-origin evaluation after durable attempt freeze in src/study.ts, src/experiment.ts, src/offline.ts, and src/fixture.ts
+- [x] T027 [US2] Run all-origin evaluation acceptance with pnpm test:ts -- src/evaluate.test.ts src/artifacts.test.ts tests/puzzle/cli.test.ts tests/puzzle/attempt-durability.test.ts
 
 **Checkpoint**: No evaluator code path accepts or records a reviewer-selected workspace.
 
@@ -91,18 +91,18 @@
 
 ### Verification for User Story 3
 
-- [ ] T028 [P] [US3] Add failing synthetic diagnostic tests for pre/post, changed/control, sentinel/specialist, stage, owner, changed type, macro accuracy, empty partition, missing token, and extra token cases in python/tests/evaluation/test_diagnostics.py
-- [ ] T029 [P] [US3] Add failing collective-ceiling and integration-gap tests for shared, isolated, partial-failure, one-scoreable, and no-scoreable cases in src/evaluate.test.ts
-- [ ] T030 [P] [US3] Add failing strict diagnostic and team-record decoder tests in src/artifacts.test.ts
+- [x] T028 [P] [US3] Add failing synthetic diagnostic tests for pre/post, changed/control, sentinel/specialist, stage, owner, changed type, macro accuracy, empty partition, missing token, and extra token cases in python/tests/evaluation/test_diagnostics.py
+- [x] T029 [P] [US3] Add failing collective-ceiling and integration-gap tests for shared, isolated, partial-failure, one-scoreable, and no-scoreable cases in src/evaluate.test.ts
+- [x] T030 [P] [US3] Add failing strict diagnostic and team-record decoder tests in src/artifacts.test.ts
 
 ### Implementation for User Story 3
 
-- [ ] T031 [US3] Implement palimpsest-diagnostics-v1 position annotations and diagnostic scoring in python/palimpsest/evaluation/diagnostics.py and python/palimpsest/evaluation/score.py
-- [ ] T032 [US3] Add the trusted diagnostic Python bridge and decode validation in src/evaluate.ts and src/artifacts.ts
-- [ ] T033 [US3] Compute position-wise collective ceiling without persisting synthetic reconstruction text in src/evaluate.ts
-- [ ] T034 [US3] Implement realized-team-product and nullable integration-gap rules with explicit reasons in src/evaluate.ts
-- [ ] T035 [US3] Retain post-freeze diagnostic and team outcomes in evaluation-record v2 and attempt-summary v6 through src/artifacts.ts and src/study.ts
-- [ ] T036 [US3] Run diagnostic and team-level acceptance with pnpm test:py -- python/tests/evaluation/test_diagnostics.py python/tests/evaluation/test_score.py and pnpm test:ts -- src/evaluate.test.ts src/artifacts.test.ts src/study.test.ts
+- [x] T031 [US3] Implement palimpsest-diagnostics-v1 position annotations and diagnostic scoring in python/palimpsest/evaluation/diagnostics.py and python/palimpsest/evaluation/score.py
+- [x] T032 [US3] Add the trusted diagnostic Python bridge and decode validation in src/evaluate.ts and src/artifacts.ts
+- [x] T033 [US3] Compute position-wise collective ceiling without persisting synthetic reconstruction text in src/evaluate.ts
+- [x] T034 [US3] Implement realized-team-product and nullable integration-gap rules with explicit reasons in src/evaluate.ts
+- [x] T035 [US3] Retain post-freeze diagnostic and team outcomes in evaluation-record v2 and attempt-summary v6 through src/artifacts.ts and src/study.ts
+- [x] T036 [US3] Run diagnostic and team-level acceptance with pnpm test:py -- python/tests/evaluation/test_diagnostics.py python/tests/evaluation/test_score.py and pnpm test:ts -- src/evaluate.test.ts src/artifacts.test.ts src/study.test.ts
 
 **Checkpoint**: Aggregate scoring remains primary while every scored origin receives exact diagnostics and every attempt receives honest team-level semantics.
 
@@ -143,17 +143,17 @@
 
 ### Verification for User Story 5
 
-- [ ] T047 [P] [US5] Write failing behavior-review schema and trace-grounding tests for communication, integration, interference, recovery, belief replacement, recognition, checker interpretation, usage, reasoning-summary coverage, and provenance in src/artifacts.test.ts and src/trace.test.ts
-- [ ] T048 [P] [US5] Write failing provider-free four-cell tests for order, one-hour schedule, null token cutoff, channel treatment, $40 authorization, automatic evaluation/review, and stop-before-validation in tests/puzzle/experiment.test.ts and tests/puzzle/offline.test.ts
-- [ ] T049 [P] [US5] Write failing prompt and manifest snapshots for three GPT-5.6-sol medium-reasoning agents and runnability-only checking in src/prompt.test.ts and src/config.test.ts
+- [x] T047 [P] [US5] Write failing behavior-review schema and trace-grounding tests for communication, integration, interference, recovery, belief replacement, recognition, checker interpretation, usage, reasoning-summary coverage, and provenance in src/artifacts.test.ts and src/trace.test.ts
+- [x] T048 [P] [US5] Write failing provider-free four-cell tests for order, one-hour schedule, null token cutoff, channel treatment, $40 authorization, automatic evaluation/review, and stop-before-validation in tests/puzzle/experiment.test.ts and tests/puzzle/offline.test.ts
+- [x] T049 [P] [US5] Write failing prompt and manifest snapshots for three GPT-5.6-sol medium-reasoning agents and runnability-only checking in src/prompt.test.ts and src/config.test.ts
 
 ### Implementation for User Story 5
 
-- [ ] T050 [US5] Implement strict post-freeze behavior-review generation and artifact publication in src/artifacts.ts, src/study.ts, and src/trace.ts
-- [ ] T051 [US5] Freeze GPT-5.6-sol medium reasoning, null token ceilings, one-hour schedule, and $10/$40 monetary authorization in experiments/config.yaml
-- [ ] T052 [US5] Make calibration expansion exactly CS, CR, IR, IS and prevent automatic validation continuation in src/study.ts and src/experiment.ts
-- [ ] T053 [US5] Complete the full provider-free CS/CR/IR/IS fixture and verify every canonical terminal evaluation, diagnostic, behavior, usage, and provenance record with pnpm puzzle:offline and tests/puzzle/offline.test.ts
-- [ ] T054 [US5] Run pnpm ci:local, pnpm verify, formatting, link, schema-version, stale-contract, and git diff checks on the complete implementation
+- [x] T050 [US5] Implement strict post-freeze behavior-review generation and artifact publication in src/artifacts.ts, src/study.ts, and src/trace.ts
+- [x] T051 [US5] Freeze GPT-5.6-sol medium reasoning, null token ceilings, one-hour schedule, and $10/$40 monetary authorization in experiments/config.yaml
+- [x] T052 [US5] Make calibration expansion exactly CS, CR, IR, IS and prevent automatic validation continuation in src/study.ts and src/experiment.ts
+- [x] T053 [US5] Complete the full provider-free CS/CR/IR/IS fixture and verify every canonical terminal evaluation, diagnostic, behavior, usage, and provenance record with pnpm puzzle:offline and tests/puzzle/offline.test.ts
+- [x] T054 [US5] Run pnpm ci:local, pnpm verify, formatting, link, schema-version, stale-contract, and git diff checks on the complete implementation
 - [ ] T055 [US5] Commit the exact verified source and sealed catalog on branch 020-blind-team-evaluation
 - [ ] T056 [US5] Run clean receipt-bound pnpm preflight and confirm artifacts/preflight.json matches the committed revision and precise runnable sandbox
 - [ ] T057 [US5] Create a fresh ignored study root and immutable design receipt, then run the paid CS, CR, IR, and IS calibration sequentially with the existing OpenAI credential

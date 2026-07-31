@@ -1,36 +1,15 @@
-import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { resolveCondition, type ConditionId } from "./condition.js";
-import {
-  evaluateFrozenAttempt,
-  evaluatePuzzle,
-  evaluatePuzzleFromFlags,
-  type EvaluationSelection,
-  type EvaluationSelectionRequest,
-  SOLVER_COMMAND,
-  SOLVER_OUTPUT_PATH,
-} from "./evaluate.js";
+import { decodeAttemptSummary } from "./artifacts.js";
+import { evaluateCanonicalOrigins, evaluatePuzzleFromFlags } from "./evaluate.js";
 import { runGit } from "./git.js";
-import { PUBLISHED_MAIN_REF, PublishedSolverInfrastructureError } from "./published-solver.js";
-import { createDockerCommandSandbox } from "./sandbox/container.js";
-import { SandboxInfrastructureError, type SandboxCommandResult } from "./sandbox/contracts.js";
-import { sealTree, type TreeSeal } from "./seal.js";
-import {
-  FakeCommandSandbox,
-  testAttemptSummary,
-  testBuildManifest,
-  TEST_SANDBOX_IDENTITY,
-} from "./test-helpers.js";
-
-vi.mock("./sandbox/container.js", () => ({
-  createDockerCommandSandbox: vi.fn(),
-}));
-
-const createSandboxMock = vi.mocked(createDockerCommandSandbox);
+import type { AgentId } from "./model.js";
+import type { SandboxCommandResult } from "./sandbox/contracts.js";
+import { FakeCommandSandbox, testAttemptSummary } from "./test-helpers.js";
 
 const SUCCESS: SandboxCommandResult = {
   exitCode: 0,
@@ -40,560 +19,233 @@ const SUCCESS: SandboxCommandResult = {
   outputExceeded: false,
 };
 
-async function evaluationFixture() {
-  const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-"));
-  const frozenGitPath = join(root, "frozen-shared.git");
-  const ciphertextPath = join(root, "ciphertext.txt");
-  await Promise.all([
-    runGit(["init", "--bare", "--initial-branch=main", frozenGitPath]),
-    writeFile(ciphertextPath, "ciphertext\n"),
-  ]);
-  const commit = await publishFile(frozenGitPath, "solver.py", "print('fixture')\n");
+const CELL = { matchedWords: 1, totalWords: 1, accuracy: 1 } as const;
+
+function diagnostics(expected = 2, predicted = 2) {
+  const empty = { matchedWords: 0, totalWords: 0, accuracy: null } as const;
   return {
-    root,
-    frozenGitPath,
-    ciphertextPath,
-    published: { ref: PUBLISHED_MAIN_REF, commit },
+    overall: { matchedWords: 2, totalWords: 2, accuracy: 1 },
+    regions: { preBoundary: CELL, postBoundary: CELL },
+    changed: { preBoundary: empty, postBoundary: empty },
+    controls: { preBoundary: empty, postBoundary: empty },
+    sentinels: { preBoundary: empty, postBoundary: empty },
+    specialists: { preBoundary: empty, postBoundary: empty },
+    stages: Array.from({ length: 6 }, (_, index) => ({
+      stage: index + 1,
+      score: index < 2 ? CELL : empty,
+    })),
+    evidenceOwners: (["agent-1", "agent-2", "agent-3"] as const).map((agentId, index) => ({
+      agentId,
+      score: index < 2 ? CELL : empty,
+    })),
+    changedTypes: [],
+    macroChangedTypeAccuracy: null,
+    positionHandling: {
+      expected,
+      predicted,
+      compared: Math.min(expected, predicted),
+      missing: Math.max(0, expected - predicted),
+      extra: Math.max(0, predicted - expected),
+      coverage: expected === 0 ? Number(predicted === 0) : Math.min(expected, predicted) / expected,
+    },
   };
 }
 
-async function publishFile(
-  repositoryPath: string,
-  relativePath: string,
-  content: string,
-): Promise<string> {
-  const seedRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-seed-"));
-  const checkout = join(seedRoot, "checkout");
+async function publishSolver(repositoryPath: string): Promise<void> {
+  await runGit(["init", "--bare", "--initial-branch=main", repositoryPath]);
+  const seed = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-seed-"));
+  const checkout = join(seed, "checkout");
   await runGit(["clone", repositoryPath, checkout]);
-  await runGit(["config", "user.name", "Palimpsest Test"], checkout);
-  await runGit(["config", "user.email", "test@palimpsest.invalid"], checkout);
-  await writeFile(join(checkout, relativePath), content, "utf8");
-  await runGit(["add", relativePath], checkout);
-  await runGit(["commit", "-m", `Publish ${relativePath}`], checkout);
+  await runGit(["config", "user.name", "Evaluator Test"], checkout);
+  await runGit(["config", "user.email", "evaluator@palimpsest.invalid"], checkout);
+  await writeFile(join(checkout, "solver.py"), "print('fixture')\n", "utf8");
+  await runGit(["add", "solver.py"], checkout);
+  await runGit(["commit", "-m", "Publish solver"], checkout);
   await runGit(["push", "origin", "main"], checkout);
-  return (await runGit(["rev-parse", "HEAD"], checkout)).stdout.trim();
 }
 
-function selectionFor(
-  _fixture: Awaited<ReturnType<typeof evaluationFixture>>,
-  overrides: Partial<EvaluationSelectionRequest> = {},
-): EvaluationSelectionRequest {
-  return {
-    workspace: "agent-1",
-    repositoryId: "shared",
-    command: "true",
-    outputPath: "answer.txt",
-    ...overrides,
-  };
-}
-
-async function conditionAttemptFixture(conditionId: ConditionId) {
-  const root = await mkdtemp(join(tmpdir(), "palimpsest-condition-evaluate-"));
-  const attemptRoot = join(root, "attempt");
-  const buildRoot = join(root, "build");
-  const frozenRoot = join(attemptRoot, "frozen");
-  const tracePath = join(attemptRoot, "trace.jsonl");
-  const traceMetadataPath = join(attemptRoot, "trace.meta.json");
-  const condition = resolveCondition(conditionId);
-  const attempt = testAttemptSummary({ condition: conditionId });
-  attempt.buildRoot = buildRoot;
-  attempt.tracePath = tracePath;
-  attempt.traceMetadataPath = traceMetadataPath;
-  const frozen = attempt.frozen as {
-    root: string;
-    repositories: Array<{ repositoryId: string; path: string; agentIds: string[] }>;
-    workspaces: Array<{ agentId: string; path: string; repositoryId: string }>;
-    treeSeal: TreeSeal;
-  };
-  frozen.root = frozenRoot;
-  frozen.repositories = frozen.repositories.map((repository) => ({
-    ...repository,
-    path: join(frozenRoot, `${repository.repositoryId}.git`),
-  }));
-  frozen.workspaces = frozen.workspaces.map((workspace) => ({
-    ...workspace,
-    path: join(frozenRoot, "workspaces", workspace.agentId),
-  }));
-
-  const selectedWorkspace = frozen.workspaces[1]!;
-  const selectedRepository = frozen.repositories.find(
-    (repository) => repository.repositoryId === selectedWorkspace.repositoryId,
+async function targets(ids: readonly ("shared" | AgentId)[]) {
+  const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-origins-"));
+  return Promise.all(
+    ids.map(async (originId) => {
+      const repositoryPath = join(root, `${originId}.git`);
+      await publishSolver(repositoryPath);
+      return { originId, repositoryPath, realizedTeamProduct: originId === "shared" };
+    }),
   );
-  if (!selectedRepository) throw new Error("Fixture omitted the selected repository.");
-  const variant = (
-    testBuildManifest().variants as Record<string, { publicCiphertextPath: string }>
-  )[condition.variantId]!;
-  const ciphertextPath = join(buildRoot, variant.publicCiphertextPath);
-
-  await Promise.all([
-    mkdir(attemptRoot, { recursive: true }),
-    mkdir(join(buildRoot, "oracle"), { recursive: true }),
-    mkdir(join(buildRoot, "variants", condition.variantId, "complete"), { recursive: true }),
-    ...frozen.repositories.map((repository) =>
-      runGit(["init", "--bare", "--initial-branch=main", repository.path]),
-    ),
-    ...frozen.workspaces.map((workspace) => mkdir(workspace.path, { recursive: true })),
-  ]);
-  await Promise.all([
-    writeFile(
-      join(buildRoot, "puzzle-build.json"),
-      `${JSON.stringify(testBuildManifest())}\n`,
-      "utf8",
-    ),
-    writeFile(join(buildRoot, "oracle", "plaintext.txt"), "selected plaintext\n", "utf8"),
-    writeFile(ciphertextPath, "ciphertext\n", "utf8"),
-    writeFile(tracePath, "", "utf8"),
-    writeFile(
-      traceMetadataPath,
-      `${JSON.stringify({ schemaVersion: 1, startedAt: new Date(0).toISOString() })}\n`,
-      "utf8",
-    ),
-    ...frozen.workspaces.map((workspace) =>
-      writeFile(join(workspace.path, `${workspace.agentId}.txt`), `${workspace.agentId}\n`, "utf8"),
-    ),
-    writeFile(join(selectedWorkspace.path, "local-only.txt"), "must not be graded\n", "utf8"),
-  ]);
-  const mainCommit = await publishFile(selectedRepository.path, "agent-2.txt", "agent-2\n");
-  const alternateRoot = await mkdtemp(join(tmpdir(), "palimpsest-condition-alternate-"));
-  const alternate = join(alternateRoot, "checkout");
-  await runGit(["clone", selectedRepository.path, alternate]);
-  await runGit(["config", "user.name", "Palimpsest Test"], alternate);
-  await runGit(["config", "user.email", "test@palimpsest.invalid"], alternate);
-  await runGit(["switch", "-c", "alternate"], alternate);
-  await writeFile(join(alternate, "agent-2.txt"), "alternate\n", "utf8");
-  await writeFile(join(alternate, "alternate-only.txt"), "must not be graded\n", "utf8");
-  await runGit(["add", "."], alternate);
-  await runGit(["commit", "-m", "Publish alternate"], alternate);
-  await runGit(["push", "origin", "HEAD:refs/heads/alternate"], alternate);
-  await runGit(["symbolic-ref", "HEAD", "refs/heads/alternate"], selectedRepository.path);
-  attempt.buildTreeSeal = await sealTree(buildRoot);
-  frozen.treeSeal = await sealTree(frozenRoot);
-  await writeFile(join(attemptRoot, "attempt.json"), `${JSON.stringify(attempt)}\n`, "utf8");
-  return {
-    root,
-    attemptRoot,
-    selectedWorkspace,
-    selectedRepository,
-    mainCommit,
-    peerRepositories: frozen.repositories.filter(
-      (repository) => repository.repositoryId !== selectedRepository.repositoryId,
-    ),
-  };
 }
 
-beforeEach(() => {
-  createSandboxMock.mockReset();
-});
-
-describe("frozen attempt evaluation", () => {
-  it.each([
-    [undefined, "not-runnable"],
-    [{ command: "true", outputPath: "answer.txt" }, "no-output"],
-    [{ command: "exit 7", outputPath: "answer.txt" }, "execution-error"],
-  ] as const)("reports %s selection as %s", async (selection, status) => {
-    const fixture = await evaluationFixture();
-    const sandbox = new FakeCommandSandbox(async (request) => ({
-      ...SUCCESS,
-      exitCode: request.command === "exit 7" ? 7 : 0,
-    }));
-    const result = await evaluateFrozenAttempt({
-      ...fixture,
-      evaluationRoot: join(fixture.root, "evaluation"),
-      selection: selection === undefined ? undefined : selectionFor(fixture, selection),
-      sandbox,
-      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-    });
-    expect(result.status).toBe(status);
-  });
-
-  it("rejects a whitespace-only command before consuming the one-shot evaluation root", async () => {
-    const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
-    const sandbox = new FakeCommandSandbox(async () => SUCCESS);
-    const options = {
-      ...fixture,
-      evaluationRoot,
-      sandbox,
-      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-    };
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...options,
-        selection: selectionFor(fixture, { command: " \t " }),
-      }),
-    ).rejects.toThrow("Reviewer command must contain non-whitespace shell source.");
-    await expect(access(evaluationRoot)).rejects.toMatchObject({ code: "ENOENT" });
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...options,
-        selection: selectionFor(fixture),
-      }),
-    ).resolves.toMatchObject({ status: "no-output" });
-  });
-
-  it("rejects empty notes before consuming the one-shot evaluation root", async () => {
-    const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
-    const options = {
-      ...fixture,
-      evaluationRoot,
-      sandbox: new FakeCommandSandbox(async () => SUCCESS),
-      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-    };
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...options,
-        selection: selectionFor(fixture, { notes: " \t " }),
-      }),
-    ).rejects.toThrow("Reviewer notes must contain non-whitespace text.");
-    await expect(access(evaluationRoot)).rejects.toMatchObject({ code: "ENOENT" });
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...options,
-        selection: selectionFor(fixture, { notes: "run the solver" }),
-      }),
-    ).resolves.toMatchObject({ status: "no-output" });
-  });
-
-  it("rejects an unsafe output path before consuming the one-shot evaluation root", async () => {
-    const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
-    const options = {
-      ...fixture,
-      evaluationRoot,
-      sandbox: new FakeCommandSandbox(async () => SUCCESS),
-      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-    };
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...options,
-        selection: selectionFor(fixture, { outputPath: "../answer.txt" }),
-      }),
-    ).rejects.toThrow("Reviewer outputPath must be a safe relative path.");
-    await expect(access(evaluationRoot)).rejects.toMatchObject({ code: "ENOENT" });
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...options,
-        selection: selectionFor(fixture),
-      }),
-    ).resolves.toMatchObject({ status: "no-output" });
-  });
-
-  it("records selection before sandbox execution and preserves the score", async () => {
-    const fixture = await evaluationFixture();
-    const solverCommit = await publishFile(
-      fixture.frozenGitPath,
-      "solver.sh",
-      "printf 'answer' > \"$PALIMPSEST_OUTPUT\"\n",
-    );
-    const kinds: string[] = [];
+describe("canonical origin evaluation", () => {
+  it("evaluates one shared origin with canonical command and a null integration gap", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-shared-"));
     const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "solver") throw new Error("Expected solver profile.");
-      await writeFile(join(request.outputRoot, request.outputPath), "answer");
+      if (request.profile !== "solver") throw new Error("expected solver sandbox");
+      await writeFile(join(request.outputRoot, request.outputPath), "one two\n", "utf8");
       return SUCCESS;
     });
-    const result = await evaluateFrozenAttempt({
-      ...fixture,
-      evaluationRoot: join(fixture.root, "evaluation"),
-      selection: selectionFor(fixture, { command: "sh solver.sh" }),
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "CS" })),
+      targets: await targets(["shared"]),
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
       sandbox,
-      observe: async (kind) => {
-        kinds.push(kind);
-      },
       score: async () => ({
-        matchedWords: 1,
-        totalWords: 2,
-        coverage: 1,
-        accuracy: 0.5,
+        aggregate: { matchedWords: 2, totalWords: 2, coverage: 1, accuracy: 1 },
+        diagnostics: diagnostics(),
+        correctPositions: [true, true],
+        predictedWords: 2,
       }),
+      now: () => new Date(0),
     });
 
-    expect(result).toMatchObject({
+    expect(record.origins).toHaveLength(1);
+    expect(record.origins[0]).toMatchObject({
+      origin: { originId: "shared", ref: "refs/heads/main", realizedTeamProduct: true },
       status: "scored",
-      score: { matchedWords: 1, totalWords: 2, coverage: 1, accuracy: 0.5 },
     });
-    expect(sandbox.requests).toEqual([
-      expect.objectContaining({
-        profile: "solver",
-        ciphertextPath: fixture.ciphertextPath,
-        outputRoot: join(fixture.root, "evaluation", "output"),
-        outputPath: "answer.txt",
-      }),
-    ]);
-    expect(kinds.indexOf("reviewer.selection")).toBeLessThan(kinds.indexOf("evaluation.started"));
-    const recorded = JSON.parse(
-      await readFile(join(fixture.root, "evaluation", "selection.json"), "utf8"),
-    ) as {
-      selection: EvaluationSelection;
-    };
-    expect(recorded.selection).toEqual({
-      workspace: "agent-1",
-      repositoryId: "shared",
-      ref: PUBLISHED_MAIN_REF,
-      commit: solverCommit,
-      command: "sh solver.sh",
-      outputPath: "answer.txt",
+    expect(record.team).toEqual({
+      realizedProductOriginId: "shared",
+      collectiveCeiling: { matchedWords: 2, totalWords: 2, coverage: 1, accuracy: 1 },
+      integrationGap: null,
+      integrationGapReason: "shared-single-origin",
     });
+    expect(sandbox.requests[0]).toMatchObject({
+      command: "python3 solver.py",
+      outputPath: "reconstruction.txt",
+    });
+    expect(JSON.stringify(record)).not.toContain("one two");
   });
 
-  it("executes the recorded snapshot after main advances during sandbox execution", async () => {
-    const fixture = await evaluationFixture();
-    let submittedSolver = "";
+  it("evaluates isolated origins in order and computes a position-wise ceiling", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-isolated-"));
     const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "solver") throw new Error("Expected solver profile.");
-      await publishFile(fixture.frozenGitPath, "solver.py", "print('replacement')\n");
-      submittedSolver = await readFile(join(request.submissionPath, "solver.py"), "utf8");
-      await writeFile(join(request.outputRoot, request.outputPath), "answer");
+      if (request.profile !== "solver") throw new Error("expected solver sandbox");
+      await writeFile(join(request.outputRoot, request.outputPath), "candidate\n", "utf8");
       return SUCCESS;
     });
-
-    const result = await evaluateFrozenAttempt({
-      ...fixture,
-      evaluationRoot: join(fixture.root, "evaluation"),
-      selection: selectionFor(fixture),
-      sandbox,
-      score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-    });
-
-    expect(submittedSolver).toBe("print('fixture')\n");
-    expect(result).toMatchObject({
-      status: "scored",
-      selection: fixture.published,
-    });
-  });
-
-  it("propagates sandbox infrastructure failure after recording commit provenance", async () => {
-    const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
-    const sandbox = new FakeCommandSandbox(async () => {
-      throw new SandboxInfrastructureError("Docker daemon unavailable.");
-    });
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...fixture,
-        evaluationRoot,
-        selection: selectionFor(fixture),
-        sandbox,
-        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-      }),
-    ).rejects.toThrow(SandboxInfrastructureError);
-    const recorded = JSON.parse(await readFile(join(evaluationRoot, "selection.json"), "utf8")) as {
-      selection: EvaluationSelection;
-    };
-    expect(recorded.selection.commit).toBe(fixture.published.commit);
-    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("raises a typed missing-main submission error without fabricating provenance", async () => {
-    const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
-    const sandbox = new FakeCommandSandbox(async () => SUCCESS);
-    await runGit(["update-ref", "-d", "refs/heads/main"], fixture.frozenGitPath);
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...fixture,
-        evaluationRoot,
-        selection: selectionFor(fixture),
-        sandbox,
-        score: async () => ({ matchedWords: 1, totalWords: 1, coverage: 1, accuracy: 1 }),
-      }),
-    ).rejects.toMatchObject({
-      name: "PublishedSolverSubmissionError",
-      message: "Published ref refs/heads/main must resolve to an available commit.",
-    });
-    expect(sandbox.requests).toEqual([]);
-    await expect(readFile(join(evaluationRoot, "selection.json"), "utf8")).resolves.toContain(
-      '"selection": null',
-    );
-    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("classifies malformed trusted scorer output as infrastructure without a result record", async () => {
-    const fixture = await evaluationFixture();
-    const evaluationRoot = join(fixture.root, "evaluation");
-    const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "solver") throw new Error("Expected solver profile.");
-      await writeFile(join(request.outputRoot, request.outputPath), "answer");
-      return SUCCESS;
-    });
-
-    await expect(
-      evaluateFrozenAttempt({
-        ...fixture,
-        evaluationRoot,
-        selection: selectionFor(fixture),
-        sandbox,
-        score: async () => ({ accuracy: 1 }) as never,
-      }),
-    ).rejects.toThrow(PublishedSolverInfrastructureError);
-    await expect(readFile(join(evaluationRoot, "selection.json"), "utf8")).resolves.toContain(
-      fixture.published.commit,
-    );
-    await expect(access(join(evaluationRoot, "result.json"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("rejects an evaluator output symlink that escapes the workspace", async () => {
-    const fixture = await evaluationFixture();
-    const outside = join(fixture.root, "outside.txt");
-    await writeFile(outside, "not an evaluator output\n");
-    const sandbox = new FakeCommandSandbox(async (request) => {
-      if (request.profile !== "solver") throw new Error("Expected solver profile.");
-      await symlink(outside, join(request.outputRoot, request.outputPath));
-      return SUCCESS;
-    });
-    let scored = false;
-    const result = await evaluateFrozenAttempt({
-      ...fixture,
-      evaluationRoot: join(fixture.root, "evaluation"),
-      selection: selectionFor(fixture, { command: "ln -s" }),
+    const positionFacts = [
+      [true, false],
+      [false, true],
+      [false, false],
+    ];
+    let index = 0;
+    let activeScores = 0;
+    let maximumActiveScores = 0;
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "IR" })),
+      targets: await targets(["agent-1", "agent-2", "agent-3"]),
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
       sandbox,
       score: async () => {
-        scored = true;
-        return { matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 };
+        activeScores += 1;
+        maximumActiveScores = Math.max(maximumActiveScores, activeScores);
+        await Promise.resolve();
+        activeScores -= 1;
+        return {
+          aggregate: { matchedWords: 1, totalWords: 2, coverage: 1, accuracy: 0.5 },
+          diagnostics: diagnostics(),
+          correctPositions: positionFacts[index++]!,
+          predictedWords: 2,
+        };
       },
+      now: () => new Date(0),
     });
 
-    expect(result).toMatchObject({ status: "execution-error" });
-    expect(result.error).toContain("resolves outside");
-    expect(scored).toBe(false);
+    expect(record.origins.map(({ origin }) => origin.originId)).toEqual([
+      "agent-1",
+      "agent-2",
+      "agent-3",
+    ]);
+    expect(record.team).toEqual({
+      realizedProductOriginId: null,
+      collectiveCeiling: { matchedWords: 2, totalWords: 2, coverage: 1, accuracy: 1 },
+      integrationGap: null,
+      integrationGapReason: "isolated-no-realized-product",
+    });
+    expect(maximumActiveScores).toBe(1);
   });
-});
 
-describe("condition attempt evaluation", () => {
-  it("requires an explicit workspace before evaluation setup", async () => {
-    const fixture = await conditionAttemptFixture("IR");
-
-    await expect(
-      evaluatePuzzle({
-        root: process.cwd(),
-        attempt: fixture.attemptRoot,
+  it("computes the isolated ceiling from only scoreable origins", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-partial-"));
+    let execution = 0;
+    const sandbox = new FakeCommandSandbox(async (request) => {
+      if (request.profile !== "solver") throw new Error("expected solver sandbox");
+      execution += 1;
+      if (execution === 2) return { ...SUCCESS, exitCode: 1 };
+      await writeFile(join(request.outputRoot, request.outputPath), "candidate\n", "utf8");
+      return SUCCESS;
+    });
+    let score = 0;
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "IS" })),
+      targets: await targets(["agent-1", "agent-2", "agent-3"]),
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
+      sandbox,
+      score: async () => ({
+        aggregate: { matchedWords: 1, totalWords: 2, coverage: 1, accuracy: 0.5 },
+        diagnostics: diagnostics(),
+        correctPositions: score++ === 0 ? [true, false] : [false, true],
+        predictedWords: 2,
       }),
-    ).rejects.toThrow("Reviewer workspace must be provided for evaluation.");
-    expect(createSandboxMock).not.toHaveBeenCalled();
-    await expect(access(join(fixture.attemptRoot, "evaluation"))).rejects.toMatchObject({
-      code: "ENOENT",
+      now: () => new Date(0),
     });
+
+    expect(record.origins.map(({ status }) => status)).toEqual([
+      "scored",
+      "execution-error",
+      "scored",
+    ]);
+    expect(record.team.collectiveCeiling).toEqual({
+      matchedWords: 2,
+      totalWords: 2,
+      coverage: 1,
+      accuracy: 1,
+    });
+    expect(record.team.integrationGapReason).toBe("isolated-no-realized-product");
   });
 
-  it("rejects reviewer-selected commands and output paths", () => {
-    expect(() =>
-      evaluatePuzzleFromFlags(
-        new Map([
-          ["--attempt", "attempt"],
-          ["--workspace", "agent-1"],
-          ["--command", "sh anything.sh"],
-        ]),
-      ),
-    ).toThrow("always runs origin/main:solver.py");
-    expect(() =>
-      evaluatePuzzleFromFlags(
-        new Map([
-          ["--attempt", "attempt"],
-          ["--workspace", "agent-1"],
-          ["--output-path", "anything.txt"],
-        ]),
-      ),
-    ).toThrow("always runs origin/main:solver.py");
+  it("retains a missing main as a terminal origin outcome", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluator-missing-"));
+    const repositoryPath = join(root, "shared.git");
+    await runGit(["init", "--bare", "--initial-branch=main", repositoryPath]);
+    const sandbox = new FakeCommandSandbox(async () => SUCCESS);
+    const record = await evaluateCanonicalOrigins({
+      attempt: decodeAttemptSummary(testAttemptSummary({ condition: "CR" })),
+      targets: [{ originId: "shared", repositoryPath, realizedTeamProduct: true }],
+      evaluationRoot: root,
+      ciphertextPath: join(root, "ciphertext.txt"),
+      sandbox,
+      score: async () => {
+        throw new Error("score must not run");
+      },
+      now: () => new Date(0),
+    });
+
+    expect(record.origins[0]).toMatchObject({ status: "not-runnable" });
+    expect(record.team.collectiveCeiling).toBeNull();
+    expect(record.team.integrationGapReason).toBe("shared-single-origin");
+    expect(sandbox.requests).toEqual([]);
   });
 
-  it.each([
-    ["CR", "shared"],
-    ["IR", "isolated"],
-  ] as const)(
-    "checks out the selected workspace's published origin in %s",
-    async (conditionId, communicationMode) => {
-      const fixture = await conditionAttemptFixture(conditionId);
-      const sandbox = new FakeCommandSandbox(async (request) => {
-        if (request.profile !== "solver") throw new Error("Expected solver profile.");
-        expect(await readFile(join(request.submissionPath, "agent-2.txt"), "utf8")).toBe(
-          "agent-2\n",
-        );
-        await expect(access(join(request.submissionPath, "agent-1.txt"))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
-        await expect(access(join(request.submissionPath, "local-only.txt"))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
-        await expect(access(join(request.submissionPath, ".git"))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
-        await writeFile(join(request.outputRoot, request.outputPath), "selected plaintext\n");
-        return SUCCESS;
-      });
-      createSandboxMock.mockResolvedValue(
-        sandbox as unknown as Awaited<ReturnType<typeof createDockerCommandSandbox>>,
-      );
-
-      const result = await evaluatePuzzle({
-        root: process.cwd(),
-        attempt: fixture.attemptRoot,
-        workspace: "agent-2",
-      });
-
-      expect(result).toMatchObject({ status: "scored", score: { accuracy: 1, coverage: 1 } });
-      expect(createSandboxMock).toHaveBeenCalledWith({
-        root: process.cwd(),
-        expectedImageId: TEST_SANDBOX_IDENTITY.imageId,
-      });
-      expect(sandbox.requests).toEqual([
-        expect.objectContaining({
-          profile: "solver",
-          command: SOLVER_COMMAND,
-          outputPath: SOLVER_OUTPUT_PATH,
-        }),
-      ]);
-      for (const repository of fixture.peerRepositories) {
-        expect(JSON.stringify(sandbox.requests)).not.toContain(repository.path);
-      }
-      expect(result.selection).toMatchObject({
-        workspace: "agent-2",
-        repositoryId: fixture.selectedRepository.repositoryId,
-        ref: "refs/heads/main",
-        commit: fixture.mainCommit,
-      });
-      expect(resolveCondition(conditionId).communicationMode).toBe(communicationMode);
-    },
-  );
-
-  it.each(["missing repository", "mismatched assignment"] as const)(
-    "rejects isolated topology with %s before sandbox creation",
-    async (failure) => {
-      const root = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-invalid-topology-"));
-      const attempt = testAttemptSummary({ condition: "IR" });
-      const frozen = attempt.frozen as {
-        repositories: Array<{ repositoryId: string; path: string; agentIds: string[] }>;
-        workspaces: Array<{ agentId: string; path: string; repositoryId: string }>;
-      };
-      if (failure === "missing repository") {
-        frozen.repositories = frozen.repositories.slice(0, 2);
-      } else {
-        frozen.workspaces[1] = { ...frozen.workspaces[1]!, repositoryId: "agent-1" };
-      }
-      await writeFile(join(root, "attempt.json"), `${JSON.stringify(attempt)}\n`, "utf8");
-
-      await expect(
-        evaluatePuzzle({
-          root: process.cwd(),
-          attempt: root,
-          workspace: "agent-2",
-        }),
-      ).rejects.toThrow(/frozen Git|condition-assigned repository/i);
-      expect(createSandboxMock).not.toHaveBeenCalled();
-      await expect(access(join(root, "evaluation"))).rejects.toMatchObject({ code: "ENOENT" });
-    },
-  );
+  it("rejects every evaluator option except --attempt", () => {
+    for (const flag of [
+      "--workspace",
+      "--notes",
+      "--command",
+      "--output-path",
+      "--branch",
+      "--ref",
+    ]) {
+      expect(() =>
+        evaluatePuzzleFromFlags(
+          new Map([
+            ["--attempt", "attempt"],
+            [flag, "value"],
+          ]),
+        ),
+      ).toThrow(`Unknown evaluate option ${flag}.`);
+    }
+  });
 });

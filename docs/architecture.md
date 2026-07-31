@@ -146,7 +146,7 @@ pnpm puzzle:evaluate -- --attempt artifacts/attempt
 pnpm puzzle:offline -- --condition CR --output artifacts/offline
 ```
 
-The offline command composes the same condition-selected build, runtime, native freeze, overlap, and evaluation path with deterministic fixture adapters, a fake monotonic clock, and no external model call.
+The offline command composes the same condition-selected build, runtime, native freeze, overlap, all-origin evaluation, and mechanical behavior-evidence path with deterministic fixture adapters, a fake monotonic clock, and no external model call.
 
 ## Failure Semantics
 

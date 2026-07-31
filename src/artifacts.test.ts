@@ -315,25 +315,74 @@ function overlapResult(): Record<string, unknown> {
 }
 
 function evaluationRecord(): Record<string, unknown> {
+  const full = { matchedWords: 10, totalWords: 10, accuracy: 1 };
+  const empty = { matchedWords: 0, totalWords: 0, accuracy: null };
+  const diagnostics = {
+    overall: full,
+    regions: { preBoundary: full, postBoundary: empty },
+    changed: { preBoundary: full, postBoundary: empty },
+    controls: { preBoundary: full, postBoundary: empty },
+    sentinels: { preBoundary: full, postBoundary: empty },
+    specialists: { preBoundary: full, postBoundary: empty },
+    stages: Array.from({ length: 6 }, (_, index) => ({ stage: index + 1, score: empty })),
+    evidenceOwners: ["agent-1", "agent-2", "agent-3"].map((agentId) => ({
+      agentId,
+      score: empty,
+    })),
+    changedTypes: [],
+    macroChangedTypeAccuracy: null,
+    positionHandling: {
+      expected: 10,
+      predicted: 10,
+      compared: 10,
+      missing: 0,
+      extra: 0,
+      coverage: 1,
+    },
+  };
   return {
-    status: "scored",
-    selection: {
-      workspace: "agent-1",
-      repositoryId: "shared",
-      ref: "refs/heads/main",
-      commit: "a".repeat(40),
-      command: "sh solve.sh",
-      outputPath: "reconstruction.txt",
+    schemaVersion: 2,
+    evaluationPolicyId: "all-canonical-main-snapshots-v1",
+    primaryMetricId: "normalized-positional-word-v1",
+    diagnosticMetricId: "palimpsest-diagnostics-v1",
+    attemptId: "attempt-1",
+    condition: "CR",
+    buildId: `build-${digest}`,
+    protocolDigest: digest,
+    startedAt: new Date(0).toISOString(),
+    completedAt: new Date(1).toISOString(),
+    origins: [
+      {
+        origin: {
+          originId: "shared",
+          repositoryId: "shared",
+          ref: "refs/heads/main",
+          commit: "a".repeat(40),
+          realizedTeamProduct: true,
+        },
+        status: "scored",
+        execution: {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          outputExceeded: false,
+        },
+        aggregate: { matchedWords: 10, totalWords: 10, coverage: 1, accuracy: 1 },
+        diagnostics,
+        outputProvenance: {
+          path: "origins/shared/output/reconstruction.txt",
+          sha256: digest,
+          byteLength: 10,
+        },
+      },
+    ],
+    team: {
+      realizedProductOriginId: "shared",
+      collectiveCeiling: { matchedWords: 10, totalWords: 10, coverage: 1, accuracy: 1 },
+      integrationGap: null,
+      integrationGapReason: "shared-single-origin",
     },
-    execution: {
-      exitCode: 0,
-      stdout: "",
-      stderr: "",
-      timedOut: false,
-      outputExceeded: false,
-    },
-    outputPath: "/tmp/palimpsest/evaluation/workspace/reconstruction.txt",
-    score: { matchedWords: 8, totalWords: 10, coverage: 0.8, accuracy: 0.8 },
   };
 }
 
@@ -355,7 +404,7 @@ describe("stored artifact decoders", () => {
     expect(decodeDesignReceipt(designReceipt()).builds).toHaveLength(5);
     expect(decodePhaseSummary(phaseSummary()).plannedCells).toHaveLength(4);
     expect(decodeOverlapResult(overlapResult()).findings).toHaveLength(1);
-    expect(decodeEvaluationRecord(evaluationRecord()).status).toBe("scored");
+    expect(decodeEvaluationRecord(evaluationRecord()).origins[0]?.status).toBe("scored");
   });
 
   it("round-trips the complete strict condition-attempt record", () => {
@@ -364,7 +413,7 @@ describe("stored artifact decoders", () => {
 
     expect(decoded).toEqual(encoded);
     expect(decoded).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       studyPhase: "standalone",
       blockId: "calibration-odd-women",
       condition: "CR",
@@ -1227,126 +1276,14 @@ describe("stored artifact decoders", () => {
     expect(decode).toThrow();
   });
 
-  it.each([
-    ["invalid status enum", () => decodeEvaluationRecord({ status: "complete" })],
-    [
-      "unsafe selection output path",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          selection: { ...(value.selection as object), outputPath: "../../answer.txt" },
-        });
-      },
-    ],
-    [
-      "wrong execution flag type",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          execution: { ...(value.execution as object), timedOut: 0 },
-        });
-      },
-    ],
-    [
-      "impossible score counters",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          score: { ...(value.score as object), matchedWords: 11 },
-        });
-      },
-    ],
-    [
-      "non-finite score",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          score: { ...(value.score as object), accuracy: Number.NaN },
-        });
-      },
-    ],
-    [
-      "status-field mismatch",
-      () => decodeEvaluationRecord({ ...evaluationRecord(), status: "not-runnable" }),
-    ],
-    [
-      "scored execution exited nonzero",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          execution: { ...(value.execution as object), exitCode: 1 },
-        });
-      },
-    ],
-    [
-      "scored execution timed out",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          execution: { ...(value.execution as object), timedOut: true },
-        });
-      },
-    ],
-    [
-      "no-output execution exceeded output",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          status: "no-output",
-          score: undefined,
-          execution: { ...(value.execution as object), outputExceeded: true },
-        });
-      },
-    ],
-    [
-      "not-runnable contains selection",
-      () =>
-        decodeEvaluationRecord({
-          status: "not-runnable",
-          selection: { command: "true", outputPath: "answer.txt" },
-        }),
-    ],
-    [
-      "execution-error contains score",
-      () =>
-        decodeEvaluationRecord({
-          ...evaluationRecord(),
-          status: "execution-error",
-          error: "scoring failed",
-        }),
-    ],
-  ])("rejects malformed evaluation data: %s", (_name, decode) => {
-    expect(decode).toThrow();
+  it("rejects reviewer-selection fields in evaluation records", () => {
+    expect(() =>
+      decodeEvaluationRecord({ ...evaluationRecord(), selection: { workspace: "agent-1" } }),
+    ).toThrow();
   });
 
-  it.each([
-    ["not-runnable", { status: "not-runnable" }],
-    [
-      "no-output",
-      {
-        ...evaluationRecord(),
-        status: "no-output",
-        score: undefined,
-      },
-    ],
-    [
-      "execution-error after successful execution",
-      {
-        ...evaluationRecord(),
-        status: "execution-error",
-        score: undefined,
-        error: "output could not be scored",
-      },
-    ],
-  ])("accepts the valid %s field combination", (_name, value) => {
-    expect(decodeEvaluationRecord(value).status).toBe(value.status);
+  it("rejects a canonical-origin topology mismatch", () => {
+    expect(() => decodeEvaluationRecord({ ...evaluationRecord(), condition: "IR" })).toThrow();
   });
 
   it.each([

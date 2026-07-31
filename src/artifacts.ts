@@ -14,7 +14,14 @@ import {
   type ModelSettings,
   type ProviderDriver,
 } from "./model.js";
-import type { EvaluationResult, EvaluationSelection, EvaluationStatus } from "./evaluate.js";
+import type {
+  CanonicalOrigin,
+  EvaluationRecord,
+  EvaluationStatus,
+  IntegrationGapReason,
+  OriginEvaluation,
+  TeamEvaluation,
+} from "./evaluate.js";
 import {
   SANDBOX_IMAGE_TAG,
   SANDBOX_POLICY,
@@ -240,7 +247,7 @@ export type AttemptStudyPhase = "standalone" | StudyPhase;
 export type InfrastructureClassification = "none" | "session-infrastructure-error";
 
 interface AttemptSummaryBase {
-  schemaVersion: 5;
+  schemaVersion: 6;
   attemptId: string;
   blockId: string;
   condition: ResolvedCondition["id"];
@@ -258,6 +265,9 @@ interface AttemptSummaryBase {
   protocol: AttemptProtocolSnapshot;
   tracePath: string;
   traceMetadataPath: string;
+  canonicalOriginIds: readonly ("shared" | AgentId)[];
+  evaluationPath: "evaluation/result.json";
+  behaviorEvidencePath: "behavior-evidence.json";
   frozen: FrozenGitInventory;
   sandbox: SandboxIdentity & SandboxPolicy;
   sessions: readonly AttemptSession[];
@@ -469,6 +479,33 @@ export interface AggregateScore {
   totalWords: number;
   coverage: number;
   accuracy: number;
+}
+
+export interface AccuracyCell {
+  matchedWords: number;
+  totalWords: number;
+  accuracy: number | null;
+}
+
+export interface DiagnosticScore {
+  overall: AccuracyCell;
+  regions: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  changed: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  controls: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  sentinels: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  specialists: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  stages: readonly { stage: number; score: AccuracyCell }[];
+  evidenceOwners: readonly { agentId: AgentId; score: AccuracyCell }[];
+  changedTypes: readonly { changedType: string; score: AccuracyCell }[];
+  macroChangedTypeAccuracy: number | null;
+  positionHandling: {
+    expected: number;
+    predicted: number;
+    compared: number;
+    missing: number;
+    extra: number;
+    coverage: number;
+  };
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {
@@ -1665,6 +1702,9 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
       "protocol",
       "tracePath",
       "traceMetadataPath",
+      "canonicalOriginIds",
+      "evaluationPath",
+      "behaviorEvidencePath",
       "frozen",
       "sandbox",
       "sessions",
@@ -1673,7 +1713,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     ],
     ["studyRootId", "conditionOrderPosition", "designDigest", "replacementOfAttemptId"],
   );
-  if (record.schemaVersion !== 5) throw new Error("Unsupported attempt schema version.");
+  if (record.schemaVersion !== 6) throw new Error("Unsupported attempt schema version.");
   const agentIds = decodeAttemptAgentIds(record.agentIds, "Attempt summary agentIds");
   if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
@@ -1719,6 +1759,16 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     throw new Error("Attempt summary protocolDigest does not match its protocol snapshot.");
   }
   const frozen = decodeFrozenGitInventory(record.frozen, condition.communicationMode, agentIds);
+  const canonicalOriginIds: readonly ("shared" | AgentId)[] =
+    condition.communicationMode === "shared" ? ["shared"] : agentIds;
+  if (
+    !Array.isArray(record.canonicalOriginIds) ||
+    record.canonicalOriginIds.join("\0") !== canonicalOriginIds.join("\0") ||
+    record.evaluationPath !== "evaluation/result.json" ||
+    record.behaviorEvidencePath !== "behavior-evidence.json"
+  ) {
+    throw new Error("Attempt summary derived artifact bindings are invalid.");
+  }
   const attemptId = nonEmptyString(record.attemptId, "Attempt summary attemptId");
   const infrastructureClassification = decodeInfrastructureClassification(
     record.infrastructureClassification,
@@ -1736,7 +1786,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     );
   }
   const common: AttemptSummaryBase = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     attemptId,
     blockId,
     condition: condition.id,
@@ -1754,6 +1804,9 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     protocol,
     tracePath: absolutePath(record.tracePath, "Attempt summary tracePath"),
     traceMetadataPath: absolutePath(record.traceMetadataPath, "Attempt summary traceMetadataPath"),
+    canonicalOriginIds,
+    evaluationPath: "evaluation/result.json",
+    behaviorEvidencePath: "behavior-evidence.json",
     frozen,
     sandbox,
     sessions,
@@ -2740,36 +2793,13 @@ export function decodeOverlapResult(value: unknown): OverlapResult {
   return { findings, scan: decodeScan(record.scan) };
 }
 
-function decodeSelection(value: unknown): EvaluationSelection {
-  const record = object(value, "Evaluation selection");
-  const notes =
-    record.notes === undefined
-      ? undefined
-      : nonEmptyString(record.notes, "Evaluation selection notes");
-  const repositoryId: EvaluationSelection["repositoryId"] =
-    record.repositoryId === "shared"
-      ? "shared"
-      : agentId(record.repositoryId, "Evaluation selection repositoryId");
-  const commit = gitObjectId(record.commit, "Evaluation selection commit");
-  if (commit.length !== 40) {
-    throw new Error("Evaluation selection commit must be a 40-character Git object ID.");
-  }
-  if (record.ref !== "refs/heads/main") {
-    throw new Error("Evaluation selection ref must be refs/heads/main.");
-  }
-  const selection = {
-    workspace: agentId(record.workspace, "Evaluation selection workspace"),
-    repositoryId,
-    ref: "refs/heads/main" as const,
-    commit,
-    command: nonEmptyString(record.command, "Evaluation selection command"),
-    outputPath: safeRelativePath(record.outputPath, "Evaluation selection outputPath"),
-  };
-  return notes === undefined ? selection : { ...selection, notes };
-}
-
 function decodeExecution(value: unknown): SandboxCommandResult {
-  const record = object(value, "Evaluation execution");
+  const record = strictObjectWithOptional(
+    value,
+    "Evaluation execution",
+    ["exitCode", "stdout", "stderr", "timedOut", "outputExceeded"],
+    ["outputFailure", "indeterminate", "sandboxGeneration"],
+  );
   const exitCode =
     record.exitCode === null ? null : integer(record.exitCode, "Evaluation execution exitCode");
   if (typeof record.timedOut !== "boolean" || typeof record.outputExceeded !== "boolean") {
@@ -2779,6 +2809,13 @@ function decodeExecution(value: unknown): SandboxCommandResult {
     record.outputFailure === undefined
       ? undefined
       : nonEmptyString(record.outputFailure, "Evaluation execution outputFailure");
+  if (record.indeterminate !== undefined && record.indeterminate !== true) {
+    throw new Error("Evaluation execution indeterminate must be true when present.");
+  }
+  const sandboxGeneration =
+    record.sandboxGeneration === undefined
+      ? undefined
+      : integer(record.sandboxGeneration, "Evaluation execution sandboxGeneration", 1);
   return {
     exitCode,
     stdout:
@@ -2792,11 +2829,18 @@ function decodeExecution(value: unknown): SandboxCommandResult {
     timedOut: record.timedOut,
     outputExceeded: record.outputExceeded,
     ...(outputFailure === undefined ? {} : { outputFailure }),
+    ...(record.indeterminate === undefined ? {} : { indeterminate: true as const }),
+    ...(sandboxGeneration === undefined ? {} : { sandboxGeneration }),
   };
 }
 
 export function decodeAggregateScore(value: unknown): AggregateScore {
-  const record = object(value, "Evaluation score");
+  const record = strictObject(value, "Evaluation score", [
+    "matchedWords",
+    "totalWords",
+    "coverage",
+    "accuracy",
+  ]);
   const totalWords = integer(record.totalWords, "Evaluation score totalWords");
   const matchedWords = integer(record.matchedWords, "Evaluation score matchedWords");
   if (matchedWords > totalWords) {
@@ -2810,79 +2854,300 @@ export function decodeAggregateScore(value: unknown): AggregateScore {
   };
 }
 
-function executionSucceeded(execution: SandboxCommandResult): boolean {
-  return (
-    execution.exitCode === 0 &&
-    !execution.timedOut &&
-    !execution.outputExceeded &&
-    execution.outputFailure === undefined
-  );
+function decodeAccuracyCell(value: unknown, name: string): AccuracyCell {
+  const record = strictObject(value, name, ["matchedWords", "totalWords", "accuracy"]);
+  const matchedWords = integer(record.matchedWords, `${name} matchedWords`);
+  const totalWords = integer(record.totalWords, `${name} totalWords`);
+  if (matchedWords > totalWords) throw new Error(`${name} matchedWords cannot exceed totalWords.`);
+  const accuracy =
+    record.accuracy === null ? null : finiteNumber(record.accuracy, `${name} accuracy`, 0, 1);
+  if ((accuracy === null) !== (totalWords === 0)) {
+    throw new Error(`${name} accuracy must be null exactly when totalWords is zero.`);
+  }
+  return { matchedWords, totalWords, accuracy };
 }
 
-export function decodeEvaluationRecord(value: unknown): EvaluationResult {
-  const record = object(value, "Evaluation result");
-  const status = evaluationStatus(record.status);
-  const selection = record.selection === undefined ? undefined : decodeSelection(record.selection);
-  const execution = record.execution === undefined ? undefined : decodeExecution(record.execution);
-  const outputPath =
-    record.outputPath === undefined
-      ? undefined
-      : absolutePath(record.outputPath, "Evaluation outputPath");
-  const score = record.score === undefined ? undefined : decodeAggregateScore(record.score);
-  const error =
-    record.error === undefined ? undefined : nonEmptyString(record.error, "Evaluation error");
-
-  if (
-    status === "scored" &&
-    (selection === undefined ||
-      execution === undefined ||
-      outputPath === undefined ||
-      score === undefined ||
-      error !== undefined ||
-      !executionSucceeded(execution))
-  ) {
-    throw new Error(
-      "Scored evaluation results require selection, successful execution, output, and score.",
-    );
-  }
-  if (
-    status === "not-runnable" &&
-    (selection !== undefined ||
-      execution !== undefined ||
-      outputPath !== undefined ||
-      score !== undefined ||
-      error !== undefined)
-  ) {
-    throw new Error("Not-runnable evaluation results cannot contain evaluation context.");
-  }
-  if (
-    status === "no-output" &&
-    (selection === undefined ||
-      execution === undefined ||
-      outputPath === undefined ||
-      score !== undefined ||
-      error !== undefined ||
-      !executionSucceeded(execution))
-  ) {
-    throw new Error(
-      "No-output evaluation results require selection, successful execution, and outputPath.",
-    );
-  }
-  if (
-    status === "execution-error" &&
-    (selection === undefined || error === undefined || score !== undefined)
-  ) {
-    throw new Error(
-      "Execution-error evaluation results require selection and error without score.",
-    );
-  }
-
+function decodeRegions(value: unknown, name: string) {
+  const record = strictObject(value, name, ["preBoundary", "postBoundary"]);
   return {
+    preBoundary: decodeAccuracyCell(record.preBoundary, `${name} preBoundary`),
+    postBoundary: decodeAccuracyCell(record.postBoundary, `${name} postBoundary`),
+  };
+}
+
+export function decodeDiagnosticScore(value: unknown): DiagnosticScore {
+  const record = strictObject(value, "Diagnostic score", [
+    "overall",
+    "regions",
+    "changed",
+    "controls",
+    "sentinels",
+    "specialists",
+    "stages",
+    "evidenceOwners",
+    "changedTypes",
+    "macroChangedTypeAccuracy",
+    "positionHandling",
+  ]);
+  if (!Array.isArray(record.stages) || record.stages.length !== 6) {
+    throw new Error("Diagnostic stages must contain stages one through six.");
+  }
+  const stages = record.stages.map((value, index) => {
+    const item = strictObject(value, `Diagnostic stage ${String(index + 1)}`, ["stage", "score"]);
+    if (item.stage !== index + 1) throw new Error("Diagnostic stages must be ordered.");
+    return {
+      stage: index + 1,
+      score: decodeAccuracyCell(item.score, `Diagnostic stage ${String(index + 1)}`),
+    };
+  });
+  if (!Array.isArray(record.evidenceOwners) || record.evidenceOwners.length !== 3) {
+    throw new Error("Diagnostic evidenceOwners must contain three agents.");
+  }
+  const evidenceOwners = record.evidenceOwners.map((value, index) => {
+    const item = strictObject(value, `Diagnostic owner ${String(index + 1)}`, ["agentId", "score"]);
+    const expected = `agent-${String(index + 1)}` as AgentId;
+    if (item.agentId !== expected) throw new Error("Diagnostic evidenceOwners must be ordered.");
+    return {
+      agentId: expected,
+      score: decodeAccuracyCell(item.score, `Diagnostic owner ${expected}`),
+    };
+  });
+  if (!Array.isArray(record.changedTypes))
+    throw new Error("Diagnostic changedTypes must be an array.");
+  const changedTypes = record.changedTypes.map((value, index) => {
+    const item = strictObject(value, `Diagnostic changed type ${String(index + 1)}`, [
+      "changedType",
+      "score",
+    ]);
+    return {
+      changedType: nonEmptyString(item.changedType, "Diagnostic changedType"),
+      score: decodeAccuracyCell(item.score, "Diagnostic changed type score"),
+    };
+  });
+  const position = strictObject(record.positionHandling, "Diagnostic positionHandling", [
+    "expected",
+    "predicted",
+    "compared",
+    "missing",
+    "extra",
+    "coverage",
+  ]);
+  const expected = integer(position.expected, "Diagnostic expected positions");
+  const predicted = integer(position.predicted, "Diagnostic predicted positions");
+  const compared = integer(position.compared, "Diagnostic compared positions");
+  const missing = integer(position.missing, "Diagnostic missing positions");
+  const extra = integer(position.extra, "Diagnostic extra positions");
+  if (
+    compared !== Math.min(expected, predicted) ||
+    missing !== Math.max(0, expected - predicted) ||
+    extra !== Math.max(0, predicted - expected)
+  ) {
+    throw new Error("Diagnostic position counts are inconsistent.");
+  }
+  return {
+    overall: decodeAccuracyCell(record.overall, "Diagnostic overall"),
+    regions: decodeRegions(record.regions, "Diagnostic regions"),
+    changed: decodeRegions(record.changed, "Diagnostic changed"),
+    controls: decodeRegions(record.controls, "Diagnostic controls"),
+    sentinels: decodeRegions(record.sentinels, "Diagnostic sentinels"),
+    specialists: decodeRegions(record.specialists, "Diagnostic specialists"),
+    stages,
+    evidenceOwners,
+    changedTypes,
+    macroChangedTypeAccuracy:
+      record.macroChangedTypeAccuracy === null
+        ? null
+        : finiteNumber(record.macroChangedTypeAccuracy, "Diagnostic macro accuracy", 0, 1),
+    positionHandling: {
+      expected,
+      predicted,
+      compared,
+      missing,
+      extra,
+      coverage: finiteNumber(position.coverage, "Diagnostic position coverage", 0, 1),
+    },
+  };
+}
+
+function decodeCanonicalOrigin(value: unknown): CanonicalOrigin {
+  const record = strictObjectWithOptional(
+    value,
+    "Canonical origin",
+    ["originId", "repositoryId", "ref", "realizedTeamProduct"],
+    ["commit"],
+  );
+  const originId = repositoryId(record.originId, "Canonical origin originId");
+  const decodedRepositoryId = repositoryId(record.repositoryId, "Canonical origin repositoryId");
+  if (originId !== decodedRepositoryId || record.ref !== "refs/heads/main") {
+    throw new Error("Canonical origin identity is inconsistent.");
+  }
+  if (typeof record.realizedTeamProduct !== "boolean") {
+    throw new Error("Canonical origin realizedTeamProduct must be boolean.");
+  }
+  const commit =
+    record.commit === undefined ? undefined : gitObjectId(record.commit, "Canonical origin commit");
+  if (commit !== undefined && commit.length !== 40) {
+    throw new Error("Canonical origin commit must be a 40-character object ID.");
+  }
+  return {
+    originId,
+    repositoryId: decodedRepositoryId,
+    ref: "refs/heads/main",
+    ...(commit === undefined ? {} : { commit }),
+    realizedTeamProduct: record.realizedTeamProduct,
+  };
+}
+
+function decodeOriginEvaluation(value: unknown): OriginEvaluation {
+  const record = strictObjectWithOptional(
+    value,
+    "Origin evaluation",
+    ["origin", "status"],
+    ["execution", "aggregate", "diagnostics", "error", "outputProvenance"],
+  );
+  const origin = decodeCanonicalOrigin(record.origin);
+  const status = evaluationStatus(record.status);
+  const execution = record.execution === undefined ? undefined : decodeExecution(record.execution);
+  const aggregate =
+    record.aggregate === undefined ? undefined : decodeAggregateScore(record.aggregate);
+  const diagnostics =
+    record.diagnostics === undefined ? undefined : decodeDiagnosticScore(record.diagnostics);
+  const error =
+    record.error === undefined ? undefined : nonEmptyString(record.error, "Origin error");
+  let outputProvenance: OriginEvaluation["outputProvenance"];
+  if (record.outputProvenance !== undefined) {
+    const output = strictObject(record.outputProvenance, "Origin output provenance", [
+      "path",
+      "sha256",
+      "byteLength",
+    ]);
+    outputProvenance = {
+      path: safeRelativePath(output.path, "Origin output path"),
+      sha256: digest(output.sha256, "Origin output sha256"),
+      byteLength: integer(output.byteLength, "Origin output byteLength", 1),
+    };
+  }
+  const hasScoredFields =
+    execution !== undefined &&
+    aggregate !== undefined &&
+    diagnostics !== undefined &&
+    outputProvenance !== undefined;
+  if ((status === "scored") !== hasScoredFields) {
+    throw new Error(
+      "Scored origins require execution, aggregate, diagnostics, and output provenance.",
+    );
+  }
+  if (status !== "scored" && error === undefined) {
+    throw new Error("Unscored origins require an error.");
+  }
+  if (
+    (status === "scored" &&
+      (error !== undefined ||
+        origin.commit === undefined ||
+        execution === undefined ||
+        execution.exitCode !== 0 ||
+        execution.timedOut ||
+        execution.outputExceeded ||
+        execution.indeterminate === true)) ||
+    (status !== "scored" &&
+      (aggregate !== undefined || diagnostics !== undefined || outputProvenance !== undefined))
+  ) {
+    throw new Error("Origin evaluation fields do not match its terminal status.");
+  }
+  return {
+    origin,
     status,
-    ...(selection === undefined ? {} : { selection }),
     ...(execution === undefined ? {} : { execution }),
-    ...(outputPath === undefined ? {} : { outputPath }),
-    ...(score === undefined ? {} : { score }),
+    ...(aggregate === undefined ? {} : { aggregate }),
+    ...(diagnostics === undefined ? {} : { diagnostics }),
     ...(error === undefined ? {} : { error }),
+    ...(outputProvenance === undefined ? {} : { outputProvenance }),
+  };
+}
+
+function decodeTeamEvaluation(value: unknown): TeamEvaluation {
+  const record = strictObject(value, "Team evaluation", [
+    "realizedProductOriginId",
+    "collectiveCeiling",
+    "integrationGap",
+    "integrationGapReason",
+  ]);
+  const realizedProductOriginId =
+    record.realizedProductOriginId === null
+      ? null
+      : repositoryId(record.realizedProductOriginId, "Team realized product");
+  if (record.integrationGap !== null) throw new Error("Native team integrationGap must be null.");
+  const reasons: readonly IntegrationGapReason[] = [
+    "shared-single-origin",
+    "isolated-no-realized-product",
+  ];
+  if (!reasons.includes(record.integrationGapReason as IntegrationGapReason)) {
+    throw new Error("Team integrationGapReason is unsupported.");
+  }
+  return {
+    realizedProductOriginId,
+    collectiveCeiling:
+      record.collectiveCeiling === null ? null : decodeAggregateScore(record.collectiveCeiling),
+    integrationGap: null,
+    integrationGapReason: record.integrationGapReason as IntegrationGapReason,
+  };
+}
+
+export function decodeEvaluationRecord(value: unknown): EvaluationRecord {
+  const record = strictObject(value, "Evaluation record", [
+    "schemaVersion",
+    "evaluationPolicyId",
+    "primaryMetricId",
+    "diagnosticMetricId",
+    "attemptId",
+    "condition",
+    "buildId",
+    "protocolDigest",
+    "startedAt",
+    "completedAt",
+    "origins",
+    "team",
+  ]);
+  if (
+    record.schemaVersion !== 2 ||
+    record.evaluationPolicyId !== "all-canonical-main-snapshots-v1" ||
+    record.primaryMetricId !== "normalized-positional-word-v1" ||
+    record.diagnosticMetricId !== "palimpsest-diagnostics-v1"
+  ) {
+    throw new Error("Evaluation record policies are unsupported.");
+  }
+  const condition = resolveCondition(record.condition);
+  if (!Array.isArray(record.origins)) throw new Error("Evaluation origins must be an array.");
+  const origins = record.origins.map(decodeOriginEvaluation);
+  const expectedIds = condition.communicationMode === "shared" ? ["shared"] : generateAgentIds(3);
+  if (origins.map(({ origin }) => origin.originId).join("\0") !== expectedIds.join("\0")) {
+    throw new Error("Evaluation origins do not match the condition topology.");
+  }
+  const team = decodeTeamEvaluation(record.team);
+  const expectedReason: IntegrationGapReason =
+    condition.communicationMode === "shared"
+      ? "shared-single-origin"
+      : "isolated-no-realized-product";
+  if (
+    (condition.communicationMode === "shared") !== (team.realizedProductOriginId === "shared") ||
+    team.integrationGapReason !== expectedReason ||
+    origins.some(({ status }) => status === "scored") !== (team.collectiveCeiling !== null) ||
+    origins.some(({ origin }) => origin.realizedTeamProduct !== (origin.originId === "shared"))
+  ) {
+    throw new Error("Evaluation realized team product is inconsistent.");
+  }
+  return {
+    schemaVersion: 2,
+    evaluationPolicyId: "all-canonical-main-snapshots-v1",
+    primaryMetricId: "normalized-positional-word-v1",
+    diagnosticMetricId: "palimpsest-diagnostics-v1",
+    attemptId: nonEmptyString(record.attemptId, "Evaluation attemptId"),
+    condition: condition.id,
+    buildId: decodeBuildId(record.buildId, "Evaluation buildId"),
+    protocolDigest: digest(record.protocolDigest, "Evaluation protocolDigest"),
+    startedAt: timestamp(record.startedAt, "Evaluation startedAt"),
+    completedAt: timestamp(record.completedAt, "Evaluation completedAt"),
+    origins,
+    team,
   };
 }

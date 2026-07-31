@@ -544,32 +544,38 @@ describe("frozen study state", () => {
     },
   );
 
-  it("continues after a non-infrastructure attempt is durable", async () => {
+  it("stops without indexing when post-freeze work fails", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
     let launches = 0;
 
-    const phase = await executeStudyPhase({
-      studyRoot,
-      study,
-      receipt,
-      phase: "calibration",
-      dependencies: {
-        beforeLaunch: async () => {},
-        runCell: async (launch) => {
-          launches += 1;
-          await publishLaunchAttempt(launch, study, false);
-          if (launches === 1) {
-            throw new Error("injected optional overlap failure");
-          }
+    await expect(
+      executeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        phase: "calibration",
+        dependencies: {
+          beforeLaunch: async () => {},
+          runCell: async (launch) => {
+            launches += 1;
+            await publishLaunchAttempt(launch, study, false);
+            throw new Error("injected post-freeze failure");
+          },
         },
-      },
-    });
+      }),
+    ).rejects.toThrow("injected post-freeze failure");
 
-    expect(launches).toBe(4);
-    expect(phase.state).toBe("complete");
-    expect(phase.attempts).toHaveLength(4);
-    expect(phase.reservations.every(({ state }) => state === "resolved")).toBe(true);
-    expect(phase.failure).toBeUndefined();
+    expect(launches).toBe(1);
+    const phase = await readPhaseSummary(studyRoot, "calibration");
+    expect(phase.state).toBe("blocked");
+    expect(phase.attempts).toEqual([]);
+    expect(phase.reservations[0]?.state).toBe("reserved");
+    expect(phase.failure?.kind).toBe("unresolved-reservation");
+    await expect(
+      access(
+        join(studyRoot, "calibration", "attempts", "attempt-calibration-01-001", "attempt.json"),
+      ),
+    ).resolves.toBeUndefined();
     await expect(access(join(studyRoot, "calibration", ".execution.lock"))).rejects.toMatchObject({
       code: "ENOENT",
     });

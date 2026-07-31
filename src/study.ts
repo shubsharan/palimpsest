@@ -1215,36 +1215,9 @@ async function executeLockedStudyPhase(
     try {
       await deps.runCell(preview);
     } catch (error) {
-      const durable = await readAttempt(preview.attemptRoot);
-      if (durable === undefined) {
-        summary = blockUnresolved(summary, reserved.reservationId, error);
-        await publishPhaseSummary(studyRoot, summary);
-        throw error;
-      }
-      await assertAttemptMatchesLaunch({
-        attempt: durable,
-        attemptRoot: preview.attemptRoot,
-        summary,
-        cell,
-        study: options.study,
-        receipt: options.receipt,
-        attemptId: preview.attemptId,
-        ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
-      });
-      summary = indexAttempt({
-        summary,
-        reservationId: reserved.reservationId,
-        cell,
-        attemptRoot: preview.attemptRoot,
-        attempt: durable,
-      });
+      summary = blockUnresolved(summary, reserved.reservationId, error);
       await publishPhaseSummary(studyRoot, summary);
-      if (durable.infrastructureClassification === "session-infrastructure-error") {
-        throw new StudyPhaseStoppedError(
-          `Phase stopped after infrastructure failure in ${durable.attemptId}.`,
-        );
-      }
-      return summary;
+      throw error;
     }
     const durable = await readAttempt(preview.attemptRoot);
     if (durable === undefined) {

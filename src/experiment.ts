@@ -1,6 +1,12 @@
 import { resolve } from "node:path";
 
-import type { BuildManifest, DesignReceipt, PhaseSummary } from "./artifacts.js";
+import {
+  decodeAttemptSummary,
+  type BuildManifest,
+  type DesignReceipt,
+  type PhaseSummary,
+} from "./artifacts.js";
+import { publishBehaviorEvidence } from "./behavior.js";
 import {
   loadResolvedStudy,
   type AgentModelAssignment,
@@ -10,8 +16,10 @@ import {
   type StudyPhase,
 } from "./config.js";
 import { requiredFlag } from "./flags.js";
+import { evaluatePuzzle } from "./evaluate.js";
 import type { ModelAdapter, ModelBinding } from "./model.js";
 import { createAiSdkModelAdapter, type CreateAiSdkModelAdapterOptions } from "./provider.js";
+import { readJsonObject } from "./python.js";
 import {
   assertPreflightSandbox,
   readCurrentPreflight,
@@ -128,6 +136,11 @@ export interface ExperimentDependencies {
   readPreflight: (root: string) => Promise<PreflightReceipt>;
   createAdapter: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter;
   run: (options: RunPuzzleOptions) => Promise<unknown>;
+  evaluate: typeof evaluatePuzzle;
+  publishBehaviorEvidence: (options: {
+    attemptRoot: string;
+    evaluation: Awaited<ReturnType<typeof evaluatePuzzle>>;
+  }) => Promise<void>;
 }
 
 const defaultDependencies: ExperimentDependencies = {
@@ -138,6 +151,14 @@ const defaultDependencies: ExperimentDependencies = {
   readPreflight: readCurrentPreflight,
   createAdapter: createAiSdkModelAdapter,
   run: runPuzzle,
+  evaluate: evaluatePuzzle,
+  publishBehaviorEvidence: async ({ attemptRoot, evaluation }) => {
+    return publishBehaviorEvidence({
+      attempt: decodeAttemptSummary(await readJsonObject(resolve(attemptRoot, "attempt.json"))),
+      evaluation,
+      attemptRoot,
+    });
+  },
 };
 
 function experimentDependencies(
@@ -218,6 +239,14 @@ export async function runStudyExperiment(
           tokenBudgetPerAgent: launch.tokenBudgetPerAgent,
           teamChannel: study.communication.teamChannel,
           sandbox,
+        });
+        const evaluation = await dependencies.evaluate({
+          root,
+          attempt: launch.attemptRoot,
+        });
+        await dependencies.publishBehaviorEvidence({
+          evaluation,
+          attemptRoot: launch.attemptRoot,
         });
       },
     },
