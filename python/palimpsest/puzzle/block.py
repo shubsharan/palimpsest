@@ -26,6 +26,7 @@ MINIMUM_ANCHORS = 12
 MINIMUM_SENTINELS = 6
 MINIMUM_SPECIALISTS = 3
 MINIMUM_CHANGED_MASS = 0.15
+CONTROL_SEARCH_MAX_DISTANCE = 0.40
 
 _IDENTIFIER = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -291,7 +292,9 @@ def candidate_windows(paragraphs: Sequence[ParagraphUnit]) -> Iterator[Paragraph
         paragraph.ordinal != ordered[0].ordinal + index for index, paragraph in enumerate(ordered)
     ):
         raise ValueError("Paragraph units must use contiguous increasing source ordinals.")
-    for start_index in range(min(len(ordered), MAX_WINDOW_STARTS)):
+    first_start = math.ceil(len(ordered) * 0.20)
+    final_start = min(len(ordered), first_start + MAX_WINDOW_STARTS)
+    for start_index in range(first_start, final_start):
         mass = 0
         end_index = start_index
         while end_index < len(ordered) and mass < TARGET_WINDOW_WORDS:
@@ -770,7 +773,7 @@ def _attempt_oracle(
         changed,
         available_controls,
         profiles,
-        tier.max_control_distance,
+        CONTROL_SEARCH_MAX_DISTANCE,
     )
     matched_changed = {match.changed_type for match in controls}
     unmatched_count = len(changed) - len(matched_changed)
@@ -826,7 +829,6 @@ def _attempt_oracle(
         ("owner-share", owner_share_deficit),
         ("solo-coverage", solo_excess),
         ("changed-mass", changed_mass_deficit),
-        ("unmatched-controls", float(unmatched_count)),
         ("old-key-loss", old_key_loss_deficit),
     ):
         if deficit > 0 and code not in reasons:
@@ -908,7 +910,19 @@ class AllocationResult:
     allocation: Allocation
     design: OracleDesign
     tier: AllocationTier
+    control_tier: str
     rejected_tiers: tuple[TierRejection, ...]
+
+
+def _control_tier(design: OracleDesign) -> str:
+    if len(design.controls) != len(design.changed_types):
+        return "fallback"
+    maximum = design.metrics.maximum_control_distance
+    if maximum <= 0.15:
+        return "strict"
+    if maximum <= 0.25:
+        return "balanced"
+    return "fallback"
 
 
 def allocate_window(
@@ -921,7 +935,13 @@ def allocate_window(
         allocation = initial_allocation(window, block_id, seed, tier)
         design, reasons, _ = _attempt_oracle(window.paragraphs, allocation, tier)
         if not reasons:
-            return AllocationResult(allocation, design, tier, tuple(rejected))
+            return AllocationResult(
+                allocation,
+                design,
+                tier,
+                _control_tier(design),
+                tuple(rejected),
+            )
         rejected.append(TierRejection(tier.name, reasons))
     detail = "; ".join(
         f"{rejection.tier}: {', '.join(rejection.reasons)}" for rejection in rejected
@@ -951,6 +971,15 @@ def design_block(
         try:
             allocation = allocate_window(window, block.block_id, block.seed)
         except InfeasibleDesignError:
+            continue
+        controls_complete = len(allocation.design.controls) == len(
+            allocation.design.changed_types
+        )
+        evidence_acceptable = allocation.tier.name in {"strict", "balanced"}
+        control_acceptable = allocation.control_tier in {"strict", "balanced"}
+        if not evidence_acceptable or not controls_complete:
+            continue
+        if block.phase == "validation" and not control_acceptable:
             continue
         if not discover and window.pin() != block.window:
             raise ValueError(

@@ -80,8 +80,8 @@ def _variant(variant_id: str) -> BuildVariant:
 def _build() -> PuzzleBuild:
     return PuzzleBuild(
         paired_build_id="paired-" + "e" * 64,
-        block_id="calibration-theron-ware",
-        source=TargetSource("theron-ware", "f" * 64),
+        block_id="calibration-odd-women",
+        source=TargetSource("odd-women", "f" * 64),
         references=(
             ReferenceSource("middlemarch", "1" * 64),
             ReferenceSource("moby-dick", "2" * 64),
@@ -99,7 +99,8 @@ def _build() -> PuzzleBuild:
         boundary_stage=4,
         allocation=AllocationSummary(
             allocation_id="allocation-" + "5" * 64,
-            tier="balanced",
+            evidence_tier="balanced",
+            control_tier="balanced",
             metrics=AllocationMetrics(
                 region_deviation=0.05,
                 stage_deviation=0.15,
@@ -150,14 +151,14 @@ def test_make_agent_ids_is_canonical_and_numeric() -> None:
         make_agent_ids(1)
 
 
-def test_schema_v3_paired_manifest_round_trips_canonical_json() -> None:
+def test_schema_v4_paired_manifest_round_trips_canonical_json() -> None:
     build = _build()
     encoded = canonical_json_bytes(build.to_dict())
 
     decoded = PuzzleBuild.from_dict(json.loads(encoded))
 
     assert decoded == build
-    assert decoded.to_dict()["schemaVersion"] == 3
+    assert decoded.to_dict()["schemaVersion"] == 4
     assert decoded.to_dict()["variants"]["stationary"]["keyTransitions"] == []
     assert len(decoded.stationary.stages) == 18
     assert len(decoded.rekey.stages) == 18
@@ -278,5 +279,5 @@ def test_selected_tier_metrics_must_satisfy_the_tier() -> None:
     build = _build()
     metrics = replace(build.allocation.metrics, max_control_distance=0.3)
 
-    with pytest.raises(ValueError, match="balanced tier"):
+    with pytest.raises(ValueError, match="balanced control tier"):
         replace(build.allocation, metrics=metrics)

@@ -2,30 +2,16 @@
   "schemaVersion": 1,
   "blocks": [
     {
-      "blockId": "calibration-theron-ware",
+      "blockId": "calibration-odd-women",
       "phase": "calibration",
-      "sourceId": "theron-ware",
-      "references": ["middlemarch", "moby-dick", "jane-eyre"],
-      "seed": 130013,
-      "window": {
-        "paragraphStart": 1,
-        "paragraphEnd": 196,
-        "wordCount": 18023,
-        "sha256": "605d43d789782765eaa9f0156551791c95afe1167e5fef5c05a960a7704c232b"
-      },
-      "boundaryStage": 4
-    },
-    {
-      "blockId": "validation-odd-women",
-      "phase": "validation",
       "sourceId": "odd-women",
       "references": ["middlemarch", "moby-dick", "jane-eyre"],
       "seed": 4313013,
       "window": {
-        "paragraphStart": 1,
-        "paragraphEnd": 311,
-        "wordCount": 18048,
-        "sha256": "2df07815fedd8ba9972ba2954508f3e16ffd50542246164683accbfd0274fc7e"
+        "paragraphStart": 387,
+        "paragraphEnd": 692,
+        "wordCount": 18060,
+        "sha256": "15d6f89e2c7a421a36122f15b9b15402eaeb5ab1b04a7480c363401069e3109c"
       },
       "boundaryStage": 4
     },
@@ -36,10 +22,10 @@
       "references": ["middlemarch", "moby-dick", "jane-eyre"],
       "seed": 367013,
       "window": {
-        "paragraphStart": 1,
-        "paragraphEnd": 181,
-        "wordCount": 18139,
-        "sha256": "7af4245a42684f7882db0e541c7acfb6a192fb1d507b2b24ff494cd6c59f349d"
+        "paragraphStart": 0,
+        "paragraphEnd": 0,
+        "wordCount": 0,
+        "sha256": ""
       },
       "boundaryStage": 4
     },
@@ -50,10 +36,10 @@
       "references": ["middlemarch", "moby-dick", "jane-eyre"],
       "seed": 11052013,
       "window": {
-        "paragraphStart": 1,
-        "paragraphEnd": 238,
-        "wordCount": 18130,
-        "sha256": "79e39976ab41f348fe37e3fb365a08789d86e9cb66907a214f4b5b1ddb4b7fc8"
+        "paragraphStart": 0,
+        "paragraphEnd": 0,
+        "wordCount": 0,
+        "sha256": ""
       },
       "boundaryStage": 4
     },
@@ -64,10 +50,24 @@
       "references": ["middlemarch", "moby-dick", "jane-eyre"],
       "seed": 482013,
       "window": {
-        "paragraphStart": 1,
-        "paragraphEnd": 246,
-        "wordCount": 18067,
-        "sha256": "088f9cac353c0ff6a04639eef903c5002eb7a404a0aa269a35cf30f4f5afb4f9"
+        "paragraphStart": 0,
+        "paragraphEnd": 0,
+        "wordCount": 0,
+        "sha256": ""
+      },
+      "boundaryStage": 4
+    },
+    {
+      "blockId": "validation-silas-lapham",
+      "phase": "validation",
+      "sourceId": "silas-lapham",
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "seed": 154013,
+      "window": {
+        "paragraphStart": 0,
+        "paragraphEnd": 0,
+        "wordCount": 0,
+        "sha256": ""
       },
       "boundaryStage": 4
     }

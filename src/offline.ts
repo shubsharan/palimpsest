@@ -85,6 +85,8 @@ export async function runOfflinePuzzle(
   const build = await buildPuzzle({
     root,
     output: resolve(output, "build"),
+    source: resolve(root, "fixtures/corpus/pg133.txt"),
+    phase: "calibration",
     block: OFFLINE_BLOCK,
   });
   const run = await runPuzzle({

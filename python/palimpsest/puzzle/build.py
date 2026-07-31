@@ -16,11 +16,12 @@ from .block import (
     BOUNDARY_STAGE,
     STAGE_COUNT,
     AllocationResult,
+    BlockDefinition,
     BlockDesign,
     ParagraphAssignment,
     ParagraphUnit,
+    WindowPin,
     design_block,
-    load_block_catalog,
 )
 from .block import (
     OracleDesign as BlockOracleDesign,
@@ -31,6 +32,7 @@ from .corpus import (
     build_reference_corpus,
     load_paragraphs,
     load_source_registry,
+    load_text_source,
     serialize_paragraphs,
 )
 from .manifest import (
@@ -54,6 +56,7 @@ from .revision import revise_explicit_types
 from .text import word_tokens
 
 MINIMUM_MANIPULATION_MASS = 0.15
+REFERENCE_SOURCE_IDS = ("middlemarch", "moby-dick", "jane-eyre")
 
 
 def _seed_hex(seed: int, domain: str) -> str:
@@ -461,20 +464,30 @@ def _build_variant(
 def _build_into(
     root: Path,
     destination: Path,
-    block_id: str,
+    source_path: Path,
+    phase: str,
+    requested_block_id: str | None,
 ) -> PuzzleBuild:
-    catalog = load_block_catalog(root / "experiments/blocks.json")
-    block = catalog.block(block_id)
-    if block.window.is_discovery:
-        raise ValueError(f"Block {block_id} must be discovered and pinned before a normal build.")
+    source = load_text_source(source_path)
+    if phase not in {"calibration", "validation"}:
+        raise ValueError("Puzzle phase must be calibration or validation.")
+    block_id = requested_block_id or source.source_id
+    block = BlockDefinition(
+        block_id=block_id,
+        phase=phase,
+        source_id=source.source_id,
+        references=REFERENCE_SOURCE_IDS,
+        seed=int(source.sha256[:13], 16),
+        window=WindowPin(0, 0, 0, ""),
+        boundary_stage=BOUNDARY_STAGE,
+    )
     registry = load_source_registry(root)
     try:
-        source = registry[block.source_id]
-        reference_sources = tuple(registry[source_id] for source_id in block.references)
+        reference_sources = tuple(registry[source_id] for source_id in REFERENCE_SOURCE_IDS)
     except KeyError as error:
         raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
 
-    design = design_block(_paragraph_units(source), block, discover=False)
+    design = design_block(_paragraph_units(source), block, discover=True)
     pair = _prepare_pair(design)
     changed_types = design.allocation.design.changed_types
 
@@ -529,7 +542,8 @@ def _build_into(
     )
     allocation_summary = AllocationSummary(
         allocation_id=design.allocation.allocation.allocation_id,
-        tier=design.allocation.tier.name,
+        evidence_tier=design.allocation.tier.name,
+        control_tier=design.allocation.control_tier,
         metrics=_manifest_metrics(design.allocation),
         rejected_tiers=tuple(
             TierRejection(rejection.tier, rejection.reasons)
@@ -555,7 +569,7 @@ def _build_into(
         changed_token_mass_by_agent=pair.manipulation_check["changedTokenMassByAgent"],
     )
     pair_basis = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "blockId": block.block_id,
         "sourceSha256": source.sha256,
         "windowSha256": design.window.sha256,
@@ -595,14 +609,20 @@ def _build_into(
     return build
 
 
-def build_puzzle(root: Path, output: Path, block_id: str) -> PuzzleBuild:
+def build_puzzle(
+    root: Path,
+    output: Path,
+    source: Path,
+    phase: str,
+    block_id: str | None = None,
+) -> PuzzleBuild:
     root = root.resolve()
     output = output.resolve()
     _assert_available_output(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
     try:
-        build = _build_into(root, staging, block_id)
+        build = _build_into(root, staging, source, phase, block_id)
         _publish_staging(staging, output)
         return build
     except BaseException:
@@ -610,71 +630,26 @@ def build_puzzle(root: Path, output: Path, block_id: str) -> PuzzleBuild:
         raise
 
 
-def discover_block(root: Path, output: Path, block_id: str) -> dict[str, Any]:
-    root = root.resolve()
-    output = output.resolve()
-    _assert_available_output(output)
-    catalog = load_block_catalog(root / "experiments/blocks.json")
-    block = catalog.block(block_id)
-    if not block.window.is_discovery:
-        raise ValueError(f"Block {block_id} already has a committed discovery window.")
-    registry = load_source_registry(root)
-    try:
-        source = registry[block.source_id]
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
-    design = design_block(_paragraph_units(source), block, discover=True)
-    pair = _prepare_pair(design)
-    record = {
-        "schemaVersion": 1,
-        "blockId": block.block_id,
-        "window": {
-            "paragraphStart": design.window.paragraph_start,
-            "paragraphEnd": design.window.paragraph_end,
-            "wordCount": design.window.word_count,
-            "sha256": design.window.sha256,
-        },
-        "allocation": _allocation_record(design),
-        "manipulationCheck": pair.manipulation_check,
-    }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
-    try:
-        _write(staging / "discovery.json", canonical_json_bytes(record))
-        _publish_staging(staging, output)
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    return {
-        "blockId": block.block_id,
-        "discoveryPath": str((output / "discovery.json").resolve()),
-        "window": record["window"],
-        "tier": design.allocation.tier.name,
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--block", required=True)
-    parser.add_argument("--discover", choices=("true",))
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--phase", choices=("calibration", "validation"), default="validation")
+    parser.add_argument("--block")
     args = parser.parse_args()
-    if args.discover == "true":
-        result = discover_block(args.root, args.output, args.block)
-    else:
-        build = build_puzzle(args.root, args.output, args.block)
-        result = {
-            "pairedBuildId": build.paired_build_id,
-            "buildPath": str(args.output.resolve()),
-            "blockId": build.block_id,
-            "agentIds": list(build.agent_ids),
-            "stageCount": build.stage_count,
-            "variants": {
-                "stationary": build.stationary.build_id,
-                "rekey": build.rekey.build_id,
-            },
-        }
+    build = build_puzzle(args.root, args.output, args.source, args.phase, args.block)
+    result = {
+        "pairedBuildId": build.paired_build_id,
+        "buildPath": str(args.output.resolve()),
+        "blockId": build.block_id,
+        "agentIds": list(build.agent_ids),
+        "stageCount": build.stage_count,
+        "variants": {
+            "stationary": build.stationary.build_id,
+            "rekey": build.rekey.build_id,
+        },
+    }
     print(canonical_json_bytes(result).decode())
 
 

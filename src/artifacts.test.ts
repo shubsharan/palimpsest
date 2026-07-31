@@ -84,10 +84,10 @@ function buildVariant(variantId: "stationary" | "rekey"): Record<string, unknown
 
 function buildManifest(): Record<string, unknown> {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     pairedBuildId: `paired-${"e".repeat(64)}`,
-    blockId: "calibration-theron-ware",
-    source: { sourceId: "theron-ware", sha256: "f".repeat(64) },
+    blockId: "calibration-odd-women",
+    source: { sourceId: "odd-women", sha256: "f".repeat(64) },
     references: [
       { sourceId: "middlemarch", sha256: "1".repeat(64) },
       { sourceId: "moby-dick", sha256: "2".repeat(64) },
@@ -105,7 +105,8 @@ function buildManifest(): Record<string, unknown> {
     boundaryStage: 4,
     allocation: {
       allocationId: `allocation-${"5".repeat(64)}`,
-      tier: "balanced",
+      evidenceTier: "balanced",
+      controlTier: "balanced",
       metrics: {
         regionDeviation: 0.05,
         stageDeviation: 0.15,
@@ -148,11 +149,11 @@ function buildManifest(): Record<string, unknown> {
 }
 
 const blockIds = [
-  "calibration-theron-ware",
-  "validation-odd-women",
+  "calibration-odd-women",
   "validation-pointed-firs",
   "validation-custom-country",
   "validation-woodlanders",
+  "validation-silas-lapham",
 ] as const;
 
 const calibrationOrder = ["CS", "CR", "IR", "IS"] as const;
@@ -201,7 +202,7 @@ function designReceipt(): Record<string, unknown> {
     }),
   );
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     createdAt: "2026-07-28T12:00:00.000Z",
     sourceRevision: "1".repeat(40),
     sandbox: attemptSummary().sandbox,
@@ -209,7 +210,7 @@ function designReceipt(): Record<string, unknown> {
     immutableManifestDigest: "3".repeat(64),
     designDigest: "4".repeat(64),
     immutableManifest: {
-      schemaVersion: 2,
+      schemaVersion: 5,
       studyId: "frozen-five-block",
       providers: { openai: { apiKeyEnv: "OPENAI_API_KEY" } },
     },
@@ -227,9 +228,11 @@ function designReceipt(): Record<string, unknown> {
       path: "experiments/behavior-rubric.md",
       sha256: "5".repeat(64),
     },
+    checking: { feedbackId: "published-runnability-coverage-v1" },
     scoring: {
-      metricId: "reconstruction-v1",
-      reviewerSelectionId: "explicit-workspace-command-output-v1",
+      primaryMetricId: "normalized-positional-word-v1",
+      diagnosticMetricId: "palimpsest-diagnostics-v1",
+      evaluationPolicyId: "all-canonical-main-snapshots-v1",
     },
     promptTemplates: templates.map((template) => ({
       ...template,
@@ -345,7 +348,7 @@ describe("stored artifact decoders", () => {
     expect(
       decodeBuildResult({
         pairedBuildId: `paired-${digest}`,
-        blockId: "calibration-theron-ware",
+        blockId: "calibration-odd-women",
         buildPath: "/tmp/palimpsest/build",
         agentIds: ["agent-1", "agent-2", "agent-3"],
         stageCount: 6,
@@ -369,7 +372,7 @@ describe("stored artifact decoders", () => {
     expect(decoded).toMatchObject({
       schemaVersion: 5,
       studyPhase: "standalone",
-      blockId: "calibration-theron-ware",
+      blockId: "calibration-odd-women",
       condition: "CR",
       communicationMode: "shared",
       keyRegime: "rekey",
@@ -470,7 +473,7 @@ describe("stored artifact decoders", () => {
       () => {
         const value = buildManifest();
         const references = [...(value.references as Record<string, unknown>[])];
-        references[0] = { ...references[0], sourceId: "theron-ware" };
+        references[0] = { ...references[0], sourceId: "odd-women" };
         return decodeBuildManifest({ ...value, references });
       },
     ],
@@ -867,7 +870,7 @@ describe("stored artifact decoders", () => {
   it("strictly decodes primary and replacement launch reservations", () => {
     const primary = {
       reservationId: "reservation-calibration-001",
-      cellId: "calibration-001-calibration-theron-ware-CS",
+      cellId: "calibration-001-calibration-odd-women-CS",
       reservedAt: "2026-07-28T12:01:00.000Z",
       kind: "primary",
       authorizedTokens: 600_000,

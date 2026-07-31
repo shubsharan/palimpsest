@@ -14,13 +14,14 @@
     "schedule",
     "budgets",
     "orders",
+    "checking",
     "scoring",
     "rubric",
     "adjustableFields",
     "failurePolicy"
   ],
   "properties": {
-    "schemaVersion": { "const": 4 },
+    "schemaVersion": { "const": 5 },
     "communication": { "$ref": "#/$defs/communication" },
     "blocks": { "$ref": "#/$defs/blocks" },
     "assignment": { "$ref": "#/$defs/assignment" },
@@ -39,6 +40,7 @@
     "schedule": { "$ref": "#/$defs/schedule" },
     "budgets": { "$ref": "#/$defs/budgets" },
     "orders": { "$ref": "#/$defs/orders" },
+    "checking": { "$ref": "#/$defs/checking" },
     "scoring": { "$ref": "#/$defs/scoring" },
     "rubric": { "$ref": "#/$defs/rubric" },
     "adjustableFields": {
@@ -77,10 +79,11 @@
     "block": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["blockId", "phase"],
+      "required": ["blockId", "phase", "sourcePath"],
       "properties": {
         "blockId": { "$ref": "#/$defs/identifier" },
-        "phase": { "enum": ["calibration", "validation"] }
+        "phase": { "enum": ["calibration", "validation"] },
+        "sourcePath": { "type": "string", "minLength": 1 }
       }
     },
     "blocks": {
@@ -92,20 +95,8 @@
             {
               "type": "object",
               "properties": {
-                "blockId": { "const": "calibration-theron-ware" },
+                "blockId": { "const": "calibration-odd-women" },
                 "phase": { "const": "calibration" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-odd-women" },
-                "phase": { "const": "validation" }
               }
             }
           ]
@@ -141,6 +132,18 @@
               "type": "object",
               "properties": {
                 "blockId": { "const": "validation-woodlanders" },
+                "phase": { "const": "validation" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/block" },
+            {
+              "type": "object",
+              "properties": {
+                "blockId": { "const": "validation-silas-lapham" },
                 "phase": { "const": "validation" }
               }
             }
@@ -253,13 +256,22 @@
         }
       }
     },
+    "checking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feedbackId"],
+      "properties": {
+        "feedbackId": { "const": "published-runnability-coverage-v1" }
+      }
+    },
     "scoring": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metricId", "reviewerSelectionId"],
+      "required": ["primaryMetricId", "diagnosticMetricId", "evaluationPolicyId"],
       "properties": {
-        "metricId": { "const": "normalized-positional-word-v1" },
-        "reviewerSelectionId": { "const": "selected-workspace-main-snapshot-v1" }
+        "primaryMetricId": { "const": "normalized-positional-word-v1" },
+        "diagnosticMetricId": { "const": "palimpsest-diagnostics-v1" },
+        "evaluationPolicyId": { "const": "all-canonical-main-snapshots-v1" }
       }
     },
     "rubric": {

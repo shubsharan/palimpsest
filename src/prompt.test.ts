@@ -42,7 +42,7 @@ describe("agent prompt", () => {
       Additional private evidence may appear during the attempt. The attempt ends after 3600000 milliseconds.
       Your cumulative model-token limit is 200000.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
       Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.
       Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.
 
@@ -62,7 +62,7 @@ describe("agent prompt", () => {
       Additional private evidence may appear during the attempt. The attempt ends after 3600000 milliseconds.
       Your cumulative model-token limit is 200000.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
       Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.
       Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.
 
@@ -120,7 +120,7 @@ describe("agent prompt", () => {
       Additional private evidence may appear during the attempt. The attempt ends after {{cutoffMs}} milliseconds.
       Your cumulative model-token limit is {{tokenBudgetPerAgent}}.
 
-      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, check the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.
+      You can inspect your private evidence, use the target-excluded reference corpus, run local commands, validate the pushed origin/main:solver.py against your currently visible private evidence with check_published_solver, use Git, or wait for visible activity. The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.
       Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.
       Do not return a final response before then. If progress stalls, revisit assumptions, test a different approach, and use new evidence or Git activity to improve the solver. Wait only when no useful work remains, then resume when activity appears.
 
@@ -189,7 +189,7 @@ describe("agent prompt", () => {
     expect(prompt).toContain("The attempt ends after 3600000 milliseconds.");
     expect(prompt).toContain("Your cumulative model-token limit is 200000.");
     expect(prompt).toContain("check_published_solver");
-    expect(prompt).toContain("aggregate metrics");
+    expect(prompt).toContain("It does not report correctness.");
     expect(prompt).toContain("wait for visible activity");
     expect(prompt).toContain("Only origin/main:solver.py can be checked or graded");
     expect(prompt).toContain(
@@ -204,7 +204,7 @@ describe("agent prompt", () => {
     expect(prompt).toContain("$PALIMPSEST_OUTPUT");
     expect(prompt).toContain("work without /evidence, /reference, or Git metadata");
     expect(prompt).toContain(
-      "The checker reports the exact commit and aggregate metrics; it covers only your visible evidence, so a perfect score does not prove the complete ciphertext is solved.",
+      "The checker reports execution, output validity, word counts, and bounded coverage only. It does not report correctness.",
     );
     expect(prompt).toContain(
       "Keep improving and pushing solver.py until you have verified that it produces a complete plaintext you believe solves the full ciphertext.",

@@ -120,6 +120,21 @@
       "sha256": "56277b945f000dbf4369dd2581b210633ba1fa791d036e91e6e40beb49f79202",
       "sourceId": "woodlanders",
       "title": "The Woodlanders"
+    },
+    {
+      "author": "William Dean Howells",
+      "byteLength": 734110,
+      "catalogUrl": "https://www.gutenberg.org/ebooks/154",
+      "contentType": "text/plain; charset=utf-8",
+      "downloadUrl": "https://www.gutenberg.org/cache/epub/154/pg154.txt",
+      "ebookNumber": 154,
+      "license": "Project Gutenberg License; catalog record states public domain in the USA",
+      "format": "gutenberg-text",
+      "path": "fixtures/corpus/pg154.txt",
+      "retrievedAt": "2026-07-31",
+      "sha256": "0ddff78b3fab89b116975d2b808f685f22b652d2bc3b85bbe4188519f46552fd",
+      "sourceId": "silas-lapham",
+      "title": "The Rise of Silas Lapham"
     }
   ]
 }

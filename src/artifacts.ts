@@ -33,11 +33,11 @@ const ALLOCATION_ID = /^allocation-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REGISTERED_BLOCK_IDS = [
-  "calibration-theron-ware",
-  "validation-odd-women",
+  "calibration-odd-women",
   "validation-pointed-firs",
   "validation-custom-country",
   "validation-woodlanders",
+  "validation-silas-lapham",
 ] as const;
 const CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
 const VALIDATION_ORDERS = [
@@ -99,7 +99,8 @@ export interface AllocationMetrics {
 
 export interface AllocationSummary {
   allocationId: string;
-  tier: AllocationTier;
+  evidenceTier: AllocationTier;
+  controlTier: AllocationTier;
   metrics: AllocationMetrics;
   rejectedTiers: readonly TierRejection[];
   path: string;
@@ -151,7 +152,7 @@ export interface ManipulationCheck {
 }
 
 export interface BuildManifest {
-  schemaVersion: 3;
+  schemaVersion: 4;
   pairedBuildId: string;
   blockId: string;
   source: BuildSource;
@@ -314,8 +315,13 @@ export interface DesignRubric {
 }
 
 export interface DesignScoring {
-  metricId: string;
-  reviewerSelectionId: string;
+  primaryMetricId: "normalized-positional-word-v1";
+  diagnosticMetricId: "palimpsest-diagnostics-v1";
+  evaluationPolicyId: "all-canonical-main-snapshots-v1";
+}
+
+export interface DesignChecking {
+  feedbackId: "published-runnability-coverage-v1";
 }
 
 export interface DesignPromptTemplate {
@@ -349,7 +355,7 @@ export interface DesignBaselineBudgets {
 }
 
 export interface DesignReceipt {
-  schemaVersion: 2;
+  schemaVersion: 3;
   createdAt: string;
   sourceRevision: string;
   sandbox: SandboxIdentity & SandboxPolicy;
@@ -361,6 +367,7 @@ export interface DesignReceipt {
   assignment: readonly DesignAgentAssignment[];
   orders: DesignOrders;
   rubric: DesignRubric;
+  checking: DesignChecking;
   scoring: DesignScoring;
   promptTemplates: readonly DesignPromptTemplate[];
   baselinePrompts: readonly DesignPromptSnapshot[];
@@ -588,6 +595,11 @@ function identifier(value: unknown, name: string): string {
     throw new Error(`${name} must be a lowercase hyphenated identifier.`);
   }
   return result;
+}
+
+function literal<const T extends string>(value: unknown, expected: T, name: string): T {
+  if (value !== expected) throw new Error(`${name} must be ${expected}.`);
+  return expected;
 }
 
 function agentId(value: unknown, name: string): AgentId {
@@ -1008,13 +1020,15 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
   const name = "Puzzle build allocation";
   const record = strictObject(value, name, [
     "allocationId",
-    "tier",
+    "evidenceTier",
+    "controlTier",
     "metrics",
     "rejectedTiers",
     "path",
     "sha256",
   ]);
-  const tier = allocationTier(record.tier, `${name} tier`);
+  const evidenceTier = allocationTier(record.evidenceTier, `${name} evidenceTier`);
+  const controlTier = allocationTier(record.controlTier, `${name} controlTier`);
   const metrics = decodeAllocationMetrics(record.metrics);
   if (!Array.isArray(record.rejectedTiers)) {
     throw new Error(`${name} rejectedTiers must be an array.`);
@@ -1033,24 +1047,32 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
     }
     return { tier: allocationTier(rejection.tier, `${rejectionName} tier`), reasons };
   });
-  const expectedRejected = ALLOCATION_TIERS.slice(0, ALLOCATION_TIERS.indexOf(tier));
+  const expectedRejected = ALLOCATION_TIERS.slice(0, ALLOCATION_TIERS.indexOf(evidenceTier));
   if (
     rejectedTiers.length !== expectedRejected.length ||
     rejectedTiers.some((rejection, index) => rejection.tier !== expectedRejected[index])
   ) {
     throw new Error("Puzzle build rejected tiers must contain all earlier tiers in order.");
   }
-  const limits = TIER_LIMITS[tier];
+  const evidenceLimits = TIER_LIMITS[evidenceTier];
   if (
-    metrics.minOwnerShare < limits.minOwnerShare ||
-    metrics.soloChangedSetCoverage > limits.maxSoloCoverage ||
-    metrics.regionDeviation > limits.maxRegionDeviation ||
-    metrics.stageDeviation > limits.maxStageDeviation ||
-    metrics.maxControlDistance > limits.maxControlDistance ||
-    metrics.minOwnerOccurrencesPerRegion < limits.minOwnerOccurrencesPerRegion ||
-    metrics.minSentinelOccurrencesPerAgentRegion < limits.minSentinelOccurrencesPerAgentRegion
+    metrics.minOwnerShare < evidenceLimits.minOwnerShare ||
+    metrics.soloChangedSetCoverage > evidenceLimits.maxSoloCoverage ||
+    metrics.regionDeviation > evidenceLimits.maxRegionDeviation ||
+    metrics.stageDeviation > evidenceLimits.maxStageDeviation ||
+    metrics.minOwnerOccurrencesPerRegion < evidenceLimits.minOwnerOccurrencesPerRegion ||
+    metrics.minSentinelOccurrencesPerAgentRegion < evidenceLimits.minSentinelOccurrencesPerAgentRegion
   ) {
-    throw new Error(`Puzzle build allocation metrics do not satisfy the ${tier} tier.`);
+    throw new Error(
+      `Puzzle build allocation metrics do not satisfy the ${evidenceTier} evidence tier.`,
+    );
+  }
+  const controlLimit = TIER_LIMITS[controlTier].maxControlDistance;
+  if (
+    controlTier !== "fallback" &&
+    (metrics.unmatchedControlCount !== 0 || metrics.maxControlDistance > controlLimit)
+  ) {
+    throw new Error(`Puzzle build allocation controls do not satisfy the ${controlTier} tier.`);
   }
   const path = safeRelativePath(record.path, `${name} path`);
   if (path !== "oracle/allocation.json") {
@@ -1058,7 +1080,8 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
   }
   return {
     allocationId: decodePrefixedDigest(record.allocationId, ALLOCATION_ID, `${name} allocationId`),
-    tier,
+    evidenceTier,
+    controlTier,
     metrics,
     rejectedTiers,
     path,
@@ -1281,7 +1304,7 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     "manipulationCheck",
     "variants",
   ]);
-  if (record.schemaVersion !== 3) {
+  if (record.schemaVersion !== 4) {
     throw new Error("Unsupported puzzle build schema version.");
   }
   const source = decodeBuildSource(record.source);
@@ -1310,7 +1333,7 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     }
   });
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     pairedBuildId: decodePrefixedDigest(
       record.pairedBuildId,
       PAIRED_BUILD_ID,
@@ -1976,6 +1999,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "assignment",
     "orders",
     "rubric",
+    "checking",
     "scoring",
     "promptTemplates",
     "baselinePrompts",
@@ -1983,7 +2007,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "baselineBudgets",
     "totalCeilings",
   ]);
-  if (record.schemaVersion !== 2) {
+  if (record.schemaVersion !== 3) {
     throw new Error("Unsupported design receipt schema version.");
   }
   if (!Array.isArray(record.builds) || record.builds.length !== REGISTERED_BLOCK_IDS.length) {
@@ -2001,9 +2025,11 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   }
   const assignment = record.assignment.map(decodeDesignAssignment);
   const rubric = strictObject(record.rubric, "Design receipt rubric", ["id", "path", "sha256"]);
+  const checking = strictObject(record.checking, "Design receipt checking", ["feedbackId"]);
   const scoring = strictObject(record.scoring, "Design receipt scoring", [
-    "metricId",
-    "reviewerSelectionId",
+    "primaryMetricId",
+    "diagnosticMetricId",
+    "evaluationPolicyId",
   ]);
   if (
     !Array.isArray(record.promptTemplates) ||
@@ -2051,7 +2077,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   );
   assertSecretFreeJson(immutableManifest, "Design receipt immutableManifest");
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     createdAt: timestamp(record.createdAt, "Design receipt createdAt"),
     sourceRevision: gitObjectId(record.sourceRevision, "Design receipt sourceRevision"),
     sandbox: decodeSandbox(record.sandbox),
@@ -2070,11 +2096,28 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
       path: safeRelativePath(rubric.path, "Design receipt rubric path"),
       sha256: digest(rubric.sha256, "Design receipt rubric sha256"),
     },
+    checking: {
+      feedbackId: literal(
+        checking.feedbackId,
+        "published-runnability-coverage-v1",
+        "Design receipt checking feedbackId",
+      ),
+    },
     scoring: {
-      metricId: identifier(scoring.metricId, "Design receipt scoring metricId"),
-      reviewerSelectionId: identifier(
-        scoring.reviewerSelectionId,
-        "Design receipt scoring reviewerSelectionId",
+      primaryMetricId: literal(
+        scoring.primaryMetricId,
+        "normalized-positional-word-v1",
+        "Design receipt scoring primaryMetricId",
+      ),
+      diagnosticMetricId: literal(
+        scoring.diagnosticMetricId,
+        "palimpsest-diagnostics-v1",
+        "Design receipt scoring diagnosticMetricId",
+      ),
+      evaluationPolicyId: literal(
+        scoring.evaluationPolicyId,
+        "all-canonical-main-snapshots-v1",
+        "Design receipt scoring evaluationPolicyId",
       ),
     },
     promptTemplates,

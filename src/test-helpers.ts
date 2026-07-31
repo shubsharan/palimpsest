@@ -133,10 +133,10 @@ export function testBuildManifest(): Record<string, unknown> {
           ],
   });
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     pairedBuildId: `paired-${"d".repeat(64)}`,
-    blockId: "calibration-theron-ware",
-    source: { sourceId: "theron-ware", sha256: TEST_DIGEST },
+    blockId: "calibration-odd-women",
+    source: { sourceId: "odd-women", sha256: TEST_DIGEST },
     references: [
       { sourceId: "middlemarch", sha256: "1".repeat(64) },
       { sourceId: "moby-dick", sha256: "2".repeat(64) },
@@ -154,7 +154,8 @@ export function testBuildManifest(): Record<string, unknown> {
     boundaryStage: 4,
     allocation: {
       allocationId: `allocation-${"5".repeat(64)}`,
-      tier: "balanced",
+      evidenceTier: "balanced",
+      controlTier: "balanced",
       metrics: {
         regionDeviation: 0.05,
         stageDeviation: 0.15,
@@ -236,7 +237,7 @@ export function testAttemptSummary(
   }));
   const protocol = {
     schemaVersion: 3,
-    blockId: "calibration-theron-ware",
+    blockId: "calibration-odd-women",
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,
@@ -284,7 +285,7 @@ export function testAttemptSummary(
     ...(options.replacementOfAttemptId === undefined
       ? {}
       : { replacementOfAttemptId: options.replacementOfAttemptId }),
-    blockId: "calibration-theron-ware",
+    blockId: "calibration-odd-women",
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,

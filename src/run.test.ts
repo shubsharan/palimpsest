@@ -282,7 +282,13 @@ describe("fixed four-condition run coordinator", () => {
         config,
         agents: runtimes(() => finishAdapter()),
         sandbox,
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        checker: async () => ({
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "valid",
+          ciphertextWords: 0,
+          outputWords: 0,
+          coverage: 1,
+        }),
         clock,
       });
 
@@ -361,7 +367,13 @@ describe("fixed four-condition run coordinator", () => {
         config,
         agents,
         sandbox: new FakeCommandSandbox(),
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        checker: async () => ({
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "valid",
+          ciphertextWords: 0,
+          outputWords: 0,
+          coverage: 1,
+        }),
         clock: new ControlledClock(),
       });
 
@@ -486,7 +498,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => adapter),
       sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock: new ControlledClock(),
     });
 
@@ -510,7 +528,13 @@ describe("fixed four-condition run coordinator", () => {
         config,
         agents: runtimes(() => adapter),
         sandbox,
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        checker: async () => ({
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "valid",
+          ciphertextWords: 0,
+          outputWords: 0,
+          coverage: 1,
+        }),
         clock,
         gitPollIntervalMs: 1,
       });
@@ -570,7 +594,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => waitingAdapter()),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock,
     });
 
@@ -615,7 +645,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => adapter, "provider"),
       sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock: new ControlledClock(),
       preflight,
     });
@@ -665,7 +701,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => waitingAdapter()),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock,
     });
 
@@ -689,7 +731,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => waitingAdapter()),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock,
     });
 
@@ -746,7 +794,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => adapter),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock: new ControlledClock(),
     });
 

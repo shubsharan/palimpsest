@@ -46,7 +46,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     name: "check_published_solver",
     description:
-      "Run origin/main:solver.py against your currently visible private evidence and receive its commit and aggregate metrics.",
+      "Run origin/main:solver.py against your currently visible private evidence and receive execution, output-validity, word-count, and coverage feedback. This does not report correctness.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -88,21 +88,43 @@ const TEAM_CHANNEL_TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   },
 ];
 
-export interface CheckerMetrics {
-  matchedWords: number;
-  totalWords: number;
-  coverage: number;
-  accuracy: number;
+export interface CheckerCoverage {
+  feedbackId: "published-runnability-coverage-v1";
+  outputValidity: "valid" | "incomplete" | "malformed";
+  ciphertextWords?: number;
+  outputWords?: number;
+  coverage?: number;
+  error?: string;
 }
 
-export type CheckerResult = CheckerMetrics | { error: string };
+export interface CheckerResult extends CheckerCoverage {
+  executionStatus?: "succeeded";
+}
 
 export type CheckerHook = (request: {
-  agentId: AgentId;
+  ciphertextPath: string;
   candidatePath: string;
-  releasedStages: readonly number[];
   signal?: AbortSignal;
 }) => Promise<CheckerResult>;
+
+export interface PublishedCheckerFeedback {
+  feedbackId: "published-runnability-coverage-v1";
+  ref?: "refs/heads/main";
+  commit?: string;
+  executionStatus: "succeeded" | "failed" | "timed-out" | "oversized" | "indeterminate";
+  outputValidity:
+    | "valid"
+    | "missing"
+    | "empty"
+    | "malformed"
+    | "oversized"
+    | "incomplete";
+  ciphertextWords?: number;
+  outputWords?: number;
+  coverage: number;
+  error?: string;
+  execution?: Readonly<Record<string, unknown>>;
+}
 
 export interface AgentToolSet {
   definitions: readonly ToolDefinition[];
@@ -130,7 +152,6 @@ function executionSummary(result: SandboxCommandResult): Readonly<Record<string,
 
 async function checkPublishedSolver(
   options: {
-    agentId: AgentId;
     repositoryPath: string;
     solverSandbox: CommandSandbox;
     checker: CheckerHook;
@@ -167,23 +188,51 @@ async function checkPublishedSolver(
       ...(signal === undefined ? {} : { signal }),
       evaluate: ({ outputPath }) =>
         options.checker({
-          agentId: options.agentId,
+          ciphertextPath,
           candidatePath: outputPath,
-          releasedStages: releasedStages.map(({ ordinal }) => ordinal),
           ...(signal === undefined ? {} : { signal }),
         }),
     });
     outcome =
       published.kind === "succeeded"
-        ? { commit: published.identity.commit, ...published.value }
-        : {
+        ? {
+            ...published.value,
+            ref: published.identity.ref,
             commit: published.identity.commit,
+            executionStatus: "succeeded",
+          }
+        : {
+            feedbackId: "published-runnability-coverage-v1",
+            ref: published.identity.ref,
+            commit: published.identity.commit,
+            executionStatus: published.execution.timedOut
+              ? "timed-out"
+              : published.execution.outputExceeded
+                ? "oversized"
+                : published.execution.indeterminate === true
+                  ? "indeterminate"
+                  : "failed",
+            outputValidity:
+              published.error === "Published solver did not produce output."
+                ? "missing"
+                : published.error === "Published solver output is empty."
+                  ? "empty"
+                  : published.error.includes("exceeds")
+                    ? "oversized"
+                    : "malformed",
+            coverage: 0,
             error: published.error,
             execution: executionSummary(published.execution),
           };
   } catch (error) {
     if (error instanceof PublishedSolverSubmissionError) {
-      outcome = { error: error.message };
+      outcome = {
+        feedbackId: "published-runnability-coverage-v1",
+        executionStatus: "failed",
+        outputValidity: "missing",
+        coverage: 0,
+        error: error.message,
+      };
     } else {
       operationFailure = {
         error:
@@ -279,7 +328,6 @@ export function createAgentTools(options: {
         }
         return checkPublishedSolver(
           {
-            agentId: options.agentId,
             repositoryPath: options.repositoryPath,
             solverSandbox: options.solverSandbox,
             checker: options.checker,

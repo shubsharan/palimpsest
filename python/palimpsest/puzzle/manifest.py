@@ -361,7 +361,8 @@ class AllocationMetrics:
 @dataclass(frozen=True)
 class AllocationSummary:
     allocation_id: str
-    tier: str
+    evidence_tier: str
+    control_tier: str
     metrics: AllocationMetrics
     rejected_tiers: tuple[TierRejection, ...]
     path: Path
@@ -369,9 +370,11 @@ class AllocationSummary:
 
     def __post_init__(self) -> None:
         _prefixed_digest(self.allocation_id, "allocation-", "Allocation ID")
-        if self.tier not in _TIERS:
-            raise ValueError("Selected allocation tier is unsupported.")
-        expected_rejected = _TIERS[: _TIERS.index(self.tier)]
+        if self.evidence_tier not in _TIERS:
+            raise ValueError("Selected evidence tier is unsupported.")
+        if self.control_tier not in _TIERS:
+            raise ValueError("Selected control tier is unsupported.")
+        expected_rejected = _TIERS[: _TIERS.index(self.evidence_tier)]
         if tuple(rejection.tier for rejection in self.rejected_tiers) != expected_rejected:
             raise ValueError("Rejected allocation tiers must contain all earlier tiers in order.")
         (
@@ -379,20 +382,29 @@ class AllocationSummary:
             max_solo,
             max_region,
             max_stage,
-            max_control,
+            _max_control,
             min_owner_occurrences,
             min_sentinel_occurrences,
-        ) = _TIER_LIMITS[self.tier]
+        ) = _TIER_LIMITS[self.evidence_tier]
         if (
             self.metrics.min_owner_share < min_owner
             or self.metrics.solo_changed_set_coverage > max_solo
             or self.metrics.region_deviation > max_region
             or self.metrics.stage_deviation > max_stage
-            or self.metrics.max_control_distance > max_control
             or self.metrics.min_owner_occurrences_per_region < min_owner_occurrences
             or (self.metrics.min_sentinel_occurrences_per_agent_region < min_sentinel_occurrences)
         ):
-            raise ValueError(f"Allocation metrics do not satisfy the {self.tier} tier.")
+            raise ValueError(
+                f"Allocation metrics do not satisfy the {self.evidence_tier} evidence tier."
+            )
+        control_limit = _TIER_LIMITS[self.control_tier][4]
+        controls_complete = self.metrics.unmatched_control_count == 0
+        if self.control_tier in {"strict", "balanced"} and (
+            not controls_complete or self.metrics.max_control_distance > control_limit
+        ):
+            raise ValueError(
+                f"Allocation controls do not satisfy the {self.control_tier} control tier."
+            )
         if self.path.as_posix() != "oracle/allocation.json":
             raise ValueError("Allocation path must be oracle/allocation.json.")
         _digest(self.sha256, "Allocation sha256")
@@ -400,7 +412,8 @@ class AllocationSummary:
     def to_dict(self) -> dict[str, Any]:
         return {
             "allocationId": self.allocation_id,
-            "tier": self.tier,
+            "evidenceTier": self.evidence_tier,
+            "controlTier": self.control_tier,
             "metrics": self.metrics.to_dict(),
             "rejectedTiers": [rejection.to_dict() for rejection in self.rejected_tiers],
             "path": self.path.as_posix(),
@@ -414,13 +427,22 @@ class AllocationSummary:
             value,
             name,
             fields=frozenset(
-                {"allocationId", "tier", "metrics", "rejectedTiers", "path", "sha256"}
+                {
+                    "allocationId",
+                    "evidenceTier",
+                    "controlTier",
+                    "metrics",
+                    "rejectedTiers",
+                    "path",
+                    "sha256",
+                }
             ),
         )
         rejections = _array(record["rejectedTiers"], f"{name} rejectedTiers", allow_empty=True)
         return cls(
             allocation_id=_string(record["allocationId"], f"{name} allocationId"),
-            tier=_string(record["tier"], f"{name} tier"),
+            evidence_tier=_string(record["evidenceTier"], f"{name} evidenceTier"),
+            control_tier=_string(record["controlTier"], f"{name} controlTier"),
             metrics=AllocationMetrics.from_dict(record["metrics"]),
             rejected_tiers=tuple(
                 TierRejection.from_dict(item, index)
@@ -837,7 +859,7 @@ class PuzzleBuild:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "pairedBuildId": self.paired_build_id,
             "blockId": self.block_id,
             "source": self.source.to_dict(),
@@ -883,7 +905,7 @@ class PuzzleBuild:
                 }
             ),
         )
-        if _integer(record["schemaVersion"], f"{name} schemaVersion") != 3:
+        if _integer(record["schemaVersion"], f"{name} schemaVersion") != 4:
             raise ValueError("Unsupported puzzle build schema version.")
         agent_ids = _strings(record["agentIds"], f"{name} agentIds")
         raw_references = _array(record["references"], f"{name} references")

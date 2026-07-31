@@ -57,6 +57,7 @@ export interface StudyModelDeclaration {
 export interface StudyBlock {
   blockId: string;
   phase: StudyPhase;
+  sourcePath: string;
 }
 
 export interface AgentModelAssignment {
@@ -82,8 +83,13 @@ export interface StudyOrders {
 }
 
 export interface StudyScoring {
-  metricId: "normalized-positional-word-v1";
-  reviewerSelectionId: "selected-workspace-main-snapshot-v1";
+  primaryMetricId: "normalized-positional-word-v1";
+  diagnosticMetricId: "palimpsest-diagnostics-v1";
+  evaluationPolicyId: "all-canonical-main-snapshots-v1";
+}
+
+export interface StudyChecking {
+  feedbackId: "published-runnability-coverage-v1";
 }
 
 export interface StudyRubric {
@@ -108,7 +114,7 @@ export interface StudyCommunication {
 }
 
 export interface StudyManifest {
-  schemaVersion: 4;
+  schemaVersion: 5;
   communication: StudyCommunication;
   blocks: StudyBlock[];
   assignment: AgentModelAssignment[];
@@ -117,6 +123,7 @@ export interface StudyManifest {
   schedule: StudySchedule;
   budgets: StudyBudgets;
   orders: StudyOrders;
+  checking: StudyChecking;
   scoring: StudyScoring;
   rubric: StudyRubric;
   adjustableFields: AdjustableStudyField[];
@@ -137,7 +144,7 @@ export interface PlannedStudyCell {
 }
 
 export interface ResolvedStudy {
-  schemaVersion: 4;
+  schemaVersion: 5;
   communication: Readonly<StudyCommunication>;
   blocks: readonly StudyBlock[];
   assignment: readonly AgentModelAssignment[];
@@ -152,6 +159,7 @@ export interface ResolvedStudy {
     calibration: readonly ConditionId[];
     validation: readonly (readonly ConditionId[])[];
   };
+  checking: Readonly<StudyChecking>;
   scoring: Readonly<StudyScoring>;
   rubric: Readonly<StudyRubric>;
   rubricPath: string;
@@ -186,11 +194,11 @@ ajv.addFormat("uri", {
 const validateSchema: ValidateFunction = ajv.compile(studySchema);
 
 const EXPECTED_BLOCKS = [
-  { blockId: "calibration-theron-ware", phase: "calibration" },
-  { blockId: "validation-odd-women", phase: "validation" },
-  { blockId: "validation-pointed-firs", phase: "validation" },
-  { blockId: "validation-custom-country", phase: "validation" },
-  { blockId: "validation-woodlanders", phase: "validation" },
+  { blockId: "calibration-odd-women", phase: "calibration", sourcePath: "fixtures/corpus/pg4313.txt" },
+  { blockId: "validation-pointed-firs", phase: "validation", sourcePath: "fixtures/corpus/367-h.htm" },
+  { blockId: "validation-custom-country", phase: "validation", sourcePath: "fixtures/corpus/pg11052.txt" },
+  { blockId: "validation-woodlanders", phase: "validation", sourcePath: "fixtures/corpus/pg482.txt" },
+  { blockId: "validation-silas-lapham", phase: "validation", sourcePath: "fixtures/corpus/pg154.txt" },
 ] as const satisfies readonly StudyBlock[];
 
 const EXPECTED_CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
@@ -204,7 +212,7 @@ const EXPECTED_ADJUSTABLE_FIELDS = [
   "budgets.tokenBudgetPerAgent",
   "budgets.perAttemptMonetaryCeilingCents",
 ] as const;
-const PRIMARY_CELL_COUNT = 20;
+const PLANNED_CALIBRATION_CELL_COUNT = 4;
 const AGENT_COUNT = 3;
 
 function structuralError(error: ErrorObject): string {
@@ -449,12 +457,12 @@ function assertAuthorizationCeilings(config: StudyManifest): void {
       ? null
       : multiplyAuthorization(
           multiplyAuthorization(tokenBudget, AGENT_COUNT, "Primary authorized token total"),
-          PRIMARY_CELL_COUNT,
+          PLANNED_CALIBRATION_CELL_COUNT,
           "Primary authorized token total",
         );
   const authorizedMoney = multiplyAuthorization(
     attemptMoney,
-    PRIMARY_CELL_COUNT,
+    PLANNED_CALIBRATION_CELL_COUNT,
     "Primary authorized monetary total",
   );
   if (authorizedTokens !== null && totalTokens !== null && authorizedTokens > totalTokens) {
@@ -587,7 +595,7 @@ export async function resolveStudy(
   const validationCells = cellsFor("validation", validationBlocks, manifest.orders.validation);
 
   return deepFreeze({
-    schemaVersion: 4,
+    schemaVersion: 5,
     communication: { ...manifest.communication },
     blocks: manifest.blocks.map((block) => ({ ...block })),
     assignment: manifest.assignment.map((assignment) => ({ ...assignment })),
@@ -604,6 +612,7 @@ export async function resolveStudy(
       calibration: [...manifest.orders.calibration],
       validation: manifest.orders.validation.map((order) => [...order]),
     },
+    checking: { ...manifest.checking },
     scoring: { ...manifest.scoring },
     rubric: { ...manifest.rubric },
     rubricPath: resolvedRubricPath,

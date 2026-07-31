@@ -10,7 +10,8 @@ import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
-const block = "calibration-theron-ware";
+const block = "calibration-odd-women";
+const source = join(root, "fixtures/corpus/pg4313.txt");
 
 interface CommandResult {
   exitCode: number;
@@ -107,8 +108,8 @@ describe("operator CLI contract", () => {
         "--",
         "--block",
         block,
-        "--discover",
-        "true",
+        "--source",
+        source,
         "--config",
         "experiments/config.yaml",
         "--condition",
@@ -133,7 +134,7 @@ describe("operator CLI contract", () => {
     ).toEqual(
       new Map([
         ["--block", block],
-        ["--discover", "true"],
+        ["--source", source],
         ["--config", "experiments/config.yaml"],
         ["--condition", "CR"],
         ["--phase", "validation"],
@@ -164,7 +165,18 @@ describe("operator CLI contract", () => {
 
     const result = await execute(
       process.execPath,
-      [tsxCli, ...(command?.slice(1) ?? []), "--block", block, "--output", output],
+      [
+        tsxCli,
+        ...(command?.slice(1) ?? []),
+        "--source",
+        source,
+        "--phase",
+        "calibration",
+        "--block",
+        block,
+        "--output",
+        output,
+      ],
       { cwd: root },
     );
 
@@ -182,8 +194,8 @@ describe("operator CLI contract", () => {
     });
   }, 30_000);
 
-  it("rejects an invalid discovery value before creating a build directory", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-discovery-"));
+  it("rejects an invalid phase before creating a build directory", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-phase-"));
     const output = join(temporaryRoot, "build");
     const scripts = await packageScripts();
     const command = scripts["puzzle:build"]?.split(/\s+/);
@@ -193,10 +205,10 @@ describe("operator CLI contract", () => {
       [
         tsxCli,
         ...(command?.slice(1) ?? []),
-        "--block",
-        block,
-        "--discover",
-        "false",
+        "--source",
+        source,
+        "--phase",
+        "pilot",
         "--output",
         output,
       ],
@@ -205,7 +217,7 @@ describe("operator CLI contract", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("--discover must be exactly true");
+    expect(result.stderr).toContain("--phase must be exactly calibration or validation");
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -253,11 +265,15 @@ describe("operator CLI contract", () => {
     const first = await buildPuzzle({
       root,
       output: firstOutput,
+      source,
+      phase: "calibration",
       block,
     });
     const second = await buildPuzzle({
       root,
       output: secondOutput,
+      source,
+      phase: "calibration",
       block,
     });
 

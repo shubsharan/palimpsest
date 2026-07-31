@@ -23,14 +23,14 @@ describe("study manifest", () => {
   it("parses YAML while rejecting duplicate keys and aliases", () => {
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 4
-schemaVersion: 4
+schemaVersion: 5
+schemaVersion: 5
 `),
     ).toThrow(/map keys must be unique/i);
 
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 4
+schemaVersion: 5
 value: &shared { nested: true }
 copy: *shared
 `),
@@ -49,37 +49,37 @@ copy: *shared
     expect(
       expandPhase(study, "calibration").map(({ blockId, condition }) => [blockId, condition]),
     ).toEqual([
-      ["calibration-theron-ware", "CS"],
-      ["calibration-theron-ware", "CR"],
-      ["calibration-theron-ware", "IR"],
-      ["calibration-theron-ware", "IS"],
+      ["calibration-odd-women", "CS"],
+      ["calibration-odd-women", "CR"],
+      ["calibration-odd-women", "IR"],
+      ["calibration-odd-women", "IS"],
     ]);
     expect(
       expandPhase(study, "validation").map(({ blockId, condition }) => [blockId, condition]),
     ).toEqual([
-      ["validation-odd-women", "CS"],
-      ["validation-odd-women", "CR"],
-      ["validation-odd-women", "IR"],
-      ["validation-odd-women", "IS"],
-      ["validation-pointed-firs", "CR"],
-      ["validation-pointed-firs", "IS"],
       ["validation-pointed-firs", "CS"],
+      ["validation-pointed-firs", "CR"],
       ["validation-pointed-firs", "IR"],
-      ["validation-custom-country", "IS"],
-      ["validation-custom-country", "IR"],
+      ["validation-pointed-firs", "IS"],
       ["validation-custom-country", "CR"],
+      ["validation-custom-country", "IS"],
       ["validation-custom-country", "CS"],
-      ["validation-woodlanders", "IR"],
-      ["validation-woodlanders", "CS"],
+      ["validation-custom-country", "IR"],
       ["validation-woodlanders", "IS"],
+      ["validation-woodlanders", "IR"],
       ["validation-woodlanders", "CR"],
+      ["validation-woodlanders", "CS"],
+      ["validation-silas-lapham", "IR"],
+      ["validation-silas-lapham", "CS"],
+      ["validation-silas-lapham", "IS"],
+      ["validation-silas-lapham", "CR"],
     ]);
     expect(study.calibrationCells.map((cell) => cell.phasePosition)).toEqual([1, 2, 3, 4]);
     expect(study.validationCells.map((cell) => cell.phasePosition)).toEqual(
       Array.from({ length: 16 }, (_, index) => index + 1),
     );
     expect(study.validationCells[4]).toMatchObject({
-      cellId: "validation-5-validation-pointed-firs-CR",
+      cellId: "validation-5-validation-custom-country-CR",
       conditionOrderPosition: 1,
     });
     expect(study.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
@@ -257,7 +257,7 @@ copy: *shared
 
   it("checks token and monetary primary authorization independently", async () => {
     const manifest = structuredClone(await validManifest());
-    manifest.budgets.totalMonetaryCeilingCents = 199_999;
+    manifest.budgets.totalMonetaryCeilingCents = 39_999;
 
     await expect(resolveStudy(manifest, resolve("."))).rejects.toThrow(
       /totalMonetaryCeilingCents/i,

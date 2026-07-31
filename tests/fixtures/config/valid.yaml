@@ -1,13 +1,13 @@
-schemaVersion: 4
+schemaVersion: 5
 
 communication: { teamChannel: disabled }
 
 blocks:
-  - { blockId: calibration-theron-ware, phase: calibration }
-  - { blockId: validation-odd-women, phase: validation }
-  - { blockId: validation-pointed-firs, phase: validation }
-  - { blockId: validation-custom-country, phase: validation }
-  - { blockId: validation-woodlanders, phase: validation }
+  - { blockId: calibration-odd-women, phase: calibration, sourcePath: fixtures/corpus/pg4313.txt }
+  - { blockId: validation-pointed-firs, phase: validation, sourcePath: fixtures/corpus/367-h.htm }
+  - { blockId: validation-custom-country, phase: validation, sourcePath: fixtures/corpus/pg11052.txt }
+  - { blockId: validation-woodlanders, phase: validation, sourcePath: fixtures/corpus/pg482.txt }
+  - { blockId: validation-silas-lapham, phase: validation, sourcePath: fixtures/corpus/pg154.txt }
 
 assignment:
   - { agentId: agent-1, modelProfileId: gpt }
@@ -50,9 +50,12 @@ orders:
     - [IS, IR, CR, CS]
     - [IR, CS, IS, CR]
 
+checking:
+  feedbackId: published-runnability-coverage-v1
 scoring:
-  metricId: normalized-positional-word-v1
-  reviewerSelectionId: selected-workspace-main-snapshot-v1
+  primaryMetricId: normalized-positional-word-v1
+  diagnosticMetricId: palimpsest-diagnostics-v1
+  evaluationPolicyId: all-canonical-main-snapshots-v1
 
 rubric:
   rubricId: fixture-behavior-review-v1

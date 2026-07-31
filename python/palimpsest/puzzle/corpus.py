@@ -46,6 +46,32 @@ class SourceDefinition:
     byte_length: int
 
 
+def load_text_source(path: Path) -> SourceDefinition:
+    """Load an operator-supplied UTF-8 text source without requiring registry promotion."""
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise ValueError(f"Puzzle source is not a file: {resolved}")
+    content = resolved.read_bytes()
+    if not content:
+        raise ValueError("Puzzle source must not be empty.")
+    try:
+        decoded = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Puzzle source must be valid UTF-8 text.") from error
+    if "\x00" in decoded:
+        raise ValueError("Puzzle source must not contain NUL characters.")
+    digest = sha256_hex(content)
+    stem = re.sub(r"[^a-z0-9]+", "-", resolved.stem.casefold()).strip("-") or "source"
+    source_format = "gutenberg-html" if resolved.suffix.casefold() in {".htm", ".html"} else "text"
+    return SourceDefinition(
+        path=resolved,
+        source_format=source_format,
+        source_id=f"{stem}-{digest[:12]}",
+        sha256=digest,
+        byte_length=len(content),
+    )
+
+
 @dataclass(frozen=True)
 class Chapter:
     index: int
@@ -182,7 +208,33 @@ class _GutenbergParagraphParser(HTMLParser):
 
 
 def load_paragraphs(source: SourceDefinition) -> tuple[str, ...]:
-    body = strip_gutenberg(source.path.read_text(encoding="utf-8"))
+    raw = source.path.read_text(encoding="utf-8")
+    if source.source_format == "text":
+        normalized = unicodedata.normalize("NFC", raw.replace("\r\n", "\n").replace("\r", "\n"))
+        start = START_MARKER.search(normalized)
+        end = END_MARKER.search(normalized, start.end() if start else 0)
+        body = (
+            normalized[start.end() : end.start()].strip()
+            if start is not None and end is not None and start.end() < end.start()
+            else normalized
+        )
+        first_heading = next(
+            (
+                match
+                for match in _FIRST_NARRATIVE_HEADING.finditer(body)
+                if re.match(r"\n[ \t]*\n", body[match.end() :]) is not None
+            ),
+            None,
+        )
+        if first_heading is not None:
+            body = body[first_heading.end() :]
+        return tuple(
+            paragraph
+            for candidate in _BLANK_LINES.split(body)
+            if (paragraph := _canonical_paragraph(candidate)) is not None
+        )
+
+    body = strip_gutenberg(raw)
     if source.source_format == "gutenberg-text":
         first_heading = next(
             (

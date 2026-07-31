@@ -933,7 +933,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const result = await runAttempt({
     config,
     agents: options.agents,
-    checker: createChecker(root, buildRoot),
+    checker: createChecker(root),
     sandbox,
     clock: options.clock ?? systemMonotonicClock,
     ...(preflight === undefined ? {} : { preflight }),

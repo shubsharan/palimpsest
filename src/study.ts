@@ -173,6 +173,8 @@ async function prepareBuilds(options: {
     await options.dependencies.build({
       root: options.root,
       output: buildRoot,
+      source: join(options.root, block.sourcePath),
+      phase: block.phase,
       block: block.blockId,
     });
     bindings.push(await readBuildBinding(buildRoot, block.blockId));
@@ -280,7 +282,7 @@ function createDesignReceiptValue(options: {
   const baselineBudgets = options.baselineBudgets ?? options.study.budgets;
   const prompts = promptBindings(options.study, baselineBudgets.tokenBudgetPerAgent);
   const identity = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     sourceRevision: options.sourceRevision,
     sandbox: { ...options.sandbox, ...SANDBOX_POLICY },
     manifestDigest: options.manifestDigest ?? options.study.manifestDigest,
@@ -294,6 +296,7 @@ function createDesignReceiptValue(options: {
       path: options.study.rubric.path,
       sha256: options.study.rubric.sha256,
     },
+    checking: options.study.checking,
     scoring: options.study.scoring,
     promptTemplates: prompts.promptTemplates,
     baselinePrompts: prompts.baselinePrompts,
