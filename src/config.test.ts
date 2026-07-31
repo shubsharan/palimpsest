@@ -23,21 +23,21 @@ describe("study manifest", () => {
   it("parses YAML while rejecting duplicate keys and aliases", () => {
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 4
-schemaVersion: 4
+schemaVersion: 6
+schemaVersion: 6
 `),
     ).toThrow(/map keys must be unique/i);
 
     expect(() =>
       parseStudyYaml(`
-schemaVersion: 4
+schemaVersion: 6
 value: &shared { nested: true }
 copy: *shared
 `),
     ).toThrow(/alias/i);
   });
 
-  it("resolves the exact five-block matrix without reading credentials", async () => {
+  it("resolves the four-cell calibration without reading credentials", async () => {
     const study = await resolveStudy(await validManifest(), resolve("."));
 
     expect(study.assignment).toEqual([
@@ -46,45 +46,18 @@ copy: *shared
       { agentId: "agent-3", modelProfileId: "gemini" },
     ]);
     expect(study.communication).toEqual({ teamChannel: "disabled" });
-    expect(
-      expandPhase(study, "calibration").map(({ blockId, condition }) => [blockId, condition]),
-    ).toEqual([
-      ["calibration-theron-ware", "CS"],
-      ["calibration-theron-ware", "CR"],
-      ["calibration-theron-ware", "IR"],
-      ["calibration-theron-ware", "IS"],
+    expect(expandPhase(study).map(({ blockId, condition }) => [blockId, condition])).toEqual([
+      ["calibration-odd-women", "CS"],
+      ["calibration-odd-women", "CR"],
+      ["calibration-odd-women", "IR"],
+      ["calibration-odd-women", "IS"],
     ]);
-    expect(
-      expandPhase(study, "validation").map(({ blockId, condition }) => [blockId, condition]),
-    ).toEqual([
-      ["validation-odd-women", "CS"],
-      ["validation-odd-women", "CR"],
-      ["validation-odd-women", "IR"],
-      ["validation-odd-women", "IS"],
-      ["validation-pointed-firs", "CR"],
-      ["validation-pointed-firs", "IS"],
-      ["validation-pointed-firs", "CS"],
-      ["validation-pointed-firs", "IR"],
-      ["validation-custom-country", "IS"],
-      ["validation-custom-country", "IR"],
-      ["validation-custom-country", "CR"],
-      ["validation-custom-country", "CS"],
-      ["validation-woodlanders", "IR"],
-      ["validation-woodlanders", "CS"],
-      ["validation-woodlanders", "IS"],
-      ["validation-woodlanders", "CR"],
-    ]);
-    expect(study.calibrationCells.map((cell) => cell.phasePosition)).toEqual([1, 2, 3, 4]);
-    expect(study.validationCells.map((cell) => cell.phasePosition)).toEqual(
-      Array.from({ length: 16 }, (_, index) => index + 1),
-    );
-    expect(study.validationCells[4]).toMatchObject({
-      cellId: "validation-5-validation-pointed-firs-CR",
-      conditionOrderPosition: 1,
-    });
+    expect(study.cells.map((cell) => cell.phasePosition)).toEqual([1, 2, 3, 4]);
     expect(study.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(study.immutableManifestDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(study.immutableManifest.budgets).toEqual({
+      tokenBudgetPerAgent: 200_000,
+      perAttemptMonetaryCeilingCents: 10_000,
       totalTokenCeiling: 15_000_000,
       totalMonetaryCeilingCents: 250_000,
     });
@@ -96,19 +69,18 @@ copy: *shared
     });
     expect(JSON.stringify(study)).not.toContain("secret");
     expect(Object.isFrozen(study)).toBe(true);
-    expect(Object.isFrozen(study.validationCells)).toBe(true);
+    expect(Object.isFrozen(study.cells)).toBe(true);
   });
 
   it("loads and verifies the checked-in manifest and rubric", async () => {
     const study = await loadResolvedStudy(resolve("experiments", "config.yaml"), resolve("."));
 
-    expect(study.blocks).toHaveLength(5);
-    expect(study.calibrationCells).toHaveLength(4);
-    expect(study.validationCells).toHaveLength(16);
+    expect(study.blocks).toHaveLength(1);
+    expect(study.cells).toHaveLength(4);
     expect(study.rubric.rubricId).toBe("palimpsest-behavior-review-v1");
   });
 
-  it("changes only the complete manifest digest for either adjustable budget", async () => {
+  it("binds every budget into both manifest digests", async () => {
     const baseline = await validManifest();
     const tokenAdjustment = structuredClone(baseline);
     tokenAdjustment.budgets.tokenBudgetPerAgent = 210_000;
@@ -123,8 +95,8 @@ copy: *shared
 
     expect(changedTokens.manifestDigest).not.toBe(original.manifestDigest);
     expect(changedMoney.manifestDigest).not.toBe(original.manifestDigest);
-    expect(changedTokens.immutableManifestDigest).toBe(original.immutableManifestDigest);
-    expect(changedMoney.immutableManifestDigest).toBe(original.immutableManifestDigest);
+    expect(changedTokens.immutableManifestDigest).not.toBe(original.immutableManifestDigest);
+    expect(changedMoney.immutableManifestDigest).not.toBe(original.immutableManifestDigest);
   });
 
   it("accepts alternate valid clocks and freezes them into the resolved study", async () => {
@@ -160,13 +132,13 @@ copy: *shared
   it("rejects partially disabled token policies", async () => {
     const missingTotal = structuredClone(await validManifest());
     missingTotal.budgets.tokenBudgetPerAgent = null;
-    expect(() => resolveStudy(missingTotal, resolve("."))).rejects.toThrow(
+    await expect(resolveStudy(missingTotal, resolve("."))).rejects.toThrow(
       /tokenBudgetPerAgent.*totalTokenCeiling|both be numeric or both be null/i,
     );
 
     const missingPerAgent = structuredClone(await validManifest());
     missingPerAgent.budgets.totalTokenCeiling = null;
-    expect(() => resolveStudy(missingPerAgent, resolve("."))).rejects.toThrow(
+    await expect(resolveStudy(missingPerAgent, resolve("."))).rejects.toThrow(
       /tokenBudgetPerAgent.*totalTokenCeiling|both be numeric or both be null/i,
     );
   });
@@ -211,7 +183,7 @@ copy: *shared
   it.each([
     ["schema-v1-runs.yaml", /schemaVersion|unsupported|invalid/i],
     ["schedule-drift.yaml", /releaseOffsetsMs|invalid/i],
-    ["order-drift.yaml", /condition orders/i],
+    ["order-drift.yaml", /condition order/i],
     ["secret-bearing.yaml", /secret-bearing provider option/i],
     ["ceiling-overflow.yaml", /totalTokenCeiling/i],
   ])("rejects the %s fixture", async (name, error) => {
@@ -234,10 +206,10 @@ copy: *shared
 
   it("rejects reordered blocks, assignments, and failure-policy drift", async () => {
     const reorderedBlocks = structuredClone(await validManifest());
-    [reorderedBlocks.blocks[1], reorderedBlocks.blocks[2]] = [
-      reorderedBlocks.blocks[2]!,
-      reorderedBlocks.blocks[1]!,
-    ];
+    reorderedBlocks.blocks.push({
+      blockId: "extra-block",
+      sourcePath: "fixtures/chronicles-of-break-oday.txt",
+    });
     expect(() => validateStudyManifest(reorderedBlocks)).toThrow(/blocks|invalid/i);
 
     const reorderedAssignment = structuredClone(await validManifest());
@@ -257,7 +229,7 @@ copy: *shared
 
   it("checks token and monetary primary authorization independently", async () => {
     const manifest = structuredClone(await validManifest());
-    manifest.budgets.totalMonetaryCeilingCents = 199_999;
+    manifest.budgets.totalMonetaryCeilingCents = 39_999;
 
     await expect(resolveStudy(manifest, resolve("."))).rejects.toThrow(
       /totalMonetaryCeilingCents/i,

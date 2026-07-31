@@ -1,6 +1,6 @@
 # Palimpsest
 
-Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes five blocks, a three-model assignment, four conditions, schedules, budgets, order, communication tooling, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
+Palimpsest is a local research runner for a team word-substitution puzzle. One checked-in YAML manifest freezes one calibration block, a three-model assignment, four conditions, schedules, budgets, order, communication tooling, and failure rules. Persistent model sessions receive different private evidence over time and decide for themselves how to solve. A canonical condition selects shared or isolated Git and the stationary or re-key puzzle twin.
 
 This is a puzzle and a research artifact. It is not a hosted service, an enterprise application, or a prescribed multi-agent workflow.
 
@@ -14,8 +14,8 @@ This is a puzzle and a research artifact. It is not a hosted service, an enterpr
 - [Feature 013 quickstart](specs/013-engineered-paired-blocks/quickstart.md): paired-block discovery, construction, and verification.
 - [Feature 014 quickstart](specs/014-four-team-conditions/quickstart.md): four-condition runtime and provider-free acceptance.
 - [Feature 015 quickstart](specs/015-frozen-five-block-protocol/quickstart.md): frozen calibration, validation, and explicit replacement flow.
-- [Experiment schema](experiments/schema.json): strict version-4 study manifest.
-- [Block catalog](experiments/blocks.json): five pinned paired study blocks.
+- [Experiment schema](experiments/schema.json): strict version-6 calibration manifest.
+- [Block catalog](experiments/blocks.json): the active paired calibration block.
 - [Study manifest](experiments/config.yaml): frozen block matrix, assignment, budgets, providers, rubric, and failure policy.
 
 Features 011 and 012 provide the configurable research runner and its verification boundary. Feature 013 adds engineered stationary/re-key block pairs. Feature 014 implements the four communication/key conditions. Feature 015 freezes the complete five-block protocol. Feature 016 adds an optional direct team channel without changing the Git grading boundary.
@@ -33,30 +33,31 @@ The first bootstrap may use the network. Once the uv cache is populated, local c
 
 ## Configure The Study
 
-Scientific block inputs live in `experiments/blocks.json`. The strict study manifest in `experiments/config.yaml` declares:
+Scientific source inputs live at the `sourcePath` values in the strict study manifest, `experiments/config.yaml`, which declares:
 
-- `blocks`: one calibration and four validation block IDs in fixed order;
+- `blocks`: the one active calibration block;
 - `communication.teamChannel`: `enabled` for a shared public discussion room or `disabled` for Git-only collaboration;
 - `assignment`: one ordered three-agent model assignment used by every cell;
 - `schedule` and `budgets`: per-run reveal offsets, wall cutoff, optional token limit, and mandatory monetary authorizations;
 - `providers`: direct OpenAI, Anthropic, Google, or OpenAI-compatible connections whose credentials are named by environment variable;
 - `models`: provider/model profiles and non-secret settings;
-- `orders`: one calibration and four balanced validation condition sequences; and
+- `order`: the calibration sequence `CS`, `CR`, `IR`, `IS`; and
 - `scoring`, `rubric`, `adjustableFields`, and `failurePolicy`: the declared observation and replacement boundary.
 
-The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
+The builder derives source identity and seed from each source's bytes, retains fixed three-agent/six-stage geometry, and seals the first phase-eligible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
 
 ## Run
 
-Build both variants of one pinned block without provider access:
+Build both variants from any eligible local UTF-8 prose source without provider access:
 
 ```bash
 pnpm puzzle:build -- \
-  --block calibration-theron-ware \
+  --source fixtures/chronicles-of-break-oday.txt \
+  --phase calibration \
   --output artifacts/build
 ```
 
-The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
+The single command parses, scans, validates, seals, and publishes atomically. Ineligible input exits nonzero without a partial build. The schema-version-4 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
 
 Run one standalone condition with the frozen assignment:
 
@@ -68,38 +69,34 @@ pnpm puzzle:run -- \
   --attempt-root artifacts/attempt
 ```
 
-Run calibration, then validation, under one local study root:
+Run the four-cell calibration under one local study root:
 
 ```bash
 pnpm puzzle:experiment -- \
   --config experiments/config.yaml \
-  --phase calibration \
-  --study-root artifacts/study
-pnpm puzzle:experiment -- \
-  --config experiments/config.yaml \
-  --phase validation \
   --study-root artifacts/study
 ```
 
-Calibration constructs all five builds and publishes immutable `design.json` before the first model session. Each phase reserves and runs one cell at a time, then indexes only strict durable attempts in its `phase.json`. A frozen `session-infrastructure-error` stops the phase; one explicit `--replace <attempt-id>` command may append a cited replacement. Nothing retries automatically.
+Calibration constructs one build and publishes immutable `design.json` before the first model session. It reserves and runs one cell at a time, evaluates every canonical origin, writes `behavior-evidence.json`, and only then indexes the attempt in `phase.json`. Evaluation or evidence failure leaves the frozen attempt unindexed, reports its preserved path, and stops. The direct evaluator can diagnose that attempt, but it does not resume or repair the study. Nothing retries automatically.
 
-After inspecting a frozen attempt, the researcher selects an agent identity. The evaluator uses that agent's assigned published Git repository:
+After an attempt freezes, the evaluator grades every condition-canonical published Git repository:
 
 ```bash
 pnpm puzzle:evaluate -- \
-  --attempt artifacts/study/validation/attempts/<attempt-id> \
-  --workspace agent-1
+  --attempt artifacts/study/calibration/attempts/<attempt-id>
 ```
 
-Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` captures only literal `refs/heads/main`, runs its pinned Git-free tree on ciphertext assembled from one frozen view of ordered host release records, cleans the capture, and only then reports the commit plus aggregate coverage and accuracy. The captured tree remains stable across later force-pushes. Local files, unpushed commits, other branches, agent-visible evidence mutations, private references, and agent-workspace siblings are absent from that execution.
+Every assigned origin begins with the same neutral `solver.py` scaffold on `main`. During an attempt, `check_published_solver` captures only literal `refs/heads/main`, runs its pinned Git-free tree on ciphertext assembled from one frozen view of ordered host release records, cleans the capture, and only then reports the commit, execution and output validity, word counts, and plaintext-independent coverage. It never opens oracle plaintext or checker truth and never reports correctness. The captured tree remains stable across later force-pushes. Local files, unpushed commits, other branches, agent-visible evidence mutations, and agent-workspace siblings are absent from that execution.
 
 The manifest is the run-control interface. `schedule.releaseOffsetsMs` supplies six strictly increasing offsets beginning at zero, and `schedule.cutoffMs` must follow the final release. Set both `budgets.tokenBudgetPerAgent` and `budgets.totalTokenCeiling` to positive integers to enforce token termination, or set both to `null` for a wall-time-only run; provider-reported usage is still recorded. Monetary authorization remains explicit in either mode. The resolved values are frozen into each run's protocol and durable artifacts, so changing the next run means editing the manifest rather than changing runner code.
 
 When `communication.teamChannel` is `enabled`, shared-condition agents also receive one attempt-local, append-only public room through `post_team_message` and `read_team_messages`; accepted posts wake peers and are retained in the attempt trace. The runtime commits live message, Git, and release views synchronously and projects them through one ordered trace outbox, so trace I/O cannot delay scheduled evidence. Any projection failure invalidates the attempt. Isolated agents never receive that room or its activity. Set the field to `disabled` to restore the prior Git-only treatment.
 
-Final evaluation uses the same complete capture-execute-evaluate-clean operation, records the exact commit before execution, and publishes completion/results only after cleanup. Missing or invalid submissions remain explicit evaluation outcomes; trusted host-process, scorer, sandbox, mount, cleanup, and cancellation failures remain infrastructure failures. The solver writes only to bounded tmpfs; afterward the host extracts the declared regular file into hidden staging and atomically publishes it after validation. The sandbox mounts no frozen repository, agent workspace, evidence, reference corpus, oracle path, or writable host output. Shared-condition agents all map to the one team origin; isolated-condition agents map to their own private origins. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
+Final evaluation uses the same complete capture-execute-evaluate-clean operation, records each exact commit before execution, and publishes completion/results only after cleanup. It evaluates the one shared origin once in shared conditions and all three private origins independently in isolated conditions; it accepts no workspace selection, notes, alternate command, or output path. Missing or invalid submissions remain explicit evaluation outcomes; trusted host-process, scorer, sandbox, mount, cleanup, and cancellation failures remain infrastructure failures. The solver writes only to bounded tmpfs; afterward the host extracts the declared regular file into hidden staging and atomically publishes it after validation. The sandbox mounts no frozen repository, agent workspace, evidence, oracle path, or writable host output. Post-freeze records retain aggregate scores, diagnostics, realized team-product status, collective ceiling, and nullable integration gap without creating a synthetic reconstruction. Discussion is never a submission or grading path. The runner prescribes no roles, commit sequence, branch strategy, messaging cadence, or collaboration cadence.
 
 Each attempt writes an append-only canonical `trace.jsonl` and a live-readable sibling `trace.log`. The text log renders each redacted event with its elapsed time, actor, event type, and indented data; watch it during a run with `tail -F artifacts/attempt/trace.log`. When a trace is reopened, the runner regenerates `trace.log` from `trace.jsonl`.
+
+`behavior-evidence.json` records only durable facts: message, checker, and Git event references; per-agent usage; returned reasoning-summary presence; final origin commits and statuses; and artifact paths. The behavior rubric remains a separate human interpretation step for integration, interference, recovery, belief replacement, and source recognition.
 
 ## Development Check
 
@@ -123,4 +120,4 @@ Generated runs belong under the ignored `artifacts/` directory. Provider-backed 
 
 ## Scope
 
-Palimpsest deterministically constructs paired puzzle blocks and scores selected runs. Feature 013 establishes controlled information geometry, not a behavioral result. Live model decisions, provider serving behavior, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner does not certify collaboration or belief revision or provide a hardened public benchmark.
+Palimpsest deterministically constructs paired puzzle blocks and scores every canonical final origin. Feature 013 establishes controlled information geometry, not a behavioral result. Live model decisions, provider serving behavior, Git interleavings, reviewer judgment, and collaboration outcomes are not reproducible claims. The runner does not certify collaboration or belief revision or provide a hardened public benchmark.

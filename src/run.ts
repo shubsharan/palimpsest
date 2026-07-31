@@ -58,7 +58,7 @@ import type { TeamChannelMode } from "./team-channel.js";
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-export type AttemptStudyPhase = "standalone" | "calibration" | "validation";
+export type AttemptStudyPhase = "standalone" | "calibration";
 
 export interface AttemptConfig {
   attemptId: string;
@@ -73,7 +73,6 @@ export interface AttemptConfig {
   buildId: string;
   artifactRoot: string;
   buildRoot: string;
-  referenceCorpusPath: string;
   agentIds: readonly AgentId[];
   agentStages: Readonly<Record<AgentId, readonly string[]>>;
   releaseOffsetsMs: readonly number[];
@@ -224,8 +223,8 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
       ? null
       : requirePositiveInteger(value, "tokenBudgetPerAgent");
   const studyPhase = value.studyPhase;
-  if (studyPhase !== "standalone" && studyPhase !== "calibration" && studyPhase !== "validation") {
-    throw new Error("studyPhase must be standalone, calibration, or validation.");
+  if (studyPhase !== "standalone" && studyPhase !== "calibration") {
+    throw new Error("studyPhase must be standalone or calibration.");
   }
   const optionalStudyFields = [value.studyRootId, value.conditionOrderPosition, value.designDigest];
   if (studyPhase === "standalone" && optionalStudyFields.some((field) => field !== undefined)) {
@@ -268,7 +267,6 @@ export function validateAttemptConfig(value: unknown): AttemptConfig {
     buildId,
     artifactRoot: requireNonEmptyString(value, "artifactRoot"),
     buildRoot: requireNonEmptyString(value, "buildRoot"),
-    referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
     agentIds,
     agentStages,
     releaseOffsetsMs: [...(releaseOffsetsMs as number[])],
@@ -362,7 +360,6 @@ async function openAgentLeases(options: {
   git: GitEnvironment;
   agentIds: readonly AgentId[];
   evidencePaths: Record<AgentId, string>;
-  referenceCorpusPath: string;
   clock: MonotonicClock;
   cutoffAt: number;
   signal: AbortSignal;
@@ -387,7 +384,6 @@ async function openAgentLeases(options: {
         profile: "agent",
         workspacePath: workspace.path,
         evidencePath,
-        referenceCorpusPath: options.referenceCorpusPath,
         gitOriginPath: repository.path,
         timeoutMs: Math.min(30_000, remainingMs),
         signal: options.signal,
@@ -573,7 +569,6 @@ export async function runAttempt(options: RunAttemptOptions): Promise<AttemptRes
       git,
       agentIds: config.agentIds,
       evidencePaths,
-      referenceCorpusPath: config.referenceCorpusPath,
       clock: options.clock,
       cutoffAt,
       signal: globalController.signal,
@@ -799,7 +794,7 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     ? "session-infrastructure-error"
     : "none";
   const summary = decodeAttemptSummary({
-    schemaVersion: 5,
+    schemaVersion: 7,
     attemptId: options.result.attemptId,
     studyPhase: options.result.studyPhase,
     ...(options.result.studyRootId === undefined
@@ -832,6 +827,10 @@ export async function finalizeAttempt(options: FinalizeAttemptOptions): Promise<
     protocol: options.result.protocol,
     tracePath: options.result.tracePath,
     traceMetadataPath: options.result.traceMetadataPath,
+    canonicalOriginIds:
+      options.result.communicationMode === "shared" ? ["shared"] : options.result.agentIds,
+    evaluationPath: "evaluation/result.json",
+    behaviorEvidencePath: "behavior-evidence.json",
     frozen: {
       root: options.result.frozen.root,
       communicationMode: options.result.frozen.communicationMode,
@@ -920,7 +919,6 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
     buildId: variant.buildId,
     artifactRoot: output,
     buildRoot,
-    referenceCorpusPath: absoluteFrom(buildRoot, variant.referenceCorpusPath),
     agentIds: manifest.agentIds,
     agentStages,
     releaseOffsetsMs: options.releaseOffsetsMs,
@@ -933,7 +931,7 @@ export async function runPuzzle(options: RunPuzzleOptions): Promise<RunPuzzleRes
   const result = await runAttempt({
     config,
     agents: options.agents,
-    checker: createChecker(root, buildRoot),
+    checker: createChecker(root),
     sandbox,
     clock: options.clock ?? systemMonotonicClock,
     ...(preflight === undefined ? {} : { preflight }),

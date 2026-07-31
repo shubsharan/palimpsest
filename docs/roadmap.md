@@ -19,11 +19,11 @@ This feature is done when rebuilds are byte-identical, paragraph order and union
 ## Feature 014: Four Team Conditions (Implemented)
 
 - Add canonical `CS`, `CR`, `IS`, and `IR` conditions and derive communication mode and key regime from those identifiers.
-- Keep the agent objective concise and vary only channel availability and the disclosed schedule, limits, tools, references, and evaluation boundary.
+- Keep the agent objective concise and vary only channel availability and the disclosed schedule, limits, tools, and evaluation boundary.
 - Give shared conditions one ordinary peer Git repository; give isolated conditions independent usable repositories with no peer evidence or activity; seed every origin with the same neutral `solver.py`.
 - Make only the exact solver pushed to the assigned origin's `main` branch checkable and gradeable, while leaving roles, Git operations, branches, and coordination cadence to the agents.
 - Freeze every visible repository, workspace, response, activity trace, Git state, session outcome, sandbox identity, block, condition, and protocol digest before optional observation.
-- Keep reviewer-selected `puzzle:evaluate`; add no automated behavioral review, outcome aggregation, or post-hoc merging.
+- Grade the one shared canonical origin or all three isolated canonical origins; retain mechanical evidence without automated behavioral interpretation or post-hoc merging.
 
 This feature is done when shared peer visibility, isolated non-observability, private Git usability, identical scaffolds, published-main-only checking, prompt parity, and the declared fake-time release schedule and cutoff pass without prescribing agent workflow.
 
@@ -57,8 +57,19 @@ This feature is done when enabled shared messaging, disabled Git-only parity, is
 
 This feature is done when multiple clock profiles and both token-policy modes pass through the same runner and durable artifact path without source edits or provider-backed spend.
 
+## Feature 020: Blind Calibration and Team-Level Evaluation
+
+- Replace correctness-bearing checker feedback with execution, output-validity, word-count, and plaintext-independent coverage feedback.
+- Evaluate the one shared canonical origin or all three isolated canonical origins without reviewer selection, repair, ranking, or synthetic integration.
+- Add post-freeze origin diagnostics, realized team-product status, collective ceiling, and nullable integration gap.
+- Separate evidence and control validity tiers, prepare one fresh calibration block, and fail closed on evidence fallback.
+- Record communication, integration, interference, belief replacement, source recognition, checker interpretation, resources, reasoning-summary coverage, and final provenance.
+- Run one fresh four-cell GPT-5.6-sol calibration under the one-hour, no-token-cutoff regime.
+
+This feature is done when provider-free acceptance and clean receipt-bound preflight pass on the exact committed source, and all four calibration cells receive terminal all-origin evaluation and diagnostic records while correctness remains hidden during model work.
+
 ## Boundaries
 
-The geometry is fixed at three agents, six stages, and a boundary at stage four. The study uses files, direct providers, sequential attempts, fixture adapters, fake clocks, and explicit reviewer evaluation. It adds no services, databases, accounts, dashboards, automatic retries, compatibility layer, automated behavioral review, or benchmark claims.
+The geometry is fixed at three agents, six stages, and a boundary at stage four. The study uses files, direct providers, sequential attempts, fixture adapters, fake clocks, blind checking, and all-canonical-origin evaluation. It adds no services, databases, accounts, dashboards, automatic retries, compatibility layer, prescribed collaboration workflow, or benchmark claims.
 
 Palimpsest claims controlled opportunities and recorded outcomes only. It does not claim guaranteed collaboration, belief revision, construct validity, or reproducible live model behavior.

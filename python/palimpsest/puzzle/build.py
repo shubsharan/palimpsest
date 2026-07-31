@@ -16,11 +16,12 @@ from .block import (
     BOUNDARY_STAGE,
     STAGE_COUNT,
     AllocationResult,
+    BlockDefinition,
     BlockDesign,
     ParagraphAssignment,
     ParagraphUnit,
+    WindowPin,
     design_block,
-    load_block_catalog,
 )
 from .block import (
     OracleDesign as BlockOracleDesign,
@@ -28,9 +29,8 @@ from .block import (
 from .cipher import apply_mapping, stationary_key
 from .corpus import (
     SourceDefinition,
-    build_reference_corpus,
     load_paragraphs,
-    load_source_registry,
+    load_text_source,
     serialize_paragraphs,
 )
 from .manifest import (
@@ -41,7 +41,6 @@ from .manifest import (
     EvidenceStage,
     ManipulationCheck,
     PuzzleBuild,
-    ReferenceSource,
     RekeyTransition,
     TargetSource,
     TierRejection,
@@ -336,26 +335,6 @@ def _prepare_pair(design: BlockDesign) -> PreparedPair:
     )
 
 
-def _write_references(
-    destination: Path,
-    sources: tuple[SourceDefinition, ...],
-    variant_id: str,
-) -> list[dict[str, Any]]:
-    artifacts: list[dict[str, Any]] = []
-    for document in build_reference_corpus(sources):
-        relative = Path("variants") / variant_id / "references" / f"{document.document_id}.txt"
-        content = document.content.encode("utf-8")
-        artifacts.append(
-            {
-                "sourceId": document.source_id,
-                "sourceSha256": document.sha256,
-                "path": relative.as_posix(),
-                **_write(destination / relative, content),
-            }
-        )
-    return artifacts
-
-
 def _complete_ciphertext(
     design: BlockDesign,
     *,
@@ -386,7 +365,6 @@ def _build_variant(
     stage_bytes: Mapping[tuple[str, int], bytes],
     base_key: dict[str, str],
     revised_key: dict[str, str],
-    reference_sources: tuple[SourceDefinition, ...],
     changed_symbols_sha256: str,
 ) -> BuildVariant:
     stages: list[EvidenceStage] = []
@@ -420,7 +398,6 @@ def _build_variant(
         variant_id=variant_id,
     )
     complete_record = _write(destination / complete_path, complete)
-    references = _write_references(destination, reference_sources, variant_id)
     transitions = (
         ()
         if variant_id == "stationary"
@@ -440,7 +417,6 @@ def _build_variant(
         "allocationId": design.allocation.allocation.allocation_id,
         "windowSha256": design.window.sha256,
         "complete": complete_record,
-        "references": references,
         "stages": [stage.to_dict() for stage in stages],
         "keyTransitions": [transition.to_dict() for transition in transitions],
     }
@@ -448,7 +424,6 @@ def _build_variant(
         variant_id=variant_id,
         build_id="build-" + sha256_hex(canonical_json_bytes(basis)),
         public_ciphertext_path=complete_path,
-        reference_corpus_path=Path(f"variants/{variant_id}/references"),
         private_stage_roots={
             agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
             for agent_id in AGENT_IDS
@@ -459,22 +434,24 @@ def _build_variant(
 
 
 def _build_into(
-    root: Path,
     destination: Path,
-    block_id: str,
+    source_path: Path,
+    phase: str,
+    requested_block_id: str | None,
 ) -> PuzzleBuild:
-    catalog = load_block_catalog(root / "experiments/blocks.json")
-    block = catalog.block(block_id)
-    if block.window.is_discovery:
-        raise ValueError(f"Block {block_id} must be discovered and pinned before a normal build.")
-    registry = load_source_registry(root)
-    try:
-        source = registry[block.source_id]
-        reference_sources = tuple(registry[source_id] for source_id in block.references)
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
-
-    design = design_block(_paragraph_units(source), block, discover=False)
+    source = load_text_source(source_path)
+    if phase not in {"calibration", "validation"}:
+        raise ValueError("Puzzle phase must be calibration or validation.")
+    block_id = requested_block_id or source.source_id
+    block = BlockDefinition(
+        block_id=block_id,
+        phase=phase,
+        source_id=source.source_id,
+        seed=int(source.sha256[:13], 16),
+        window=WindowPin(0, 0, 0, ""),
+        boundary_stage=BOUNDARY_STAGE,
+    )
+    design = design_block(_paragraph_units(source), block, discover=True)
     pair = _prepare_pair(design)
     changed_types = design.allocation.design.changed_types
 
@@ -514,7 +491,6 @@ def _build_into(
         stage_bytes=pair.stationary_stage_bytes,
         base_key=pair.base_key,
         revised_key=pair.revised_key,
-        reference_sources=reference_sources,
         changed_symbols_sha256=changed_symbols_sha256,
     )
     rekey = _build_variant(
@@ -524,12 +500,12 @@ def _build_into(
         stage_bytes=pair.rekey_stage_bytes,
         base_key=pair.base_key,
         revised_key=pair.revised_key,
-        reference_sources=reference_sources,
         changed_symbols_sha256=changed_symbols_sha256,
     )
     allocation_summary = AllocationSummary(
         allocation_id=design.allocation.allocation.allocation_id,
-        tier=design.allocation.tier.name,
+        evidence_tier=design.allocation.tier.name,
+        control_tier=design.allocation.control_tier,
         metrics=_manifest_metrics(design.allocation),
         rejected_tiers=tuple(
             TierRejection(rejection.tier, rejection.reasons)
@@ -555,7 +531,7 @@ def _build_into(
         changed_token_mass_by_agent=pair.manipulation_check["changedTokenMassByAgent"],
     )
     pair_basis = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "blockId": block.block_id,
         "sourceSha256": source.sha256,
         "windowSha256": design.window.sha256,
@@ -569,10 +545,6 @@ def _build_into(
         paired_build_id="paired-" + sha256_hex(canonical_json_bytes(pair_basis)),
         block_id=block.block_id,
         source=TargetSource(source.source_id, source.sha256),
-        references=tuple(
-            ReferenceSource(reference.source_id, reference.sha256)
-            for reference in reference_sources
-        ),
         seed=block.seed,
         window=BuildWindow(
             design.window.paragraph_start,
@@ -595,14 +567,21 @@ def _build_into(
     return build
 
 
-def build_puzzle(root: Path, output: Path, block_id: str) -> PuzzleBuild:
+def build_puzzle(
+    root: Path,
+    output: Path,
+    source: Path,
+    phase: str,
+    block_id: str | None = None,
+) -> PuzzleBuild:
     root = root.resolve()
+    source = source if source.is_absolute() else root / source
     output = output.resolve()
     _assert_available_output(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
     try:
-        build = _build_into(root, staging, block_id)
+        build = _build_into(staging, source, phase, block_id)
         _publish_staging(staging, output)
         return build
     except BaseException:
@@ -610,71 +589,26 @@ def build_puzzle(root: Path, output: Path, block_id: str) -> PuzzleBuild:
         raise
 
 
-def discover_block(root: Path, output: Path, block_id: str) -> dict[str, Any]:
-    root = root.resolve()
-    output = output.resolve()
-    _assert_available_output(output)
-    catalog = load_block_catalog(root / "experiments/blocks.json")
-    block = catalog.block(block_id)
-    if not block.window.is_discovery:
-        raise ValueError(f"Block {block_id} already has a committed discovery window.")
-    registry = load_source_registry(root)
-    try:
-        source = registry[block.source_id]
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
-    design = design_block(_paragraph_units(source), block, discover=True)
-    pair = _prepare_pair(design)
-    record = {
-        "schemaVersion": 1,
-        "blockId": block.block_id,
-        "window": {
-            "paragraphStart": design.window.paragraph_start,
-            "paragraphEnd": design.window.paragraph_end,
-            "wordCount": design.window.word_count,
-            "sha256": design.window.sha256,
-        },
-        "allocation": _allocation_record(design),
-        "manipulationCheck": pair.manipulation_check,
-    }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
-    try:
-        _write(staging / "discovery.json", canonical_json_bytes(record))
-        _publish_staging(staging, output)
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    return {
-        "blockId": block.block_id,
-        "discoveryPath": str((output / "discovery.json").resolve()),
-        "window": record["window"],
-        "tier": design.allocation.tier.name,
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--block", required=True)
-    parser.add_argument("--discover", choices=("true",))
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--phase", choices=("calibration", "validation"), default="validation")
+    parser.add_argument("--block")
     args = parser.parse_args()
-    if args.discover == "true":
-        result = discover_block(args.root, args.output, args.block)
-    else:
-        build = build_puzzle(args.root, args.output, args.block)
-        result = {
-            "pairedBuildId": build.paired_build_id,
-            "buildPath": str(args.output.resolve()),
-            "blockId": build.block_id,
-            "agentIds": list(build.agent_ids),
-            "stageCount": build.stage_count,
-            "variants": {
-                "stationary": build.stationary.build_id,
-                "rekey": build.rekey.build_id,
-            },
-        }
+    build = build_puzzle(args.root, args.output, args.source, args.phase, args.block)
+    result = {
+        "pairedBuildId": build.paired_build_id,
+        "buildPath": str(args.output.resolve()),
+        "blockId": build.block_id,
+        "agentIds": list(build.agent_ids),
+        "stageCount": build.stage_count,
+        "variants": {
+            "stationary": build.stationary.build_id,
+            "rekey": build.rekey.build_id,
+        },
+    }
     print(canonical_json_bytes(result).decode())
 
 

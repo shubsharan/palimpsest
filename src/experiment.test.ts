@@ -51,7 +51,7 @@ describe("study experiment orchestration", () => {
     expect(() => assertBuildMatchesStudy(manifest, study)).not.toThrow();
     expect(() =>
       assertBuildMatchesStudy({ ...manifest, blockId: "not-a-study-block" }, study),
-    ).toThrow(/five registered study blocks/);
+    ).toThrow(/registered calibration block/);
   });
 
   it("checks the clean preflight before constructing any provider adapter", async () => {
@@ -64,7 +64,6 @@ describe("study experiment orchestration", () => {
       root,
       configPath: "experiments/config.yaml",
       studyRoot: "/tmp/palimpsest-experiment-order",
-      phase: "calibration",
       dependencies: {
         loadStudy: async () => study,
         createSandbox: async () => sandbox,
@@ -86,6 +85,13 @@ describe("study experiment orchestration", () => {
         run: async (request) => {
           events.push("run");
           observedTeamChannel = request.teamChannel;
+        },
+        evaluate: async () => {
+          events.push("evaluate");
+          return {} as never;
+        },
+        publishBehaviorEvidence: async () => {
+          events.push("behavior");
         },
         executePhase: async (options) => {
           await options.dependencies.beforeLaunch({
@@ -131,7 +137,15 @@ describe("study experiment orchestration", () => {
       },
     });
 
-    expect(events).toEqual(["preflight", "adapter", "adapter", "adapter", "run"]);
+    expect(events).toEqual([
+      "preflight",
+      "adapter",
+      "adapter",
+      "adapter",
+      "run",
+      "evaluate",
+      "behavior",
+    ]);
     expect(observedTeamChannel).toBe("enabled");
     expect(result.state).toBe("blocked");
   });
@@ -145,7 +159,6 @@ describe("study experiment orchestration", () => {
         root,
         configPath: "experiments/config.yaml",
         studyRoot: "/tmp/palimpsest-experiment-preflight",
-        phase: "calibration",
         dependencies: {
           loadStudy: async () => study,
           createSandbox: async () => new FakeCommandSandbox(),
@@ -185,7 +198,7 @@ describe("study experiment orchestration", () => {
     expect(adapterCalls).toBe(0);
   });
 
-  it("accepts only the phase study-root and optional replacement flags", () => {
+  it("accepts only the config, study-root, and optional replacement flags", () => {
     expect(() =>
       runExperimentFromFlags(
         new Map([
@@ -194,12 +207,11 @@ describe("study experiment orchestration", () => {
           ["--study-root", "artifacts/study"],
         ]),
       ),
-    ).toThrow(/calibration or validation/);
+    ).toThrow(/Unsupported experiment flag --phase/);
     expect(() =>
       runExperimentFromFlags(
         new Map([
           ["--config", "experiments/config.yaml"],
-          ["--phase", "calibration"],
           ["--study-root", "artifacts/study"],
           ["--condition", "CS"],
         ]),

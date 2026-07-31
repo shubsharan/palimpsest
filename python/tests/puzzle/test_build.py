@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import palimpsest.puzzle.block as block_module
@@ -17,25 +17,19 @@ from palimpsest.puzzle.block import (
     WindowPin,
     candidate_windows,
     design_block,
-    load_block_catalog,
 )
 from palimpsest.puzzle.cipher import apply_mapping
 from palimpsest.puzzle.corpus import (
     load_paragraphs,
-    load_source_registry,
+    load_text_source,
     serialize_paragraphs,
 )
 from palimpsest.puzzle.manifest import PuzzleBuild
 from palimpsest.puzzle.text import word_tokens
 
 ROOT = Path(__file__).resolve().parents[3]
-BLOCK_IDS = (
-    "calibration-theron-ware",
-    "validation-odd-women",
-    "validation-pointed-firs",
-    "validation-custom-country",
-    "validation-woodlanders",
-)
+BLOCK_IDS = ("calibration-odd-women",)
+CALIBRATION_SOURCE = ROOT / "fixtures/chronicles-of-break-oday.txt"
 AGENT_IDS = ("agent-1", "agent-2", "agent-3")
 
 
@@ -47,48 +41,6 @@ def _json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     return value
-
-
-def _copy_fixture_root(
-    destination: Path,
-    mutate_catalog: Callable[[dict[str, Any]], None],
-) -> Path:
-    root = destination / "root"
-    corpus = root / "fixtures/corpus"
-    corpus.mkdir(parents=True)
-    for source in (ROOT / "fixtures/corpus").iterdir():
-        if source.is_file():
-            shutil.copy2(source, corpus / source.name)
-    experiments = root / "experiments"
-    experiments.mkdir()
-    catalog = _json(ROOT / "experiments/blocks.json")
-    mutate_catalog(catalog)
-    (experiments / "blocks.json").write_text(
-        json.dumps(catalog, ensure_ascii=False, sort_keys=True),
-        encoding="utf-8",
-    )
-    return root
-
-
-def _catalog_entry(catalog: dict[str, Any], block_id: str) -> dict[str, Any]:
-    blocks = catalog["blocks"]
-    assert isinstance(blocks, list)
-    return next(block for block in blocks if block["blockId"] == block_id)
-
-
-def _zero_window(catalog: dict[str, Any], block_id: str) -> None:
-    _catalog_entry(catalog, block_id)["window"] = {
-        "paragraphStart": 0,
-        "paragraphEnd": 0,
-        "wordCount": 0,
-        "sha256": "",
-    }
-
-
-def _wrong_window(catalog: dict[str, Any], block_id: str) -> None:
-    window = _catalog_entry(catalog, block_id)["window"]
-    assert isinstance(window, dict)
-    window["sha256"] = "0" * 64
 
 
 def _paragraphs(count: int = 700, words: int = 100) -> tuple[ParagraphUnit, ...]:
@@ -126,24 +78,23 @@ class BuiltBlock:
 
 @pytest.fixture(scope="module")
 def built_blocks(tmp_path_factory: pytest.TempPathFactory) -> Mapping[str, BuiltBlock]:
-    catalog = load_block_catalog(ROOT / "experiments/blocks.json")
     output_root = tmp_path_factory.mktemp("paired-blocks")
     built: dict[str, BuiltBlock] = {}
-    for block_id in BLOCK_IDS:
-        block = catalog.block(block_id)
-        assert not block.window.is_discovery, f"{block_id} must have a committed window"
-        first_root = output_root / block_id / "first"
-        second_root = output_root / block_id / "second"
-        first = build_module.build_puzzle(ROOT, first_root, block_id)
-        second = build_module.build_puzzle(ROOT, second_root, block_id)
-        assert first == second
-        assert _files(first_root) == _files(second_root)
-        built[block_id] = BuiltBlock(first, first_root, second_root)
+    block_id = BLOCK_IDS[0]
+    first_root = output_root / block_id / "first"
+    second_root = output_root / block_id / "second"
+    first = build_module.build_puzzle(ROOT, first_root, CALIBRATION_SOURCE, "calibration", block_id)
+    second = build_module.build_puzzle(
+        ROOT, second_root, CALIBRATION_SOURCE, "calibration", block_id
+    )
+    assert first == second
+    assert _files(first_root) == _files(second_root)
+    built[block_id] = BuiltBlock(first, first_root, second_root)
     return built
 
 
 def test_candidate_windows_use_exact_first_end_and_boundary_order() -> None:
-    windows = candidate_windows(_paragraphs(count=181))
+    windows = candidate_windows(_paragraphs(count=227))
     first = next(windows)
     second = next(windows)
 
@@ -152,13 +103,13 @@ def test_candidate_windows_use_exact_first_end_and_boundary_order() -> None:
         first.paragraph_end,
         first.word_count,
         first.boundary_index,
-    ) == (1, 180, 18_000, 90)
+    ) == (47, 226, 18_000, 90)
     assert (
         second.paragraph_start,
         second.paragraph_end,
         second.word_count,
         second.boundary_index,
-    ) == (2, 181, 18_000, 90)
+    ) == (48, 227, 18_000, 90)
 
 
 def test_design_search_stops_after_512_window_starts(
@@ -176,30 +127,32 @@ def test_design_search_stops_after_512_window_starts(
         block_id="synthetic-block",
         phase="calibration",
         source_id="synthetic",
-        references=("reference",),
         seed=17,
         window=WindowPin(0, 0, 0, ""),
         boundary_stage=4,
     )
 
-    with pytest.raises(InfeasibleDesignError, match="no-feasible-window"):
-        design_block(_paragraphs(), block, discover=True)
+    with pytest.raises(InfeasibleDesignError, match="no candidate window satisfied"):
+        design_block(_paragraphs(count=900), block, discover=True)
 
-    assert starts == list(range(1, 513))
+    assert starts == list(range(181, 693))
 
 
 def test_normal_design_revalidates_the_first_feasible_pin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    paragraphs = _paragraphs(count=181)
+    paragraphs = _paragraphs(count=226)
     first = next(candidate_windows(paragraphs))
-    allocation = object()
+    allocation = SimpleNamespace(
+        design=SimpleNamespace(controls=(), changed_types=()),
+        tier=block_module.TIERS[0],
+        control_tier="strict",
+    )
     monkeypatch.setattr(block_module, "allocate_window", lambda *args: allocation)
     block = BlockDefinition(
         block_id="synthetic-block",
         phase="calibration",
         source_id="synthetic",
-        references=("reference",),
         seed=17,
         window=first.pin(),
         boundary_stage=4,
@@ -212,87 +165,25 @@ def test_normal_design_revalidates_the_first_feasible_pin(
         design_block(paragraphs, stale, discover=False)
 
 
-def test_discovery_writes_only_the_first_feasible_record(tmp_path: Path) -> None:
-    committed = load_block_catalog(ROOT / "experiments/blocks.json").block(BLOCK_IDS[0])
-    assert not committed.window.is_discovery
-    normal_output = tmp_path / "normal-build"
-    build_module.build_puzzle(ROOT, normal_output, committed.block_id)
-    root = _copy_fixture_root(
-        tmp_path,
-        lambda catalog: _zero_window(catalog, committed.block_id),
-    )
-    output = tmp_path / "discovery"
-
-    result = build_module.discover_block(root, output, committed.block_id)
-
-    assert result is not None
-    assert tuple(_files(output)) == (Path("discovery.json"),)
-    discovery = _json(output / "discovery.json")
-    assert set(discovery) == {
-        "schemaVersion",
-        "blockId",
-        "window",
-        "allocation",
-        "manipulationCheck",
-    }
-    assert discovery["blockId"] == committed.block_id
-    assert discovery["window"] == {
-        "paragraphStart": committed.window.paragraph_start,
-        "paragraphEnd": committed.window.paragraph_end,
-        "wordCount": committed.window.word_count,
-        "sha256": committed.window.sha256,
-    }
-    assert discovery["allocation"] == _json(normal_output / "oracle/allocation.json")
-    assert discovery["manipulationCheck"] == _json(normal_output / "oracle/manipulation-check.json")
-
-    with pytest.raises(ValueError, match="discovered and pinned"):
-        build_module.build_puzzle(root, tmp_path / "unpinned", committed.block_id)
-    assert not (tmp_path / "unpinned").exists()
-
-
-def test_discovery_pair_validation_failure_publishes_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    block_id = BLOCK_IDS[0]
-    root = _copy_fixture_root(tmp_path, lambda catalog: _zero_window(catalog, block_id))
-    output = tmp_path / "discovery"
-
-    def fail_pair(**kwargs: object) -> None:
-        del kwargs
-        raise ValueError("invalid manipulation")
-
-    monkeypatch.setattr(build_module, "validate_pair", fail_pair)
-
-    with pytest.raises(ValueError, match="invalid manipulation"):
-        build_module.discover_block(root, output, block_id)
-
-    assert not output.exists()
-
-
-def test_normal_build_rejects_a_stale_committed_pin_without_publication(
-    tmp_path: Path,
-) -> None:
-    block_id = BLOCK_IDS[0]
-    root = _copy_fixture_root(
-        tmp_path,
-        lambda catalog: _wrong_window(catalog, block_id),
-    )
+def test_plain_utf8_source_builds_without_registration_or_pinning(tmp_path: Path) -> None:
+    source = tmp_path / "dropped-in.txt"
+    source.write_text(CALIBRATION_SOURCE.read_text(encoding="utf-8"), encoding="utf-8")
     output = tmp_path / "build"
 
-    with pytest.raises(ValueError, match="first deterministic feasible window"):
-        build_module.build_puzzle(root, output, block_id)
+    build = build_module.build_puzzle(ROOT, output, source, "calibration")
 
-    assert not output.exists()
+    assert build.block_id.startswith("dropped-in-")
+    assert build.source.source_id == build.block_id
+    assert (output / "puzzle-build.json").is_file()
 
 
-def test_discovery_rejects_a_committed_block_without_publication(
-    tmp_path: Path,
-) -> None:
-    output = tmp_path / "discovery"
+def test_ineligible_source_rejects_without_publication(tmp_path: Path) -> None:
+    source = tmp_path / "too-short.txt"
+    source.write_text("This text cannot contain a qualifying puzzle window.\n", encoding="utf-8")
+    output = tmp_path / "build"
 
-    with pytest.raises(ValueError, match="committed discovery window"):
-        build_module.discover_block(ROOT, output, BLOCK_IDS[0])
+    with pytest.raises(InfeasibleDesignError, match="no bounded 16,000-to-20,000-word"):
+        build_module.build_puzzle(ROOT, output, source, "validation")
 
     assert not output.exists()
 
@@ -364,7 +255,7 @@ def test_design_failures_publish_nothing(
     monkeypatch.setattr(build_module, "design_block", fail_design)
 
     with pytest.raises(InfeasibleDesignError, match=reason):
-        build_module.build_puzzle(ROOT, output, BLOCK_IDS[0])
+        build_module.build_puzzle(ROOT, output, CALIBRATION_SOURCE, "calibration", BLOCK_IDS[0])
 
     assert not output.exists()
 
@@ -389,7 +280,7 @@ def test_pair_validation_failures_publish_nothing(
     monkeypatch.setattr(build_module, "validate_pair", fail_pair)
 
     with pytest.raises(ValueError, match=message):
-        build_module.build_puzzle(ROOT, output, BLOCK_IDS[0])
+        build_module.build_puzzle(ROOT, output, CALIBRATION_SOURCE, "calibration", BLOCK_IDS[0])
 
     assert not output.exists()
 
@@ -401,20 +292,20 @@ def test_build_refuses_an_existing_nonempty_destination(tmp_path: Path) -> None:
     sentinel.write_text("user data\n", encoding="utf-8")
 
     with pytest.raises(FileExistsError, match="non-empty"):
-        build_module.build_puzzle(ROOT, output, BLOCK_IDS[0])
+        build_module.build_puzzle(ROOT, output, CALIBRATION_SOURCE, "calibration", BLOCK_IDS[0])
 
     assert sentinel.read_text(encoding="utf-8") == "user data\n"
     assert tuple(_files(output)) == (Path("keep.txt"),)
 
 
-def test_all_five_committed_blocks_rebuild_byte_identically(
+def test_eligible_source_rebuilds_byte_identically(
     built_blocks: Mapping[str, BuiltBlock],
 ) -> None:
-    assert tuple(built_blocks) == BLOCK_IDS
+    assert tuple(built_blocks) == (BLOCK_IDS[0],)
     for block_id, built in built_blocks.items():
         manifest = _json(built.first_root / "puzzle-build.json")
         assert PuzzleBuild.from_dict(manifest) == built.build
-        assert manifest["schemaVersion"] == 3
+        assert manifest["schemaVersion"] == 4
         assert built.build.block_id == block_id
         assert built.build.agent_ids == AGENT_IDS
         assert built.build.stage_count == 6
@@ -466,8 +357,7 @@ def test_calibration_pair_has_exact_union_and_verified_key_manipulation(
             expected_rekey_key,
         )
 
-    registry = load_source_registry(ROOT)
-    paragraphs = load_paragraphs(registry[build.source.source_id])
+    paragraphs = load_paragraphs(load_text_source(CALIBRATION_SOURCE))
     selected = paragraphs[build.window.paragraph_start - 1 : build.window.paragraph_end]
     plaintext = serialize_paragraphs(selected)
     assert (root / build.stationary.public_ciphertext_path).read_text(

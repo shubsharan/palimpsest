@@ -76,12 +76,16 @@ describe("offline behavior-neutral runner", () => {
             session.model.requestedModel === "collaborative-revision",
         ),
       ).toBe(true);
-      expect(result.evaluation.status).toBe("scored");
+      expect(result.evaluation.origins).toHaveLength(
+        condition.communicationMode === "shared" ? 1 : 3,
+      );
+      expect(result.evaluation.origins.every(({ status }) => status === "scored")).toBe(true);
       expect(result.run.overlap.findings).toEqual([]);
 
       await access(join(result.run.attemptRoot, "trace.jsonl"));
       await access(join(result.run.attemptRoot, "trace.meta.json"));
       await access(join(result.run.attemptRoot, "overlap.json"));
+      await access(join(result.run.attemptRoot, "behavior-evidence.json"));
       for (const repository of result.run.frozen.repositories) await access(repository.path);
       await expect(access(join(result.run.attemptRoot, "preflight.json"))).rejects.toMatchObject({
         code: "ENOENT",
@@ -102,8 +106,8 @@ describe("offline behavior-neutral runner", () => {
       );
 
       expect(buildManifest).toMatchObject({
-        schemaVersion: 3,
-        blockId: "calibration-theron-ware",
+        schemaVersion: 4,
+        blockId: "calibration-odd-women",
         agentIds: result.build.agentIds,
         stageCount: result.build.stageCount,
         boundaryStage: 4,
@@ -117,7 +121,7 @@ describe("offline behavior-neutral runner", () => {
         },
       });
       expect(attemptSummary).toMatchObject({
-        schemaVersion: 5,
+        schemaVersion: 7,
         attemptId: result.run.attemptId,
         studyPhase: "standalone",
         monetaryAuthorizationCeilingCents: 0,
@@ -137,25 +141,24 @@ describe("offline behavior-neutral runner", () => {
         condition.communicationMode === "shared" ? 1 : 3,
       );
       expect(overlapArtifact).toEqual(result.run.overlap);
-      expect(evaluationArtifact.status).toBe(result.evaluation.status);
+      expect(evaluationArtifact).toEqual(result.evaluation);
 
       const checker = await runPythonJson(process.cwd(), "palimpsest.evaluation.checker", [
-        "--build",
-        result.build.buildPath,
-        "--agent",
-        "agent-1",
-        "--released",
-        "1",
+        "--ciphertext",
+        join(
+          result.build.buildPath,
+          buildManifest.variants[condition.variantId].publicCiphertextPath,
+        ),
         "--candidate",
         join(result.build.buildPath, "oracle", "checker", "agent-1", "stage-01.txt"),
       ]);
       expect(checker).toMatchObject({
-        matchedWords: expect.any(Number),
-        totalWords: expect.any(Number),
-        coverage: 1,
-        accuracy: 1,
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "incomplete",
+        ciphertextWords: expect.any(Number),
+        outputWords: expect.any(Number),
+        coverage: expect.any(Number),
       });
-      expect(asRecord(checker).matchedWords).toBe(asRecord(checker).totalWords);
 
       const trace = await readFile(join(result.run.attemptRoot, "trace.jsonl"), "utf8");
       const events = trace
@@ -190,10 +193,7 @@ describe("offline behavior-neutral runner", () => {
       for (const [before, after] of [
         ["attempt.sessions-ended", "attempt.frozen"],
         ["attempt.frozen", "overlap.observed"],
-        ["overlap.observed", "reviewer.selection"],
-        ["reviewer.selection", "evaluation.started"],
-        ["reviewer.selection", "evaluation.completed"],
-        ["reviewer.selection", "evaluation.scored"],
+        ["overlap.observed", "evaluation.completed"],
       ] as const) {
         expect(sequenceOf(events, before)).toBeLessThan(sequenceOf(events, after));
       }

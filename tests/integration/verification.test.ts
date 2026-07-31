@@ -72,7 +72,6 @@ const DELETED_REFERENCE_PATTERNS = [
 
 const REMOVED_LEGACY_ROOTS = [
   ".artifacts-tmp",
-  ".cursor",
   "packages",
   "specs/006-behavior-neutral-runner",
   "specs/008-runner-hardening-cleanup",
@@ -268,10 +267,10 @@ describe("active repository boundary", () => {
     expect(schema.properties).toHaveProperty("assignment");
     expect(schema.properties).toHaveProperty("providers");
     expect(schema.properties).toHaveProperty("models");
-    expect(schema.properties).toHaveProperty("orders");
+    expect(schema.properties).toHaveProperty("order");
     expect(schema.properties).toHaveProperty("failurePolicy");
     expect(schema.properties).not.toHaveProperty("runs");
-    expect(baselineSource).toContain("schemaVersion: 4");
+    expect(baselineSource).toContain("schemaVersion: 6");
     expect(baselineSource).toContain("teamChannel: enabled");
     expect(packageManifest.scripts).toMatchObject({
       "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",

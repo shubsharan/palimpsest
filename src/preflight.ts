@@ -264,28 +264,26 @@ const DEFAULT_DEPENDENCIES: PreflightDependencies = {
   async runFixture(root, output) {
     const { runOfflinePuzzle } = await import("./offline.js");
     const result = await runOfflinePuzzle({ root, output, condition: "CR" });
-    return { status: result.evaluation.status, sandbox: result.run.sandbox };
+    return {
+      status: result.evaluation.origins.every(({ status }) => status === "scored")
+        ? "scored"
+        : "evaluation-failed",
+      sandbox: result.run.sandbox,
+    };
   },
   async probeSandbox(root, expectedImageId) {
     const sandbox = await createDockerCommandSandbox({ root, expectedImageId });
     const probeRoot = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-probe-"));
     const workspacePath = join(probeRoot, "workspace");
     const evidencePath = join(probeRoot, "evidence");
-    const referenceCorpusPath = join(probeRoot, "reference");
     const gitOriginPath = join(probeRoot, "origin.git");
     let lease: AgentSandboxLease | undefined;
     try {
-      await Promise.all([
-        mkdir(workspacePath),
-        mkdir(evidencePath),
-        mkdir(referenceCorpusPath),
-        mkdir(gitOriginPath),
-      ]);
+      await Promise.all([mkdir(workspacePath), mkdir(evidencePath), mkdir(gitOriginPath)]);
       lease = await sandbox.openAgentLease({
         profile: "agent",
         workspacePath,
         evidencePath,
-        referenceCorpusPath,
         gitOriginPath,
         timeoutMs: 30_000,
       });

@@ -1,3 +1,3 @@
 # Fixture Behavior Rubric
 
-Record observed behavior without selecting, aggregating, or grading outcomes.
+Mechanical evidence records facts only. Human reviewers interpret integration, interference, recovery, belief replacement, and source recognition without producing an aggregate score.

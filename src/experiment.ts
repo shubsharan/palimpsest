@@ -1,17 +1,24 @@
 import { resolve } from "node:path";
 
-import type { BuildManifest, DesignReceipt, PhaseSummary } from "./artifacts.js";
+import {
+  decodeAttemptSummary,
+  type BuildManifest,
+  type DesignReceipt,
+  type PhaseSummary,
+} from "./artifacts.js";
+import { publishBehaviorEvidence } from "./behavior.js";
 import {
   loadResolvedStudy,
   type AgentModelAssignment,
   type ModelProfile,
   type ProviderConnection,
   type ResolvedStudy,
-  type StudyPhase,
 } from "./config.js";
 import { requiredFlag } from "./flags.js";
+import { evaluatePuzzle } from "./evaluate.js";
 import type { ModelAdapter, ModelBinding } from "./model.js";
 import { createAiSdkModelAdapter, type CreateAiSdkModelAdapterOptions } from "./provider.js";
+import { readJsonObject } from "./python.js";
 import {
   assertPreflightSandbox,
   readCurrentPreflight,
@@ -114,9 +121,7 @@ export function createConfiguredStudyAgents(
 
 export function assertBuildMatchesStudy(manifest: BuildManifest, study: ResolvedStudy): void {
   if (!study.blocks.some((block) => block.blockId === manifest.blockId)) {
-    throw new Error(
-      `Puzzle build ${manifest.blockId} is not one of the five registered study blocks.`,
-    );
+    throw new Error(`Puzzle build ${manifest.blockId} is not the registered calibration block.`);
   }
 }
 
@@ -128,6 +133,11 @@ export interface ExperimentDependencies {
   readPreflight: (root: string) => Promise<PreflightReceipt>;
   createAdapter: (options: CreateAiSdkModelAdapterOptions) => ModelAdapter;
   run: (options: RunPuzzleOptions) => Promise<unknown>;
+  evaluate: typeof evaluatePuzzle;
+  publishBehaviorEvidence: (options: {
+    attemptRoot: string;
+    evaluation: Awaited<ReturnType<typeof evaluatePuzzle>>;
+  }) => Promise<void>;
 }
 
 const defaultDependencies: ExperimentDependencies = {
@@ -138,6 +148,14 @@ const defaultDependencies: ExperimentDependencies = {
   readPreflight: readCurrentPreflight,
   createAdapter: createAiSdkModelAdapter,
   run: runPuzzle,
+  evaluate: evaluatePuzzle,
+  publishBehaviorEvidence: async ({ attemptRoot, evaluation }) => {
+    return publishBehaviorEvidence({
+      attempt: decodeAttemptSummary(await readJsonObject(resolve(attemptRoot, "attempt.json"))),
+      evaluation,
+      attemptRoot,
+    });
+  },
 };
 
 function experimentDependencies(
@@ -150,7 +168,6 @@ export interface RunStudyExperimentOptions {
   root: string;
   configPath: string;
   studyRoot: string;
-  phase: StudyPhase;
   replaceAttemptId?: string;
   env?: NodeJS.ProcessEnv;
   dependencies?: Partial<ExperimentDependencies>;
@@ -169,7 +186,6 @@ export async function runStudyExperiment(
     root,
     studyRoot,
     study,
-    phase: options.phase,
     dependencies: {
       sandboxIdentity: async () => sandbox.identity,
     },
@@ -179,7 +195,6 @@ export async function runStudyExperiment(
     studyRoot,
     study,
     receipt,
-    phase: options.phase,
     ...(options.replaceAttemptId === undefined
       ? {}
       : { replaceAttemptId: options.replaceAttemptId }),
@@ -203,7 +218,7 @@ export async function runStudyExperiment(
           buildRoot: launch.cell.buildRoot,
           output: launch.attemptRoot,
           attemptId: launch.attemptId,
-          studyPhase: options.phase,
+          studyPhase: "calibration",
           studyRootId: launch.studyRootId,
           conditionOrderPosition: launch.cell.conditionOrderPosition,
           designDigest: launch.designDigest,
@@ -219,19 +234,20 @@ export async function runStudyExperiment(
           teamChannel: study.communication.teamChannel,
           sandbox,
         });
+        const evaluation = await dependencies.evaluate({
+          root,
+          attempt: launch.attemptRoot,
+        });
+        await dependencies.publishBehaviorEvidence({
+          evaluation,
+          attemptRoot: launch.attemptRoot,
+        });
       },
     },
   });
 }
 
-const EXPERIMENT_FLAGS = new Set(["--config", "--phase", "--study-root", "--replace"]);
-
-function studyPhase(value: string): StudyPhase {
-  if (value !== "calibration" && value !== "validation") {
-    throw new Error("--phase must be calibration or validation.");
-  }
-  return value;
-}
+const EXPERIMENT_FLAGS = new Set(["--config", "--study-root", "--replace"]);
 
 export function runExperimentFromFlags(
   flags: ReadonlyMap<string, string>,
@@ -246,7 +262,6 @@ export function runExperimentFromFlags(
     root,
     configPath: requiredFlag(flags, "--config"),
     studyRoot: requiredFlag(flags, "--study-root"),
-    phase: studyPhase(requiredFlag(flags, "--phase")),
     ...(flags.has("--replace") ? { replaceAttemptId: requiredFlag(flags, "--replace") } : {}),
   });
 }

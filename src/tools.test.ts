@@ -92,7 +92,6 @@ async function toolFixture(
     profile: "agent",
     workspacePath: workspace,
     evidencePath: evidence,
-    referenceCorpusPath: reference,
     gitOriginPath: gitOrigin,
     timeoutMs: 1_000,
   });
@@ -114,10 +113,11 @@ async function toolFixture(
       (async ({ candidatePath }) => {
         checkerRequests.push(candidatePath);
         return {
-          matchedWords: 1,
-          totalWords: 2,
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "incomplete",
+          ciphertextWords: 4,
+          outputWords: 2,
           coverage: 1,
-          accuracy: 0.5,
         };
       }),
   });
@@ -203,7 +203,7 @@ describe("agent tools", () => {
     });
   });
 
-  it("checks only the pushed main solver and exposes its commit with aggregate output", async () => {
+  it("checks only the pushed main solver and exposes blind coverage feedback", async () => {
     const fixture = await toolFixture();
     const { sandbox, tools } = fixture;
     const command = await tools.execute("run_command", {
@@ -217,20 +217,24 @@ describe("agent tools", () => {
         command: "pwd",
         workspacePath: fixture.workspace,
         evidencePath: fixture.evidence,
-        referenceCorpusPath: fixture.reference,
         gitOriginPath: fixture.gitOrigin,
       }),
     ]);
 
     const checked = await tools.execute("check_published_solver", {});
     expect(checked).toEqual({
+      feedbackId: "published-runnability-coverage-v1",
+      ref: "refs/heads/main",
       commit: fixture.commit,
-      matchedWords: 1,
-      totalWords: 2,
+      executionStatus: "succeeded",
+      outputValidity: "incomplete",
+      ciphertextWords: 4,
+      outputWords: 2,
       coverage: 1,
-      accuracy: 0.5,
     });
-    expect(JSON.stringify(checked)).not.toMatch(/expected|mismatch|correctWords/);
+    expect(JSON.stringify(checked)).not.toMatch(
+      /expected|mismatch|correctWords|matchedWords|accuracy/,
+    );
     expect(fixture.checkerRequests).toHaveLength(1);
     expect(fixture.capturedCiphertexts).toEqual(["one two\n\nthree four\n"]);
     expect(fixture.checkerRequests[0]).not.toContain(fixture.workspace);
@@ -257,9 +261,14 @@ describe("agent tools", () => {
   it("reports checkout and solver failures without scoring private workspace files", async () => {
     const checkoutFailure = await toolFixture();
     await runGit(["update-ref", "-d", "refs/heads/main"], checkoutFailure.gitOrigin);
-    await expect(checkoutFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
-      error: "Published ref refs/heads/main must resolve to an available commit.",
-    });
+    await expect(checkoutFailure.tools.execute("check_published_solver", {})).resolves.toEqual(
+      expect.objectContaining({
+        feedbackId: "published-runnability-coverage-v1",
+        executionStatus: "failed",
+        outputValidity: "missing",
+        error: "Published ref refs/heads/main must resolve to an available commit.",
+      }),
+    );
     expect(checkoutFailure.checkerRequests).toEqual([]);
 
     const solverFailure = await toolFixture(async (request) =>
@@ -267,21 +276,32 @@ describe("agent tools", () => {
         ? { ...SUCCESS, exitCode: 2, stderr: "solver.py missing" }
         : SUCCESS,
     );
-    await expect(solverFailure.tools.execute("check_published_solver", {})).resolves.toEqual({
-      commit: solverFailure.commit,
-      error: "Published solver execution failed.",
-      execution: expect.objectContaining({ exitCode: 2, stderr: "solver.py missing" }),
-    });
+    await expect(solverFailure.tools.execute("check_published_solver", {})).resolves.toEqual(
+      expect.objectContaining({
+        feedbackId: "published-runnability-coverage-v1",
+        ref: "refs/heads/main",
+        commit: solverFailure.commit,
+        executionStatus: "failed",
+        outputValidity: "malformed",
+        error: "Published solver execution failed.",
+        execution: expect.objectContaining({ exitCode: 2, stderr: "solver.py missing" }),
+      }),
+    );
     expect(solverFailure.checkerRequests).toEqual([]);
 
     const timeout = await toolFixture(async (request) =>
       request.profile === "solver" ? { ...SUCCESS, timedOut: true } : SUCCESS,
     );
-    await expect(timeout.tools.execute("check_published_solver", {})).resolves.toEqual({
-      commit: timeout.commit,
-      error: "Published solver execution failed.",
-      execution: expect.objectContaining({ timedOut: true }),
-    });
+    await expect(timeout.tools.execute("check_published_solver", {})).resolves.toEqual(
+      expect.objectContaining({
+        feedbackId: "published-runnability-coverage-v1",
+        commit: timeout.commit,
+        executionStatus: "timed-out",
+        outputValidity: "malformed",
+        error: "Published solver execution failed.",
+        execution: expect.objectContaining({ timedOut: true }),
+      }),
+    );
     expect(timeout.checkerRequests).toEqual([]);
   });
 
@@ -316,7 +336,8 @@ describe("agent tools", () => {
 
     await expect(fixture.tools.execute("check_published_solver", {})).resolves.toMatchObject({
       commit: fixture.commit,
-      accuracy: 0.5,
+      feedbackId: "published-runnability-coverage-v1",
+      outputValidity: "incomplete",
     });
     expect(fixture.capturedCiphertexts).toEqual(["one two\n\nthree four\n"]);
   });

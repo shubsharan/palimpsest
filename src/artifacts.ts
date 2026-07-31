@@ -14,7 +14,14 @@ import {
   type ModelSettings,
   type ProviderDriver,
 } from "./model.js";
-import type { EvaluationResult, EvaluationSelection, EvaluationStatus } from "./evaluate.js";
+import type {
+  CanonicalOrigin,
+  EvaluationRecord,
+  EvaluationStatus,
+  IntegrationGapReason,
+  OriginEvaluation,
+  TeamEvaluation,
+} from "./evaluate.js";
 import {
   SANDBOX_IMAGE_TAG,
   SANDBOX_POLICY,
@@ -32,20 +39,8 @@ const PAIRED_BUILD_ID = /^paired-[0-9a-f]{64}$/;
 const ALLOCATION_ID = /^allocation-[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const REGISTERED_BLOCK_IDS = [
-  "calibration-theron-ware",
-  "validation-odd-women",
-  "validation-pointed-firs",
-  "validation-custom-country",
-  "validation-woodlanders",
-] as const;
+const REGISTERED_BLOCK_IDS = ["calibration-odd-women"] as const;
 const CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
-const VALIDATION_ORDERS = [
-  ["CS", "CR", "IR", "IS"],
-  ["CR", "IS", "CS", "IR"],
-  ["IS", "IR", "CR", "CS"],
-  ["IR", "CS", "IS", "CR"],
-] as const;
 
 export interface BuildPuzzleResult {
   pairedBuildId: string;
@@ -60,11 +55,6 @@ export interface BuildPuzzleResult {
 }
 
 export interface BuildSource {
-  sourceId: string;
-  sha256: string;
-}
-
-export interface BuildReference {
   sourceId: string;
   sha256: string;
 }
@@ -99,7 +89,8 @@ export interface AllocationMetrics {
 
 export interface AllocationSummary {
   allocationId: string;
-  tier: AllocationTier;
+  evidenceTier: AllocationTier;
+  controlTier: AllocationTier;
   metrics: AllocationMetrics;
   rejectedTiers: readonly TierRejection[];
   path: string;
@@ -135,7 +126,6 @@ export interface BuildVariant {
   variantId: "stationary" | "rekey";
   buildId: string;
   publicCiphertextPath: string;
-  referenceCorpusPath: string;
   privateStageRoots: Record<AgentId, string>;
   stages: readonly BuildStage[];
   keyTransitions: readonly BuildKeyTransition[];
@@ -151,11 +141,10 @@ export interface ManipulationCheck {
 }
 
 export interface BuildManifest {
-  schemaVersion: 3;
+  schemaVersion: 4;
   pairedBuildId: string;
   blockId: string;
   source: BuildSource;
-  references: readonly BuildReference[];
   seed: number;
   window: BuildWindow;
   agentIds: readonly AgentId[];
@@ -241,12 +230,12 @@ export interface FrozenGitInventory {
   treeSeal: TreeSeal;
 }
 
-export type StudyPhase = "calibration" | "validation";
+export type StudyPhase = "calibration";
 export type AttemptStudyPhase = "standalone" | StudyPhase;
 export type InfrastructureClassification = "none" | "session-infrastructure-error";
 
 interface AttemptSummaryBase {
-  schemaVersion: 5;
+  schemaVersion: 7;
   attemptId: string;
   blockId: string;
   condition: ResolvedCondition["id"];
@@ -264,6 +253,9 @@ interface AttemptSummaryBase {
   protocol: AttemptProtocolSnapshot;
   tracePath: string;
   traceMetadataPath: string;
+  canonicalOriginIds: readonly ("shared" | AgentId)[];
+  evaluationPath: "evaluation/result.json";
+  behaviorEvidencePath: "behavior-evidence.json";
   frozen: FrozenGitInventory;
   sandbox: SandboxIdentity & SandboxPolicy;
   sessions: readonly AttemptSession[];
@@ -302,11 +294,6 @@ export interface DesignAgentAssignment {
   modelProfileId: string;
 }
 
-export interface DesignOrders {
-  calibration: readonly ResolvedCondition["id"][];
-  validation: readonly (readonly ResolvedCondition["id"][])[];
-}
-
 export interface DesignRubric {
   id: string;
   path: string;
@@ -314,8 +301,13 @@ export interface DesignRubric {
 }
 
 export interface DesignScoring {
-  metricId: string;
-  reviewerSelectionId: string;
+  primaryMetricId: "normalized-positional-word-v1";
+  diagnosticMetricId: "palimpsest-diagnostics-v1";
+  evaluationPolicyId: "all-canonical-main-snapshots-v1";
+}
+
+export interface DesignChecking {
+  feedbackId: "published-runnability-coverage-v1";
 }
 
 export interface DesignPromptTemplate {
@@ -349,7 +341,7 @@ export interface DesignBaselineBudgets {
 }
 
 export interface DesignReceipt {
-  schemaVersion: 2;
+  schemaVersion: 4;
   createdAt: string;
   sourceRevision: string;
   sandbox: SandboxIdentity & SandboxPolicy;
@@ -359,8 +351,9 @@ export interface DesignReceipt {
   immutableManifest: JsonObject;
   builds: readonly DesignBuildBinding[];
   assignment: readonly DesignAgentAssignment[];
-  orders: DesignOrders;
+  order: readonly ResolvedCondition["id"][];
   rubric: DesignRubric;
+  checking: DesignChecking;
   scoring: DesignScoring;
   promptTemplates: readonly DesignPromptTemplate[];
   baselinePrompts: readonly DesignPromptSnapshot[];
@@ -396,14 +389,6 @@ export interface LaunchReservation {
   attemptId?: string;
 }
 
-export interface PhaseAdjustment {
-  fieldPath: "budgets.tokenBudgetPerAgent" | "budgets.perAttemptMonetaryCeilingCents";
-  priorValue: number | null;
-  resolvedValue: number | null;
-  priorManifestDigest: string;
-  currentManifestDigest: string;
-}
-
 export interface PhaseAttemptReference {
   attemptId: string;
   attemptRoot: string;
@@ -424,14 +409,13 @@ export interface PhaseFailure {
 export type PhaseState = "ready" | "running" | "blocked" | "complete";
 
 export interface PhaseSummary {
-  schemaVersion: 2;
+  schemaVersion: 3;
   phase: StudyPhase;
   state: PhaseState;
   manifestDigest: string;
   immutableManifestDigest: string;
   designDigest: string;
   plannedCells: readonly PlannedCell[];
-  adjustments: readonly PhaseAdjustment[];
   reservations: readonly LaunchReservation[];
   attempts: readonly PhaseAttemptReference[];
   cumulativeAuthorizedTokens: number | null;
@@ -469,6 +453,33 @@ export interface AggregateScore {
   totalWords: number;
   coverage: number;
   accuracy: number;
+}
+
+export interface AccuracyCell {
+  matchedWords: number;
+  totalWords: number;
+  accuracy: number | null;
+}
+
+export interface DiagnosticScore {
+  overall: AccuracyCell;
+  regions: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  changed: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  controls: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  sentinels: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  specialists: { preBoundary: AccuracyCell; postBoundary: AccuracyCell };
+  stages: readonly { stage: number; score: AccuracyCell }[];
+  evidenceOwners: readonly { agentId: AgentId; score: AccuracyCell }[];
+  changedTypes: readonly { changedType: string; score: AccuracyCell }[];
+  macroChangedTypeAccuracy: number | null;
+  positionHandling: {
+    expected: number;
+    predicted: number;
+    compared: number;
+    missing: number;
+    extra: number;
+    coverage: number;
+  };
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {
@@ -588,6 +599,11 @@ function identifier(value: unknown, name: string): string {
     throw new Error(`${name} must be a lowercase hyphenated identifier.`);
   }
   return result;
+}
+
+function literal<const T extends string>(value: unknown, expected: T, name: string): T {
+  if (value !== expected) throw new Error(`${name} must be ${expected}.`);
+  return expected;
 }
 
 function agentId(value: unknown, name: string): AgentId {
@@ -881,27 +897,6 @@ function decodeBuildSource(value: unknown): BuildSource {
   };
 }
 
-function decodeBuildReferences(value: unknown, sourceId: string): readonly BuildReference[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error("Puzzle build references must be a non-empty array.");
-  }
-  const seen = new Set<string>();
-  return value.map((item, index) => {
-    const name = `Puzzle build reference ${String(index + 1)}`;
-    const record = strictObject(item, name, ["sourceId", "sha256"]);
-    const referenceId = identifier(record.sourceId, `${name} sourceId`);
-    if (referenceId === sourceId) {
-      throw new Error("Puzzle build target source cannot also be a reference.");
-    }
-    if (seen.has(referenceId)) throw new Error("Puzzle build reference source IDs must be unique.");
-    seen.add(referenceId);
-    return {
-      sourceId: referenceId,
-      sha256: digest(record.sha256, `${name} sha256`),
-    };
-  });
-}
-
 function decodeBuildWindow(value: unknown): BuildWindow {
   const name = "Puzzle build window";
   const record = strictObject(value, name, [
@@ -1008,13 +1003,15 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
   const name = "Puzzle build allocation";
   const record = strictObject(value, name, [
     "allocationId",
-    "tier",
+    "evidenceTier",
+    "controlTier",
     "metrics",
     "rejectedTiers",
     "path",
     "sha256",
   ]);
-  const tier = allocationTier(record.tier, `${name} tier`);
+  const evidenceTier = allocationTier(record.evidenceTier, `${name} evidenceTier`);
+  const controlTier = allocationTier(record.controlTier, `${name} controlTier`);
   const metrics = decodeAllocationMetrics(record.metrics);
   if (!Array.isArray(record.rejectedTiers)) {
     throw new Error(`${name} rejectedTiers must be an array.`);
@@ -1033,24 +1030,33 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
     }
     return { tier: allocationTier(rejection.tier, `${rejectionName} tier`), reasons };
   });
-  const expectedRejected = ALLOCATION_TIERS.slice(0, ALLOCATION_TIERS.indexOf(tier));
+  const expectedRejected = ALLOCATION_TIERS.slice(0, ALLOCATION_TIERS.indexOf(evidenceTier));
   if (
     rejectedTiers.length !== expectedRejected.length ||
     rejectedTiers.some((rejection, index) => rejection.tier !== expectedRejected[index])
   ) {
     throw new Error("Puzzle build rejected tiers must contain all earlier tiers in order.");
   }
-  const limits = TIER_LIMITS[tier];
+  const evidenceLimits = TIER_LIMITS[evidenceTier];
   if (
-    metrics.minOwnerShare < limits.minOwnerShare ||
-    metrics.soloChangedSetCoverage > limits.maxSoloCoverage ||
-    metrics.regionDeviation > limits.maxRegionDeviation ||
-    metrics.stageDeviation > limits.maxStageDeviation ||
-    metrics.maxControlDistance > limits.maxControlDistance ||
-    metrics.minOwnerOccurrencesPerRegion < limits.minOwnerOccurrencesPerRegion ||
-    metrics.minSentinelOccurrencesPerAgentRegion < limits.minSentinelOccurrencesPerAgentRegion
+    metrics.minOwnerShare < evidenceLimits.minOwnerShare ||
+    metrics.soloChangedSetCoverage > evidenceLimits.maxSoloCoverage ||
+    metrics.regionDeviation > evidenceLimits.maxRegionDeviation ||
+    metrics.stageDeviation > evidenceLimits.maxStageDeviation ||
+    metrics.minOwnerOccurrencesPerRegion < evidenceLimits.minOwnerOccurrencesPerRegion ||
+    metrics.minSentinelOccurrencesPerAgentRegion <
+      evidenceLimits.minSentinelOccurrencesPerAgentRegion
   ) {
-    throw new Error(`Puzzle build allocation metrics do not satisfy the ${tier} tier.`);
+    throw new Error(
+      `Puzzle build allocation metrics do not satisfy the ${evidenceTier} evidence tier.`,
+    );
+  }
+  const controlLimit = TIER_LIMITS[controlTier].maxControlDistance;
+  if (
+    controlTier !== "fallback" &&
+    (metrics.unmatchedControlCount !== 0 || metrics.maxControlDistance > controlLimit)
+  ) {
+    throw new Error(`Puzzle build allocation controls do not satisfy the ${controlTier} tier.`);
   }
   const path = safeRelativePath(record.path, `${name} path`);
   if (path !== "oracle/allocation.json") {
@@ -1058,7 +1064,8 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
   }
   return {
     allocationId: decodePrefixedDigest(record.allocationId, ALLOCATION_ID, `${name} allocationId`),
-    tier,
+    evidenceTier,
+    controlTier,
     metrics,
     rejectedTiers,
     path,
@@ -1178,7 +1185,6 @@ function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rek
     "variantId",
     "buildId",
     "publicCiphertextPath",
-    "referenceCorpusPath",
     "privateStageRoots",
     "stages",
     "keyTransitions",
@@ -1193,13 +1199,6 @@ function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rek
   );
   if (publicCiphertextPath !== `${prefix}/complete/ciphertext.txt`) {
     throw new Error(`Puzzle build ${expectedVariant} public ciphertext path is invalid.`);
-  }
-  const referenceCorpusPath = safeRelativePath(
-    record.referenceCorpusPath,
-    `${name} referenceCorpusPath`,
-  );
-  if (referenceCorpusPath !== `${prefix}/references`) {
-    throw new Error(`Puzzle build ${expectedVariant} reference corpus path is invalid.`);
   }
   if (!Array.isArray(record.stages) || record.stages.length !== 18) {
     throw new Error(`${name} must contain exactly 18 stages.`);
@@ -1255,7 +1254,6 @@ function decodeBuildVariant(value: unknown, expectedVariant: "stationary" | "rek
     variantId: expectedVariant,
     buildId: decodeBuildId(record.buildId, `${name} buildId`),
     publicCiphertextPath,
-    referenceCorpusPath,
     privateStageRoots: decodeAgentPathMap(record.privateStageRoots, expectedVariant),
     stages,
     keyTransitions,
@@ -1269,7 +1267,6 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     "pairedBuildId",
     "blockId",
     "source",
-    "references",
     "seed",
     "window",
     "agentIds",
@@ -1281,7 +1278,7 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     "manipulationCheck",
     "variants",
   ]);
-  if (record.schemaVersion !== 3) {
+  if (record.schemaVersion !== 4) {
     throw new Error("Unsupported puzzle build schema version.");
   }
   const source = decodeBuildSource(record.source);
@@ -1310,7 +1307,7 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     }
   });
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     pairedBuildId: decodePrefixedDigest(
       record.pairedBuildId,
       PAIRED_BUILD_ID,
@@ -1318,7 +1315,6 @@ export function decodeBuildManifest(value: unknown): BuildManifest {
     ),
     blockId: identifier(record.blockId, `${name} blockId`),
     source,
-    references: decodeBuildReferences(record.references, source.sourceId),
     seed: safeInteger(record.seed, `${name} seed`),
     window: decodeBuildWindow(record.window),
     agentIds,
@@ -1680,6 +1676,9 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
       "protocol",
       "tracePath",
       "traceMetadataPath",
+      "canonicalOriginIds",
+      "evaluationPath",
+      "behaviorEvidencePath",
       "frozen",
       "sandbox",
       "sessions",
@@ -1688,7 +1687,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     ],
     ["studyRootId", "conditionOrderPosition", "designDigest", "replacementOfAttemptId"],
   );
-  if (record.schemaVersion !== 5) throw new Error("Unsupported attempt schema version.");
+  if (record.schemaVersion !== 7) throw new Error("Unsupported attempt schema version.");
   const agentIds = decodeAttemptAgentIds(record.agentIds, "Attempt summary agentIds");
   if (!Array.isArray(record.sessions) || record.sessions.length !== agentIds.length) {
     throw new Error("Attempt summary must contain exactly one session per agent.");
@@ -1734,6 +1733,16 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     throw new Error("Attempt summary protocolDigest does not match its protocol snapshot.");
   }
   const frozen = decodeFrozenGitInventory(record.frozen, condition.communicationMode, agentIds);
+  const canonicalOriginIds: readonly ("shared" | AgentId)[] =
+    condition.communicationMode === "shared" ? ["shared"] : agentIds;
+  if (
+    !Array.isArray(record.canonicalOriginIds) ||
+    record.canonicalOriginIds.join("\0") !== canonicalOriginIds.join("\0") ||
+    record.evaluationPath !== "evaluation/result.json" ||
+    record.behaviorEvidencePath !== "behavior-evidence.json"
+  ) {
+    throw new Error("Attempt summary derived artifact bindings are invalid.");
+  }
   const attemptId = nonEmptyString(record.attemptId, "Attempt summary attemptId");
   const infrastructureClassification = decodeInfrastructureClassification(
     record.infrastructureClassification,
@@ -1751,7 +1760,7 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     );
   }
   const common: AttemptSummaryBase = {
-    schemaVersion: 5,
+    schemaVersion: 7,
     attemptId,
     blockId,
     condition: condition.id,
@@ -1769,6 +1778,9 @@ export function decodeAttemptSummary(value: unknown): AttemptSummary {
     protocol,
     tracePath: absolutePath(record.tracePath, "Attempt summary tracePath"),
     traceMetadataPath: absolutePath(record.traceMetadataPath, "Attempt summary traceMetadataPath"),
+    canonicalOriginIds,
+    evaluationPath: "evaluation/result.json",
+    behaviorEvidencePath: "behavior-evidence.json",
     frozen,
     sandbox,
     sessions,
@@ -1840,8 +1852,8 @@ function stringDigest(value: string): string {
 }
 
 function decodeStudyPhase(value: unknown, name: string): StudyPhase {
-  if (value === "calibration" || value === "validation") return value;
-  throw new Error(`${name} must be calibration or validation.`);
+  if (value === "calibration") return value;
+  throw new Error(`${name} must be calibration.`);
 }
 
 function decodeInfrastructureClassification(
@@ -1879,7 +1891,7 @@ function decodeDesignBuild(value: unknown, index: number): DesignBuildBinding {
   const blockId = identifier(record.blockId, `${name} blockId`);
   const expectedBlockId = REGISTERED_BLOCK_IDS[index];
   if (blockId !== expectedBlockId) {
-    throw new Error("Design receipt builds must contain the five registered blocks in order.");
+    throw new Error("Design receipt builds must contain registered blocks in order.");
   }
   const manifest = decodeBuildManifest(record.manifest);
   if (manifest.blockId !== blockId) {
@@ -1904,27 +1916,6 @@ function decodeDesignAssignment(value: unknown, index: number): DesignAgentAssig
   return {
     agentId: decodedAgentId,
     modelProfileId: identifier(record.modelProfileId, `${name} modelProfileId`),
-  };
-}
-
-function decodeDesignOrders(value: unknown): DesignOrders {
-  const record = strictObject(value, "Design receipt orders", ["calibration", "validation"]);
-  if (!Array.isArray(record.validation) || record.validation.length !== VALIDATION_ORDERS.length) {
-    throw new Error("Design receipt validation orders must contain four block orders.");
-  }
-  return {
-    calibration: decodeConditionOrder(
-      record.calibration,
-      CALIBRATION_ORDER,
-      "Design receipt calibration order",
-    ),
-    validation: record.validation.map((order, index) =>
-      decodeConditionOrder(
-        order,
-        VALIDATION_ORDERS[index]!,
-        `Design receipt validation order ${String(index + 1)}`,
-      ),
-    ),
   };
 }
 
@@ -1974,8 +1965,9 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "immutableManifest",
     "builds",
     "assignment",
-    "orders",
+    "order",
     "rubric",
+    "checking",
     "scoring",
     "promptTemplates",
     "baselinePrompts",
@@ -1983,11 +1975,11 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     "baselineBudgets",
     "totalCeilings",
   ]);
-  if (record.schemaVersion !== 2) {
+  if (record.schemaVersion !== 4) {
     throw new Error("Unsupported design receipt schema version.");
   }
-  if (!Array.isArray(record.builds) || record.builds.length !== REGISTERED_BLOCK_IDS.length) {
-    throw new Error("Design receipt must contain exactly five registered builds.");
+  if (!Array.isArray(record.builds) || record.builds.length < 1 || record.builds.length !== 1) {
+    throw new Error("Design receipt must contain the calibration build.");
   }
   const builds = record.builds.map(decodeDesignBuild);
   if (
@@ -2001,9 +1993,11 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   }
   const assignment = record.assignment.map(decodeDesignAssignment);
   const rubric = strictObject(record.rubric, "Design receipt rubric", ["id", "path", "sha256"]);
+  const checking = strictObject(record.checking, "Design receipt checking", ["feedbackId"]);
   const scoring = strictObject(record.scoring, "Design receipt scoring", [
-    "metricId",
-    "reviewerSelectionId",
+    "primaryMetricId",
+    "diagnosticMetricId",
+    "evaluationPolicyId",
   ]);
   if (
     !Array.isArray(record.promptTemplates) ||
@@ -2051,7 +2045,7 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   );
   assertSecretFreeJson(immutableManifest, "Design receipt immutableManifest");
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     createdAt: timestamp(record.createdAt, "Design receipt createdAt"),
     sourceRevision: gitObjectId(record.sourceRevision, "Design receipt sourceRevision"),
     sandbox: decodeSandbox(record.sandbox),
@@ -2064,17 +2058,34 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
     immutableManifest,
     builds,
     assignment,
-    orders: decodeDesignOrders(record.orders),
+    order: decodeConditionOrder(record.order, CALIBRATION_ORDER, "Design receipt order"),
     rubric: {
       id: identifier(rubric.id, "Design receipt rubric id"),
       path: safeRelativePath(rubric.path, "Design receipt rubric path"),
       sha256: digest(rubric.sha256, "Design receipt rubric sha256"),
     },
+    checking: {
+      feedbackId: literal(
+        checking.feedbackId,
+        "published-runnability-coverage-v1",
+        "Design receipt checking feedbackId",
+      ),
+    },
     scoring: {
-      metricId: identifier(scoring.metricId, "Design receipt scoring metricId"),
-      reviewerSelectionId: identifier(
-        scoring.reviewerSelectionId,
-        "Design receipt scoring reviewerSelectionId",
+      primaryMetricId: literal(
+        scoring.primaryMetricId,
+        "normalized-positional-word-v1",
+        "Design receipt scoring primaryMetricId",
+      ),
+      diagnosticMetricId: literal(
+        scoring.diagnosticMetricId,
+        "palimpsest-diagnostics-v1",
+        "Design receipt scoring diagnosticMetricId",
+      ),
+      evaluationPolicyId: literal(
+        scoring.evaluationPolicyId,
+        "all-canonical-main-snapshots-v1",
+        "Design receipt scoring evaluationPolicyId",
       ),
     },
     promptTemplates,
@@ -2204,37 +2215,6 @@ export function decodeLaunchReservation(
   };
 }
 
-function decodePhaseAdjustment(value: unknown, index: number): PhaseAdjustment {
-  const name = `Phase adjustment ${String(index + 1)}`;
-  const record = strictObject(value, name, [
-    "fieldPath",
-    "priorValue",
-    "resolvedValue",
-    "priorManifestDigest",
-    "currentManifestDigest",
-  ]);
-  if (
-    record.fieldPath !== "budgets.tokenBudgetPerAgent" &&
-    record.fieldPath !== "budgets.perAttemptMonetaryCeilingCents"
-  ) {
-    throw new Error(`${name} fieldPath is not calibration-adjustable.`);
-  }
-  const minimum = record.fieldPath === "budgets.tokenBudgetPerAgent" ? 1 : 0;
-  return {
-    fieldPath: record.fieldPath,
-    priorValue:
-      record.fieldPath === "budgets.tokenBudgetPerAgent"
-        ? nullableInteger(record.priorValue, `${name} priorValue`, minimum)
-        : integer(record.priorValue, `${name} priorValue`, minimum),
-    resolvedValue:
-      record.fieldPath === "budgets.tokenBudgetPerAgent"
-        ? nullableInteger(record.resolvedValue, `${name} resolvedValue`, minimum)
-        : integer(record.resolvedValue, `${name} resolvedValue`, minimum),
-    priorManifestDigest: digest(record.priorManifestDigest, `${name} priorManifestDigest`),
-    currentManifestDigest: digest(record.currentManifestDigest, `${name} currentManifestDigest`),
-  };
-}
-
 function decodePhaseAttemptReference(value: unknown, index: number): PhaseAttemptReference {
   const name = `Phase attempt ${String(index + 1)}`;
   const record = strictObjectWithOptional(
@@ -2298,15 +2278,14 @@ function decodePhaseFailure(value: unknown): PhaseFailure {
 }
 
 function assertPlannedMatrix(phase: StudyPhase, cells: readonly PlannedCell[]): void {
-  const expectedCount = phase === "calibration" ? 4 : 16;
+  const expectedCount = 4;
   if (cells.length !== expectedCount) {
     throw new Error(
       `Phase summary ${phase} plan must contain exactly ${String(expectedCount)} cells.`,
     );
   }
-  const expectedBlocks =
-    phase === "calibration" ? REGISTERED_BLOCK_IDS.slice(0, 1) : REGISTERED_BLOCK_IDS.slice(1);
-  const expectedOrders = phase === "calibration" ? [CALIBRATION_ORDER] : VALIDATION_ORDERS;
+  const expectedBlocks = REGISTERED_BLOCK_IDS;
+  const expectedOrders = [CALIBRATION_ORDER];
   cells.forEach((cell, index) => {
     const blockIndex = Math.floor(index / 4);
     const conditionIndex = index % 4;
@@ -2334,7 +2313,6 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
       "immutableManifestDigest",
       "designDigest",
       "plannedCells",
-      "adjustments",
       "reservations",
       "attempts",
       "cumulativeAuthorizedTokens",
@@ -2343,7 +2321,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     ],
     ["failure"],
   );
-  if (record.schemaVersion !== 2) {
+  if (record.schemaVersion !== 3) {
     throw new Error("Unsupported phase summary schema version.");
   }
   const phase = decodeStudyPhase(record.phase, "Phase summary phase");
@@ -2366,25 +2344,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
   if (new Set(cellIds).size !== cellIds.length) {
     throw new Error("Phase summary planned cell IDs must be unique.");
   }
-  if (!Array.isArray(record.adjustments)) {
-    throw new Error("Phase summary adjustments must be an array.");
-  }
-  const adjustments = record.adjustments.map(decodePhaseAdjustment);
-  if (phase === "calibration" && adjustments.length !== 0) {
-    throw new Error("Calibration phase summary must not contain adjustments.");
-  }
-  if (
-    adjustments.length > 2 ||
-    new Set(adjustments.map((adjustment) => adjustment.fieldPath)).size !== adjustments.length
-  ) {
-    throw new Error("Phase summary adjustments must contain each adjustable field at most once.");
-  }
   const manifestDigest = digest(record.manifestDigest, "Phase summary manifestDigest");
-  for (const adjustment of adjustments) {
-    if (adjustment.currentManifestDigest !== manifestDigest) {
-      throw new Error("Phase adjustment current manifest digest must match the phase summary.");
-    }
-  }
   if (!Array.isArray(record.reservations)) {
     throw new Error("Phase summary reservations must be an array.");
   }
@@ -2549,7 +2509,7 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     }
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     phase,
     state: record.state,
     manifestDigest,
@@ -2559,7 +2519,6 @@ export function decodePhaseSummary(value: unknown): PhaseSummary {
     ),
     designDigest: digest(record.designDigest, "Phase summary designDigest"),
     plannedCells,
-    adjustments,
     reservations,
     attempts,
     cumulativeAuthorizedTokens,
@@ -2731,36 +2690,13 @@ export function decodeOverlapResult(value: unknown): OverlapResult {
   return { findings, scan: decodeScan(record.scan) };
 }
 
-function decodeSelection(value: unknown): EvaluationSelection {
-  const record = object(value, "Evaluation selection");
-  const notes =
-    record.notes === undefined
-      ? undefined
-      : nonEmptyString(record.notes, "Evaluation selection notes");
-  const repositoryId: EvaluationSelection["repositoryId"] =
-    record.repositoryId === "shared"
-      ? "shared"
-      : agentId(record.repositoryId, "Evaluation selection repositoryId");
-  const commit = gitObjectId(record.commit, "Evaluation selection commit");
-  if (commit.length !== 40) {
-    throw new Error("Evaluation selection commit must be a 40-character Git object ID.");
-  }
-  if (record.ref !== "refs/heads/main") {
-    throw new Error("Evaluation selection ref must be refs/heads/main.");
-  }
-  const selection = {
-    workspace: agentId(record.workspace, "Evaluation selection workspace"),
-    repositoryId,
-    ref: "refs/heads/main" as const,
-    commit,
-    command: nonEmptyString(record.command, "Evaluation selection command"),
-    outputPath: safeRelativePath(record.outputPath, "Evaluation selection outputPath"),
-  };
-  return notes === undefined ? selection : { ...selection, notes };
-}
-
 function decodeExecution(value: unknown): SandboxCommandResult {
-  const record = object(value, "Evaluation execution");
+  const record = strictObjectWithOptional(
+    value,
+    "Evaluation execution",
+    ["exitCode", "stdout", "stderr", "timedOut", "outputExceeded"],
+    ["outputFailure", "indeterminate", "sandboxGeneration"],
+  );
   const exitCode =
     record.exitCode === null ? null : integer(record.exitCode, "Evaluation execution exitCode");
   if (typeof record.timedOut !== "boolean" || typeof record.outputExceeded !== "boolean") {
@@ -2770,6 +2706,13 @@ function decodeExecution(value: unknown): SandboxCommandResult {
     record.outputFailure === undefined
       ? undefined
       : nonEmptyString(record.outputFailure, "Evaluation execution outputFailure");
+  if (record.indeterminate !== undefined && record.indeterminate !== true) {
+    throw new Error("Evaluation execution indeterminate must be true when present.");
+  }
+  const sandboxGeneration =
+    record.sandboxGeneration === undefined
+      ? undefined
+      : integer(record.sandboxGeneration, "Evaluation execution sandboxGeneration", 1);
   return {
     exitCode,
     stdout:
@@ -2783,11 +2726,18 @@ function decodeExecution(value: unknown): SandboxCommandResult {
     timedOut: record.timedOut,
     outputExceeded: record.outputExceeded,
     ...(outputFailure === undefined ? {} : { outputFailure }),
+    ...(record.indeterminate === undefined ? {} : { indeterminate: true as const }),
+    ...(sandboxGeneration === undefined ? {} : { sandboxGeneration }),
   };
 }
 
 export function decodeAggregateScore(value: unknown): AggregateScore {
-  const record = object(value, "Evaluation score");
+  const record = strictObject(value, "Evaluation score", [
+    "matchedWords",
+    "totalWords",
+    "coverage",
+    "accuracy",
+  ]);
   const totalWords = integer(record.totalWords, "Evaluation score totalWords");
   const matchedWords = integer(record.matchedWords, "Evaluation score matchedWords");
   if (matchedWords > totalWords) {
@@ -2801,79 +2751,300 @@ export function decodeAggregateScore(value: unknown): AggregateScore {
   };
 }
 
-function executionSucceeded(execution: SandboxCommandResult): boolean {
-  return (
-    execution.exitCode === 0 &&
-    !execution.timedOut &&
-    !execution.outputExceeded &&
-    execution.outputFailure === undefined
-  );
+function decodeAccuracyCell(value: unknown, name: string): AccuracyCell {
+  const record = strictObject(value, name, ["matchedWords", "totalWords", "accuracy"]);
+  const matchedWords = integer(record.matchedWords, `${name} matchedWords`);
+  const totalWords = integer(record.totalWords, `${name} totalWords`);
+  if (matchedWords > totalWords) throw new Error(`${name} matchedWords cannot exceed totalWords.`);
+  const accuracy =
+    record.accuracy === null ? null : finiteNumber(record.accuracy, `${name} accuracy`, 0, 1);
+  if ((accuracy === null) !== (totalWords === 0)) {
+    throw new Error(`${name} accuracy must be null exactly when totalWords is zero.`);
+  }
+  return { matchedWords, totalWords, accuracy };
 }
 
-export function decodeEvaluationRecord(value: unknown): EvaluationResult {
-  const record = object(value, "Evaluation result");
-  const status = evaluationStatus(record.status);
-  const selection = record.selection === undefined ? undefined : decodeSelection(record.selection);
-  const execution = record.execution === undefined ? undefined : decodeExecution(record.execution);
-  const outputPath =
-    record.outputPath === undefined
-      ? undefined
-      : absolutePath(record.outputPath, "Evaluation outputPath");
-  const score = record.score === undefined ? undefined : decodeAggregateScore(record.score);
-  const error =
-    record.error === undefined ? undefined : nonEmptyString(record.error, "Evaluation error");
-
-  if (
-    status === "scored" &&
-    (selection === undefined ||
-      execution === undefined ||
-      outputPath === undefined ||
-      score === undefined ||
-      error !== undefined ||
-      !executionSucceeded(execution))
-  ) {
-    throw new Error(
-      "Scored evaluation results require selection, successful execution, output, and score.",
-    );
-  }
-  if (
-    status === "not-runnable" &&
-    (selection !== undefined ||
-      execution !== undefined ||
-      outputPath !== undefined ||
-      score !== undefined ||
-      error !== undefined)
-  ) {
-    throw new Error("Not-runnable evaluation results cannot contain evaluation context.");
-  }
-  if (
-    status === "no-output" &&
-    (selection === undefined ||
-      execution === undefined ||
-      outputPath === undefined ||
-      score !== undefined ||
-      error !== undefined ||
-      !executionSucceeded(execution))
-  ) {
-    throw new Error(
-      "No-output evaluation results require selection, successful execution, and outputPath.",
-    );
-  }
-  if (
-    status === "execution-error" &&
-    (selection === undefined || error === undefined || score !== undefined)
-  ) {
-    throw new Error(
-      "Execution-error evaluation results require selection and error without score.",
-    );
-  }
-
+function decodeRegions(value: unknown, name: string) {
+  const record = strictObject(value, name, ["preBoundary", "postBoundary"]);
   return {
+    preBoundary: decodeAccuracyCell(record.preBoundary, `${name} preBoundary`),
+    postBoundary: decodeAccuracyCell(record.postBoundary, `${name} postBoundary`),
+  };
+}
+
+export function decodeDiagnosticScore(value: unknown): DiagnosticScore {
+  const record = strictObject(value, "Diagnostic score", [
+    "overall",
+    "regions",
+    "changed",
+    "controls",
+    "sentinels",
+    "specialists",
+    "stages",
+    "evidenceOwners",
+    "changedTypes",
+    "macroChangedTypeAccuracy",
+    "positionHandling",
+  ]);
+  if (!Array.isArray(record.stages) || record.stages.length !== 6) {
+    throw new Error("Diagnostic stages must contain stages one through six.");
+  }
+  const stages = record.stages.map((value, index) => {
+    const item = strictObject(value, `Diagnostic stage ${String(index + 1)}`, ["stage", "score"]);
+    if (item.stage !== index + 1) throw new Error("Diagnostic stages must be ordered.");
+    return {
+      stage: index + 1,
+      score: decodeAccuracyCell(item.score, `Diagnostic stage ${String(index + 1)}`),
+    };
+  });
+  if (!Array.isArray(record.evidenceOwners) || record.evidenceOwners.length !== 3) {
+    throw new Error("Diagnostic evidenceOwners must contain three agents.");
+  }
+  const evidenceOwners = record.evidenceOwners.map((value, index) => {
+    const item = strictObject(value, `Diagnostic owner ${String(index + 1)}`, ["agentId", "score"]);
+    const expected = `agent-${String(index + 1)}` as AgentId;
+    if (item.agentId !== expected) throw new Error("Diagnostic evidenceOwners must be ordered.");
+    return {
+      agentId: expected,
+      score: decodeAccuracyCell(item.score, `Diagnostic owner ${expected}`),
+    };
+  });
+  if (!Array.isArray(record.changedTypes))
+    throw new Error("Diagnostic changedTypes must be an array.");
+  const changedTypes = record.changedTypes.map((value, index) => {
+    const item = strictObject(value, `Diagnostic changed type ${String(index + 1)}`, [
+      "changedType",
+      "score",
+    ]);
+    return {
+      changedType: nonEmptyString(item.changedType, "Diagnostic changedType"),
+      score: decodeAccuracyCell(item.score, "Diagnostic changed type score"),
+    };
+  });
+  const position = strictObject(record.positionHandling, "Diagnostic positionHandling", [
+    "expected",
+    "predicted",
+    "compared",
+    "missing",
+    "extra",
+    "coverage",
+  ]);
+  const expected = integer(position.expected, "Diagnostic expected positions");
+  const predicted = integer(position.predicted, "Diagnostic predicted positions");
+  const compared = integer(position.compared, "Diagnostic compared positions");
+  const missing = integer(position.missing, "Diagnostic missing positions");
+  const extra = integer(position.extra, "Diagnostic extra positions");
+  if (
+    compared !== Math.min(expected, predicted) ||
+    missing !== Math.max(0, expected - predicted) ||
+    extra !== Math.max(0, predicted - expected)
+  ) {
+    throw new Error("Diagnostic position counts are inconsistent.");
+  }
+  return {
+    overall: decodeAccuracyCell(record.overall, "Diagnostic overall"),
+    regions: decodeRegions(record.regions, "Diagnostic regions"),
+    changed: decodeRegions(record.changed, "Diagnostic changed"),
+    controls: decodeRegions(record.controls, "Diagnostic controls"),
+    sentinels: decodeRegions(record.sentinels, "Diagnostic sentinels"),
+    specialists: decodeRegions(record.specialists, "Diagnostic specialists"),
+    stages,
+    evidenceOwners,
+    changedTypes,
+    macroChangedTypeAccuracy:
+      record.macroChangedTypeAccuracy === null
+        ? null
+        : finiteNumber(record.macroChangedTypeAccuracy, "Diagnostic macro accuracy", 0, 1),
+    positionHandling: {
+      expected,
+      predicted,
+      compared,
+      missing,
+      extra,
+      coverage: finiteNumber(position.coverage, "Diagnostic position coverage", 0, 1),
+    },
+  };
+}
+
+function decodeCanonicalOrigin(value: unknown): CanonicalOrigin {
+  const record = strictObjectWithOptional(
+    value,
+    "Canonical origin",
+    ["originId", "repositoryId", "ref", "realizedTeamProduct"],
+    ["commit"],
+  );
+  const originId = repositoryId(record.originId, "Canonical origin originId");
+  const decodedRepositoryId = repositoryId(record.repositoryId, "Canonical origin repositoryId");
+  if (originId !== decodedRepositoryId || record.ref !== "refs/heads/main") {
+    throw new Error("Canonical origin identity is inconsistent.");
+  }
+  if (typeof record.realizedTeamProduct !== "boolean") {
+    throw new Error("Canonical origin realizedTeamProduct must be boolean.");
+  }
+  const commit =
+    record.commit === undefined ? undefined : gitObjectId(record.commit, "Canonical origin commit");
+  if (commit !== undefined && commit.length !== 40) {
+    throw new Error("Canonical origin commit must be a 40-character object ID.");
+  }
+  return {
+    originId,
+    repositoryId: decodedRepositoryId,
+    ref: "refs/heads/main",
+    ...(commit === undefined ? {} : { commit }),
+    realizedTeamProduct: record.realizedTeamProduct,
+  };
+}
+
+function decodeOriginEvaluation(value: unknown): OriginEvaluation {
+  const record = strictObjectWithOptional(
+    value,
+    "Origin evaluation",
+    ["origin", "status"],
+    ["execution", "aggregate", "diagnostics", "error", "outputProvenance"],
+  );
+  const origin = decodeCanonicalOrigin(record.origin);
+  const status = evaluationStatus(record.status);
+  const execution = record.execution === undefined ? undefined : decodeExecution(record.execution);
+  const aggregate =
+    record.aggregate === undefined ? undefined : decodeAggregateScore(record.aggregate);
+  const diagnostics =
+    record.diagnostics === undefined ? undefined : decodeDiagnosticScore(record.diagnostics);
+  const error =
+    record.error === undefined ? undefined : nonEmptyString(record.error, "Origin error");
+  let outputProvenance: OriginEvaluation["outputProvenance"];
+  if (record.outputProvenance !== undefined) {
+    const output = strictObject(record.outputProvenance, "Origin output provenance", [
+      "path",
+      "sha256",
+      "byteLength",
+    ]);
+    outputProvenance = {
+      path: safeRelativePath(output.path, "Origin output path"),
+      sha256: digest(output.sha256, "Origin output sha256"),
+      byteLength: integer(output.byteLength, "Origin output byteLength", 1),
+    };
+  }
+  const hasScoredFields =
+    execution !== undefined &&
+    aggregate !== undefined &&
+    diagnostics !== undefined &&
+    outputProvenance !== undefined;
+  if ((status === "scored") !== hasScoredFields) {
+    throw new Error(
+      "Scored origins require execution, aggregate, diagnostics, and output provenance.",
+    );
+  }
+  if (status !== "scored" && error === undefined) {
+    throw new Error("Unscored origins require an error.");
+  }
+  if (
+    (status === "scored" &&
+      (error !== undefined ||
+        origin.commit === undefined ||
+        execution === undefined ||
+        execution.exitCode !== 0 ||
+        execution.timedOut ||
+        execution.outputExceeded ||
+        execution.indeterminate === true)) ||
+    (status !== "scored" &&
+      (aggregate !== undefined || diagnostics !== undefined || outputProvenance !== undefined))
+  ) {
+    throw new Error("Origin evaluation fields do not match its terminal status.");
+  }
+  return {
+    origin,
     status,
-    ...(selection === undefined ? {} : { selection }),
     ...(execution === undefined ? {} : { execution }),
-    ...(outputPath === undefined ? {} : { outputPath }),
-    ...(score === undefined ? {} : { score }),
+    ...(aggregate === undefined ? {} : { aggregate }),
+    ...(diagnostics === undefined ? {} : { diagnostics }),
     ...(error === undefined ? {} : { error }),
+    ...(outputProvenance === undefined ? {} : { outputProvenance }),
+  };
+}
+
+function decodeTeamEvaluation(value: unknown): TeamEvaluation {
+  const record = strictObject(value, "Team evaluation", [
+    "realizedProductOriginId",
+    "collectiveCeiling",
+    "integrationGap",
+    "integrationGapReason",
+  ]);
+  const realizedProductOriginId =
+    record.realizedProductOriginId === null
+      ? null
+      : repositoryId(record.realizedProductOriginId, "Team realized product");
+  if (record.integrationGap !== null) throw new Error("Native team integrationGap must be null.");
+  const reasons: readonly IntegrationGapReason[] = [
+    "shared-single-origin",
+    "isolated-no-realized-product",
+  ];
+  if (!reasons.includes(record.integrationGapReason as IntegrationGapReason)) {
+    throw new Error("Team integrationGapReason is unsupported.");
+  }
+  return {
+    realizedProductOriginId,
+    collectiveCeiling:
+      record.collectiveCeiling === null ? null : decodeAggregateScore(record.collectiveCeiling),
+    integrationGap: null,
+    integrationGapReason: record.integrationGapReason as IntegrationGapReason,
+  };
+}
+
+export function decodeEvaluationRecord(value: unknown): EvaluationRecord {
+  const record = strictObject(value, "Evaluation record", [
+    "schemaVersion",
+    "evaluationPolicyId",
+    "primaryMetricId",
+    "diagnosticMetricId",
+    "attemptId",
+    "condition",
+    "buildId",
+    "protocolDigest",
+    "startedAt",
+    "completedAt",
+    "origins",
+    "team",
+  ]);
+  if (
+    record.schemaVersion !== 2 ||
+    record.evaluationPolicyId !== "all-canonical-main-snapshots-v1" ||
+    record.primaryMetricId !== "normalized-positional-word-v1" ||
+    record.diagnosticMetricId !== "palimpsest-diagnostics-v1"
+  ) {
+    throw new Error("Evaluation record policies are unsupported.");
+  }
+  const condition = resolveCondition(record.condition);
+  if (!Array.isArray(record.origins)) throw new Error("Evaluation origins must be an array.");
+  const origins = record.origins.map(decodeOriginEvaluation);
+  const expectedIds = condition.communicationMode === "shared" ? ["shared"] : generateAgentIds(3);
+  if (origins.map(({ origin }) => origin.originId).join("\0") !== expectedIds.join("\0")) {
+    throw new Error("Evaluation origins do not match the condition topology.");
+  }
+  const team = decodeTeamEvaluation(record.team);
+  const expectedReason: IntegrationGapReason =
+    condition.communicationMode === "shared"
+      ? "shared-single-origin"
+      : "isolated-no-realized-product";
+  if (
+    (condition.communicationMode === "shared") !== (team.realizedProductOriginId === "shared") ||
+    team.integrationGapReason !== expectedReason ||
+    origins.some(({ status }) => status === "scored") !== (team.collectiveCeiling !== null) ||
+    origins.some(({ origin }) => origin.realizedTeamProduct !== (origin.originId === "shared"))
+  ) {
+    throw new Error("Evaluation realized team product is inconsistent.");
+  }
+  return {
+    schemaVersion: 2,
+    evaluationPolicyId: "all-canonical-main-snapshots-v1",
+    primaryMetricId: "normalized-positional-word-v1",
+    diagnosticMetricId: "palimpsest-diagnostics-v1",
+    attemptId: nonEmptyString(record.attemptId, "Evaluation attemptId"),
+    condition: condition.id,
+    buildId: decodeBuildId(record.buildId, "Evaluation buildId"),
+    protocolDigest: digest(record.protocolDigest, "Evaluation protocolDigest"),
+    startedAt: timestamp(record.startedAt, "Evaluation startedAt"),
+    completedAt: timestamp(record.completedAt, "Evaluation completedAt"),
+    origins,
+    team,
   };
 }

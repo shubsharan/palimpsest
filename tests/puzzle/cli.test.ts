@@ -10,7 +10,8 @@ import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
-const block = "calibration-theron-ware";
+const block = "calibration-odd-women";
+const source = join(root, "fixtures/chronicles-of-break-oday.txt");
 
 interface CommandResult {
   exitCode: number;
@@ -101,14 +102,14 @@ describe("operator CLI contract", () => {
     expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
   });
 
-  it("accepts the provider-neutral build, run, phase, replacement, and evaluate flags", () => {
+  it("parses the provider-neutral build, run, phase, replacement, and attempt flags", () => {
     expect(
       parseFlags([
         "--",
         "--block",
         block,
-        "--discover",
-        "true",
+        "--source",
+        source,
         "--config",
         "experiments/config.yaml",
         "--condition",
@@ -125,15 +126,11 @@ describe("operator CLI contract", () => {
         "build",
         "--attempt",
         "attempt",
-        "--workspace",
-        "agent-1",
-        "--notes",
-        "reviewed",
       ]),
     ).toEqual(
       new Map([
         ["--block", block],
-        ["--discover", "true"],
+        ["--source", source],
         ["--config", "experiments/config.yaml"],
         ["--condition", "CR"],
         ["--phase", "validation"],
@@ -142,8 +139,6 @@ describe("operator CLI contract", () => {
         ["--output", "attempt"],
         ["--build", "build"],
         ["--attempt", "attempt"],
-        ["--workspace", "agent-1"],
-        ["--notes", "reviewed"],
       ]),
     );
   });
@@ -164,7 +159,18 @@ describe("operator CLI contract", () => {
 
     const result = await execute(
       process.execPath,
-      [tsxCli, ...(command?.slice(1) ?? []), "--block", block, "--output", output],
+      [
+        tsxCli,
+        ...(command?.slice(1) ?? []),
+        "--source",
+        source,
+        "--phase",
+        "calibration",
+        "--block",
+        block,
+        "--output",
+        output,
+      ],
       { cwd: root },
     );
 
@@ -182,8 +188,8 @@ describe("operator CLI contract", () => {
     });
   }, 30_000);
 
-  it("rejects an invalid discovery value before creating a build directory", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-discovery-"));
+  it("rejects an invalid phase before creating a build directory", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-phase-"));
     const output = join(temporaryRoot, "build");
     const scripts = await packageScripts();
     const command = scripts["puzzle:build"]?.split(/\s+/);
@@ -193,10 +199,10 @@ describe("operator CLI contract", () => {
       [
         tsxCli,
         ...(command?.slice(1) ?? []),
-        "--block",
-        block,
-        "--discover",
-        "false",
+        "--source",
+        source,
+        "--phase",
+        "pilot",
         "--output",
         output,
       ],
@@ -205,7 +211,7 @@ describe("operator CLI contract", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("--discover must be exactly true");
+    expect(result.stderr).toContain("--phase must be exactly calibration or validation");
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -227,7 +233,7 @@ describe("operator CLI contract", () => {
     await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("requires a workspace for evaluation", async () => {
+  it("requires a published attempt for evaluation", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-workspace-"));
     const scripts = await packageScripts();
     const command = scripts["puzzle:evaluate"]?.split(/\s+/);
@@ -240,11 +246,28 @@ describe("operator CLI contract", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Reviewer workspace must be provided for evaluation.");
+    expect(result.stderr).toContain("attempt.json");
     await expect(access(join(temporaryRoot, "attempt", "evaluation"))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
+
+  it.each(["--workspace", "--notes", "--command", "--output-path", "--branch", "--ref"])(
+    "rejects prohibited evaluator option %s",
+    async (flag) => {
+      const scripts = await packageScripts();
+      const command = scripts["puzzle:evaluate"]?.split(/\s+/);
+      const result = await execute(
+        process.execPath,
+        [tsxCli, ...(command?.slice(1) ?? []), "--attempt", "/missing", flag, "value"],
+        { cwd: root },
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(`Unknown evaluate option ${flag}.`);
+    },
+  );
 
   it("rebuilds one pinned block byte-identically", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-determinism-"));
@@ -253,11 +276,15 @@ describe("operator CLI contract", () => {
     const first = await buildPuzzle({
       root,
       output: firstOutput,
+      source,
+      phase: "calibration",
       block,
     });
     const second = await buildPuzzle({
       root,
       output: secondOutput,
+      source,
+      phase: "calibration",
       block,
     });
 

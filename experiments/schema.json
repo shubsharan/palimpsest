@@ -13,14 +13,14 @@
     "models",
     "schedule",
     "budgets",
-    "orders",
+    "order",
+    "checking",
     "scoring",
     "rubric",
-    "adjustableFields",
     "failurePolicy"
   ],
   "properties": {
-    "schemaVersion": { "const": 4 },
+    "schemaVersion": { "const": 6 },
     "communication": { "$ref": "#/$defs/communication" },
     "blocks": { "$ref": "#/$defs/blocks" },
     "assignment": { "$ref": "#/$defs/assignment" },
@@ -38,19 +38,10 @@
     },
     "schedule": { "$ref": "#/$defs/schedule" },
     "budgets": { "$ref": "#/$defs/budgets" },
-    "orders": { "$ref": "#/$defs/orders" },
+    "order": { "$ref": "#/$defs/conditionOrder" },
+    "checking": { "$ref": "#/$defs/checking" },
     "scoring": { "$ref": "#/$defs/scoring" },
     "rubric": { "$ref": "#/$defs/rubric" },
-    "adjustableFields": {
-      "type": "array",
-      "prefixItems": [
-        { "const": "budgets.tokenBudgetPerAgent" },
-        { "const": "budgets.perAttemptMonetaryCeilingCents" }
-      ],
-      "items": false,
-      "minItems": 2,
-      "maxItems": 2
-    },
     "failurePolicy": { "$ref": "#/$defs/failurePolicy" }
   },
   "$defs": {
@@ -77,10 +68,10 @@
     "block": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["blockId", "phase"],
+      "required": ["blockId", "sourcePath"],
       "properties": {
         "blockId": { "$ref": "#/$defs/identifier" },
-        "phase": { "enum": ["calibration", "validation"] }
+        "sourcePath": { "type": "string", "minLength": 1 }
       }
     },
     "blocks": {
@@ -92,64 +83,15 @@
             {
               "type": "object",
               "properties": {
-                "blockId": { "const": "calibration-theron-ware" },
-                "phase": { "const": "calibration" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-odd-women" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-pointed-firs" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-custom-country" },
-                "phase": { "const": "validation" }
-              }
-            }
-          ]
-        },
-        {
-          "allOf": [
-            { "$ref": "#/$defs/block" },
-            {
-              "type": "object",
-              "properties": {
-                "blockId": { "const": "validation-woodlanders" },
-                "phase": { "const": "validation" }
+                "blockId": { "const": "calibration-odd-women" }
               }
             }
           ]
         }
       ],
       "items": false,
-      "minItems": 5,
-      "maxItems": 5
+      "minItems": 1,
+      "maxItems": 1
     },
     "assignmentEntry": {
       "type": "object",
@@ -233,33 +175,22 @@
         "totalMonetaryCeilingCents": { "type": "integer", "minimum": 0 }
       }
     },
-    "orders": {
+    "checking": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["calibration", "validation"],
+      "required": ["feedbackId"],
       "properties": {
-        "calibration": { "$ref": "#/$defs/conditionOrder" },
-        "validation": {
-          "type": "array",
-          "prefixItems": [
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" },
-            { "$ref": "#/$defs/conditionOrder" }
-          ],
-          "items": false,
-          "minItems": 4,
-          "maxItems": 4
-        }
+        "feedbackId": { "const": "published-runnability-coverage-v1" }
       }
     },
     "scoring": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metricId", "reviewerSelectionId"],
+      "required": ["primaryMetricId", "diagnosticMetricId", "evaluationPolicyId"],
       "properties": {
-        "metricId": { "const": "normalized-positional-word-v1" },
-        "reviewerSelectionId": { "const": "selected-workspace-main-snapshot-v1" }
+        "primaryMetricId": { "const": "normalized-positional-word-v1" },
+        "diagnosticMetricId": { "const": "palimpsest-diagnostics-v1" },
+        "evaluationPolicyId": { "const": "all-canonical-main-snapshots-v1" }
       }
     },
     "rubric": {

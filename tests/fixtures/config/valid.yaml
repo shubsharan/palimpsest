@@ -1,13 +1,9 @@
-schemaVersion: 4
+schemaVersion: 6
 
 communication: { teamChannel: disabled }
 
 blocks:
-  - { blockId: calibration-theron-ware, phase: calibration }
-  - { blockId: validation-odd-women, phase: validation }
-  - { blockId: validation-pointed-firs, phase: validation }
-  - { blockId: validation-custom-country, phase: validation }
-  - { blockId: validation-woodlanders, phase: validation }
+  - { blockId: calibration-odd-women, sourcePath: fixtures/chronicles-of-break-oday.txt }
 
 assignment:
   - { agentId: agent-1, modelProfileId: gpt }
@@ -42,26 +38,19 @@ budgets:
   totalTokenCeiling: 15000000
   totalMonetaryCeilingCents: 250000
 
-orders:
-  calibration: [CS, CR, IR, IS]
-  validation:
-    - [CS, CR, IR, IS]
-    - [CR, IS, CS, IR]
-    - [IS, IR, CR, CS]
-    - [IR, CS, IS, CR]
+order: [CS, CR, IR, IS]
 
+checking:
+  feedbackId: published-runnability-coverage-v1
 scoring:
-  metricId: normalized-positional-word-v1
-  reviewerSelectionId: selected-workspace-main-snapshot-v1
+  primaryMetricId: normalized-positional-word-v1
+  diagnosticMetricId: palimpsest-diagnostics-v1
+  evaluationPolicyId: all-canonical-main-snapshots-v1
 
 rubric:
   rubricId: fixture-behavior-review-v1
   path: tests/fixtures/config/behavior-rubric.md
-  sha256: 8ede239ab2c6da697f2ef138fc65db1658c50712ef40157b46d6e469a86b887f
-
-adjustableFields:
-  - budgets.tokenBudgetPerAgent
-  - budgets.perAttemptMonetaryCeilingCents
+  sha256: 27397411faadcf7048e6d5e832c6d799884cbb9bd2e4d66344d358429902ea5b
 
 failurePolicy:
   stopOnInfrastructureFailure: true

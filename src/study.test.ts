@@ -61,22 +61,16 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
     String(manipulationCheck.path),
     `manipulation:${options.block}\n`,
   );
+  await writeArtifact("oracle/plaintext.txt", `plaintext:${options.block}\n`);
+  for (const stage of variants.stationary.stages as Array<Record<string, unknown>>) {
+    await writeArtifact(
+      `oracle/checker/${String(stage.agentId)}/${basename(String(stage.sourcePath))}`,
+      `checker:${options.block}:${String(stage.agentId)}:${String(stage.ordinal)}\n`,
+    );
+  }
   for (const variant of Object.values(variants)) {
     const ciphertext = `ciphertext:${options.block}:${String(variant.variantId)}\n`;
     await writeArtifact(String(variant.publicCiphertextPath), ciphertext);
-    const references = await Promise.all(
-      (manifest.references as Array<Record<string, unknown>>).map(async (reference) => {
-        const path = `${String(variant.referenceCorpusPath)}/${String(reference.sourceId)}-reference.txt`;
-        const content = `reference:${options.block}:${String(reference.sourceId)}\n`;
-        return {
-          sourceId: reference.sourceId,
-          sourceSha256: reference.sha256,
-          path,
-          byteLength: Buffer.byteLength(content),
-          sha256: await writeArtifact(path, content),
-        };
-      }),
-    );
     const stages = variant.stages as Array<Record<string, unknown>>;
     for (const stage of stages) {
       const content = `stage:${options.block}:${String(stage.agentId)}:${String(stage.ordinal)}\n`;
@@ -92,7 +86,6 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
         byteLength: Buffer.byteLength(ciphertext),
         sha256: digestBytes(ciphertext),
       },
-      references,
       stages,
       keyTransitions: variant.keyTransitions,
     })}`;
@@ -129,10 +122,10 @@ async function prepareFixture(options: { disableTokenLimit?: boolean } = {}): Pr
     root,
     studyRoot,
     study,
-    phase: "calibration",
     dependencies: {
       sourceState: async () => cleanSourceState(),
       sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+      build: publishFixtureBuild,
       now: () => new Date("2026-07-29T12:00:00.000Z"),
     },
   });
@@ -295,7 +288,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -315,26 +307,25 @@ describe("frozen study state", () => {
     expect(phase.attempts).toHaveLength(4);
   }, 60_000);
 
-  it("binds five build bytes and accepts only declared validation budget changes", async () => {
+  it("binds one build and rejects receipt-bound budget drift", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
-    expect(receipt.builds).toHaveLength(5);
+    expect(receipt.builds).toHaveLength(1);
     expect(await readDesignReceipt(studyRoot)).toEqual(receipt);
 
     const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
-    adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
     adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 800;
     const adjusted = await resolveStudy(adjustedManifest, root);
-    const reused = await prepareStudyDesign({
-      root,
-      studyRoot,
-      study: adjusted,
-      phase: "validation",
-      dependencies: {
-        sourceState: async () => cleanSourceState(),
-        sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
-      },
-    });
-    expect(reused.designDigest).toBe(receipt.designDigest);
+    await expect(
+      prepareStudyDesign({
+        root,
+        studyRoot,
+        study: adjusted,
+        dependencies: {
+          sourceState: async () => cleanSourceState(),
+          sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+        },
+      }),
+    ).rejects.toThrow(/manifest/i);
 
     const immutableDrift = await loadStudyManifest("experiments/config.yaml");
     immutableDrift.models.sol!.model = "different-model";
@@ -343,7 +334,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study: await resolveStudy(immutableDrift, root),
-        phase: "validation",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -360,7 +350,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "calibration",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -377,7 +366,6 @@ describe("frozen study state", () => {
     const paths = [
       stage.sourcePath,
       variant.publicCiphertextPath,
-      `${variant.referenceCorpusPath}/${binding.manifest.references[0]!.sourceId}-reference.txt`,
       "oracle/plaintext.txt",
       `oracle/checker/${stage.agentId}/${basename(stage.sourcePath)}`,
     ];
@@ -390,7 +378,6 @@ describe("frozen study state", () => {
           root,
           studyRoot,
           study,
-          phase: "validation",
           dependencies: {
             sourceState: async () => cleanSourceState(),
             sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -401,7 +388,7 @@ describe("frozen study state", () => {
     }
   }, 60_000);
 
-  it("recomputes the receipt baseline manifest digest during validation", async () => {
+  it("recomputes the receipt baseline manifest digest", async () => {
     const { studyRoot, study } = await prepareFixture();
     const path = join(studyRoot, "design.json");
     const receipt = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
@@ -413,7 +400,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "validation",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -433,7 +419,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "calibration",
         dependencies: {
           sourceState: async () => ({ testedCommit: sourceRevision, sourceClean: false }),
           build: async () => {
@@ -463,7 +448,6 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study,
-        phase: "calibration",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           build: async () => {
@@ -480,7 +464,7 @@ describe("frozen study state", () => {
     expect(sandboxReads).toBe(0);
   });
 
-  it("constructs all five builds and rechecks the source before publishing", async () => {
+  it("constructs the requested phase build and rechecks the source before publishing", async () => {
     const studyRoot = await temporaryRoot();
     const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
     let sourceReads = 0;
@@ -490,7 +474,6 @@ describe("frozen study state", () => {
       root,
       studyRoot,
       study,
-      phase: "calibration",
       dependencies: {
         sourceState: async () => {
           sourceReads += 1;
@@ -506,9 +489,9 @@ describe("frozen study state", () => {
     });
 
     expect(sourceReads).toBe(2);
-    expect(builds).toBe(5);
+    expect(builds).toBe(1);
     expect(receipt.sourceRevision).toBe(sourceRevision);
-    expect(receipt.builds).toHaveLength(5);
+    expect(receipt.builds).toHaveLength(1);
   });
 
   it.each([
@@ -531,7 +514,6 @@ describe("frozen study state", () => {
           root,
           studyRoot,
           study,
-          phase: "calibration",
           dependencies: {
             sourceState: async () => {
               sourceReads += 1;
@@ -546,37 +528,46 @@ describe("frozen study state", () => {
         }),
       ).rejects.toThrow(expectedError);
       expect(sourceReads).toBe(2);
-      expect(builds).toBe(5);
+      expect(builds).toBe(1);
       await expect(readDesignReceipt(studyRoot)).rejects.toThrow();
     },
   );
 
-  it("continues after a non-infrastructure attempt is durable", async () => {
+  it("stops without indexing when post-freeze work fails", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
     let launches = 0;
 
-    const phase = await executeStudyPhase({
-      studyRoot,
-      study,
-      receipt,
-      phase: "calibration",
-      dependencies: {
-        beforeLaunch: async () => {},
-        runCell: async (launch) => {
-          launches += 1;
-          await publishLaunchAttempt(launch, study, false);
-          if (launches === 1) {
-            throw new Error("injected optional overlap failure");
-          }
+    await expect(
+      executeStudyPhase({
+        studyRoot,
+        study,
+        receipt,
+        dependencies: {
+          beforeLaunch: async () => {},
+          runCell: async (launch) => {
+            launches += 1;
+            await publishLaunchAttempt(launch, study, false);
+            throw new Error("injected post-freeze failure");
+          },
         },
-      },
-    });
+      }),
+    ).rejects.toThrow(/injected post-freeze failure.*Preserved frozen attempt at/);
 
-    expect(launches).toBe(4);
-    expect(phase.state).toBe("complete");
-    expect(phase.attempts).toHaveLength(4);
-    expect(phase.reservations.every(({ state }) => state === "resolved")).toBe(true);
-    expect(phase.failure).toBeUndefined();
+    expect(launches).toBe(1);
+    const phase = await readPhaseSummary(studyRoot, "calibration");
+    expect(phase.state).toBe("blocked");
+    expect(phase.attempts).toEqual([]);
+    expect(phase.reservations[0]?.state).toBe("reserved");
+    expect(phase.failure?.kind).toBe("unresolved-reservation");
+    const attemptRoot = join(studyRoot, "calibration", "attempts", "attempt-calibration-01-001");
+    expect(phase.failure?.detail).toContain(`Preserved frozen attempt at ${attemptRoot}.`);
+    await expect(access(join(attemptRoot, "attempt.json"))).resolves.toBeUndefined();
+    await expect(access(join(attemptRoot, "evaluation", "result.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(join(attemptRoot, "behavior-evidence.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await expect(access(join(studyRoot, "calibration", ".execution.lock"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -600,7 +591,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {
           firstReached();
@@ -619,7 +609,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {
             competingPreflights += 1;
@@ -657,7 +646,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {
             preflights += 1;
@@ -680,7 +668,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -692,17 +679,6 @@ describe("frozen study state", () => {
     if (firstAttempt === undefined) {
       throw new Error("Fixture phase did not publish a durable attempt.");
     }
-    const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
-    adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
-    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 800;
-    await expect(
-      initializeStudyPhase({
-        studyRoot,
-        study: await resolveStudy(adjustedManifest, root),
-        receipt,
-        phase: "validation",
-      }),
-    ).resolves.toMatchObject({ state: "ready" });
     await rm(join(firstAttempt.attemptRoot, "attempt.json"), { force: true });
 
     await expect(
@@ -710,7 +686,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {},
           runCell: async () => {},
@@ -725,7 +700,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -750,7 +724,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
       });
 
     await rm(tracePath);
@@ -786,7 +759,6 @@ describe("frozen study state", () => {
       studyRoot,
       study,
       receipt,
-      phase: "calibration",
       dependencies: {
         beforeLaunch: async () => {},
         runCell: async (launch) => {
@@ -832,7 +804,6 @@ describe("frozen study state", () => {
           studyRoot,
           study,
           receipt,
-          phase: "calibration",
         }),
       ).rejects.toThrow(/does not match the frozen study protocol/);
     }
@@ -846,7 +817,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
       }),
     ).rejects.toThrow(/frozen tree has drifted/);
   }, 60_000);
@@ -860,25 +830,19 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies: {
           beforeLaunch: async () => {},
           runCell: async (launch) => {
             launches += 1;
             await publishLaunchAttempt(launch, study, false);
             if (launches === 1) {
-              const nextCell = study.calibrationCells[1]!;
+              const nextCell = study.cells[1]!;
               const binding = receipt.builds.find(
                 (candidate) => candidate.blockId === nextCell.blockId,
               )!;
               const variant = binding.manifest.variants.rekey;
-              const reference = binding.manifest.references[0]!;
               await writeFile(
-                join(
-                  binding.buildRoot,
-                  variant.referenceCorpusPath,
-                  `${reference.sourceId}-reference.txt`,
-                ),
+                join(binding.buildRoot, variant.publicCiphertextPath),
                 "tampered between launches\n",
               );
             }
@@ -909,7 +873,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toBeInstanceOf(StudyPhaseStoppedError);
@@ -926,7 +889,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toThrow(/explicit --replace/);
@@ -935,30 +897,10 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         replaceAttemptId: "attempt-not-current",
         dependencies,
       }),
     ).rejects.toThrow(/current frozen infrastructure failure/);
-
-    for (let replacement = 0; replacement < 5; replacement += 1) {
-      const sourceAttemptId = phase.failure?.attemptId;
-      if (sourceAttemptId === undefined) {
-        throw new Error("Fixture phase did not cite its infrastructure failure.");
-      }
-      await expect(
-        executeStudyPhase({
-          studyRoot,
-          study,
-          receipt,
-          phase: "calibration",
-          replaceAttemptId: sourceAttemptId,
-          dependencies,
-        }),
-      ).rejects.toBeInstanceOf(StudyPhaseStoppedError);
-      phase = await readPhaseSummary(studyRoot, "calibration");
-      expect(phase.attempts.at(-1)?.replacementOfAttemptId).toBe(sourceAttemptId);
-    }
 
     const finalSource = phase.failure?.attemptId;
     if (finalSource === undefined) {
@@ -969,14 +911,13 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         replaceAttemptId: finalSource,
         dependencies,
       }),
     ).rejects.toThrow(/ceiling/);
-    expect(launches).toBe(6);
-    expect(phase.attempts).toHaveLength(6);
-    expect(phase.reservations.filter(({ kind }) => kind === "replacement")).toHaveLength(5);
+    expect(launches).toBe(1);
+    expect(phase.attempts).toHaveLength(1);
+    expect(phase.reservations.filter(({ kind }) => kind === "replacement")).toHaveLength(0);
   }, 60_000);
 
   it("never relaunches an unresolved reservation", async () => {
@@ -994,7 +935,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toThrow(/fixture died/);
@@ -1006,7 +946,6 @@ describe("frozen study state", () => {
         studyRoot,
         study,
         receipt,
-        phase: "calibration",
         dependencies,
       }),
     ).rejects.toThrow(/use a new study root/);

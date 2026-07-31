@@ -11,7 +11,7 @@ import type { AgentId } from "./model.js";
 import type { TeamChannelMode } from "./team-channel.js";
 
 export type ProviderDriver = "openai" | "anthropic" | "google" | "openai-compatible";
-export type StudyPhase = "calibration" | "validation";
+export type StudyPhase = "calibration";
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
 
@@ -56,7 +56,7 @@ export interface StudyModelDeclaration {
 
 export interface StudyBlock {
   blockId: string;
-  phase: StudyPhase;
+  sourcePath: string;
 }
 
 export interface AgentModelAssignment {
@@ -76,14 +76,14 @@ export interface StudyBudgets {
   totalMonetaryCeilingCents: number;
 }
 
-export interface StudyOrders {
-  calibration: ConditionId[];
-  validation: ConditionId[][];
+export interface StudyScoring {
+  primaryMetricId: "normalized-positional-word-v1";
+  diagnosticMetricId: "palimpsest-diagnostics-v1";
+  evaluationPolicyId: "all-canonical-main-snapshots-v1";
 }
 
-export interface StudyScoring {
-  metricId: "normalized-positional-word-v1";
-  reviewerSelectionId: "selected-workspace-main-snapshot-v1";
+export interface StudyChecking {
+  feedbackId: "published-runnability-coverage-v1";
 }
 
 export interface StudyRubric {
@@ -91,10 +91,6 @@ export interface StudyRubric {
   path: string;
   sha256: string;
 }
-
-export type AdjustableStudyField =
-  | "budgets.tokenBudgetPerAgent"
-  | "budgets.perAttemptMonetaryCeilingCents";
 
 export interface StudyFailurePolicy {
   stopOnInfrastructureFailure: true;
@@ -108,7 +104,7 @@ export interface StudyCommunication {
 }
 
 export interface StudyManifest {
-  schemaVersion: 4;
+  schemaVersion: 6;
   communication: StudyCommunication;
   blocks: StudyBlock[];
   assignment: AgentModelAssignment[];
@@ -116,16 +112,14 @@ export interface StudyManifest {
   models: Record<string, StudyModelDeclaration>;
   schedule: StudySchedule;
   budgets: StudyBudgets;
-  orders: StudyOrders;
+  order: ConditionId[];
+  checking: StudyChecking;
   scoring: StudyScoring;
   rubric: StudyRubric;
-  adjustableFields: AdjustableStudyField[];
   failurePolicy: StudyFailurePolicy;
 }
 
-export type ImmutableStudyManifest = Omit<StudyManifest, "budgets"> & {
-  budgets: Pick<StudyBudgets, "totalTokenCeiling" | "totalMonetaryCeilingCents">;
-};
+export type ImmutableStudyManifest = StudyManifest;
 
 export interface PlannedStudyCell {
   cellId: string;
@@ -137,7 +131,7 @@ export interface PlannedStudyCell {
 }
 
 export interface ResolvedStudy {
-  schemaVersion: 4;
+  schemaVersion: 6;
   communication: Readonly<StudyCommunication>;
   blocks: readonly StudyBlock[];
   assignment: readonly AgentModelAssignment[];
@@ -148,20 +142,13 @@ export interface ResolvedStudy {
     cutoffMs: number;
   };
   budgets: Readonly<StudyBudgets>;
-  orders: {
-    calibration: readonly ConditionId[];
-    validation: readonly (readonly ConditionId[])[];
-  };
+  order: readonly ConditionId[];
+  checking: Readonly<StudyChecking>;
   scoring: Readonly<StudyScoring>;
   rubric: Readonly<StudyRubric>;
   rubricPath: string;
-  adjustableFields: readonly [
-    "budgets.tokenBudgetPerAgent",
-    "budgets.perAttemptMonetaryCeilingCents",
-  ];
   failurePolicy: Readonly<StudyFailurePolicy>;
-  calibrationCells: readonly PlannedStudyCell[];
-  validationCells: readonly PlannedStudyCell[];
+  cells: readonly PlannedStudyCell[];
   manifestDigest: string;
   immutableManifestDigest: string;
   immutableManifest: ImmutableStudyManifest;
@@ -186,25 +173,14 @@ ajv.addFormat("uri", {
 const validateSchema: ValidateFunction = ajv.compile(studySchema);
 
 const EXPECTED_BLOCKS = [
-  { blockId: "calibration-theron-ware", phase: "calibration" },
-  { blockId: "validation-odd-women", phase: "validation" },
-  { blockId: "validation-pointed-firs", phase: "validation" },
-  { blockId: "validation-custom-country", phase: "validation" },
-  { blockId: "validation-woodlanders", phase: "validation" },
+  {
+    blockId: "calibration-odd-women",
+    sourcePath: "fixtures/chronicles-of-break-oday.txt",
+  },
 ] as const satisfies readonly StudyBlock[];
 
 const EXPECTED_CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;
-const EXPECTED_VALIDATION_ORDERS = [
-  ["CS", "CR", "IR", "IS"],
-  ["CR", "IS", "CS", "IR"],
-  ["IS", "IR", "CR", "CS"],
-  ["IR", "CS", "IS", "CR"],
-] as const;
-const EXPECTED_ADJUSTABLE_FIELDS = [
-  "budgets.tokenBudgetPerAgent",
-  "budgets.perAttemptMonetaryCeilingCents",
-] as const;
-const PRIMARY_CELL_COUNT = 20;
+const PLANNED_CALIBRATION_CELL_COUNT = 4;
 const AGENT_COUNT = 3;
 
 function structuralError(error: ErrorObject): string {
@@ -371,18 +347,12 @@ function equalJson(left: unknown, right: unknown): boolean {
 
 function assertExactProtocol(config: StudyManifest): void {
   if (!equalJson(config.blocks, EXPECTED_BLOCKS)) {
-    throw new Error("Study manifest blocks must match the exact registered five-block order.");
+    throw new Error("Study manifest blocks must contain the calibration block.");
   }
-  if (
-    !equalJson(config.orders.calibration, EXPECTED_CALIBRATION_ORDER) ||
-    !equalJson(config.orders.validation, EXPECTED_VALIDATION_ORDERS)
-  ) {
-    throw new Error("Study manifest condition orders must match the exact frozen matrix.");
+  if (!equalJson(config.order, EXPECTED_CALIBRATION_ORDER)) {
+    throw new Error("Study manifest condition order must match the frozen calibration order.");
   }
   validateRunSchedule(config.schedule.releaseOffsetsMs, config.schedule.cutoffMs);
-  if (!equalJson(config.adjustableFields, EXPECTED_ADJUSTABLE_FIELDS)) {
-    throw new Error("Study manifest adjustableFields must contain exactly the two budget paths.");
-  }
 }
 
 function assertReferences(config: StudyManifest): void {
@@ -449,12 +419,12 @@ function assertAuthorizationCeilings(config: StudyManifest): void {
       ? null
       : multiplyAuthorization(
           multiplyAuthorization(tokenBudget, AGENT_COUNT, "Primary authorized token total"),
-          PRIMARY_CELL_COUNT,
+          PLANNED_CALIBRATION_CELL_COUNT,
           "Primary authorized token total",
         );
   const authorizedMoney = multiplyAuthorization(
     attemptMoney,
-    PRIMARY_CELL_COUNT,
+    PLANNED_CALIBRATION_CELL_COUNT,
     "Primary authorized monetary total",
   );
   if (authorizedTokens !== null && totalTokens !== null && authorizedTokens > totalTokens) {
@@ -499,35 +469,19 @@ function cloneModels(models: Record<string, StudyModelDeclaration>): Record<stri
   );
 }
 
-function cellsFor(
-  phase: StudyPhase,
-  blocks: readonly StudyBlock[],
-  orders: readonly (readonly ConditionId[])[],
-): PlannedStudyCell[] {
-  let phasePosition = 0;
-  return blocks.flatMap((block, blockIndex) =>
-    orders[blockIndex]!.map((condition, conditionIndex) => {
-      phasePosition += 1;
-      return {
-        cellId: `${phase}-${String(phasePosition)}-${block.blockId}-${condition}`,
-        phase,
-        blockId: block.blockId,
-        condition,
-        conditionOrderPosition: conditionIndex + 1,
-        phasePosition,
-      };
-    }),
-  );
+function cellsFor(block: StudyBlock, order: readonly ConditionId[]): PlannedStudyCell[] {
+  return order.map((condition, index) => ({
+    cellId: `calibration-${String(index + 1)}-${block.blockId}-${condition}`,
+    phase: "calibration",
+    blockId: block.blockId,
+    condition,
+    conditionOrderPosition: index + 1,
+    phasePosition: index + 1,
+  }));
 }
 
 function immutableProjection(manifest: StudyManifest): ImmutableStudyManifest {
-  return {
-    ...structuredClone(manifest),
-    budgets: {
-      totalTokenCeiling: manifest.budgets.totalTokenCeiling,
-      totalMonetaryCeilingCents: manifest.budgets.totalMonetaryCeilingCents,
-    },
-  };
+  return structuredClone(manifest);
 }
 
 function rubricPath(repositoryRoot: string, configuredPath: string): string {
@@ -579,15 +533,10 @@ export async function resolveStudy(
   const root = resolve(repositoryRoot);
   const resolvedRubricPath = await verifyRubric(root, manifest.rubric);
   const immutableManifest = immutableProjection(manifest);
-  const calibrationBlocks = manifest.blocks.filter((block) => block.phase === "calibration");
-  const validationBlocks = manifest.blocks.filter((block) => block.phase === "validation");
-  const calibrationCells = cellsFor("calibration", calibrationBlocks, [
-    manifest.orders.calibration,
-  ]);
-  const validationCells = cellsFor("validation", validationBlocks, manifest.orders.validation);
+  const cells = cellsFor(manifest.blocks[0]!, manifest.order);
 
   return deepFreeze({
-    schemaVersion: 4,
+    schemaVersion: 6,
     communication: { ...manifest.communication },
     blocks: manifest.blocks.map((block) => ({ ...block })),
     assignment: manifest.assignment.map((assignment) => ({ ...assignment })),
@@ -600,25 +549,21 @@ export async function resolveStudy(
       cutoffMs: manifest.schedule.cutoffMs,
     },
     budgets: { ...manifest.budgets },
-    orders: {
-      calibration: [...manifest.orders.calibration],
-      validation: manifest.orders.validation.map((order) => [...order]),
-    },
+    order: [...manifest.order],
+    checking: { ...manifest.checking },
     scoring: { ...manifest.scoring },
     rubric: { ...manifest.rubric },
     rubricPath: resolvedRubricPath,
-    adjustableFields: [...EXPECTED_ADJUSTABLE_FIELDS],
     failurePolicy: { ...manifest.failurePolicy },
-    calibrationCells,
-    validationCells,
+    cells,
     manifestDigest: hashProtocolSnapshot(manifest),
     immutableManifestDigest: hashProtocolSnapshot(immutableManifest),
     immutableManifest,
   });
 }
 
-export function expandPhase(study: ResolvedStudy, phase: StudyPhase): readonly PlannedStudyCell[] {
-  return phase === "calibration" ? study.calibrationCells : study.validationCells;
+export function expandPhase(study: ResolvedStudy): readonly PlannedStudyCell[] {
+  return study.cells;
 }
 
 export async function loadStudyManifest(path: string): Promise<StudyManifest> {

@@ -156,32 +156,6 @@ class TargetSource:
 
 
 @dataclass(frozen=True)
-class ReferenceSource:
-    source_id: str
-    sha256: str
-
-    def __post_init__(self) -> None:
-        _identifier(self.source_id, "Reference sourceId")
-        _digest(self.sha256, "Reference source sha256")
-
-    def to_dict(self) -> dict[str, str]:
-        return {"sourceId": self.source_id, "sha256": self.sha256}
-
-    @classmethod
-    def from_dict(cls, value: object, index: int) -> ReferenceSource:
-        name = f"Puzzle build reference {index}"
-        record = _record(
-            value,
-            name,
-            fields=frozenset({"sourceId", "sha256"}),
-        )
-        return cls(
-            source_id=_identifier(record["sourceId"], f"{name} sourceId"),
-            sha256=_digest(record["sha256"], f"{name} sha256"),
-        )
-
-
-@dataclass(frozen=True)
 class BuildWindow:
     paragraph_start: int
     paragraph_end: int
@@ -361,7 +335,8 @@ class AllocationMetrics:
 @dataclass(frozen=True)
 class AllocationSummary:
     allocation_id: str
-    tier: str
+    evidence_tier: str
+    control_tier: str
     metrics: AllocationMetrics
     rejected_tiers: tuple[TierRejection, ...]
     path: Path
@@ -369,9 +344,11 @@ class AllocationSummary:
 
     def __post_init__(self) -> None:
         _prefixed_digest(self.allocation_id, "allocation-", "Allocation ID")
-        if self.tier not in _TIERS:
-            raise ValueError("Selected allocation tier is unsupported.")
-        expected_rejected = _TIERS[: _TIERS.index(self.tier)]
+        if self.evidence_tier not in _TIERS:
+            raise ValueError("Selected evidence tier is unsupported.")
+        if self.control_tier not in _TIERS:
+            raise ValueError("Selected control tier is unsupported.")
+        expected_rejected = _TIERS[: _TIERS.index(self.evidence_tier)]
         if tuple(rejection.tier for rejection in self.rejected_tiers) != expected_rejected:
             raise ValueError("Rejected allocation tiers must contain all earlier tiers in order.")
         (
@@ -379,20 +356,29 @@ class AllocationSummary:
             max_solo,
             max_region,
             max_stage,
-            max_control,
+            _max_control,
             min_owner_occurrences,
             min_sentinel_occurrences,
-        ) = _TIER_LIMITS[self.tier]
+        ) = _TIER_LIMITS[self.evidence_tier]
         if (
             self.metrics.min_owner_share < min_owner
             or self.metrics.solo_changed_set_coverage > max_solo
             or self.metrics.region_deviation > max_region
             or self.metrics.stage_deviation > max_stage
-            or self.metrics.max_control_distance > max_control
             or self.metrics.min_owner_occurrences_per_region < min_owner_occurrences
             or (self.metrics.min_sentinel_occurrences_per_agent_region < min_sentinel_occurrences)
         ):
-            raise ValueError(f"Allocation metrics do not satisfy the {self.tier} tier.")
+            raise ValueError(
+                f"Allocation metrics do not satisfy the {self.evidence_tier} evidence tier."
+            )
+        control_limit = _TIER_LIMITS[self.control_tier][4]
+        controls_complete = self.metrics.unmatched_control_count == 0
+        if self.control_tier in {"strict", "balanced"} and (
+            not controls_complete or self.metrics.max_control_distance > control_limit
+        ):
+            raise ValueError(
+                f"Allocation controls do not satisfy the {self.control_tier} control tier."
+            )
         if self.path.as_posix() != "oracle/allocation.json":
             raise ValueError("Allocation path must be oracle/allocation.json.")
         _digest(self.sha256, "Allocation sha256")
@@ -400,7 +386,8 @@ class AllocationSummary:
     def to_dict(self) -> dict[str, Any]:
         return {
             "allocationId": self.allocation_id,
-            "tier": self.tier,
+            "evidenceTier": self.evidence_tier,
+            "controlTier": self.control_tier,
             "metrics": self.metrics.to_dict(),
             "rejectedTiers": [rejection.to_dict() for rejection in self.rejected_tiers],
             "path": self.path.as_posix(),
@@ -414,13 +401,22 @@ class AllocationSummary:
             value,
             name,
             fields=frozenset(
-                {"allocationId", "tier", "metrics", "rejectedTiers", "path", "sha256"}
+                {
+                    "allocationId",
+                    "evidenceTier",
+                    "controlTier",
+                    "metrics",
+                    "rejectedTiers",
+                    "path",
+                    "sha256",
+                }
             ),
         )
         rejections = _array(record["rejectedTiers"], f"{name} rejectedTiers", allow_empty=True)
         return cls(
             allocation_id=_string(record["allocationId"], f"{name} allocationId"),
-            tier=_string(record["tier"], f"{name} tier"),
+            evidence_tier=_string(record["evidenceTier"], f"{name} evidenceTier"),
+            control_tier=_string(record["controlTier"], f"{name} controlTier"),
             metrics=AllocationMetrics.from_dict(record["metrics"]),
             rejected_tiers=tuple(
                 TierRejection.from_dict(item, index)
@@ -583,7 +579,6 @@ class BuildVariant:
     variant_id: str
     build_id: str
     public_ciphertext_path: Path
-    reference_corpus_path: Path
     private_stage_roots: dict[str, Path]
     stages: tuple[EvidenceStage, ...]
     key_transitions: tuple[RekeyTransition, ...]
@@ -596,10 +591,6 @@ class BuildVariant:
         if self.public_ciphertext_path.as_posix() != f"{prefix}/complete/ciphertext.txt":
             raise ValueError(
                 f"Build {self.variant_id} public ciphertext path must use its variant tree."
-            )
-        if self.reference_corpus_path.as_posix() != f"{prefix}/references":
-            raise ValueError(
-                f"Build {self.variant_id} reference corpus path must use its variant tree."
             )
         if set(self.private_stage_roots) != set(_FIXED_AGENT_IDS):
             raise ValueError("Build privateStageRoots must contain exactly three agents.")
@@ -639,7 +630,6 @@ class BuildVariant:
             "variantId": self.variant_id,
             "buildId": self.build_id,
             "publicCiphertextPath": self.public_ciphertext_path.as_posix(),
-            "referenceCorpusPath": self.reference_corpus_path.as_posix(),
             "privateStageRoots": {
                 agent_id: self.private_stage_roots[agent_id].as_posix()
                 for agent_id in _FIXED_AGENT_IDS
@@ -659,7 +649,6 @@ class BuildVariant:
                     "variantId",
                     "buildId",
                     "publicCiphertextPath",
-                    "referenceCorpusPath",
                     "privateStageRoots",
                     "stages",
                     "keyTransitions",
@@ -681,9 +670,6 @@ class BuildVariant:
             build_id=_string(record["buildId"], f"{name} buildId"),
             public_ciphertext_path=_relative_path(
                 record["publicCiphertextPath"], f"{name} publicCiphertextPath"
-            ),
-            reference_corpus_path=_relative_path(
-                record["referenceCorpusPath"], f"{name} referenceCorpusPath"
             ),
             private_stage_roots={
                 agent_id: _relative_path(roots[agent_id], f"{name} {agent_id} private stage root")
@@ -784,7 +770,6 @@ class PuzzleBuild:
     paired_build_id: str
     block_id: str
     source: TargetSource
-    references: tuple[ReferenceSource, ...]
     seed: int
     window: BuildWindow
     agent_ids: tuple[str, ...]
@@ -807,13 +792,6 @@ class PuzzleBuild:
             raise ValueError("Puzzle build stageCount must be exactly 6.")
         if self.boundary_stage != _FIXED_BOUNDARY_STAGE:
             raise ValueError("Puzzle build boundaryStage must be exactly 4.")
-        reference_ids = tuple(reference.source_id for reference in self.references)
-        if not reference_ids:
-            raise ValueError("Puzzle references must be non-empty.")
-        if len(set(reference_ids)) != len(reference_ids):
-            raise ValueError("Puzzle reference source IDs must be unique.")
-        if self.source.source_id in reference_ids:
-            raise ValueError("Puzzle target source cannot also be a reference.")
         if self.base_key_path.as_posix() != "oracle/keys/base.json":
             raise ValueError("Puzzle baseKeyPath must be oracle/keys/base.json.")
         if self.stationary.variant_id != "stationary" or self.rekey.variant_id != "rekey":
@@ -837,11 +815,10 @@ class PuzzleBuild:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "pairedBuildId": self.paired_build_id,
             "blockId": self.block_id,
             "source": self.source.to_dict(),
-            "references": [reference.to_dict() for reference in self.references],
             "seed": self.seed,
             "window": self.window.to_dict(),
             "agentIds": list(self.agent_ids),
@@ -869,7 +846,6 @@ class PuzzleBuild:
                     "pairedBuildId",
                     "blockId",
                     "source",
-                    "references",
                     "seed",
                     "window",
                     "agentIds",
@@ -883,10 +859,9 @@ class PuzzleBuild:
                 }
             ),
         )
-        if _integer(record["schemaVersion"], f"{name} schemaVersion") != 3:
+        if _integer(record["schemaVersion"], f"{name} schemaVersion") != 4:
             raise ValueError("Unsupported puzzle build schema version.")
         agent_ids = _strings(record["agentIds"], f"{name} agentIds")
-        raw_references = _array(record["references"], f"{name} references")
         variants = _record(
             record["variants"],
             f"{name} variants",
@@ -896,10 +871,6 @@ class PuzzleBuild:
             paired_build_id=_string(record["pairedBuildId"], f"{name} pairedBuildId"),
             block_id=_identifier(record["blockId"], f"{name} blockId"),
             source=TargetSource.from_dict(record["source"]),
-            references=tuple(
-                ReferenceSource.from_dict(reference, index)
-                for index, reference in enumerate(raw_references, start=1)
-            ),
             seed=_safe_integer(record["seed"], f"{name} seed"),
             window=BuildWindow.from_dict(record["window"]),
             agent_ids=agent_ids,

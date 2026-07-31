@@ -13,6 +13,7 @@ import {
   selectBuildVariant,
   type AttemptSummary,
 } from "../../src/artifacts.js";
+import { buildPuzzle } from "../../src/build.js";
 import { hashProtocolSnapshot, resolveCondition } from "../../src/condition.js";
 import { runStudyExperiment } from "../../src/experiment.js";
 import type { ModelAdapter } from "../../src/model.js";
@@ -172,8 +173,8 @@ async function publishFixtureAttempt(
   return summary;
 }
 
-describe("frozen five-block study", () => {
-  it("runs all twenty cells sequentially with one explicit replacement and no provider request", async () => {
+describe("frozen calibration study", () => {
+  it("runs four calibration cells sequentially", async () => {
     const studyRoot = await temporaryRoot();
     const source = await readSourceState(root);
     const sandbox = new FakeCommandSandbox();
@@ -182,7 +183,6 @@ describe("frozen five-block study", () => {
     let maximumActiveAttempts = 0;
     let adapterCreations = 0;
     let providerRequests = 0;
-    let failNextValidation = true;
     const env = {
       OPENAI_API_KEY: "secret-canary-openai",
       ANTHROPIC_API_KEY: "secret-canary-anthropic",
@@ -206,6 +206,12 @@ describe("frozen five-block study", () => {
               testedCommit: source.testedCommit,
               sourceClean: true,
             }),
+            build: async (buildOptions) =>
+              buildPuzzle({
+                ...buildOptions,
+                source: join(root, "fixtures/chronicles-of-break-oday.txt"),
+                phase: "calibration",
+              }),
           },
         }),
       readPreflight: async () => ({
@@ -224,102 +230,40 @@ describe("frozen five-block study", () => {
         maximumActiveAttempts = Math.max(maximumActiveAttempts, activeAttempts);
         try {
           const receipt = await readDesignReceipt(studyRoot);
-          const phase = await readPhaseSummary(
-            studyRoot,
-            request.studyPhase === "validation" ? "validation" : "calibration",
-          );
-          expect(receipt.builds).toHaveLength(5);
+          const phase = await readPhaseSummary(studyRoot, "calibration");
+          expect(receipt.builds).toHaveLength(1);
           expect(phase.reservations.at(-1)?.state).toBe("reserved");
           launchConditions.push(
             `${request.studyPhase}:${request.condition}:${request.replacementOfAttemptId ?? "primary"}`,
           );
-          const infrastructureFailure =
-            request.studyPhase === "validation" &&
-            request.replacementOfAttemptId === undefined &&
-            failNextValidation;
-          if (infrastructureFailure) failNextValidation = false;
-          return publishFixtureAttempt(request, infrastructureFailure);
+          return publishFixtureAttempt(request, false);
         } finally {
           activeAttempts -= 1;
         }
       },
+      evaluate: async () => ({}) as never,
+      publishBehaviorEvidence: async () => {},
     };
 
     const calibration = await runStudyExperiment({
       root,
       configPath: "experiments/config.yaml",
       studyRoot,
-      phase: "calibration",
       env,
       dependencies,
     });
     expect(calibration.state).toBe("complete");
     expect(calibration.attempts).toHaveLength(4);
 
-    await expect(
-      runStudyExperiment({
-        root,
-        configPath: "experiments/config.yaml",
-        studyRoot,
-        phase: "validation",
-        env,
-        dependencies,
-      }),
-    ).rejects.toThrow(/infrastructure failure/i);
-    const blocked = await readPhaseSummary(studyRoot, "validation");
-    const sourceAttemptId = blocked.failure?.attemptId;
-    if (sourceAttemptId === undefined) {
-      throw new Error("Blocked validation phase did not cite its failed attempt.");
-    }
-
-    const afterReplacement = await runStudyExperiment({
-      root,
-      configPath: "experiments/config.yaml",
-      studyRoot,
-      phase: "validation",
-      replaceAttemptId: sourceAttemptId,
-      env,
-      dependencies,
-    });
-    expect(afterReplacement.state).toBe("running");
-    expect(afterReplacement.attempts.at(-1)?.replacementOfAttemptId).toBe(sourceAttemptId);
-    await expect(
-      runStudyExperiment({
-        root,
-        configPath: "experiments/config.yaml",
-        studyRoot,
-        phase: "validation",
-        replaceAttemptId: sourceAttemptId,
-        env,
-        dependencies,
-      }),
-    ).rejects.toThrow(/current frozen infrastructure failure/);
-
-    const validation = await runStudyExperiment({
-      root,
-      configPath: "experiments/config.yaml",
-      studyRoot,
-      phase: "validation",
-      env,
-      dependencies,
-    });
-    expect(validation.state).toBe("complete");
-    expect(validation.plannedCells).toHaveLength(16);
-    expect(validation.attempts).toHaveLength(17);
-    expect(new Set(validation.attempts.map((attempt) => attempt.cellId))).toHaveLength(16);
-    expect(validation.reservations.filter(({ kind }) => kind === "replacement")).toHaveLength(1);
     expect(maximumActiveAttempts).toBe(1);
     expect(providerRequests).toBe(0);
-    expect(adapterCreations).toBe(63);
+    expect(adapterCreations).toBe(12);
 
     const receiptSource = await readFile(join(studyRoot, "design.json"), "utf8");
     expect(receiptSource).not.toContain("secret-canary");
     expect(JSON.parse(receiptSource)).toMatchObject({
       sourceRevision: source.testedCommit,
-      builds: expect.arrayContaining([
-        expect.objectContaining({ blockId: "calibration-theron-ware" }),
-        expect.objectContaining({ blockId: "validation-woodlanders" }),
-      ]),
+      builds: [expect.objectContaining({ blockId: "calibration-odd-women" })],
     });
     expect(launchConditions.slice(0, 4)).toEqual([
       "calibration:CS:primary",
@@ -327,7 +271,6 @@ describe("frozen five-block study", () => {
       "calibration:IR:primary",
       "calibration:IS:primary",
     ]);
-    expect(launchConditions[4]).toBe("validation:CS:primary");
-    expect(launchConditions[5]).toBe(`validation:CS:${sourceAttemptId}`);
+    expect(launchConditions).toHaveLength(4);
   }, 120_000);
 });

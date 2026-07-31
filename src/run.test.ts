@@ -149,9 +149,6 @@ async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promi
       }),
     ),
   ) as Record<AgentId, readonly string[]>;
-  const referenceCorpusPath = join(root, "reference");
-  await mkdir(referenceCorpusPath);
-  await writeFile(join(referenceCorpusPath, "reference.txt"), "reference\n", "utf8");
   return {
     attemptId: `attempt-${condition.toLowerCase()}-001`,
     studyPhase: "standalone",
@@ -161,7 +158,6 @@ async function fixtureConfig(root: string, condition: ConditionId = "CR"): Promi
     buildId: resolved.variantId === "stationary" ? STATIONARY_BUILD_ID : REKEY_BUILD_ID,
     artifactRoot: join(root, "attempt"),
     buildRoot: join(root, "build"),
-    referenceCorpusPath,
     agentIds: AGENTS,
     agentStages,
     releaseOffsetsMs: RELEASE_OFFSETS_MS,
@@ -282,7 +278,13 @@ describe("fixed four-condition run coordinator", () => {
         config,
         agents: runtimes(() => finishAdapter()),
         sandbox,
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        checker: async () => ({
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "valid",
+          ciphertextWords: 0,
+          outputWords: 0,
+          coverage: 1,
+        }),
         clock,
       });
 
@@ -361,7 +363,13 @@ describe("fixed four-condition run coordinator", () => {
         config,
         agents,
         sandbox: new FakeCommandSandbox(),
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        checker: async () => ({
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "valid",
+          ciphertextWords: 0,
+          outputWords: 0,
+          coverage: 1,
+        }),
         clock: new ControlledClock(),
       });
 
@@ -448,14 +456,14 @@ describe("fixed four-condition run coordinator", () => {
     const config = await fixtureConfig(root);
     const studyConfig = {
       ...config,
-      studyPhase: "validation",
+      studyPhase: "calibration",
       studyRootId: "study-fixture",
       conditionOrderPosition: 2,
       designDigest: "a".repeat(64),
     } as const;
 
     expect(validateAttemptConfig(studyConfig)).toMatchObject({
-      studyPhase: "validation",
+      studyPhase: "calibration",
       studyRootId: "study-fixture",
       conditionOrderPosition: 2,
       designDigest: "a".repeat(64),
@@ -486,7 +494,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => adapter),
       sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock: new ControlledClock(),
     });
 
@@ -510,7 +524,13 @@ describe("fixed four-condition run coordinator", () => {
         config,
         agents: runtimes(() => adapter),
         sandbox,
-        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        checker: async () => ({
+          feedbackId: "published-runnability-coverage-v1",
+          outputValidity: "valid",
+          ciphertextWords: 0,
+          outputWords: 0,
+          coverage: 1,
+        }),
         clock,
         gitPollIntervalMs: 1,
       });
@@ -570,7 +590,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => waitingAdapter()),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock,
     });
 
@@ -615,7 +641,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => adapter, "provider"),
       sandbox: new FakeCommandSandbox(),
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock: new ControlledClock(),
       preflight,
     });
@@ -665,7 +697,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => waitingAdapter()),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock,
     });
 
@@ -689,7 +727,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => waitingAdapter()),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock,
     });
 
@@ -746,7 +790,13 @@ describe("fixed four-condition run coordinator", () => {
       config,
       agents: runtimes(() => adapter),
       sandbox,
-      checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+      checker: async () => ({
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "valid",
+        ciphertextWords: 0,
+        outputWords: 0,
+        coverage: 1,
+      }),
       clock: new ControlledClock(),
     });
 

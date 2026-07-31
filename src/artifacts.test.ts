@@ -60,7 +60,6 @@ function buildVariant(variantId: "stationary" | "rekey"): Record<string, unknown
     variantId,
     buildId: `build-${variantId === "stationary" ? "c".repeat(64) : "d".repeat(64)}`,
     publicCiphertextPath: `variants/${variantId}/complete/ciphertext.txt`,
-    referenceCorpusPath: `variants/${variantId}/references`,
     privateStageRoots: Object.fromEntries(
       ["agent-1", "agent-2", "agent-3"].map((agentId) => [
         agentId,
@@ -84,15 +83,10 @@ function buildVariant(variantId: "stationary" | "rekey"): Record<string, unknown
 
 function buildManifest(): Record<string, unknown> {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     pairedBuildId: `paired-${"e".repeat(64)}`,
-    blockId: "calibration-theron-ware",
-    source: { sourceId: "theron-ware", sha256: "f".repeat(64) },
-    references: [
-      { sourceId: "middlemarch", sha256: "1".repeat(64) },
-      { sourceId: "moby-dick", sha256: "2".repeat(64) },
-      { sourceId: "jane-eyre", sha256: "3".repeat(64) },
-    ],
+    blockId: "calibration-odd-women",
+    source: { sourceId: "odd-women", sha256: "f".repeat(64) },
     seed: 130013,
     window: {
       paragraphStart: 10,
@@ -105,7 +99,8 @@ function buildManifest(): Record<string, unknown> {
     boundaryStage: 4,
     allocation: {
       allocationId: `allocation-${"5".repeat(64)}`,
-      tier: "balanced",
+      evidenceTier: "balanced",
+      controlTier: "balanced",
       metrics: {
         regionDeviation: 0.05,
         stageDeviation: 0.15,
@@ -147,21 +142,9 @@ function buildManifest(): Record<string, unknown> {
   };
 }
 
-const blockIds = [
-  "calibration-theron-ware",
-  "validation-odd-women",
-  "validation-pointed-firs",
-  "validation-custom-country",
-  "validation-woodlanders",
-] as const;
+const blockIds = ["calibration-odd-women"] as const;
 
 const calibrationOrder = ["CS", "CR", "IR", "IS"] as const;
-const validationOrders = [
-  ["CS", "CR", "IR", "IS"],
-  ["CR", "IS", "CS", "IR"],
-  ["IS", "IR", "CR", "CS"],
-  ["IR", "CS", "IS", "CR"],
-] as const;
 
 function receiptBuild(blockId: string, index: number): Record<string, unknown> {
   const manifest = structuredClone(buildManifest());
@@ -201,7 +184,7 @@ function designReceipt(): Record<string, unknown> {
     }),
   );
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     createdAt: "2026-07-28T12:00:00.000Z",
     sourceRevision: "1".repeat(40),
     sandbox: attemptSummary().sandbox,
@@ -209,8 +192,8 @@ function designReceipt(): Record<string, unknown> {
     immutableManifestDigest: "3".repeat(64),
     designDigest: "4".repeat(64),
     immutableManifest: {
-      schemaVersion: 2,
-      studyId: "frozen-five-block",
+      schemaVersion: 6,
+      studyId: "calibration-only",
       providers: { openai: { apiKeyEnv: "OPENAI_API_KEY" } },
     },
     builds: blockIds.map(receiptBuild),
@@ -218,18 +201,17 @@ function designReceipt(): Record<string, unknown> {
       agentId: `agent-${String(index + 1)}`,
       modelProfileId,
     })),
-    orders: {
-      calibration: calibrationOrder,
-      validation: validationOrders,
-    },
+    order: calibrationOrder,
     rubric: {
       id: "behavior-review-v1",
       path: "experiments/behavior-rubric.md",
       sha256: "5".repeat(64),
     },
+    checking: { feedbackId: "published-runnability-coverage-v1" },
     scoring: {
-      metricId: "reconstruction-v1",
-      reviewerSelectionId: "explicit-workspace-command-output-v1",
+      primaryMetricId: "normalized-positional-word-v1",
+      diagnosticMetricId: "palimpsest-diagnostics-v1",
+      evaluationPolicyId: "all-canonical-main-snapshots-v1",
     },
     promptTemplates: templates.map((template) => ({
       ...template,
@@ -252,16 +234,14 @@ function designReceipt(): Record<string, unknown> {
   };
 }
 
-function plannedCells(phase: "calibration" | "validation"): Record<string, unknown>[] {
-  const phaseBlocks = phase === "calibration" ? blockIds.slice(0, 1) : blockIds.slice(1);
-  const orders = phase === "calibration" ? [calibrationOrder] : validationOrders;
-  return phaseBlocks.flatMap((blockId, blockIndex) =>
-    orders[blockIndex]!.map((condition, conditionIndex) => {
+function plannedCells(): Record<string, unknown>[] {
+  return blockIds.flatMap((blockId, blockIndex) =>
+    calibrationOrder.map((condition, conditionIndex) => {
       const phasePosition = blockIndex * 4 + conditionIndex + 1;
       const buildIndex = blockIds.indexOf(blockId);
       return {
-        cellId: `${phase}-${String(phasePosition).padStart(3, "0")}-${blockId}-${condition}`,
-        phase,
+        cellId: `calibration-${String(phasePosition).padStart(3, "0")}-${blockId}-${condition}`,
+        phase: "calibration",
         blockId,
         condition,
         conditionOrderPosition: conditionIndex + 1,
@@ -276,14 +256,13 @@ function plannedCells(phase: "calibration" | "validation"): Record<string, unkno
 
 function phaseSummary(overrides: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     phase: "calibration",
     state: "ready",
     manifestDigest: "2".repeat(64),
     immutableManifestDigest: "3".repeat(64),
     designDigest: "4".repeat(64),
-    plannedCells: plannedCells("calibration"),
-    adjustments: [],
+    plannedCells: plannedCells(),
     reservations: [],
     attempts: [],
     cumulativeAuthorizedTokens: 0,
@@ -318,25 +297,74 @@ function overlapResult(): Record<string, unknown> {
 }
 
 function evaluationRecord(): Record<string, unknown> {
+  const full = { matchedWords: 10, totalWords: 10, accuracy: 1 };
+  const empty = { matchedWords: 0, totalWords: 0, accuracy: null };
+  const diagnostics = {
+    overall: full,
+    regions: { preBoundary: full, postBoundary: empty },
+    changed: { preBoundary: full, postBoundary: empty },
+    controls: { preBoundary: full, postBoundary: empty },
+    sentinels: { preBoundary: full, postBoundary: empty },
+    specialists: { preBoundary: full, postBoundary: empty },
+    stages: Array.from({ length: 6 }, (_, index) => ({ stage: index + 1, score: empty })),
+    evidenceOwners: ["agent-1", "agent-2", "agent-3"].map((agentId) => ({
+      agentId,
+      score: empty,
+    })),
+    changedTypes: [],
+    macroChangedTypeAccuracy: null,
+    positionHandling: {
+      expected: 10,
+      predicted: 10,
+      compared: 10,
+      missing: 0,
+      extra: 0,
+      coverage: 1,
+    },
+  };
   return {
-    status: "scored",
-    selection: {
-      workspace: "agent-1",
-      repositoryId: "shared",
-      ref: "refs/heads/main",
-      commit: "a".repeat(40),
-      command: "sh solve.sh",
-      outputPath: "reconstruction.txt",
+    schemaVersion: 2,
+    evaluationPolicyId: "all-canonical-main-snapshots-v1",
+    primaryMetricId: "normalized-positional-word-v1",
+    diagnosticMetricId: "palimpsest-diagnostics-v1",
+    attemptId: "attempt-1",
+    condition: "CR",
+    buildId: `build-${digest}`,
+    protocolDigest: digest,
+    startedAt: new Date(0).toISOString(),
+    completedAt: new Date(1).toISOString(),
+    origins: [
+      {
+        origin: {
+          originId: "shared",
+          repositoryId: "shared",
+          ref: "refs/heads/main",
+          commit: "a".repeat(40),
+          realizedTeamProduct: true,
+        },
+        status: "scored",
+        execution: {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          outputExceeded: false,
+        },
+        aggregate: { matchedWords: 10, totalWords: 10, coverage: 1, accuracy: 1 },
+        diagnostics,
+        outputProvenance: {
+          path: "origins/shared/output/reconstruction.txt",
+          sha256: digest,
+          byteLength: 10,
+        },
+      },
+    ],
+    team: {
+      realizedProductOriginId: "shared",
+      collectiveCeiling: { matchedWords: 10, totalWords: 10, coverage: 1, accuracy: 1 },
+      integrationGap: null,
+      integrationGapReason: "shared-single-origin",
     },
-    execution: {
-      exitCode: 0,
-      stdout: "",
-      stderr: "",
-      timedOut: false,
-      outputExceeded: false,
-    },
-    outputPath: "/tmp/palimpsest/evaluation/workspace/reconstruction.txt",
-    score: { matchedWords: 8, totalWords: 10, coverage: 0.8, accuracy: 0.8 },
   };
 }
 
@@ -345,7 +373,7 @@ describe("stored artifact decoders", () => {
     expect(
       decodeBuildResult({
         pairedBuildId: `paired-${digest}`,
-        blockId: "calibration-theron-ware",
+        blockId: "calibration-odd-women",
         buildPath: "/tmp/palimpsest/build",
         agentIds: ["agent-1", "agent-2", "agent-3"],
         stageCount: 6,
@@ -355,10 +383,10 @@ describe("stored artifact decoders", () => {
     expect(decodeBuildManifest(buildManifest()).variants.stationary.stages).toHaveLength(18);
     expect(decodeBuildManifest(buildManifest()).variants.rekey.stages).toHaveLength(18);
     expect(decodeAttemptSummary(attemptSummary()).sessions).toHaveLength(3);
-    expect(decodeDesignReceipt(designReceipt()).builds).toHaveLength(5);
+    expect(decodeDesignReceipt(designReceipt()).builds).toHaveLength(1);
     expect(decodePhaseSummary(phaseSummary()).plannedCells).toHaveLength(4);
     expect(decodeOverlapResult(overlapResult()).findings).toHaveLength(1);
-    expect(decodeEvaluationRecord(evaluationRecord()).status).toBe("scored");
+    expect(decodeEvaluationRecord(evaluationRecord()).origins[0]?.status).toBe("scored");
   });
 
   it("round-trips the complete strict condition-attempt record", () => {
@@ -367,9 +395,9 @@ describe("stored artifact decoders", () => {
 
     expect(decoded).toEqual(encoded);
     expect(decoded).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 7,
       studyPhase: "standalone",
-      blockId: "calibration-theron-ware",
+      blockId: "calibration-odd-women",
       condition: "CR",
       communicationMode: "shared",
       keyRegime: "rekey",
@@ -409,21 +437,21 @@ describe("stored artifact decoders", () => {
   it("accepts strict study provenance and replacement lineage", () => {
     const decoded = decodeAttemptSummary({
       ...attemptSummary(),
-      attemptId: "attempt-validation-replacement",
-      studyPhase: "validation",
-      studyRootId: "study-frozen-five-block",
+      attemptId: "attempt-calibration-replacement",
+      studyPhase: "calibration",
+      studyRootId: "study-calibration",
       conditionOrderPosition: 2,
       designDigest: "4".repeat(64),
       monetaryAuthorizationCeilingCents: 5_000,
-      replacementOfAttemptId: "attempt-validation-primary",
+      replacementOfAttemptId: "attempt-calibration-primary",
     });
 
     expect(decoded).toMatchObject({
-      studyPhase: "validation",
-      studyRootId: "study-frozen-five-block",
+      studyPhase: "calibration",
+      studyRootId: "study-calibration",
       conditionOrderPosition: 2,
       monetaryAuthorizationCeilingCents: 5_000,
-      replacementOfAttemptId: "attempt-validation-primary",
+      replacementOfAttemptId: "attempt-calibration-primary",
     });
     expect(decoded).not.toHaveProperty("runName");
     expect(decoded).not.toHaveProperty("repetition");
@@ -465,15 +493,7 @@ describe("stored artifact decoders", () => {
       "unsupported build version",
       () => decodeBuildManifest({ ...buildManifest(), schemaVersion: 2 }),
     ],
-    [
-      "target duplicated as reference",
-      () => {
-        const value = buildManifest();
-        const references = [...(value.references as Record<string, unknown>[])];
-        references[0] = { ...references[0], sourceId: "theron-ware" };
-        return decodeBuildManifest({ ...value, references });
-      },
-    ],
+    ["retired references field", () => decodeBuildManifest({ ...buildManifest(), references: [] })],
     [
       "release timing field",
       () => decodeBuildManifest({ ...buildManifest(), stageIntervalMs: 20 }),
@@ -787,7 +807,7 @@ describe("stored artifact decoders", () => {
     expect(decode).toThrow();
   });
 
-  it("round-trips the immutable five-build design receipt", () => {
+  it("round-trips the immutable calibration design receipt", () => {
     const encoded = JSON.parse(JSON.stringify(designReceipt())) as unknown;
     expect(decodeDesignReceipt(encoded)).toEqual(encoded);
   });
@@ -867,7 +887,7 @@ describe("stored artifact decoders", () => {
   it("strictly decodes primary and replacement launch reservations", () => {
     const primary = {
       reservationId: "reservation-calibration-001",
-      cellId: "calibration-001-calibration-theron-ware-CS",
+      cellId: "calibration-001-calibration-odd-women-CS",
       reservedAt: "2026-07-28T12:01:00.000Z",
       kind: "primary",
       authorizedTokens: 600_000,
@@ -893,7 +913,7 @@ describe("stored artifact decoders", () => {
     expect(decodePhaseSummary(phaseSummary())).toEqual(phaseSummary());
     const reservation = {
       reservationId: "reservation-calibration-001",
-      cellId: plannedCells("calibration")[0]!.cellId as string,
+      cellId: plannedCells()[0]!.cellId as string,
       reservedAt: "2026-07-28T12:01:00.000Z",
       kind: "primary",
       authorizedTokens: 600_000,
@@ -910,35 +930,8 @@ describe("stored artifact decoders", () => {
     expect(decodePhaseSummary(running)).toEqual(running);
   });
 
-  it("accepts only the two validation adjustment records", () => {
-    const currentManifestDigest = "6".repeat(64);
-    const validation = phaseSummary({
-      phase: "validation",
-      manifestDigest: currentManifestDigest,
-      plannedCells: plannedCells("validation"),
-      adjustments: [
-        {
-          fieldPath: "budgets.tokenBudgetPerAgent",
-          priorValue: 200_000,
-          resolvedValue: 150_000,
-          priorManifestDigest: "2".repeat(64),
-          currentManifestDigest,
-        },
-        {
-          fieldPath: "budgets.perAttemptMonetaryCeilingCents",
-          priorValue: 5_000,
-          resolvedValue: 4_000,
-          priorManifestDigest: "2".repeat(64),
-          currentManifestDigest,
-        },
-      ],
-    });
-
-    expect(decodePhaseSummary(validation).plannedCells).toHaveLength(16);
-  });
-
   it("round-trips a blocked frozen session-infrastructure attempt", () => {
-    const cellId = plannedCells("calibration")[0]!.cellId as string;
+    const cellId = plannedCells()[0]!.cellId as string;
     const blocked = phaseSummary({
       state: "blocked",
       reservations: [
@@ -981,7 +974,7 @@ describe("stored artifact decoders", () => {
   });
 
   it("accepts one eligible failure followed by one inherited replacement", () => {
-    const cellId = plannedCells("calibration")[0]!.cellId as string;
+    const cellId = plannedCells()[0]!.cellId as string;
     const sourceReservation = {
       reservationId: "reservation-source",
       cellId,
@@ -1042,7 +1035,7 @@ describe("stored artifact decoders", () => {
     [
       "duplicate primary reservation",
       () => {
-        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const cellId = plannedCells()[0]!.cellId as string;
         const reservation = {
           reservationId: "reservation-one",
           cellId,
@@ -1083,7 +1076,7 @@ describe("stored artifact decoders", () => {
     [
       "replacement of a model outcome",
       () => {
-        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const cellId = plannedCells()[0]!.cellId as string;
         return decodePhaseSummary(
           phaseSummary({
             state: "running",
@@ -1137,7 +1130,7 @@ describe("stored artifact decoders", () => {
     [
       "reserved replacement with an absent source",
       () => {
-        const cellId = plannedCells("calibration")[0]!.cellId as string;
+        const cellId = plannedCells()[0]!.cellId as string;
         return decodePhaseSummary(
           phaseSummary({
             state: "running",
@@ -1171,7 +1164,7 @@ describe("stored artifact decoders", () => {
       reservations: [
         {
           reservationId: "reservation-calibration-001",
-          cellId: plannedCells("calibration")[0]!.cellId,
+          cellId: plannedCells()[0]!.cellId,
           reservedAt: "2026-07-28T12:01:00.000Z",
           kind: "primary",
           authorizedTokens: 600_000,
@@ -1238,126 +1231,14 @@ describe("stored artifact decoders", () => {
     expect(decode).toThrow();
   });
 
-  it.each([
-    ["invalid status enum", () => decodeEvaluationRecord({ status: "complete" })],
-    [
-      "unsafe selection output path",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          selection: { ...(value.selection as object), outputPath: "../../answer.txt" },
-        });
-      },
-    ],
-    [
-      "wrong execution flag type",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          execution: { ...(value.execution as object), timedOut: 0 },
-        });
-      },
-    ],
-    [
-      "impossible score counters",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          score: { ...(value.score as object), matchedWords: 11 },
-        });
-      },
-    ],
-    [
-      "non-finite score",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          score: { ...(value.score as object), accuracy: Number.NaN },
-        });
-      },
-    ],
-    [
-      "status-field mismatch",
-      () => decodeEvaluationRecord({ ...evaluationRecord(), status: "not-runnable" }),
-    ],
-    [
-      "scored execution exited nonzero",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          execution: { ...(value.execution as object), exitCode: 1 },
-        });
-      },
-    ],
-    [
-      "scored execution timed out",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          execution: { ...(value.execution as object), timedOut: true },
-        });
-      },
-    ],
-    [
-      "no-output execution exceeded output",
-      () => {
-        const value = evaluationRecord();
-        return decodeEvaluationRecord({
-          ...value,
-          status: "no-output",
-          score: undefined,
-          execution: { ...(value.execution as object), outputExceeded: true },
-        });
-      },
-    ],
-    [
-      "not-runnable contains selection",
-      () =>
-        decodeEvaluationRecord({
-          status: "not-runnable",
-          selection: { command: "true", outputPath: "answer.txt" },
-        }),
-    ],
-    [
-      "execution-error contains score",
-      () =>
-        decodeEvaluationRecord({
-          ...evaluationRecord(),
-          status: "execution-error",
-          error: "scoring failed",
-        }),
-    ],
-  ])("rejects malformed evaluation data: %s", (_name, decode) => {
-    expect(decode).toThrow();
+  it("rejects reviewer-selection fields in evaluation records", () => {
+    expect(() =>
+      decodeEvaluationRecord({ ...evaluationRecord(), selection: { workspace: "agent-1" } }),
+    ).toThrow();
   });
 
-  it.each([
-    ["not-runnable", { status: "not-runnable" }],
-    [
-      "no-output",
-      {
-        ...evaluationRecord(),
-        status: "no-output",
-        score: undefined,
-      },
-    ],
-    [
-      "execution-error after successful execution",
-      {
-        ...evaluationRecord(),
-        status: "execution-error",
-        score: undefined,
-        error: "output could not be scored",
-      },
-    ],
-  ])("accepts the valid %s field combination", (_name, value) => {
-    expect(decodeEvaluationRecord(value).status).toBe(value.status);
+  it("rejects a canonical-origin topology mismatch", () => {
+    expect(() => decodeEvaluationRecord({ ...evaluationRecord(), condition: "IR" })).toThrow();
   });
 
   it.each([

@@ -22,10 +22,9 @@ def catalog() -> dict[str, object]:
         "schemaVersion": 1,
         "blocks": [
             {
-                "blockId": "calibration-theron-ware",
+                "blockId": "calibration-odd-women",
                 "phase": "calibration",
-                "sourceId": "theron-ware",
-                "references": ["middlemarch", "moby-dick", "jane-eyre"],
+                "sourceId": "odd-women",
                 "seed": 130013,
                 "window": {
                     "paragraphStart": 0,
@@ -54,7 +53,7 @@ def paragraph(ordinal: int, *tokens: str) -> ParagraphUnit:
 def test_catalog_decoder_is_strict_and_accepts_only_complete_discovery_windows() -> None:
     decoded = decode_block_catalog(catalog())
 
-    assert decoded.blocks[0].block_id == "calibration-theron-ware"
+    assert decoded.blocks[0].block_id == "calibration-odd-women"
     assert decoded.blocks[0].window.is_discovery
 
     value = catalog()
@@ -92,30 +91,30 @@ def test_catalog_decoder_accepts_a_pinned_window_and_rejects_duplicates() -> Non
 
 def test_candidate_window_uses_first_18k_mass_and_first_half_boundary() -> None:
     paragraphs = tuple(
-        paragraph(ordinal, *("window" for _ in range(20))) for ordinal in range(1, 901)
+        paragraph(ordinal, *("window" for _ in range(20))) for ordinal in range(1, 1126)
     )
 
     window = next(candidate_windows(paragraphs))
 
-    assert window.paragraph_start == 1
-    assert window.paragraph_end == 900
+    assert window.paragraph_start == 226
+    assert window.paragraph_end == 1125
     assert window.word_count == 18_000
     assert window.boundary_index == 450
-    expected = "\n\n".join(item.text for item in paragraphs) + "\n"
+    expected = "\n\n".join(item.text for item in paragraphs[225:]) + "\n"
     assert window.sha256 == sha256(expected.encode()).hexdigest()
 
 
 def test_initial_allocation_is_deterministic_complete_ordered_and_nonempty() -> None:
     paragraphs = tuple(
-        paragraph(ordinal, *("window" for _ in range(20))) for ordinal in range(1, 901)
+        paragraph(ordinal, *("window" for _ in range(20))) for ordinal in range(1, 1126)
     )
     window = next(candidate_windows(paragraphs))
 
-    first = initial_allocation(window, "calibration-theron-ware", 130013, TIERS[0])
-    second = initial_allocation(window, "calibration-theron-ware", 130013, TIERS[0])
+    first = initial_allocation(window, "calibration-odd-women", 4313013, TIERS[0])
+    second = initial_allocation(window, "calibration-odd-women", 4313013, TIERS[0])
 
     assert first == second
-    assert sorted(item.paragraph.ordinal for item in first.assignments) == list(range(1, 901))
+    assert sorted(item.paragraph.ordinal for item in first.assignments) == list(range(226, 1126))
     for agent_id in ("agent-1", "agent-2", "agent-3"):
         for stage in range(1, 7):
             ordinals = [

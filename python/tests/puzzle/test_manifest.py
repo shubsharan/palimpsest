@@ -16,7 +16,6 @@ from palimpsest.puzzle.manifest import (
     ManipulationCheck,
     OracleDesign,
     PuzzleBuild,
-    ReferenceSource,
     RekeyTransition,
     TargetSource,
     TierRejection,
@@ -67,7 +66,6 @@ def _variant(variant_id: str) -> BuildVariant:
         variant_id=variant_id,
         build_id="build-" + ("c" if variant_id == "stationary" else "d") * 64,
         public_ciphertext_path=Path(f"variants/{variant_id}/complete/ciphertext.txt"),
-        reference_corpus_path=Path(f"variants/{variant_id}/references"),
         private_stage_roots={
             agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
             for agent_id in AGENT_IDS
@@ -80,13 +78,8 @@ def _variant(variant_id: str) -> BuildVariant:
 def _build() -> PuzzleBuild:
     return PuzzleBuild(
         paired_build_id="paired-" + "e" * 64,
-        block_id="calibration-theron-ware",
-        source=TargetSource("theron-ware", "f" * 64),
-        references=(
-            ReferenceSource("middlemarch", "1" * 64),
-            ReferenceSource("moby-dick", "2" * 64),
-            ReferenceSource("jane-eyre", "3" * 64),
-        ),
+        block_id="calibration-odd-women",
+        source=TargetSource("odd-women", "f" * 64),
         seed=130013,
         window=BuildWindow(
             paragraph_start=10,
@@ -99,7 +92,8 @@ def _build() -> PuzzleBuild:
         boundary_stage=4,
         allocation=AllocationSummary(
             allocation_id="allocation-" + "5" * 64,
-            tier="balanced",
+            evidence_tier="balanced",
+            control_tier="balanced",
             metrics=AllocationMetrics(
                 region_deviation=0.05,
                 stage_deviation=0.15,
@@ -150,14 +144,14 @@ def test_make_agent_ids_is_canonical_and_numeric() -> None:
         make_agent_ids(1)
 
 
-def test_schema_v3_paired_manifest_round_trips_canonical_json() -> None:
+def test_schema_v4_paired_manifest_round_trips_canonical_json() -> None:
     build = _build()
     encoded = canonical_json_bytes(build.to_dict())
 
     decoded = PuzzleBuild.from_dict(json.loads(encoded))
 
     assert decoded == build
-    assert decoded.to_dict()["schemaVersion"] == 3
+    assert decoded.to_dict()["schemaVersion"] == 4
     assert decoded.to_dict()["variants"]["stationary"]["keyTransitions"] == []
     assert len(decoded.stationary.stages) == 18
     assert len(decoded.rekey.stages) == 18
@@ -172,6 +166,7 @@ def test_schema_v3_paired_manifest_round_trips_canonical_json() -> None:
         ("boundaryStage", 3, "exactly 4"),
         ("pairedBuildId", "paired-nope", "lowercase SHA-256"),
         ("baseKeyPath", "../base.json", "safe relative path"),
+        ("references", [], "unknown field references"),
     ],
 )
 def test_manifest_rejects_invalid_top_level_contract(field: str, value: object, match: str) -> None:
@@ -278,5 +273,5 @@ def test_selected_tier_metrics_must_satisfy_the_tier() -> None:
     build = _build()
     metrics = replace(build.allocation.metrics, max_control_distance=0.3)
 
-    with pytest.raises(ValueError, match="balanced tier"):
+    with pytest.raises(ValueError, match="balanced control tier"):
         replace(build.allocation, metrics=metrics)

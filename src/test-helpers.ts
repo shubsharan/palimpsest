@@ -49,7 +49,6 @@ export class FakeCommandSandbox implements CommandSandbox {
       profile: request.profile,
       workspacePath: request.workspacePath,
       evidencePath: request.evidencePath,
-      referenceCorpusPath: request.referenceCorpusPath,
       gitOriginPath: request.gitOriginPath,
     } as const;
     return {
@@ -99,7 +98,6 @@ export function testBuildManifest(): Record<string, unknown> {
     variantId,
     buildId: `build-${variantId === "stationary" ? "b".repeat(64) : TEST_DIGEST}`,
     publicCiphertextPath: `variants/${variantId}/complete/ciphertext.txt`,
-    referenceCorpusPath: `variants/${variantId}/references`,
     privateStageRoots: Object.fromEntries(
       agentIds.map((agentId) => [agentId, `variants/${variantId}/private/${agentId}/stages`]),
     ),
@@ -133,15 +131,10 @@ export function testBuildManifest(): Record<string, unknown> {
           ],
   });
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     pairedBuildId: `paired-${"d".repeat(64)}`,
-    blockId: "calibration-theron-ware",
-    source: { sourceId: "theron-ware", sha256: TEST_DIGEST },
-    references: [
-      { sourceId: "middlemarch", sha256: "1".repeat(64) },
-      { sourceId: "moby-dick", sha256: "2".repeat(64) },
-      { sourceId: "jane-eyre", sha256: "3".repeat(64) },
-    ],
+    blockId: "calibration-odd-women",
+    source: { sourceId: "odd-women", sha256: TEST_DIGEST },
     seed: 130013,
     window: {
       paragraphStart: 10,
@@ -154,7 +147,8 @@ export function testBuildManifest(): Record<string, unknown> {
     boundaryStage: 4,
     allocation: {
       allocationId: `allocation-${"5".repeat(64)}`,
-      tier: "balanced",
+      evidenceTier: "balanced",
+      controlTier: "balanced",
       metrics: {
         regionDeviation: 0.05,
         stageDeviation: 0.15,
@@ -197,7 +191,7 @@ export function testAttemptSummary(
   options: {
     agentIds?: readonly AgentId[];
     condition?: "CS" | "CR" | "IS" | "IR";
-    studyPhase?: "standalone" | "calibration" | "validation";
+    studyPhase?: "standalone" | "calibration";
     infrastructureAgentId?: AgentId;
     replacementOfAttemptId?: string;
     releaseOffsetsMs?: readonly number[];
@@ -236,7 +230,7 @@ export function testAttemptSummary(
   }));
   const protocol = {
     schemaVersion: 3,
-    blockId: "calibration-theron-ware",
+    blockId: "calibration-odd-women",
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,
@@ -268,7 +262,7 @@ export function testAttemptSummary(
           agentIds: [agentId],
         }));
   return {
-    schemaVersion: 5,
+    schemaVersion: 7,
     attemptId: "attempt-fixture",
     studyPhase,
     ...(studyPhase === "standalone"
@@ -284,7 +278,7 @@ export function testAttemptSummary(
     ...(options.replacementOfAttemptId === undefined
       ? {}
       : { replacementOfAttemptId: options.replacementOfAttemptId }),
-    blockId: "calibration-theron-ware",
+    blockId: "calibration-odd-women",
     condition: condition.id,
     communicationMode: condition.communicationMode,
     keyRegime: condition.keyRegime,
@@ -300,6 +294,9 @@ export function testAttemptSummary(
     protocol,
     tracePath: "/tmp/palimpsest/attempt/trace.jsonl",
     traceMetadataPath: "/tmp/palimpsest/attempt/trace.meta.json",
+    canonicalOriginIds: condition.communicationMode === "shared" ? ["shared"] : agentIds,
+    evaluationPath: "evaluation/result.json",
+    behaviorEvidencePath: "behavior-evidence.json",
     frozen: {
       root: "/tmp/palimpsest/attempt/frozen",
       communicationMode: condition.communicationMode,

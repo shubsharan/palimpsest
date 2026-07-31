@@ -1,85 +1,62 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
-from ..puzzle.manifest import PuzzleBuild, stage_filename
+from ..puzzle.text import word_tokens
 from ..serialization import canonical_json_bytes
-from .score import score_reconstruction
+
+FEEDBACK_ID = "published-runnability-coverage-v1"
 
 
-def load_puzzle_build(build_root: Path) -> PuzzleBuild:
-    manifest_path = build_root / "puzzle-build.json"
-    value = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("Puzzle build manifest must be an object.")
-    return PuzzleBuild.from_dict(value)
+def _word_count(value: str) -> int:
+    return sum(token.normalized is not None for token in word_tokens(value))
 
 
-def _released_prefix(ordinals: tuple[int, ...], stage_count: int) -> tuple[int, ...]:
-    if ordinals != tuple(range(1, len(ordinals) + 1)) or len(ordinals) > stage_count:
-        raise ValueError("Released ordinals must be a contiguous released prefix.")
-    if not ordinals:
-        raise ValueError("At least one released stage is required.")
-    return ordinals
-
-
-def check_reconstruction(
-    *,
-    build_root: Path,
-    agent_id: str,
-    released_ordinals: tuple[int, ...],
-    candidate: str,
-):
-    build = load_puzzle_build(build_root)
-    if agent_id not in build.agent_ids:
-        raise ValueError(f"Unknown puzzle agent: {agent_id}.")
-    ordinals = _released_prefix(released_ordinals, build.stage_count)
-    truth = "\n".join(
-        (
-            build_root
-            / "oracle"
-            / "checker"
-            / agent_id
-            / stage_filename(ordinal, build.stage_count)
-        ).read_text(encoding="utf-8")
-        for ordinal in ordinals
+def check_coverage(*, ciphertext: str, candidate: str) -> dict[str, object]:
+    ciphertext_words = _word_count(ciphertext)
+    output_words = _word_count(candidate)
+    coverage = (
+        min(output_words, ciphertext_words) / ciphertext_words
+        if ciphertext_words
+        else float(output_words == 0)
     )
-    return score_reconstruction(truth, candidate)
+    return {
+        "feedbackId": FEEDBACK_ID,
+        "outputValidity": "valid" if output_words >= ciphertext_words else "incomplete",
+        "ciphertextWords": ciphertext_words,
+        "outputWords": output_words,
+        "coverage": coverage,
+    }
 
 
-def check_candidate_file(
-    *,
-    build_root: Path,
-    agent_id: str,
-    released_ordinals: tuple[int, ...],
-    candidate_path: Path,
-) -> dict[str, object]:
+def check_files(*, ciphertext_path: Path, candidate_path: Path) -> dict[str, object]:
+    try:
+        ciphertext = ciphertext_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return {
+            "feedbackId": FEEDBACK_ID,
+            "outputValidity": "malformed",
+            "error": "ciphertext could not be read",
+        }
     try:
         candidate = candidate_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
-        return {"error": "candidate could not be read"}
-    return check_reconstruction(
-        build_root=build_root,
-        agent_id=agent_id,
-        released_ordinals=released_ordinals,
-        candidate=candidate,
-    ).to_dict()
+        return {
+            "feedbackId": FEEDBACK_ID,
+            "outputValidity": "malformed",
+            "error": "candidate could not be read",
+        }
+    return check_coverage(ciphertext=ciphertext, candidate=candidate)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--build", type=Path, required=True)
-    parser.add_argument("--agent", required=True)
-    parser.add_argument("--released", required=True)
+    parser.add_argument("--ciphertext", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     args = parser.parse_args()
-    ordinals = tuple(int(value) for value in args.released.split(",") if value)
-    result = check_candidate_file(
-        build_root=args.build,
-        agent_id=args.agent,
-        released_ordinals=ordinals,
+    result = check_files(
+        ciphertext_path=args.ciphertext,
         candidate_path=args.candidate,
     )
     print(canonical_json_bytes(result).decode())

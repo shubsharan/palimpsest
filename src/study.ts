@@ -17,7 +17,6 @@ import {
   type AttemptSummary,
   type DesignBuildBinding,
   type DesignReceipt,
-  type PhaseAdjustment,
   type PhaseSummary,
   type PlannedCell,
   type StudyPhase,
@@ -48,7 +47,6 @@ import { JsonlObservationLog } from "./trace.js";
 
 const AGENT_COUNT = 3;
 const CALIBRATION_CELL_COUNT = 4;
-const VALIDATION_CELL_COUNT = 16;
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
@@ -173,6 +171,8 @@ async function prepareBuilds(options: {
     await options.dependencies.build({
       root: options.root,
       output: buildRoot,
+      source: join(options.root, block.sourcePath),
+      phase: "calibration",
       block: block.blockId,
     });
     bindings.push(await readBuildBinding(buildRoot, block.blockId));
@@ -271,29 +271,25 @@ function createDesignReceiptValue(options: {
   sourceRevision: string;
   sandbox: SandboxIdentity;
   createdAt: string;
-  manifestDigest?: string;
-  baselineBudgets?: {
-    tokenBudgetPerAgent: number | null;
-    perAttemptMonetaryCeilingCents: number;
-  };
 }): DesignReceipt {
-  const baselineBudgets = options.baselineBudgets ?? options.study.budgets;
+  const baselineBudgets = options.study.budgets;
   const prompts = promptBindings(options.study, baselineBudgets.tokenBudgetPerAgent);
   const identity = {
-    schemaVersion: 2,
+    schemaVersion: 4,
     sourceRevision: options.sourceRevision,
     sandbox: { ...options.sandbox, ...SANDBOX_POLICY },
-    manifestDigest: options.manifestDigest ?? options.study.manifestDigest,
+    manifestDigest: options.study.manifestDigest,
     immutableManifestDigest: options.study.immutableManifestDigest,
     immutableManifest: options.study.immutableManifest,
     builds: options.builds,
     assignment: options.study.assignment,
-    orders: options.study.orders,
+    order: options.study.order,
     rubric: {
       id: options.study.rubric.rubricId,
       path: options.study.rubric.path,
       sha256: options.study.rubric.sha256,
     },
+    checking: options.study.checking,
     scoring: options.study.scoring,
     promptTemplates: prompts.promptTemplates,
     baselinePrompts: prompts.baselinePrompts,
@@ -320,32 +316,19 @@ function createDesignReceiptValue(options: {
 
 function assertPrimaryAuthorization(
   receipt: DesignReceipt,
-  validationBudgets: {
-    tokenBudgetPerAgent: number | null;
-    perAttemptMonetaryCeilingCents: number;
-  },
   replacementAuthorization: { tokens: number; cents: number } = {
     tokens: 0,
     cents: 0,
   },
 ): void {
   const calibrationAttemptTokens = authorizedTokens(receipt.baselineBudgets.tokenBudgetPerAgent);
-  const validationAttemptTokens = authorizedTokens(validationBudgets.tokenBudgetPerAgent);
   const calibrationMoney = checkedProduct(
     CALIBRATION_CELL_COUNT,
     receipt.baselineBudgets.perAttemptMonetaryCeilingCents,
     "Calibration primary monetary authorization",
   );
-  const validationMoney = checkedProduct(
-    VALIDATION_CELL_COUNT,
-    validationBudgets.perAttemptMonetaryCeilingCents,
-    "Validation primary monetary authorization",
-  );
   const tokenPolicyDisabled = receipt.totalCeilings.tokens === null;
-  if (
-    tokenPolicyDisabled !== (calibrationAttemptTokens === null) ||
-    tokenPolicyDisabled !== (validationAttemptTokens === null)
-  ) {
+  if (tokenPolicyDisabled !== (calibrationAttemptTokens === null)) {
     throw new Error("Study token policy must remain consistent with its total token ceiling.");
   }
   if (
@@ -355,18 +338,13 @@ function assertPrimaryAuthorization(
       calibrationAttemptTokens!,
       "Calibration primary token authorization",
     ) +
-      checkedProduct(
-        VALIDATION_CELL_COUNT,
-        validationAttemptTokens!,
-        "Validation primary token authorization",
-      ) +
       replacementAuthorization.tokens >
       receipt.totalCeilings.tokens!
   ) {
     throw new Error("Study token ceiling cannot authorize the primary matrix and replacements.");
   }
   if (
-    calibrationMoney + validationMoney + replacementAuthorization.cents >
+    calibrationMoney + replacementAuthorization.cents >
     receipt.totalCeilings.monetaryAuthorizationCents
   ) {
     throw new Error("Study monetary ceiling cannot authorize the primary matrix and replacements.");
@@ -416,11 +394,7 @@ async function assertCellBuildBinding(receipt: DesignReceipt, cell: PlannedCell)
   }
 }
 
-function assertDesignIdentity(
-  actual: DesignReceipt,
-  expected: DesignReceipt,
-  phase: StudyPhase,
-): void {
+function assertDesignIdentity(actual: DesignReceipt, expected: DesignReceipt): void {
   if (
     actual.designDigest !== expected.designDigest ||
     actual.immutableManifestDigest !== expected.immutableManifestDigest ||
@@ -428,7 +402,7 @@ function assertDesignIdentity(
   ) {
     throw new Error("Study design receipt does not match the immutable manifest.");
   }
-  if (phase === "calibration" && actual.manifestDigest !== expected.manifestDigest) {
+  if (actual.manifestDigest !== expected.manifestDigest) {
     throw new Error("Calibration manifest does not match its design receipt.");
   }
 }
@@ -437,7 +411,6 @@ export interface PrepareStudyDesignOptions {
   root: string;
   studyRoot: string;
   study: ResolvedStudy;
-  phase: StudyPhase;
   dependencies?: Partial<StudyDesignDependencies>;
 }
 
@@ -448,9 +421,6 @@ export async function prepareStudyDesign(
   const studyRoot = resolve(options.studyRoot);
   const deps = designDependencies(options.dependencies);
   const receiptExists = await exists(designReceiptPath(studyRoot));
-  if (!receiptExists && options.phase === "validation") {
-    throw new Error("Validation requires an existing calibration design receipt.");
-  }
   const receipt = receiptExists ? await readDesignReceipt(studyRoot) : undefined;
   if (receipt !== undefined) {
     assertReceiptDigest(receipt);
@@ -464,24 +434,22 @@ export async function prepareStudyDesign(
   const sandbox = await deps.sandboxIdentity(root);
   const builds = receipt
     ? await assertBuildBindings(receipt, studyRoot)
-    : await prepareBuilds({ root, studyRoot, study: options.study, dependencies: deps });
+    : await prepareBuilds({
+        root,
+        studyRoot,
+        study: options.study,
+        dependencies: deps,
+      });
   const expected = createDesignReceiptValue({
     study: options.study,
     builds,
     sourceRevision: initialSource.testedCommit,
     sandbox,
     createdAt: receipt?.createdAt ?? deps.now().toISOString(),
-    ...(receipt === undefined
-      ? {}
-      : {
-          manifestDigest:
-            options.phase === "calibration" ? options.study.manifestDigest : receipt.manifestDigest,
-          baselineBudgets: receipt.baselineBudgets,
-        }),
   });
-  assertPrimaryAuthorization(expected, expected.baselineBudgets);
+  assertPrimaryAuthorization(expected);
   if (receipt !== undefined) {
-    assertDesignIdentity(receipt, expected, options.phase);
+    assertDesignIdentity(receipt, expected);
     return receipt;
   }
   requireStableStudySource(initialSource, await deps.sourceState(root));
@@ -489,13 +457,9 @@ export async function prepareStudyDesign(
   return readDesignReceipt(studyRoot);
 }
 
-function plannedCells(
-  study: ResolvedStudy,
-  receipt: DesignReceipt,
-  phase: StudyPhase,
-): readonly PlannedCell[] {
+function plannedCells(study: ResolvedStudy, receipt: DesignReceipt): readonly PlannedCell[] {
   const builds = new Map(receipt.builds.map((build) => [build.blockId, build]));
-  return expandPhase(study, phase).map((cell) => {
+  return expandPhase(study).map((cell) => {
     const binding = builds.get(cell.blockId);
     if (binding === undefined) {
       throw new Error(`Design receipt has no build for ${cell.blockId}.`);
@@ -513,34 +477,6 @@ function plannedCells(
   });
 }
 
-function validationAdjustments(
-  study: ResolvedStudy,
-  receipt: DesignReceipt,
-): readonly PhaseAdjustment[] {
-  const adjustments: PhaseAdjustment[] = [];
-  const values = [
-    {
-      fieldPath: "budgets.tokenBudgetPerAgent",
-      priorValue: receipt.baselineBudgets.tokenBudgetPerAgent,
-      resolvedValue: study.budgets.tokenBudgetPerAgent,
-    },
-    {
-      fieldPath: "budgets.perAttemptMonetaryCeilingCents",
-      priorValue: receipt.baselineBudgets.perAttemptMonetaryCeilingCents,
-      resolvedValue: study.budgets.perAttemptMonetaryCeilingCents,
-    },
-  ] as const;
-  for (const value of values) {
-    if (value.priorValue === value.resolvedValue) continue;
-    adjustments.push({
-      ...value,
-      priorManifestDigest: receipt.manifestDigest,
-      currentManifestDigest: study.manifestDigest,
-    });
-  }
-  return adjustments;
-}
-
 async function readPhaseIfPresent(
   studyRoot: string,
   phase: StudyPhase,
@@ -555,14 +491,12 @@ function assertPhaseIdentity(
   study: ResolvedStudy,
   receipt: DesignReceipt,
   cells: readonly PlannedCell[],
-  adjustments: readonly PhaseAdjustment[],
 ): void {
   if (
     summary.manifestDigest !== study.manifestDigest ||
     summary.immutableManifestDigest !== study.immutableManifestDigest ||
     summary.designDigest !== receipt.designDigest ||
-    !sameValue(summary.plannedCells, cells) ||
-    !sameValue(summary.adjustments, adjustments)
+    !sameValue(summary.plannedCells, cells)
   ) {
     throw new Error(`${summary.phase} phase summary does not match the current study design.`);
   }
@@ -571,19 +505,16 @@ function assertPhaseIdentity(
 function newPhaseSummary(
   study: ResolvedStudy,
   receipt: DesignReceipt,
-  phase: StudyPhase,
   cells: readonly PlannedCell[],
-  adjustments: readonly PhaseAdjustment[],
 ): PhaseSummary {
   return decodePhaseSummary({
-    schemaVersion: 2,
-    phase,
+    schemaVersion: 3,
+    phase: "calibration",
     state: "ready",
     manifestDigest: study.manifestDigest,
     immutableManifestDigest: study.immutableManifestDigest,
     designDigest: receipt.designDigest,
     plannedCells: cells,
-    adjustments,
     reservations: [],
     attempts: [],
     cumulativeAuthorizedTokens: study.budgets.tokenBudgetPerAgent === null ? null : 0,
@@ -596,56 +527,31 @@ export async function initializeStudyPhase(options: {
   studyRoot: string;
   study: ResolvedStudy;
   receipt: DesignReceipt;
-  phase: StudyPhase;
 }): Promise<PhaseSummary> {
   const studyRoot = resolve(options.studyRoot);
   await assertBuildBindings(options.receipt, studyRoot);
   if (options.study.immutableManifestDigest !== options.receipt.immutableManifestDigest) {
     throw new Error("Phase manifest contains immutable drift from the design receipt.");
   }
-  const adjustments =
-    options.phase === "calibration" ? [] : validationAdjustments(options.study, options.receipt);
-  if (
-    options.phase === "calibration" &&
-    options.study.manifestDigest !== options.receipt.manifestDigest
-  ) {
+  if (options.study.manifestDigest !== options.receipt.manifestDigest) {
     throw new Error("Calibration cannot adjust its receipt-bound manifest.");
   }
-  const calibration = await readPhaseIfPresent(studyRoot, "calibration");
-  const existing = await readPhaseIfPresent(studyRoot, options.phase);
-  const indexedSummaries = options.phase === "validation" ? [calibration, existing] : [existing];
-  for (const summary of indexedSummaries) {
-    if (summary !== undefined) {
-      await assertIndexedAttempts({
-        studyRoot,
-        summary,
-        study: options.study,
-        receipt: options.receipt,
-      });
-    }
-  }
-  if (options.phase === "validation") {
-    if (calibration?.state !== "complete") {
-      throw new Error("Validation requires a completed calibration phase.");
-    }
-  }
-  assertPrimaryAuthorization(
-    options.receipt,
-    options.study.budgets,
-    replacementAuthorization([calibration, options.phase === "validation" ? existing : undefined]),
-  );
-  const cells = plannedCells(options.study, options.receipt, options.phase);
+  const existing = await readPhaseIfPresent(studyRoot, "calibration");
   if (existing !== undefined) {
-    assertPhaseIdentity(existing, options.study, options.receipt, cells, adjustments);
+    await assertIndexedAttempts({
+      studyRoot,
+      summary: existing,
+      study: options.study,
+      receipt: options.receipt,
+    });
+  }
+  assertPrimaryAuthorization(options.receipt, replacementAuthorization([existing]));
+  const cells = plannedCells(options.study, options.receipt);
+  if (existing !== undefined) {
+    assertPhaseIdentity(existing, options.study, options.receipt, cells);
     return existing;
   }
-  const summary = newPhaseSummary(
-    options.study,
-    options.receipt,
-    options.phase,
-    cells,
-    adjustments,
-  );
+  const summary = newPhaseSummary(options.study, options.receipt, cells);
   await publishPhaseSummary(studyRoot, summary);
   return summary;
 }
@@ -674,9 +580,8 @@ async function assertReplacementHeadroom(
 ): Promise<void> {
   const authorization = replacementAuthorization([
     await readPhaseIfPresent(studyRoot, "calibration"),
-    await readPhaseIfPresent(studyRoot, "validation"),
   ]);
-  assertPrimaryAuthorization(receipt, study.budgets, {
+  assertPrimaryAuthorization(receipt, {
     tokens: authorization.tokens + (authorizedTokens(study.budgets.tokenBudgetPerAgent) ?? 0),
     cents: authorization.cents + study.budgets.perAttemptMonetaryCeilingCents,
   });
@@ -911,16 +816,10 @@ async function assertIndexedAttempts(options: {
   receipt: DesignReceipt;
 }): Promise<void> {
   const cells = new Map(
-    plannedCells(options.study, options.receipt, options.summary.phase).map((cell) => [
-      cell.cellId,
-      cell,
-    ]),
+    plannedCells(options.study, options.receipt).map((cell) => [cell.cellId, cell]),
   );
   const attemptsRoot = resolve(options.studyRoot, options.summary.phase, "attempts");
-  const budgets =
-    options.summary.phase === "calibration"
-      ? options.receipt.baselineBudgets
-      : options.study.budgets;
+  const budgets = options.receipt.baselineBudgets;
   for (const reference of options.summary.attempts) {
     const attemptRoot = resolve(reference.attemptRoot);
     if (attemptRoot !== attemptsRoot && !attemptRoot.startsWith(`${attemptsRoot}${sep}`)) {
@@ -1084,18 +983,14 @@ export interface ExecuteStudyPhaseOptions {
   studyRoot: string;
   study: ResolvedStudy;
   receipt: DesignReceipt;
-  phase: StudyPhase;
   replaceAttemptId?: string;
   dependencies: Omit<StudyExecutionDependencies, "now"> &
     Partial<Pick<StudyExecutionDependencies, "now">>;
 }
 
-async function acquirePhaseExecutionLock(
-  studyRoot: string,
-  phase: StudyPhase,
-): Promise<() => Promise<void>> {
-  const path = join(studyRoot, phase, ".execution.lock");
-  await mkdir(join(studyRoot, phase), { recursive: true });
+async function acquirePhaseExecutionLock(studyRoot: string): Promise<() => Promise<void>> {
+  const path = join(studyRoot, "calibration", ".execution.lock");
+  await mkdir(join(studyRoot, "calibration"), { recursive: true });
   try {
     await writeFile(path, "", { flag: "wx" });
   } catch (error) {
@@ -1111,7 +1006,7 @@ async function acquirePhaseExecutionLock(
 
 export async function executeStudyPhase(options: ExecuteStudyPhaseOptions): Promise<PhaseSummary> {
   const studyRoot = resolve(options.studyRoot);
-  const release = await acquirePhaseExecutionLock(studyRoot, options.phase);
+  const release = await acquirePhaseExecutionLock(studyRoot);
   try {
     return await executeLockedStudyPhase(options, studyRoot);
   } finally {
@@ -1128,7 +1023,6 @@ async function executeLockedStudyPhase(
     studyRoot,
     study: options.study,
     receipt: options.receipt,
-    phase: options.phase,
   });
   if (summary.state === "complete") {
     if (options.replaceAttemptId !== undefined) {
@@ -1155,9 +1049,9 @@ async function executeLockedStudyPhase(
       await assertReplacementHeadroom(studyRoot, options.study, options.receipt);
     }
     const kind = replacementOfAttemptId === undefined ? "primary" : "replacement";
-    const launchRoot = join(studyRoot, options.phase, "attempts");
+    const launchRoot = join(studyRoot, "calibration", "attempts");
     const previewOrdinal = summary.reservations.length + 1;
-    const previewAttemptId = `attempt-${options.phase}-${String(cell.phasePosition).padStart(2, "0")}-${String(previewOrdinal).padStart(3, "0")}`;
+    const previewAttemptId = `attempt-calibration-${String(cell.phasePosition).padStart(2, "0")}-${String(previewOrdinal).padStart(3, "0")}`;
     const preview: StudyCellLaunch = {
       cell,
       attemptId: previewAttemptId,
@@ -1187,35 +1081,14 @@ async function executeLockedStudyPhase(
       await deps.runCell(preview);
     } catch (error) {
       const durable = await readAttempt(preview.attemptRoot);
-      if (durable === undefined) {
-        summary = blockUnresolved(summary, reserved.reservationId, error);
-        await publishPhaseSummary(studyRoot, summary);
-        throw error;
-      }
-      await assertAttemptMatchesLaunch({
-        attempt: durable,
-        attemptRoot: preview.attemptRoot,
-        summary,
-        cell,
-        study: options.study,
-        receipt: options.receipt,
-        attemptId: preview.attemptId,
-        ...(replacementOfAttemptId === undefined ? {} : { replacementOfAttemptId }),
-      });
-      summary = indexAttempt({
-        summary,
-        reservationId: reserved.reservationId,
-        cell,
-        attemptRoot: preview.attemptRoot,
-        attempt: durable,
-      });
+      const detail = error instanceof Error ? error.message : String(error);
+      const terminalError =
+        durable === undefined
+          ? error
+          : new Error(`${detail} Preserved frozen attempt at ${preview.attemptRoot}.`);
+      summary = blockUnresolved(summary, reserved.reservationId, terminalError);
       await publishPhaseSummary(studyRoot, summary);
-      if (durable.infrastructureClassification === "session-infrastructure-error") {
-        throw new StudyPhaseStoppedError(
-          `Phase stopped after infrastructure failure in ${durable.attemptId}.`,
-        );
-      }
-      return summary;
+      throw terminalError;
     }
     const durable = await readAttempt(preview.attemptRoot);
     if (durable === undefined) {
