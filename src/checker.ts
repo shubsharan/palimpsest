@@ -67,7 +67,10 @@ export function decodeCheckerResult(value: unknown): CheckerResult {
     throw new Error("Checker result coverage must be between 0 and 1.");
   }
   const expectedValidity = outputWords >= ciphertextWords ? "valid" : "incomplete";
-  const expectedCoverage = ciphertextWords === 0 ? Number(outputWords === 0) : Math.min(outputWords, ciphertextWords) / ciphertextWords;
+  const expectedCoverage =
+    ciphertextWords === 0
+      ? Number(outputWords === 0)
+      : Math.min(outputWords, ciphertextWords) / ciphertextWords;
   if (record.outputValidity !== expectedValidity || record.coverage !== expectedCoverage) {
     throw new Error("Checker result coverage fields are inconsistent.");
   }
@@ -86,12 +89,7 @@ export function createChecker(root: string): CheckerHook {
       await runPythonJson(
         root,
         "palimpsest.evaluation.checker",
-        [
-          "--ciphertext",
-          request.ciphertextPath,
-          "--candidate",
-          request.candidatePath,
-        ],
+        ["--ciphertext", request.ciphertextPath, "--candidate", request.candidatePath],
         request.signal,
       ),
     );

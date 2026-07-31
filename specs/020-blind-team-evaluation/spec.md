@@ -58,13 +58,13 @@ As a researcher, I can inspect where each canonical artifact succeeded across ti
 
 ---
 
-### User Story 4 - Seal Strong Fresh Study Blocks (Priority: P2)
+### User Story 4 - Build Or Reject Any Supplied Text (Priority: P2)
 
-As a researcher, I can rebuild a five-block catalog whose calibration and validation entries satisfy explicit evidence and control gates without silently weakening the scientific design.
+As a researcher, I can give the puzzle builder any local UTF-8 prose file and receive either one sealed, runnable puzzle or an explicit rejection from the same command.
 
 **Why this priority**: The new instrument is not credible if specialist evidence falls back to a weak allocation or stable controls are incomplete or poorly matched.
 
-**Independent Test**: Deterministically search the bounded candidate windows for all five declared sources, seal the first qualifying window for each phase, and prove that fallback evidence is rejected before credentials or provider adapters are created.
+**Independent Test**: Build an eligible unregistered plain-text file twice and compare every byte, then submit malformed, short, and scientifically infeasible files and prove that each exits nonzero without publishing output.
 
 **Acceptance Scenarios**:
 
@@ -72,9 +72,9 @@ As a researcher, I can rebuild a five-block catalog whose calibration and valida
 2. **Given** a paid calibration block, **When** it is accepted, **Then** its evidence tier is at least balanced, its stable controls are complete, and its control tier is explicitly recorded.
 3. **Given** a validation block, **When** it is accepted, **Then** both its evidence tier and control tier are at least balanced.
 4. **Given** a target source, **When** candidate selection runs, **Then** it begins after the first 20 percent of canonical paragraphs and selects the first 16,000-to-20,000-word window satisfying the phase gate.
-5. **Given** no qualifying window within the existing bounded search, **When** preparation ends, **Then** paid work is blocked rather than accepting an evidence fallback or weakened gate.
-6. **Given** the rebuilt catalog, **When** it is inspected, **Then** it contains exactly `calibration-odd-women`, `validation-pointed-firs`, `validation-custom-country`, `validation-woodlanders`, and `validation-silas-lapham`, with the previously exposed Theron Ware block absent from the active study.
-7. **Given** the Silas Lapham target, **When** it is sealed, **Then** its pinned provenance identifies Project Gutenberg ebook 154, seed `154013`, and the selected source digest, window, allocation, and manipulation records.
+5. **Given** no qualifying window within the bounded search, **When** the build command ends, **Then** it exits nonzero and publishes no partial build rather than accepting a fallback or weakened gate.
+6. **Given** an eligible source that is not registered in provenance or a block catalog, **When** it is built, **Then** source identity and seed are derived deterministically from the supplied bytes and retained in the sealed manifest.
+7. **Given** ordinary UTF-8 prose, Gutenberg text, or Gutenberg HTML, **When** it is supplied, **Then** the same command normalizes it into candidate paragraphs without a separate discover, promote, or pin workflow.
 
 ---
 
@@ -159,7 +159,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **FR-022**: Diagnostics MUST record output coverage and deterministic positional handling for missing and extra output tokens.
 - **FR-023**: Diagnostics and oracle-derived evaluation MUST occur only after origins are frozen and MUST remain invisible to agents.
 
-#### Block Validity and Catalog
+#### Source Validation and Sealing
 
 - **FR-024**: Build validity MUST represent `evidenceTier` separately from `controlTier`.
 - **FR-025**: `evidenceTier` MUST summarize specialist ownership, occurrences, solo coverage, and stage and region balance.
@@ -167,9 +167,9 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **FR-027**: A paid calibration block MUST have `evidenceTier` of at least balanced, complete controls, and an explicitly recorded control tier.
 - **FR-028**: A validation block MUST have both `evidenceTier` and `controlTier` of at least balanced.
 - **FR-029**: Provider-backed preparation MUST reject an evidence fallback before credentials are read or model adapters are created.
-- **FR-030**: The active catalog MUST contain exactly `calibration-odd-women`, `validation-pointed-firs`, `validation-custom-country`, `validation-woodlanders`, and `validation-silas-lapham`.
-- **FR-031**: The previously exposed Theron Ware block MUST be retired from the active study without mutating historical Feature 017 or 018 artifacts.
-- **FR-032**: The Silas Lapham source MUST use official [Project Gutenberg ebook 154](https://www.gutenberg.org/ebooks/154), pinned canonical source bytes, and seed `154013`.
+- **FR-030**: `puzzle:build` MUST accept a local source path directly and MUST NOT require prior provenance registration, catalog discovery, or manual pin promotion.
+- **FR-031**: The builder MUST accept valid UTF-8 ordinary prose, Gutenberg text, and Gutenberg HTML and MUST reject empty, non-UTF-8, structurally insufficient, or scientifically infeasible input explicitly.
+- **FR-032**: Source identity and seed MUST be derived deterministically from the supplied bytes; the sealed build MUST retain the source digest and selected window.
 - **FR-033**: For each target, candidate inspection MUST begin after the first 20 percent of canonical paragraphs and select the first 16,000-to-20,000-word window satisfying its phase-specific gate.
 - **FR-034**: Candidate search MUST remain deterministic and bounded; absence of a qualifying window MUST stop the workflow before paid work rather than weaken a gate.
 - **FR-035**: Every sealed block MUST retain its pinned provenance, source digest, seed, selected window, allocation record, manipulation record, evidence tier, control tier, and phase-gate result.
@@ -189,7 +189,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 #### Verification and Calibration
 
 - **FR-045**: Provider-free acceptance MUST prove the checker disclosure boundary, all declared solver failure modes, shared and isolated evaluation cardinality, prohibited evaluation inputs, complete synthetic diagnostics, collective-ceiling semantics, nullable integration-gap semantics, and pre-adapter evidence-fallback rejection.
-- **FR-046**: Provider-free acceptance MUST rebuild and seal all five blocks and require every phase-specific gate to pass.
+- **FR-046**: Provider-free acceptance MUST prove eligible unregistered input seals byte-identically and rejected input exits nonzero without publishing any build.
 - **FR-047**: Provider-free acceptance MUST complete the full offline `CS`, `CR`, `IR`, and `IS` fixture, advisory local CI, full repository verification, and a clean receipt-bound preflight on the exact committed revision.
 - **FR-048**: Paid calibration MUST create a fresh study root and immutable design receipt before running `CS`, `CR`, `IR`, and `IS` sequentially on `calibration-odd-women`.
 - **FR-049**: Each calibration attempt MUST use three GPT-5.6-sol agents at medium reasoning with releases at 0, 5, 10, 20, 30, and 40 minutes, a 60-minute cutoff, and no cumulative token cutoff.
@@ -221,7 +221,7 @@ As a researcher, I can run the redesigned instrument once across all four commun
 - **SC-003**: Every shared fixture emits exactly one canonical-origin result and every isolated fixture emits exactly three, with zero accepted reviewer-selection or evaluation-override inputs.
 - **SC-004**: Synthetic diagnostic fixtures produce exact expected results for every declared boundary, changed/control, sentinel/specialist, stage, owner, changed-type, missing-token, and extra-token case.
 - **SC-005**: Collective ceiling and integration gap tests cover every shared, isolated, partial-failure, single-scoreable-origin, and no-scoreable-origin case with an explicit deterministic result or null reason.
-- **SC-006**: All five active blocks seal from their first qualifying bounded window, meet their phase gates, retain complete provenance, and contain zero evidence fallbacks.
+- **SC-006**: Eligible unregistered input seals from its first qualifying bounded window byte-identically, while every rejected input publishes zero build files.
 - **SC-007**: Invalid or fallback evidence causes zero credential reads, zero provider adapter creations, and zero paid calls.
 - **SC-008**: The complete provider-free four-condition fixture, advisory local CI, repository verification, and clean receipt-bound preflight pass on one exact committed revision.
 - **SC-009**: The paid calibration produces exactly four sequential attempt records and terminal evaluation outcomes for 100 percent of their canonical origins without exceeding $40 authorization.

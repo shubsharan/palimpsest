@@ -967,14 +967,14 @@ def design_block(
         raise ValueError(
             f"Block {block.block_id} has a {state} window incompatible with this build."
         )
+    candidate_count = 0
     for window in candidate_windows(paragraphs):
+        candidate_count += 1
         try:
             allocation = allocate_window(window, block.block_id, block.seed)
         except InfeasibleDesignError:
             continue
-        controls_complete = len(allocation.design.controls) == len(
-            allocation.design.changed_types
-        )
+        controls_complete = len(allocation.design.controls) == len(allocation.design.changed_types)
         evidence_acceptable = allocation.tier.name in {"strict", "balanced"}
         control_acceptable = allocation.control_tier in {"strict", "balanced"}
         if not evidence_acceptable or not controls_complete:
@@ -986,4 +986,13 @@ def design_block(
                 f"Block {block.block_id} pin is not the first deterministic feasible window."
             )
         return BlockDesign(block, window, allocation)
-    raise InfeasibleDesignError(("no-feasible-window",))
+    if candidate_count == 0:
+        raise InfeasibleDesignError(
+            (
+                "source has no bounded 16,000-to-20,000-word candidate window after "
+                "the first 20 percent of canonical paragraphs",
+            )
+        )
+    raise InfeasibleDesignError(
+        (f"no candidate window satisfied the {block.phase} evidence and control gates",)
+    )

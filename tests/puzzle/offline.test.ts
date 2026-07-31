@@ -102,7 +102,7 @@ describe("offline behavior-neutral runner", () => {
       );
 
       expect(buildManifest).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
         blockId: "calibration-theron-ware",
         agentIds: result.build.agentIds,
         stageCount: result.build.stageCount,
@@ -140,22 +140,21 @@ describe("offline behavior-neutral runner", () => {
       expect(evaluationArtifact.status).toBe(result.evaluation.status);
 
       const checker = await runPythonJson(process.cwd(), "palimpsest.evaluation.checker", [
-        "--build",
-        result.build.buildPath,
-        "--agent",
-        "agent-1",
-        "--released",
-        "1",
+        "--ciphertext",
+        join(
+          result.build.buildPath,
+          buildManifest.variants[condition.variantId].publicCiphertextPath,
+        ),
         "--candidate",
         join(result.build.buildPath, "oracle", "checker", "agent-1", "stage-01.txt"),
       ]);
       expect(checker).toMatchObject({
-        matchedWords: expect.any(Number),
-        totalWords: expect.any(Number),
-        coverage: 1,
-        accuracy: 1,
+        feedbackId: "published-runnability-coverage-v1",
+        outputValidity: "incomplete",
+        ciphertextWords: expect.any(Number),
+        outputWords: expect.any(Number),
+        coverage: expect.any(Number),
       });
-      expect(asRecord(checker).matchedWords).toBe(asRecord(checker).totalWords);
 
       const trace = await readFile(join(result.run.attemptRoot, "trace.jsonl"), "utf8");
       const events = trace

@@ -31,7 +31,6 @@ from .corpus import (
     SourceDefinition,
     build_reference_corpus,
     load_paragraphs,
-    load_source_registry,
     load_text_source,
     serialize_paragraphs,
 )
@@ -56,7 +55,10 @@ from .revision import revise_explicit_types
 from .text import word_tokens
 
 MINIMUM_MANIPULATION_MASS = 0.15
-REFERENCE_SOURCE_IDS = ("middlemarch", "moby-dick", "jane-eyre")
+REFERENCE_SOURCE_PATHS = (
+    Path("fixtures/corpus/middlemarch.txt"),
+    Path("fixtures/corpus/jane-eyre.txt"),
+)
 
 
 def _seed_hex(seed: int, domain: str) -> str:
@@ -471,22 +473,23 @@ def _build_into(
     source = load_text_source(source_path)
     if phase not in {"calibration", "validation"}:
         raise ValueError("Puzzle phase must be calibration or validation.")
+    reference_sources = tuple(
+        reference
+        for relative in REFERENCE_SOURCE_PATHS
+        if (reference := load_text_source(root / relative)).sha256 != source.sha256
+    )
+    if not reference_sources:
+        raise ValueError("Puzzle source must be distinct from at least one reference text.")
     block_id = requested_block_id or source.source_id
     block = BlockDefinition(
         block_id=block_id,
         phase=phase,
         source_id=source.source_id,
-        references=REFERENCE_SOURCE_IDS,
+        references=tuple(reference.source_id for reference in reference_sources),
         seed=int(source.sha256[:13], 16),
         window=WindowPin(0, 0, 0, ""),
         boundary_stage=BOUNDARY_STAGE,
     )
-    registry = load_source_registry(root)
-    try:
-        reference_sources = tuple(registry[source_id] for source_id in REFERENCE_SOURCE_IDS)
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
-
     design = design_block(_paragraph_units(source), block, discover=True)
     pair = _prepare_pair(design)
     changed_types = design.allocation.design.changed_types

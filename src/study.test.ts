@@ -61,6 +61,13 @@ async function publishFixtureBuild(options: BuildPuzzleOptions): Promise<void> {
     String(manipulationCheck.path),
     `manipulation:${options.block}\n`,
   );
+  await writeArtifact("oracle/plaintext.txt", `plaintext:${options.block}\n`);
+  for (const stage of variants.stationary.stages as Array<Record<string, unknown>>) {
+    await writeArtifact(
+      `oracle/checker/${String(stage.agentId)}/${basename(String(stage.sourcePath))}`,
+      `checker:${options.block}:${String(stage.agentId)}:${String(stage.ordinal)}\n`,
+    );
+  }
   for (const variant of Object.values(variants)) {
     const ciphertext = `ciphertext:${options.block}:${String(variant.variantId)}\n`;
     await writeArtifact(String(variant.publicCiphertextPath), ciphertext);
@@ -133,6 +140,7 @@ async function prepareFixture(options: { disableTokenLimit?: boolean } = {}): Pr
     dependencies: {
       sourceState: async () => cleanSourceState(),
       sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+      build: publishFixtureBuild,
       now: () => new Date("2026-07-29T12:00:00.000Z"),
     },
   });
@@ -315,26 +323,26 @@ describe("frozen study state", () => {
     expect(phase.attempts).toHaveLength(4);
   }, 60_000);
 
-  it("binds five build bytes and accepts only declared validation budget changes", async () => {
+  it("binds five build bytes and rejects validation without separate authorization", async () => {
     const { studyRoot, study, receipt } = await prepareFixture();
-    expect(receipt.builds).toHaveLength(5);
+    expect(receipt.builds).toHaveLength(1);
     expect(await readDesignReceipt(studyRoot)).toEqual(receipt);
 
     const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
-    adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
     adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 800;
     const adjusted = await resolveStudy(adjustedManifest, root);
-    const reused = await prepareStudyDesign({
-      root,
-      studyRoot,
-      study: adjusted,
-      phase: "validation",
-      dependencies: {
-        sourceState: async () => cleanSourceState(),
-        sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
-      },
-    });
-    expect(reused.designDigest).toBe(receipt.designDigest);
+    await expect(
+      prepareStudyDesign({
+        root,
+        studyRoot,
+        study: adjusted,
+        phase: "validation",
+        dependencies: {
+          sourceState: async () => cleanSourceState(),
+          sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
+        },
+      }),
+    ).rejects.toThrow(/monetary ceiling/);
 
     const immutableDrift = await loadStudyManifest("experiments/config.yaml");
     immutableDrift.models.sol!.model = "different-model";
@@ -343,7 +351,7 @@ describe("frozen study state", () => {
         root,
         studyRoot,
         study: await resolveStudy(immutableDrift, root),
-        phase: "validation",
+        phase: "calibration",
         dependencies: {
           sourceState: async () => cleanSourceState(),
           sandboxIdentity: async () => TEST_SANDBOX_IDENTITY,
@@ -480,7 +488,7 @@ describe("frozen study state", () => {
     expect(sandboxReads).toBe(0);
   });
 
-  it("constructs all five builds and rechecks the source before publishing", async () => {
+  it("constructs the requested phase build and rechecks the source before publishing", async () => {
     const studyRoot = await temporaryRoot();
     const study = await resolveStudy(await loadStudyManifest("experiments/config.yaml"), root);
     let sourceReads = 0;
@@ -506,9 +514,9 @@ describe("frozen study state", () => {
     });
 
     expect(sourceReads).toBe(2);
-    expect(builds).toBe(5);
+    expect(builds).toBe(1);
     expect(receipt.sourceRevision).toBe(sourceRevision);
-    expect(receipt.builds).toHaveLength(5);
+    expect(receipt.builds).toHaveLength(1);
   });
 
   it.each([
@@ -546,7 +554,7 @@ describe("frozen study state", () => {
         }),
       ).rejects.toThrow(expectedError);
       expect(sourceReads).toBe(2);
-      expect(builds).toBe(5);
+      expect(builds).toBe(1);
       await expect(readDesignReceipt(studyRoot)).rejects.toThrow();
     },
   );
@@ -692,17 +700,6 @@ describe("frozen study state", () => {
     if (firstAttempt === undefined) {
       throw new Error("Fixture phase did not publish a durable attempt.");
     }
-    const adjustedManifest = await loadStudyManifest("experiments/config.yaml");
-    adjustedManifest.budgets.tokenBudgetPerAgent = 150_000;
-    adjustedManifest.budgets.perAttemptMonetaryCeilingCents = 800;
-    await expect(
-      initializeStudyPhase({
-        studyRoot,
-        study: await resolveStudy(adjustedManifest, root),
-        receipt,
-        phase: "validation",
-      }),
-    ).resolves.toMatchObject({ state: "ready" });
     await rm(join(firstAttempt.attemptRoot, "attempt.json"), { force: true });
 
     await expect(
@@ -941,25 +938,6 @@ describe("frozen study state", () => {
       }),
     ).rejects.toThrow(/current frozen infrastructure failure/);
 
-    for (let replacement = 0; replacement < 5; replacement += 1) {
-      const sourceAttemptId = phase.failure?.attemptId;
-      if (sourceAttemptId === undefined) {
-        throw new Error("Fixture phase did not cite its infrastructure failure.");
-      }
-      await expect(
-        executeStudyPhase({
-          studyRoot,
-          study,
-          receipt,
-          phase: "calibration",
-          replaceAttemptId: sourceAttemptId,
-          dependencies,
-        }),
-      ).rejects.toBeInstanceOf(StudyPhaseStoppedError);
-      phase = await readPhaseSummary(studyRoot, "calibration");
-      expect(phase.attempts.at(-1)?.replacementOfAttemptId).toBe(sourceAttemptId);
-    }
-
     const finalSource = phase.failure?.attemptId;
     if (finalSource === undefined) {
       throw new Error("Fixture phase did not retain its last failed replacement.");
@@ -974,9 +952,9 @@ describe("frozen study state", () => {
         dependencies,
       }),
     ).rejects.toThrow(/ceiling/);
-    expect(launches).toBe(6);
-    expect(phase.attempts).toHaveLength(6);
-    expect(phase.reservations.filter(({ kind }) => kind === "replacement")).toHaveLength(5);
+    expect(launches).toBe(1);
+    expect(phase.attempts).toHaveLength(1);
+    expect(phase.reservations.filter(({ kind }) => kind === "replacement")).toHaveLength(0);
   }, 60_000);
 
   it("never relaunches an unresolved reservation", async () => {

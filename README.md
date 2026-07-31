@@ -33,7 +33,7 @@ The first bootstrap may use the network. Once the uv cache is populated, local c
 
 ## Configure The Study
 
-Scientific block inputs live in `experiments/blocks.json`. The strict study manifest in `experiments/config.yaml` declares:
+Scientific source inputs live at the `sourcePath` values in the strict study manifest, `experiments/config.yaml`, which declares:
 
 - `blocks`: one calibration and four validation block IDs in fixed order;
 - `communication.teamChannel`: `enabled` for a shared public discussion room or `disabled` for Git-only collaboration;
@@ -44,19 +44,20 @@ Scientific block inputs live in `experiments/blocks.json`. The strict study mani
 - `orders`: one calibration and four balanced validation condition sequences; and
 - `scoring`, `rubric`, `adjustableFields`, and `failurePolicy`: the declared observation and replacement boundary.
 
-The block catalog owns source, references, seed, fixed three-agent/six-stage geometry, and the committed first-feasible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
+The builder derives source identity and seed from each source's bytes, retains fixed three-agent/six-stage geometry, and seals the first phase-eligible prose window. Older schema versions, unknown keys, aliases, order drift, secret-bearing values, and mismatched identities fail before an attempt. Palimpsest uses the AI SDK only as a narrow provider-neutral boundary and performs no automatic fallback or retry.
 
 ## Run
 
-Build both variants of one pinned block without provider access:
+Build both variants from any eligible local UTF-8 prose source without provider access:
 
 ```bash
 pnpm puzzle:build -- \
-  --block calibration-theron-ware \
+  --source fixtures/corpus/chronicles-of-break-oday.txt \
+  --phase calibration \
   --output artifacts/build
 ```
 
-The schema-version-3 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
+The single command parses, scans, validates, seals, and publishes atomically. Ineligible input exits nonzero without a partial build. The schema-version-4 build contains stationary and re-key variants with byte-identical stages one through three. Every run requires exactly one of `CS`, `CR`, `IS`, or `IR`; the condition selects the variant and native Git topology.
 
 Run one standalone condition with the frozen assignment:
 

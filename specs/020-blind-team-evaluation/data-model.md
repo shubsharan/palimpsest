@@ -120,8 +120,8 @@ Each section has a status, trace evidence references, and a concise observation 
 ## State Transitions
 
 ```text
-catalog source pinned
-  -> bounded discovery
+operator source supplied
+  -> UTF-8 parsing and bounded eligibility scan
   -> phase gate passed
   -> puzzle build v4 sealed
   -> design receipt v3 published
@@ -135,4 +135,4 @@ catalog source pinned
   -> phase cell indexed
 ```
 
-Any invalid catalog gate stops before credential or adapter creation. Any post-freeze origin submission failure becomes a terminal origin result. Trusted evaluation infrastructure failure preserves the attempt and fails the phase without rerunning model work.
+Any invalid source or phase gate exits nonzero and publishes no build before credential or adapter creation. Any post-freeze origin submission failure becomes a terminal origin result. Trusted evaluation infrastructure failure preserves the attempt and fails the phase without rerunning model work.

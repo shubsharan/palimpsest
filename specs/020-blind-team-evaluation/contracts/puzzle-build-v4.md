@@ -26,4 +26,4 @@ Paired build identity binds source digest, selected window, seed, allocation dig
 4. `validation-woodlanders`
 5. `validation-silas-lapham`
 
-Every pinned window is the first qualifying 16,000-to-20,000-word candidate beginning after the first 20 percent of canonical paragraphs under the existing bounded search order.
+Every sealed window is the first qualifying 16,000-to-20,000-word candidate beginning after the first 20 percent of canonical paragraphs under the bounded search order. Source identity and seed derive from the supplied bytes; no separate discovery or pin-promotion record exists.

@@ -4,7 +4,7 @@
 
 ## Summary
 
-Make checking blind by replacing oracle-backed partial scoring with execution, output-validity, and plaintext-independent token coverage. Replace reviewer workspace selection with deterministic post-freeze evaluation of every condition-canonical `main` ref, adding origin diagnostics, realized-team-product status, a collective ceiling, and a nullable integration gap. Split build validity into evidence and control tiers, retire the exposed Theron Ware calibration block, add a pinned Silas Lapham validation source, and seal the first qualifying bounded window for all five blocks. Advance the strict protocol records, expand the trace-grounded behavior rubric, verify the exact committed implementation provider-free, then run one four-cell GPT-5.6-sol calibration and stop before validation.
+Make checking blind by replacing oracle-backed partial scoring with execution, output-validity, and plaintext-independent token coverage. Replace reviewer workspace selection with deterministic post-freeze evaluation of every condition-canonical `main` ref, adding origin diagnostics, realized-team-product status, a collective ceiling, and a nullable integration gap. Split build validity into evidence and control tiers, then make parsing, bounded scanning, phase validation, sealing, and atomic publication one command for any local UTF-8 prose source. Advance the strict protocol records, expand the trace-grounded behavior rubric, verify the exact committed implementation provider-free, then run one four-cell GPT-5.6-sol calibration and stop before validation.
 
 ## Technical Context
 
@@ -130,7 +130,7 @@ The builder replaces one overloaded allocation tier with:
 
 The bounded window order and allocation-seed order remain unchanged. Discovery begins at `ceil(canonicalParagraphCount * 0.20)` and accepts only 16,000-to-20,000-word windows. Calibration requires `evidenceTier >= balanced`, complete controls, and an explicit control tier. Validation additionally requires `controlTier >= balanced`. No provider-backed command may cross configuration/build preparation before all selected blocks satisfy their phase gate.
 
-The active catalog is rebuilt in the requested order. Odd Women becomes calibration material; Pointed Firs, Custom Country, Woodlanders, and Silas Lapham become validation material. Silas Lapham uses pinned Project Gutenberg ebook 154 bytes and seed `154013`. Discovery outputs are inspected and their first qualifying window, source digest, allocation, manipulation, and tier records are committed. Failure of any bounded search stops implementation before paid work.
+`puzzle:build` accepts a local source path directly. The builder recognizes ordinary UTF-8 prose and Gutenberg text/HTML, derives source identity and seed from the bytes, scans the bounded candidate set, applies the declared phase gate, validates the paired manipulation, and atomically publishes the first qualifying sealed build. Any parsing or eligibility failure exits nonzero without output or paid work; there is no discovery artifact or manual pin-promotion step.
 
 ### Strict Records and Behavior Review
 
@@ -140,7 +140,7 @@ The behavior rubric and generated review record use trace-grounded nullable obse
 
 ### Verification and Paid Calibration
 
-Tests are written before each behavior change and include direct filesystem guards proving the blind checker does not open oracle files. The offline fixture produces one shared and three isolated results, exact synthetic diagnostics, collective-ceiling/null-gap cases, and pre-credential fallback rejection. All five blocks rebuild from committed bytes and pass phase gates. `pnpm ci:local`, `pnpm verify`, and `pnpm preflight` run after implementation; preflight runs only on the exact clean committed source and precise runnable sandbox.
+Tests are written before each behavior change and include direct filesystem guards proving the blind checker does not open oracle files. The offline fixture produces one shared and three isolated results, exact synthetic diagnostics, collective-ceiling/null-gap cases, and pre-credential fallback rejection. Source workflow tests cover deterministic acceptance and rejection without partial publication. `pnpm ci:local`, `pnpm verify`, and `pnpm preflight` run after implementation; preflight runs only on the exact clean committed source and precise runnable sandbox.
 
 The paid phase reuses the existing ignored OpenAI credential only after the provider-free gates pass. A fresh ignored study root receives one immutable design receipt and sequential `CS`, `CR`, `IR`, and `IS` attempts on `calibration-odd-women`. The manifest selects three GPT-5.6-sol medium-reasoning bindings, the declared one-hour schedule, null token ceilings, and $10 per attempt/$40 total authorization. Each attempt auto-evaluates and generates diagnostics and behavior review. The workflow stops after calibration regardless of observed model quality.
 

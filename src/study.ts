@@ -163,12 +163,15 @@ async function prepareBuilds(options: {
   root: string;
   studyRoot: string;
   study: ResolvedStudy;
+  phase: StudyPhase;
   dependencies: StudyDesignDependencies;
 }): Promise<readonly DesignBuildBinding[]> {
   const buildsRoot = join(options.studyRoot, "builds");
   await mkdir(buildsRoot, { recursive: true });
   const bindings: DesignBuildBinding[] = [];
-  for (const block of options.study.blocks) {
+  for (const block of options.study.blocks.filter(
+    (candidate) => candidate.phase === options.phase,
+  )) {
     const buildRoot = join(buildsRoot, block.blockId);
     await options.dependencies.build({
       root: options.root,
@@ -331,6 +334,7 @@ function assertPrimaryAuthorization(
     tokens: 0,
     cents: 0,
   },
+  includeValidation = false,
 ): void {
   const calibrationAttemptTokens = authorizedTokens(receipt.baselineBudgets.tokenBudgetPerAgent);
   const validationAttemptTokens = authorizedTokens(validationBudgets.tokenBudgetPerAgent);
@@ -339,11 +343,13 @@ function assertPrimaryAuthorization(
     receipt.baselineBudgets.perAttemptMonetaryCeilingCents,
     "Calibration primary monetary authorization",
   );
-  const validationMoney = checkedProduct(
-    VALIDATION_CELL_COUNT,
-    validationBudgets.perAttemptMonetaryCeilingCents,
-    "Validation primary monetary authorization",
-  );
+  const validationMoney = includeValidation
+    ? checkedProduct(
+        VALIDATION_CELL_COUNT,
+        validationBudgets.perAttemptMonetaryCeilingCents,
+        "Validation primary monetary authorization",
+      )
+    : 0;
   const tokenPolicyDisabled = receipt.totalCeilings.tokens === null;
   if (
     tokenPolicyDisabled !== (calibrationAttemptTokens === null) ||
@@ -358,11 +364,13 @@ function assertPrimaryAuthorization(
       calibrationAttemptTokens!,
       "Calibration primary token authorization",
     ) +
-      checkedProduct(
-        VALIDATION_CELL_COUNT,
-        validationAttemptTokens!,
-        "Validation primary token authorization",
-      ) +
+      (includeValidation
+        ? checkedProduct(
+            VALIDATION_CELL_COUNT,
+            validationAttemptTokens!,
+            "Validation primary token authorization",
+          )
+        : 0) +
       replacementAuthorization.tokens >
       receipt.totalCeilings.tokens!
   ) {
@@ -467,7 +475,13 @@ export async function prepareStudyDesign(
   const sandbox = await deps.sandboxIdentity(root);
   const builds = receipt
     ? await assertBuildBindings(receipt, studyRoot)
-    : await prepareBuilds({ root, studyRoot, study: options.study, dependencies: deps });
+    : await prepareBuilds({
+        root,
+        studyRoot,
+        study: options.study,
+        phase: options.phase,
+        dependencies: deps,
+      });
   const expected = createDesignReceiptValue({
     study: options.study,
     builds,
@@ -482,7 +496,12 @@ export async function prepareStudyDesign(
           baselineBudgets: receipt.baselineBudgets,
         }),
   });
-  assertPrimaryAuthorization(expected, expected.baselineBudgets);
+  assertPrimaryAuthorization(
+    expected,
+    expected.baselineBudgets,
+    undefined,
+    options.phase === "validation",
+  );
   if (receipt !== undefined) {
     assertDesignIdentity(receipt, expected, options.phase);
     return receipt;
@@ -636,6 +655,7 @@ export async function initializeStudyPhase(options: {
     options.receipt,
     options.study.budgets,
     replacementAuthorization([calibration, options.phase === "validation" ? existing : undefined]),
+    options.phase === "validation",
   );
   const cells = plannedCells(options.study, options.receipt, options.phase);
   if (existing !== undefined) {
@@ -675,14 +695,20 @@ async function assertReplacementHeadroom(
   study: ResolvedStudy,
   receipt: DesignReceipt,
 ): Promise<void> {
+  const validation = await readPhaseIfPresent(studyRoot, "validation");
   const authorization = replacementAuthorization([
     await readPhaseIfPresent(studyRoot, "calibration"),
-    await readPhaseIfPresent(studyRoot, "validation"),
+    validation,
   ]);
-  assertPrimaryAuthorization(receipt, study.budgets, {
-    tokens: authorization.tokens + (authorizedTokens(study.budgets.tokenBudgetPerAgent) ?? 0),
-    cents: authorization.cents + study.budgets.perAttemptMonetaryCeilingCents,
-  });
+  assertPrimaryAuthorization(
+    receipt,
+    study.budgets,
+    {
+      tokens: authorization.tokens + (authorizedTokens(study.budgets.tokenBudgetPerAgent) ?? 0),
+      cents: authorization.cents + study.budgets.perAttemptMonetaryCeilingCents,
+    },
+    validation !== undefined,
+  );
 }
 
 function successfulCellIds(summary: PhaseSummary): ReadonlySet<string> {

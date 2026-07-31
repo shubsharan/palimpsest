@@ -1,18 +1,17 @@
 # Quickstart: Blind Calibration and Team-Level Evaluation
 
-## 1. Verify The Catalog Offline
+## 1. Build Or Reject One Source
 
-Build all five active blocks into fresh ignored outputs:
+Drop a UTF-8 prose file anywhere local and run the single preparation command:
 
 ```bash
-pnpm puzzle:build -- --block calibration-odd-women --output artifacts/build-calibration-odd-women
-pnpm puzzle:build -- --block validation-pointed-firs --output artifacts/build-validation-pointed-firs
-pnpm puzzle:build -- --block validation-custom-country --output artifacts/build-validation-custom-country
-pnpm puzzle:build -- --block validation-woodlanders --output artifacts/build-validation-woodlanders
-pnpm puzzle:build -- --block validation-silas-lapham --output artifacts/build-validation-silas-lapham
+pnpm puzzle:build -- \
+  --source fixtures/corpus/chronicles-of-break-oday.txt \
+  --phase calibration \
+  --output artifacts/build-chronicles
 ```
 
-Calibration must have evidence tier at least balanced and complete controls. Every validation build must have both tiers at least balanced. Any failure stops the workflow; do not substitute another window or fallback tier.
+The command parses, scans, applies the phase gate, seals, and publishes. Calibration requires evidence tier at least balanced and complete controls; validation requires both tiers at least balanced. Any failure exits nonzero and leaves no build output. Do not substitute a fallback tier.
 
 ## 2. Exercise Blind Checking
 

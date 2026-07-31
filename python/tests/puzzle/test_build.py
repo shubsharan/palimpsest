@@ -23,7 +23,6 @@ from palimpsest.puzzle.corpus import (
     load_paragraphs,
     load_text_source,
     serialize_paragraphs,
-    strip_gutenberg,
 )
 from palimpsest.puzzle.manifest import PuzzleBuild
 from palimpsest.puzzle.text import word_tokens
@@ -36,7 +35,7 @@ BLOCK_IDS = (
     "validation-woodlanders",
     "validation-silas-lapham",
 )
-CALIBRATION_SOURCE = ROOT / "fixtures/corpus/pg4313.txt"
+CALIBRATION_SOURCE = ROOT / "fixtures/corpus/chronicles-of-break-oday.txt"
 AGENT_IDS = ("agent-1", "agent-2", "agent-3")
 
 
@@ -140,7 +139,7 @@ def test_design_search_stops_after_512_window_starts(
         boundary_stage=4,
     )
 
-    with pytest.raises(InfeasibleDesignError, match="no-feasible-window"):
+    with pytest.raises(InfeasibleDesignError, match="no candidate window satisfied"):
         design_block(_paragraphs(count=900), block, discover=True)
 
     assert starts == list(range(181, 693))
@@ -176,10 +175,7 @@ def test_normal_design_revalidates_the_first_feasible_pin(
 
 def test_plain_utf8_source_builds_without_registration_or_pinning(tmp_path: Path) -> None:
     source = tmp_path / "dropped-in.txt"
-    source.write_text(
-        strip_gutenberg(CALIBRATION_SOURCE.read_text(encoding="utf-8")),
-        encoding="utf-8",
-    )
+    source.write_text(CALIBRATION_SOURCE.read_text(encoding="utf-8"), encoding="utf-8")
     output = tmp_path / "build"
 
     build = build_module.build_puzzle(ROOT, output, source, "calibration")
@@ -194,7 +190,7 @@ def test_ineligible_source_rejects_without_publication(tmp_path: Path) -> None:
     source.write_text("This text cannot contain a qualifying puzzle window.\n", encoding="utf-8")
     output = tmp_path / "build"
 
-    with pytest.raises(InfeasibleDesignError, match="no-feasible-window"):
+    with pytest.raises(InfeasibleDesignError, match="no bounded 16,000-to-20,000-word"):
         build_module.build_puzzle(ROOT, output, source, "validation")
 
     assert not output.exists()

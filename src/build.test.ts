@@ -10,7 +10,7 @@ import { assertBuildMatchesBlock, sandboxDockerBuildArguments } from "./build.js
 import { testBuildManifest } from "./test-helpers.js";
 
 const output = "/tmp/palimpsest/build";
-const block = "calibration-theron-ware";
+const block = "calibration-odd-women";
 
 function currentBuild() {
   const manifest = decodeBuildManifest(testBuildManifest());

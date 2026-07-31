@@ -10,13 +10,17 @@ def test_correct_and_incorrect_same_length_outputs_are_identical() -> None:
     correct = check_coverage(ciphertext=ciphertext, candidate="plain words here")
     incorrect = check_coverage(ciphertext=ciphertext, candidate="wrong answer entirely")
 
-    assert correct == incorrect == {
-        "feedbackId": FEEDBACK_ID,
-        "outputValidity": "valid",
-        "ciphertextWords": 3,
-        "outputWords": 3,
-        "coverage": 1.0,
-    }
+    assert (
+        correct
+        == incorrect
+        == {
+            "feedbackId": FEEDBACK_ID,
+            "outputValidity": "valid",
+            "ciphertextWords": 3,
+            "outputWords": 3,
+            "coverage": 1.0,
+        }
+    )
 
 
 def test_checker_reports_bounded_word_coverage() -> None:

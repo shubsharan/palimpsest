@@ -112,13 +112,7 @@ export interface PublishedCheckerFeedback {
   ref?: "refs/heads/main";
   commit?: string;
   executionStatus: "succeeded" | "failed" | "timed-out" | "oversized" | "indeterminate";
-  outputValidity:
-    | "valid"
-    | "missing"
-    | "empty"
-    | "malformed"
-    | "oversized"
-    | "incomplete";
+  outputValidity: "valid" | "missing" | "empty" | "malformed" | "oversized" | "incomplete";
   ciphertextWords?: number;
   outputWords?: number;
   coverage: number;

@@ -1061,7 +1061,8 @@ function decodeAllocationSummary(value: unknown): AllocationSummary {
     metrics.regionDeviation > evidenceLimits.maxRegionDeviation ||
     metrics.stageDeviation > evidenceLimits.maxStageDeviation ||
     metrics.minOwnerOccurrencesPerRegion < evidenceLimits.minOwnerOccurrencesPerRegion ||
-    metrics.minSentinelOccurrencesPerAgentRegion < evidenceLimits.minSentinelOccurrencesPerAgentRegion
+    metrics.minSentinelOccurrencesPerAgentRegion <
+      evidenceLimits.minSentinelOccurrencesPerAgentRegion
   ) {
     throw new Error(
       `Puzzle build allocation metrics do not satisfy the ${evidenceTier} evidence tier.`,
@@ -1902,7 +1903,7 @@ function decodeDesignBuild(value: unknown, index: number): DesignBuildBinding {
   const blockId = identifier(record.blockId, `${name} blockId`);
   const expectedBlockId = REGISTERED_BLOCK_IDS[index];
   if (blockId !== expectedBlockId) {
-    throw new Error("Design receipt builds must contain the five registered blocks in order.");
+    throw new Error("Design receipt builds must contain registered blocks in order.");
   }
   const manifest = decodeBuildManifest(record.manifest);
   if (manifest.blockId !== blockId) {
@@ -2010,8 +2011,12 @@ export function decodeDesignReceipt(value: unknown): DesignReceipt {
   if (record.schemaVersion !== 3) {
     throw new Error("Unsupported design receipt schema version.");
   }
-  if (!Array.isArray(record.builds) || record.builds.length !== REGISTERED_BLOCK_IDS.length) {
-    throw new Error("Design receipt must contain exactly five registered builds.");
+  if (
+    !Array.isArray(record.builds) ||
+    record.builds.length < 1 ||
+    record.builds.length > REGISTERED_BLOCK_IDS.length
+  ) {
+    throw new Error("Design receipt must contain one to five registered builds.");
   }
   const builds = record.builds.map(decodeDesignBuild);
   if (

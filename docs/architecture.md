@@ -33,20 +33,20 @@ The supported direct drivers are OpenAI, Anthropic, Google, and OpenAI-compatibl
 
 ## Deterministic Construction
 
-`puzzle:build --block` loads one committed catalog entry and invokes `palimpsest.puzzle.build`. Python:
+`puzzle:build --source <path> --phase <phase>` invokes `palimpsest.puzzle.build` directly. Python:
 
-1. resolves target and references through `fixtures/corpus/provenance.json`;
-2. verifies source byte length and SHA-256 before parsing;
-3. canonicalizes Gutenberg-body blank-line blocks or HTML paragraphs and revalidates the committed first-feasible window;
+1. reads the supplied local file as strict UTF-8 and derives source identity and seed from its bytes;
+2. canonicalizes ordinary prose, Gutenberg-body blank-line blocks, or Gutenberg HTML paragraphs;
+3. scans the bounded candidates and selects the first window that satisfies the declared phase gate;
 4. performs the bounded tiered paragraph allocation and oracle-set selection;
 5. derives one base key plus stationary and stage-four re-key variants;
 6. verifies complete paragraph union, pre-boundary twin identity, stable controls, and old-key degradation;
 7. writes variant stage trees, complete ciphertexts, checker truth, keys, allocation, design, and manipulation records; and
-8. atomically publishes strict `puzzle-build.json` schema version 3.
+8. atomically publishes strict `puzzle-build.json` schema version 4.
 
-Discovery writes `discovery.json` only. A normal build fails if its committed window is not the deterministic first feasible result, all tiers are infeasible, oracle constraints fail, twins diverge before stage four, or manipulation checks fail.
+There is no discovery or manual pin-promotion step. The command exits nonzero and publishes no output if parsing fails, no candidate qualifies, oracle constraints fail, twins diverge before stage four, or manipulation checks fail.
 
-For fixed registered source bytes, block definition, and builder version, the window, allocation, keys, both variant stage trees, oracle records, and build identities are deterministic. Release timing is not part of build identity.
+For fixed source bytes, phase, optional logical block ID, references, and builder version, the window, allocation, keys, both variant stage trees, oracle records, and build identities are deterministic. Release timing is not part of build identity.
 
 ## Attempt Runtime
 

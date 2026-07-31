@@ -11,7 +11,7 @@ import { parseFlags } from "../../src/flags.js";
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
 const block = "calibration-odd-women";
-const source = join(root, "fixtures/corpus/pg4313.txt");
+const source = join(root, "fixtures/corpus/chronicles-of-break-oday.txt");
 
 interface CommandResult {
   exitCode: number;

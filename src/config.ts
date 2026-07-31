@@ -194,11 +194,31 @@ ajv.addFormat("uri", {
 const validateSchema: ValidateFunction = ajv.compile(studySchema);
 
 const EXPECTED_BLOCKS = [
-  { blockId: "calibration-odd-women", phase: "calibration", sourcePath: "fixtures/corpus/pg4313.txt" },
-  { blockId: "validation-pointed-firs", phase: "validation", sourcePath: "fixtures/corpus/367-h.htm" },
-  { blockId: "validation-custom-country", phase: "validation", sourcePath: "fixtures/corpus/pg11052.txt" },
-  { blockId: "validation-woodlanders", phase: "validation", sourcePath: "fixtures/corpus/pg482.txt" },
-  { blockId: "validation-silas-lapham", phase: "validation", sourcePath: "fixtures/corpus/pg154.txt" },
+  {
+    blockId: "calibration-odd-women",
+    phase: "calibration",
+    sourcePath: "fixtures/corpus/chronicles-of-break-oday.txt",
+  },
+  {
+    blockId: "validation-pointed-firs",
+    phase: "validation",
+    sourcePath: "fixtures/corpus/367-h.htm",
+  },
+  {
+    blockId: "validation-custom-country",
+    phase: "validation",
+    sourcePath: "fixtures/corpus/pg11052.txt",
+  },
+  {
+    blockId: "validation-woodlanders",
+    phase: "validation",
+    sourcePath: "fixtures/corpus/pg482.txt",
+  },
+  {
+    blockId: "validation-silas-lapham",
+    phase: "validation",
+    sourcePath: "fixtures/corpus/pg154.txt",
+  },
 ] as const satisfies readonly StudyBlock[];
 
 const EXPECTED_CALIBRATION_ORDER = ["CS", "CR", "IR", "IS"] as const;

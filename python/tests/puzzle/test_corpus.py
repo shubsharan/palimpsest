@@ -10,79 +10,13 @@ from palimpsest.puzzle.corpus import (
     load_chapters,
     load_paragraphs,
     load_source_registry,
+    load_text_source,
     select_chapters,
     serialize_paragraphs,
 )
 from palimpsest.puzzle.text import word_tokens
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-def test_registry_verifies_every_checked_in_source() -> None:
-    registry = load_source_registry(ROOT)
-
-    assert tuple(registry) == (
-        "middlemarch",
-        "moby-dick",
-        "jane-eyre",
-        "theron-ware",
-        "odd-women",
-        "pointed-firs",
-        "custom-country",
-        "woodlanders",
-    )
-    assert registry["middlemarch"].path == ROOT / "fixtures/corpus/middlemarch.txt"
-    assert registry["theron-ware"].path == ROOT / "fixtures/corpus/pg133.txt"
-    assert registry["pointed-firs"].source_format == "gutenberg-html"
-    assert all(source.sha256 and source.byte_length > 0 for source in registry.values())
-
-
-def test_study_sources_pin_exact_download_metadata() -> None:
-    provenance = json.loads((ROOT / "fixtures/corpus/provenance.json").read_text(encoding="utf-8"))
-    sources = {source["sourceId"]: source for source in provenance["sources"]}
-
-    assert {
-        source_id: (
-            source["downloadUrl"],
-            source["contentType"],
-            source["ebookNumber"],
-            source["retrievedAt"],
-        )
-        for source_id, source in sources.items()
-        if source_id
-        in {"theron-ware", "odd-women", "pointed-firs", "custom-country", "woodlanders"}
-    } == {
-        "theron-ware": (
-            "https://www.gutenberg.org/cache/epub/133/pg133.txt",
-            "text/plain; charset=utf-8",
-            133,
-            "2026-07-28",
-        ),
-        "odd-women": (
-            "https://www.gutenberg.org/cache/epub/4313/pg4313.txt",
-            "text/plain; charset=utf-8",
-            4313,
-            "2026-07-28",
-        ),
-        "pointed-firs": (
-            "https://www.gutenberg.org/files/367/367-h/367-h.htm",
-            "text/html",
-            367,
-            "2026-07-28",
-        ),
-        "custom-country": (
-            "https://www.gutenberg.org/cache/epub/11052/pg11052.txt",
-            "text/plain; charset=utf-8",
-            11052,
-            "2026-07-28",
-        ),
-        "woodlanders": (
-            "https://www.gutenberg.org/cache/epub/482/pg482.txt",
-            "text/plain; charset=utf-8",
-            482,
-            "2026-07-28",
-        ),
-    }
 
 
 def test_registry_rejects_digest_drift(tmp_path: Path) -> None:
@@ -107,27 +41,6 @@ def test_registry_rejects_digest_drift(tmp_path: Path) -> None:
         load_source_registry(tmp_path)
 
 
-def test_chapters_are_one_based_and_discard_leading_toc_matches() -> None:
-    registry = load_source_registry(ROOT)
-    middlemarch = load_chapters(registry["middlemarch"])
-    moby_dick = load_chapters(registry["moby-dick"])
-
-    assert middlemarch[0].index == 1
-    assert middlemarch[0].heading == "CHAPTER I."
-    assert moby_dick[0].index == 1
-    assert moby_dick[0].heading == "CHAPTER 1. Loomings."
-    selected = select_chapters(registry["middlemarch"], 10, 15)
-    assert [selected[0].heading, selected[-1].heading] == ["CHAPTER X.", "CHAPTER XV."]
-
-
-@pytest.mark.parametrize(("start", "end"), [(0, 1), (2, 1), (1, 10_000)])
-def test_chapter_selection_rejects_invalid_one_based_ranges(start: int, end: int) -> None:
-    source = load_source_registry(ROOT)["jane-eyre"]
-
-    with pytest.raises(ValueError, match="chapter range"):
-        select_chapters(source, start, end)
-
-
 def _source(tmp_path: Path, name: str, source_format: str, content: str) -> SourceDefinition:
     path = tmp_path / name
     encoded = content.encode("utf-8")
@@ -139,6 +52,29 @@ def _source(tmp_path: Path, name: str, source_format: str, content: str) -> Sour
         sha256=hashlib.sha256(encoded).hexdigest(),
         byte_length=len(encoded),
     )
+
+
+def test_chapter_helpers_remain_one_based(tmp_path: Path) -> None:
+    words = " ".join(["narrative"] * 200)
+    source = _source(
+        tmp_path,
+        "chapters.txt",
+        "gutenberg-text",
+        "*** START OF THE PROJECT GUTENBERG EBOOK SYNTHETIC ***\n"
+        f"CHAPTER I.\n{words}\n"
+        f"CHAPTER II.\n{words}\n"
+        "*** END OF THE PROJECT GUTENBERG EBOOK SYNTHETIC ***\n",
+    )
+
+    chapters = load_chapters(source)
+    assert [chapter.index for chapter in chapters] == [1, 2]
+    assert [chapter.heading for chapter in select_chapters(source, 1, 2)] == [
+        "CHAPTER I.",
+        "CHAPTER II.",
+    ]
+    for start, end in ((0, 1), (2, 1), (1, 10_000)):
+        with pytest.raises(ValueError, match="chapter range"):
+            select_chapters(source, start, end)
 
 
 def test_plain_paragraphs_use_only_canonical_gutenberg_body_blocks(tmp_path: Path) -> None:
@@ -193,27 +129,13 @@ def test_html_paragraphs_decode_entities_and_nested_text(tmp_path: Path) -> None
     assert load_paragraphs(source) == (f"Café & {inside}",)
 
 
-def test_every_study_source_has_canonical_prose_paragraphs() -> None:
-    registry = load_source_registry(ROOT)
-
-    for source_id in (
-        "theron-ware",
-        "odd-women",
-        "pointed-firs",
-        "custom-country",
-        "woodlanders",
+def test_present_text_sources_have_canonical_prose_paragraphs() -> None:
+    for name in (
+        "chronicles-of-break-oday.txt",
+        "middlemarch.txt",
+        "jane-eyre.txt",
     ):
-        paragraphs = load_paragraphs(registry[source_id])
+        paragraphs = load_paragraphs(load_text_source(ROOT / "fixtures/corpus" / name))
         assert paragraphs
         assert all(len(word_tokens(paragraph)) >= 20 for paragraph in paragraphs)
         assert serialize_paragraphs(paragraphs).endswith("\n")
-
-    assert load_paragraphs(registry["theron-ware"])[0].startswith("No such throng")
-    assert load_paragraphs(registry["odd-women"])[0].startswith("“So to-morrow")
-    assert load_paragraphs(registry["pointed-firs"])[0].startswith(
-        "THERE WAS SOMETHING about the coast town"
-    )
-    assert load_paragraphs(registry["custom-country"])[0].startswith(
-        '"Undine Spragg--how can you?"'
-    )
-    assert load_paragraphs(registry["woodlanders"])[0].startswith("The rambler who")

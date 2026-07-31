@@ -40,13 +40,13 @@
 
 **Alternatives considered**: One combined tier repeats the current ambiguity. A boolean control flag loses matching-quality information. Accepting fallback evidence for calibration would weaken the exact run intended to calibrate the instrument.
 
-## Fresh Source Material
+## Source-To-Build Workflow
 
-**Decision**: Retire Theron Ware from the active catalog, move Odd Women to calibration, retain three requested validation works, and add pinned plain-text bytes for Project Gutenberg ebook 154 with seed `154013`.
+**Decision**: Make `puzzle:build --source <path> --phase <phase> --output <path>` the only source-preparation workflow. It parses, scans, validates, seals, and publishes atomically; there is no separate discovery or catalog-promotion command.
 
-**Rationale**: This produces fresh calibration material and the requested five-block order while preserving natural public-domain prose and deterministic local rebuilds.
+**Rationale**: Eligibility is a property of the supplied bytes and the phase gate. Deriving identity and seed from those bytes lets operators drop in new material without weakening reproducibility or requiring hand-maintained pins.
 
-**Alternatives considered**: Reusing Theron Ware preserves prior exposure. Fetching source bytes during builds breaks offline reproducibility. Private prose and a separately randomized recognition factor are explicitly outside scope.
+**Alternatives considered**: A discover-then-promote workflow creates stale intermediate state and manual catalog edits. Silently selecting weaker thresholds makes rejection ambiguous. Fetching bytes during builds breaks offline reproducibility.
 
 ## Behavior Review Boundary
 
