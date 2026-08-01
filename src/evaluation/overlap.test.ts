@@ -42,71 +42,42 @@ async function commitHistory(repository: GitRepository, leak: boolean): Promise<
 async function fixturePackage(root: string): Promise<string> {
   const fixtureRoot = join(root, "fixture");
   const stage = "one two three four five six seven eight nine ten eleven twelve\n";
-  const reference = "reference corpus\n";
   const oracle = "{}\n";
   await Promise.all([
-    mkdir(join(fixtureRoot, "variants", "stationary", "complete"), { recursive: true }),
-    mkdir(join(fixtureRoot, "variants", "stationary", "references"), { recursive: true }),
-    mkdir(join(fixtureRoot, "variants", "stationary", "private", "agent-1", "stages"), {
+    mkdir(join(fixtureRoot, "complete"), { recursive: true }),
+    mkdir(join(fixtureRoot, "private", "agent-1", "stages"), {
       recursive: true,
     }),
-    mkdir(join(fixtureRoot, "variants", "stationary", "private", "agent-2", "stages"), {
+    mkdir(join(fixtureRoot, "private", "agent-2", "stages"), {
       recursive: true,
     }),
     mkdir(join(fixtureRoot, "oracle"), { recursive: true }),
   ]);
   const content = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fixtureId: "analysis-fixture",
+    constructionId: `construction-${"c".repeat(64)}`,
     window: { sha256: sha256(PLAINTEXT) },
     allocation: { path: "oracle/allocation.json", sha256: sha256(oracle) },
     oracleDesign: { path: "oracle/design.json", sha256: sha256(oracle) },
     manipulationCheck: { path: "oracle/manipulation-check.json", sha256: sha256(oracle) },
     agentIds: ["agent-1", "agent-2"],
     stageCount: 1,
-    variants: {
-      stationary: {
-        variantId: "stationary",
-        rekeyFromStage: null,
-        buildId: `build-${"b".repeat(64)}`,
-        publicCiphertextPath: "variants/stationary/complete/ciphertext.txt",
-        publicCiphertextSha256: sha256("ciphertext\n"),
-        referenceCorpusPath: "variants/stationary/references",
-        referenceFiles: [
-          {
-            sourceId: "reference",
-            sourceSha256: sha256(reference),
-            path: "variants/stationary/references/reference.txt",
-            byteLength: Buffer.byteLength(reference),
-            sha256: sha256(reference),
-          },
-        ],
-        stages: ["agent-1", "agent-2"].map((agentId) => ({
-          agentId,
-          ordinal: 1,
-          sourcePath: `variants/stationary/private/${agentId}/stages/stage-01.txt`,
-          sha256: sha256(stage),
-        })),
-      },
-    },
+    rekeyAtStage: null,
+    buildId: `build-${"b".repeat(64)}`,
+    publicCiphertextPath: "complete/ciphertext.txt",
+    publicCiphertextSha256: sha256("ciphertext\n"),
+    stages: ["agent-1", "agent-2"].map((agentId) => ({
+      agentId,
+      ordinal: 1,
+      sourcePath: `private/${agentId}/stages/stage-01.txt`,
+      sha256: sha256(stage),
+    })),
   };
   await Promise.all([
-    writeFile(
-      join(fixtureRoot, "variants", "stationary", "complete", "ciphertext.txt"),
-      "ciphertext\n",
-    ),
-    writeFile(
-      join(fixtureRoot, "variants", "stationary", "references", "reference.txt"),
-      reference,
-    ),
-    writeFile(
-      join(fixtureRoot, "variants", "stationary", "private", "agent-1", "stages", "stage-01.txt"),
-      stage,
-    ),
-    writeFile(
-      join(fixtureRoot, "variants", "stationary", "private", "agent-2", "stages", "stage-01.txt"),
-      stage,
-    ),
+    writeFile(join(fixtureRoot, "complete", "ciphertext.txt"), "ciphertext\n"),
+    writeFile(join(fixtureRoot, "private", "agent-1", "stages", "stage-01.txt"), stage),
+    writeFile(join(fixtureRoot, "private", "agent-2", "stages", "stage-01.txt"), stage),
     writeFile(join(fixtureRoot, "oracle", "plaintext.txt"), PLAINTEXT),
     writeFile(join(fixtureRoot, "oracle", "allocation.json"), oracle),
     writeFile(join(fixtureRoot, "oracle", "design.json"), oracle),

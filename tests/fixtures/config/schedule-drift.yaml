@@ -1,14 +1,12 @@
-schemaVersion: 1
-providers:
-  fixture: { driver: openai, apiKeyEnv: FIXTURE_KEY }
-models:
-  fixture: { provider: fixture, model: fixture-model }
-totalSpendCeilingCents: 100
+schemaVersion: 2
+name: invalid-schedule
+models: { fixture: { provider: openai, model: fixture-model } }
 runs:
-  - id: invalid-schedule
-    fixture: { packagePath: tests/fixtures/config/packages/fixture.json, variant: stationary }
-    assignment: { agent-1: fixture }
-    capabilities: { git: isolated, teamRoom: disabled }
-    schedule: { releaseOffsetsMs: [0, 10, 10], cutoffMs: 20 }
-    limits: { tokenLimitPerAgent: 100, spendCeilingCents: 100 }
-    labels: {}
+  invalid:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 2
+    model: fixture
+    communication: isolated
+    releases: [0ms, 10ms, 10ms]
+    cutoff: 20ms
+    spendCeilingCents: 0

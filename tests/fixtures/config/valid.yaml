@@ -1,41 +1,23 @@
-schemaVersion: 1
-
-providers:
-  openai: { driver: openai, apiKeyEnv: RESEARCH_OPENAI_KEY }
-  anthropic: { driver: anthropic, apiKeyEnv: RESEARCH_ANTHROPIC_KEY }
-  google: { driver: google, apiKeyEnv: RESEARCH_GOOGLE_KEY }
-  local: { driver: openai-compatible, baseURL: "http://127.0.0.1:4000/v1" }
-
+schemaVersion: 2
+name: manifest-test
 models:
-  gpt:
-    provider: openai
-    model: gpt-research
-    settings: { maxOutputTokens: 4096, temperature: 0.2, topP: 0.9, seed: 7 }
-  claude:
-    provider: anthropic
-    model: claude-research
-    providerOptions: { anthropic: { effort: low } }
-  gemini: { provider: google, model: gemini-research }
-  local: { provider: local, model: local-research }
-
-totalSpendCeilingCents: 25000
-
+  gpt: { provider: openai, model: gpt-research, reasoningEffort: medium }
 runs:
-  - id: shared-stationary
-    fixture: { packagePath: tests/fixtures/config/packages/three-agent.json, variant: stationary }
-    assignment: { agent-1: gpt, agent-2: claude, agent-3: gemini }
-    capabilities: { git: shared, teamRoom: enabled }
-    schedule:
-      releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
-      cutoffMs: 3600000
-    limits: { tokenLimitPerAgent: 200000, spendCeilingCents: 10000 }
-    labels: { cohort: baseline, replicate: 1 }
-  - id: isolated-rekey
-    fixture: { packagePath: tests/fixtures/config/packages/three-agent.json, variant: rekey }
-    assignment: { agent-1: gpt, agent-2: claude, agent-3: gemini }
-    capabilities: { git: isolated, teamRoom: disabled }
-    schedule:
-      releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
-      cutoffMs: 3600000
-    limits: { tokenLimitPerAgent: 200000, spendCeilingCents: 10000 }
-    labels: { cohort: baseline, replicate: 1 }
+  shared:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 3
+    model: gpt
+    communication: shared
+    releases: [0m, 5m, 10m, 20m, 30m, 40m]
+    cutoff: 1h
+    spendCeilingCents: 10000
+  isolated-rekey:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 3
+    model: gpt
+    communication: isolated
+    releases: [0m, 5m, 10m, 20m, 30m, 40m]
+    cutoff: 1h
+    rekeyAtStage: 4
+    tokenLimitPerAgent: 200000
+    spendCeilingCents: 10000

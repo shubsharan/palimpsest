@@ -42,7 +42,6 @@ export class FakeCommandSandbox implements CommandSandbox {
       profile: request.profile,
       workspacePath: request.workspacePath,
       evidencePath: request.evidencePath,
-      referenceCorpusPath: request.referenceCorpusPath,
       gitOriginPath: request.gitOriginPath,
     } as const;
     return {

@@ -1,14 +1,14 @@
-schemaVersion: 1
-providers:
-  local: { driver: openai-compatible, baseURL: "http://127.0.0.1:4000/v1" }
+schemaVersion: 2
+name: varied
 models:
-  local: { provider: local, model: small-local-model }
-totalSpendCeilingCents: 0
+  local: { provider: google, model: small-local-model }
 runs:
-  - id: two-agent-three-stage
-    fixture: { packagePath: tests/fixtures/config/packages/two-agent.json, variant: rekey-late }
-    assignment: { agent-1: local, agent-2: local }
-    capabilities: { git: isolated, teamRoom: disabled }
-    schedule: { releaseOffsetsMs: [0, 500, 1500], cutoffMs: 2500 }
-    limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 }
-    labels: { geometry: two-by-three, corpus: synthetic }
+  two-agent-three-stage:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 2
+    model: local
+    communication: isolated
+    releases: [0ms, 500ms, 1500ms]
+    cutoff: 2500ms
+    rekeyAtStage: 3
+    spendCeilingCents: 0

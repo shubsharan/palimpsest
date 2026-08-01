@@ -16,17 +16,17 @@ describe("fixture build boundary", () => {
     ]);
   });
 
-  it("requires a fixture declaration and output root", () => {
-    expect(() => buildFixtureFromFlags(new Map([["--output", "out"]]))).toThrow(
-      "--fixture is required.",
+  it("uses the canonical config by default and rejects legacy build flags", async () => {
+    await expect(buildFixtureFromFlags(new Map([["--output", "out"]]))).rejects.toThrow(
+      "Unknown build option --output.",
     );
-    expect(() => buildFixtureFromFlags(new Map([["--fixture", "fixture"]]))).toThrow(
-      "--output is required.",
+    await expect(buildFixtureFromFlags(new Map([["--fixture", "fixture"]]))).rejects.toThrow(
+      "Unknown build option --fixture.",
     );
   });
 
-  it("rejects build controls outside the fixture contract", () => {
-    expect(() =>
+  it("rejects build controls outside the run contract", async () => {
+    await expect(
       buildFixtureFromFlags(
         new Map([
           ["--fixture", "fixture"],
@@ -34,6 +34,6 @@ describe("fixture build boundary", () => {
           ["--condition", "CR"],
         ]),
       ),
-    ).toThrow("Unknown build option --condition.");
+    ).rejects.toThrow("Unknown build option --fixture.");
   });
 });

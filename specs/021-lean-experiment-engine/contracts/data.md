@@ -1,72 +1,50 @@
 # Data Contracts
 
-Public interface names are `FixtureDefinition`, `FixturePackage`, `ExperimentManifest`, and `RunRecord`. Serialized documents use numeric `schemaVersion: 1`.
-
-## FixtureDefinition
-
-`experiments/fixtures.json` contains a `fixtures` array. Each definition has:
-
-```json
-{
-  "fixtureId": "example-fixture",
-  "source": {
-    "sourceId": "target",
-    "window": { "paragraphStart": 1, "paragraphEnd": 100, "wordCount": 18000, "sha256": "..." }
-  },
-  "references": ["middlemarch", "moby-dick"],
-  "seed": 130013,
-  "agentIds": ["agent-1", "agent-2"],
-  "stageCount": 3,
-  "variants": [
-    { "variantId": "stationary", "rekeyFromStage": null },
-    { "variantId": "rekey", "rekeyFromStage": 2 }
-  ],
-  "allocationConstraints": {
-    "minimumAnchors": 12,
-    "minimumSentinels": 6,
-    "minimumSpecialistsPerAgent": 3,
-    "minimumChangedMass": 0.15,
-    "tiers": [
-      {
-        "tier": "strict",
-        "minimumSpecialistOwnerShare": 0.67,
-        "minimumOwnerOccurrences": 3,
-        "minimumSentinelOccurrences": 3,
-        "maximumSoloCoverage": 0.6,
-        "maximumRegionDeviation": 0.04,
-        "maximumStageDeviation": 0.12,
-        "maximumControlDistance": 0.15
-      }
-    ]
-  }
-}
-```
-
-Preparation publishes `fixture.json` with `fixtureId`, `contentDigest`, resolved source/references/window, seed, agent/stage geometry, allocation, oracle design, base-key path, manipulation check, and a variant map. Each variant contains its re-key boundary, build ID, public ciphertext, reference corpus, private stage roots, ordered stages, and key transitions. `contentDigest` covers the canonical manifest without that field plus the sorted relative path and SHA-256 of every regular package file except `fixture.json`. All declared paths are relative, contained, targeted-digest-checked for diagnostics, and split into trusted versus agent-visible surfaces.
-
 ## ExperimentManifest
 
+`experiments/config.yaml` is the only authored experiment contract. Schema v2 rejects legacy fields and duplicate YAML run keys.
+
 ```yaml
-schemaVersion: 1
-providers:
-  openai: { driver: openai, apiKeyEnv: OPENAI_API_KEY }
+schemaVersion: 2
+name: theron-ware-unlimited-1h
 models:
-  sol: { provider: openai, model: gpt-5.6-sol }
-totalSpendCeilingCents: 2000
+  sol:
+    provider: openai
+    model: gpt-5.6-sol
+    reasoningEffort: medium
 runs:
-  - id: shared-stationary
-    fixture: { packagePath: artifacts/fixtures/example, variant: stationary }
-    assignment: { agent-1: sol, agent-2: sol }
-    capabilities: { git: shared, teamRoom: enabled }
-    schedule: { releaseOffsetsMs: [0, 300000, 600000], cutoffMs: 900000 }
-    limits: { tokenLimitPerAgent: null, spendCeilingCents: 1000 }
-    labels: { treatment: shared, replicate: 1 }
+  shared:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 3
+    model: sol
+    communication: shared
+    releases: [0m, 5m, 10m, 20m, 30m, 40m]
+    cutoff: 1h
+    spendCeilingCents: 1000
 ```
 
-Run IDs are unique within the manifest. Assignment keys exactly equal package agents; schedule length equals package stages; selected variants and model profiles exist; shared room requires shared Git; credential fields are environment names; labels are secret-free JSON; and summed run ceilings do not exceed `totalSpendCeilingCents`. The resolved manifest digest identifies the experiment.
+The run map key is the required human-readable run identifier used by `--run` and artifact records. It is not a scientific input and is not repeated as an `id` field. Run order is YAML map order.
+
+Every run requires `source`, `agents`, `model`, `communication`, `releases`, `cutoff`, and `spendCeilingCents`. `rekeyAtStage` and `tokenLimitPerAgent` are optional; omission means stationary and unlimited respectively. Durations are strict non-negative integers followed by `ms`, `s`, `m`, or `h`. Releases begin at zero, increase strictly, and finish before the positive cutoff.
+
+The engine infers ordered agent IDs, applies one model uniformly, maps communication to Git and room capabilities, infers conventional credential variables, and sums run ceilings for aggregate authorization. It rejects unknown models, unsafe source paths, invalid team sizes or re-key boundaries, malformed durations, and every removed legacy field.
+
+## FixturePackage
+
+`puzzle:build` derives one flat package for each selected run. Its identity changes with source bytes or geometry. `fixture.json` uses `schemaVersion: 2` and records:
+
+- package and construction identities, content digest, source provenance, resolved source window, agent IDs, and stage count;
+- one realized stationary or re-keyed regime with `rekeyAtStage`, public ciphertext, and ordered private stage paths and digests;
+- trusted oracle, allocation, manipulation checks, and scoring inputs.
+
+There is no authored fixture ID, package path, source window, word count, hash, format, reference material, seed, variant catalog, or allocation threshold. Reference material is absent from the serialized package and every agent-visible surface. The content digest covers the canonical manifest without `contentDigest` plus every regular package file except `fixture.json`.
+
+## ResolvedRun
+
+Before execution the engine freezes the selected package identity and digest, source and re-key boundary, inferred agents and uniform model assignments, inferred credential environment name, communication capabilities, resolved release and cutoff milliseconds, optional token limit, run spend ceiling, aggregate authorization, and sandbox identity. Credential values are never stored.
 
 ## RunRecord and Trace
 
-`run.json` is decoded by one strict schema-v1 decoder. It rejects unknown fields, malformed nested values, inconsistent agent/origin sets, absolute paths, traversal, and paths that escape the relocated run or fixture root. It freezes creation/publication timestamps, manifest and resolved-run digests, the complete resolved secret-free configuration, the current run's exact fixture validation, one shared validation snapshot with the representative smoke's explicit `sourceRunId`, staged releases, requested/actual model bindings, complete session outcomes and explicit session infrastructure failures, canonical relative trace paths `trace.jsonl` and `trace.meta.json`, sandbox identity, run-relative frozen Git/workspace topology and outputs, and ordered evaluation-batch and overlap-analysis history. The smoke fixture must match its recorded source run but may differ from a later current run in the same manifest. One shared origin or every isolated agent origin must appear in each automatic evaluation batch; none is selected as best. A directory without `run.json` is interrupted, not a partial record.
+`run.json` remains a strict, relocatable record. It freezes the resolved secret-free run configuration, exact fixture validation, representative smoke identity, releases, model identities and usage, session outcomes, canonical trace paths, sandbox identity, frozen topology, evaluations, and analyses. A shared run records one canonical origin; an isolated run records every agent origin without selecting a best result.
 
-`trace.jsonl` is append-only and records lifecycle, releases, responses, safe returned summaries, tools, checker calls, Git/room activity, termination, freezing, evaluation, and infrastructure errors. Publication creates `run.json` once. Re-evaluation and overlap analysis strictly load it, validate JSONL structure, sequential event numbers, non-regressing timestamps, fixture digest, contained topology, and frozen-tree seals, then append exactly one typed history entry by atomic replacement. Frozen configuration, status, scores, topology, and trace bytes remain unchanged; failed operations leave the prior record intact and remove staging files. Neither surface may contain credentials, hidden reasoning, full provider payloads, keys, oracle content, or unreleased evidence.
+`trace.jsonl` remains append-only. Re-evaluation and analysis validate the trace, package digest, contained topology, and frozen trees before atomically appending history. They cannot alter frozen configuration, status, earlier results, or trace bytes. Neither surface may contain credentials, hidden reasoning, provider payloads, keys, oracle content, references, or unreleased evidence.

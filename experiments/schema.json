@@ -4,32 +4,21 @@
   "title": "Palimpsest Experiment",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "providers", "models", "totalSpendCeilingCents", "runs"],
+  "required": ["schemaVersion", "name", "models", "runs"],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "experimentName": { "type": "string", "minLength": 1 },
-    "fixtures": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/fixtureDefinition" }
-    },
-    "providers": {
-      "type": "object",
-      "minProperties": 1,
-      "propertyNames": { "$ref": "#/$defs/identifier" },
-      "additionalProperties": { "$ref": "#/$defs/provider" }
-    },
+    "schemaVersion": { "const": 2 },
+    "name": { "$ref": "#/$defs/identifier" },
     "models": {
       "type": "object",
       "minProperties": 1,
       "propertyNames": { "$ref": "#/$defs/identifier" },
       "additionalProperties": { "$ref": "#/$defs/model" }
     },
-    "totalSpendCeilingCents": { "$ref": "#/$defs/nonNegativeSafeInteger" },
     "runs": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/run" }
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/run" }
     }
   },
   "$defs": {
@@ -37,13 +26,9 @@
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
-    "agentId": {
+    "duration": {
       "type": "string",
-      "pattern": "^agent-[1-9][0-9]*$"
-    },
-    "environmentName": {
-      "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      "pattern": "^(?:0|[1-9][0-9]*)(?:ms|s|m|h)$"
     },
     "safeInteger": {
       "type": "integer",
@@ -55,172 +40,46 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
-    "provider": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["driver", "apiKeyEnv"],
-          "properties": {
-            "driver": { "enum": ["openai", "anthropic", "google"] },
-            "apiKeyEnv": { "$ref": "#/$defs/environmentName" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["driver", "baseURL"],
-          "properties": {
-            "driver": { "const": "openai-compatible" },
-            "baseURL": { "type": "string", "format": "uri" },
-            "apiKeyEnv": { "$ref": "#/$defs/environmentName" },
-            "headersEnv": {
-              "type": "object",
-              "minProperties": 1,
-              "additionalProperties": { "$ref": "#/$defs/environmentName" }
-            }
-          }
-        }
-      ]
-    },
     "model": {
       "type": "object",
       "additionalProperties": false,
       "required": ["provider", "model"],
       "properties": {
-        "provider": { "$ref": "#/$defs/identifier" },
+        "provider": { "enum": ["openai", "anthropic", "google"] },
         "model": { "type": "string", "minLength": 1 },
-        "settings": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "maxOutputTokens": { "$ref": "#/$defs/safeInteger" },
-            "temperature": { "type": "number", "minimum": 0 },
-            "topP": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-            "seed": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            }
-          }
-        },
-        "providerOptions": {
-          "type": "object",
-          "additionalProperties": true
-        }
+        "reasoningEffort": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh"] }
       }
-    },
-    "fixtureReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["fixtureId", "packagePath", "variant"],
-      "properties": {
-        "fixtureId": { "$ref": "#/$defs/identifier" },
-        "packagePath": { "type": "string", "minLength": 1 },
-        "variant": { "$ref": "#/$defs/identifier" }
-      }
-    },
-    "fixtureDefinition": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["fixtureId", "source", "references"],
-      "properties": {
-        "fixtureId": { "$ref": "#/$defs/identifier" },
-        "source": { "$ref": "#/$defs/fixtureSource" },
-        "references": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/textFile" }
-        }
-      }
-    },
-    "textFile": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "format"],
-      "properties": {
-        "path": { "type": "string", "pattern": "^fixtures/" },
-        "format": { "enum": ["plain-text", "gutenberg-text", "gutenberg-html"] }
-      }
-    },
-    "fixtureSource": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "format", "window"],
-      "properties": {
-        "path": { "type": "string", "pattern": "^fixtures/" },
-        "format": { "enum": ["plain-text", "gutenberg-text", "gutenberg-html"] },
-        "window": { "type": "object" }
-      }
-    },
-    "assignment": {
-      "type": "object",
-      "minProperties": 1,
-      "propertyNames": { "$ref": "#/$defs/agentId" },
-      "additionalProperties": { "$ref": "#/$defs/identifier" }
-    },
-    "capabilities": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["git", "teamRoom"],
-      "properties": {
-        "git": { "enum": ["shared", "isolated"] },
-        "teamRoom": { "enum": ["enabled", "disabled"] }
-      }
-    },
-    "schedule": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["releaseOffsetsMs", "cutoffMs"],
-      "properties": {
-        "releaseOffsetsMs": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/nonNegativeSafeInteger" }
-        },
-        "cutoffMs": { "$ref": "#/$defs/safeInteger" }
-      }
-    },
-    "limits": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["tokenLimitPerAgent", "spendCeilingCents"],
-      "properties": {
-        "tokenLimitPerAgent": {
-          "oneOf": [{ "$ref": "#/$defs/safeInteger" }, { "type": "null" }]
-        },
-        "spendCeilingCents": { "$ref": "#/$defs/nonNegativeSafeInteger" }
-      }
-    },
-    "jsonValue": {
-      "oneOf": [
-        { "type": "null" },
-        { "type": "boolean" },
-        { "type": "number" },
-        { "type": "string" },
-        { "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
-        {
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
-        }
-      ]
-    },
-    "labels": {
-      "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
     },
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "fixture", "assignment", "capabilities", "schedule", "limits", "labels"],
+      "required": [
+        "source",
+        "agents",
+        "model",
+        "communication",
+        "releases",
+        "cutoff",
+        "spendCeilingCents"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/identifier" },
-        "fixture": { "$ref": "#/$defs/fixtureReference" },
-        "assignment": { "$ref": "#/$defs/assignment" },
-        "capabilities": { "$ref": "#/$defs/capabilities" },
-        "schedule": { "$ref": "#/$defs/schedule" },
-        "limits": { "$ref": "#/$defs/limits" },
-        "labels": { "$ref": "#/$defs/labels" }
+        "source": { "type": "string", "pattern": "^fixtures/" },
+        "agents": { "type": "integer", "minimum": 2, "maximum": 64 },
+        "model": { "$ref": "#/$defs/identifier" },
+        "communication": { "enum": ["shared", "isolated"] },
+        "releases": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/duration" }
+        },
+        "cutoff": { "$ref": "#/$defs/duration" },
+        "spendCeilingCents": { "$ref": "#/$defs/nonNegativeSafeInteger" },
+        "rekeyAtStage": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "tokenLimitPerAgent": { "$ref": "#/$defs/safeInteger" }
       }
     }
   }

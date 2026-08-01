@@ -101,3 +101,11 @@ Complete US1 and the manifest decoder first to establish the minimum fixture-to-
 - [x] T045 Recompose package scripts and the pre-push hook around `check`, CI-safe `test`, `verify`, explicit consequential tiers, and dependency-free `ci:local`
 - [x] T046 Split advisory hosted verification into parallel quality/TypeScript/Python jobs and a separately triggered sandbox-image smoke workflow without consequential or provider-backed checks
 - [x] T047 Run focused schema/runtime tests, three repeated parallel fast suites, full provider-free verification including material/acceptance/Docker tiers, script/doc integrity checks, and `git diff --check`
+
+## Phase 9: Streamlined Experiment Configuration
+
+- [x] T048 Replace legacy authored manifests with strict schema-v2 named runs and derived credentials, agents, capabilities, durations, package identities, and aggregate authorization
+- [x] T049 Build deterministic flat schema-v2 fixture packages directly from config with one realized key regime and no reference surfaces
+- [x] T050 Wire named-run build, validation, execution, frozen provenance, re-key, and unlimited-token behavior through CLI and run records
+- [x] T051 Replace manifest, fixture, sandbox, evaluator, CLI, and Python contract tests with streamlined configuration coverage
+- [x] T052 Rewrite active Feature 021 contracts, specification, plan, research, data model, README, architecture, proposal, roadmap, and quickstart around the schema-v2 contract

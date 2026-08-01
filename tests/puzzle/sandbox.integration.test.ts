@@ -106,7 +106,6 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
-      referenceCorpusPath: fixture.reference,
       gitOriginPath: fixture.repository.path,
     });
     expect(sandbox.identity).toEqual({
@@ -118,7 +117,7 @@ describe("real Docker command containment", () => {
     const result = await lease.execute({
       command: [
         'test "$(cat /evidence/stage.txt)" = private-stage',
-        'test "$(cat /reference/reference.txt)" = reference-corpus',
+        "test ! -e /reference",
         `test ! -e ${shellQuote(fixture.peerEvidence)}`,
         `test ! -e ${shellQuote(fixture.oracle)}`,
         `test ! -e ${shellQuote(fixture.hostSentinel)}`,
@@ -154,7 +153,6 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
-      referenceCorpusPath: fixture.reference,
       gitOriginPath: fixture.repository.path,
     });
     const result = await lease.execute({
@@ -281,7 +279,6 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
-      referenceCorpusPath: fixture.reference,
       gitOriginPath: fixture.repository.path,
     });
 

@@ -2,13 +2,14 @@
 
 ## Direction
 
-Palimpsest develops only what is needed to ask and evaluate word-substitution puzzle questions. The active architecture is the direct flow `FixtureDefinition -> FixturePackage -> ExperimentManifest -> RunRecord`; historical feature machinery remains available through Git history rather than the working tree.
+Palimpsest develops only what is needed to ask and evaluate word-substitution puzzle questions. The active architecture is the direct flow `ExperimentManifest -> FixturePackage -> RunRecord`; historical feature machinery remains available through Git history rather than the working tree.
 
 ## Lean Experiment Engine
 
 ### Flexible Fixtures
 
-- Declare source, references, seed, agents, stages, variants, re-key boundaries, and scientific allocation constraints in one definition.
+- Declare only source, agent count, release geometry, and an optional re-key boundary on each named run.
+- Derive agent IDs, source windows, construction randomness, allocation policy, package identity, and paths.
 - Prepare immutable packages with deterministic agent-visible evidence, trusted oracle data, provenance, manipulation checks, and scoring inputs.
 - Verify 2-agent/3-stage, 3-agent/6-stage, and 4-agent/8-stage fixtures without source changes.
 
@@ -16,7 +17,7 @@ Done means repeated preparation is byte-stable, trusted data stays hidden, and n
 
 ### Explicit Experiments
 
-- Declare concrete ordered runs with exact fixture variants, model assignments, communication capabilities, schedules, limits, spend ceilings, and analysis labels.
+- Declare concrete named runs with one model, communication mode, schedule, optional token limit, and one spend ceiling.
 - Execute runs sequentially and agents within a run concurrently.
 - Preserve shared ordinary Git and an optional team room, or isolated usable private Git, without prescribing model workflow.
 - Stop on failure without retry, replacement, phase, reservation, or resume machinery.

@@ -182,7 +182,14 @@ class _GutenbergParagraphParser(HTMLParser):
 
 
 def load_paragraphs(source: SourceDefinition) -> tuple[str, ...]:
-    body = strip_gutenberg(source.path.read_text(encoding="utf-8"))
+    raw = source.path.read_text(encoding="utf-8")
+    if source.source_format == "plain-text":
+        return tuple(
+            paragraph
+            for candidate in _BLANK_LINES.split(raw)
+            if (paragraph := _canonical_paragraph(candidate)) is not None
+        )
+    body = strip_gutenberg(raw)
     if source.source_format == "gutenberg-text":
         first_heading = next(
             (

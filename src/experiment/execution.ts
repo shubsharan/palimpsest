@@ -385,6 +385,10 @@ export async function runExperiment(options: {
           packagePath: run.fixture.packagePath,
           digest: fixture.contentDigest,
           variant: run.fixture.variant,
+          ...(run.fixture.source === undefined ? {} : { source: run.fixture.source }),
+          ...(run.fixture.rekeyAtStage === undefined
+            ? {}
+            : { rekeyAtStage: run.fixture.rekeyAtStage }),
         },
         assignment: run.assignment,
         capabilities: run.capabilities,

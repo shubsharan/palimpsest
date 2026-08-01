@@ -27,25 +27,26 @@ The first bootstrap may use the network. Model-authored commands and canonical s
 
 ## Prepare Fixtures
 
-`experiments/config.yaml` is the only authored experiment file. Its `experimentName` labels the work, and its `fixtures` section names the source and reference text files under `fixtures/` alongside the geometry and allocation inputs.
+`experiments/config.yaml` is the only authored experiment file. It names models and named runs. Each run declares its source text, team size, model, communication mode, release schedule, cutoff, per-run spend ceiling, and only the optional controls that matter to the experiment.
 
-Build one fixture or the complete example set without provider access:
+Build every run's derived package, or only one named run, without provider access:
 
 ```bash
-pnpm puzzle:build --fixture theron-ware --output artifacts/fixtures/theron-ware
+pnpm puzzle:build --config experiments/config.yaml
+pnpm puzzle:build --config experiments/config.yaml --run shared
 ```
 
-Preparation publishes a deterministic `FixturePackage` containing agent-visible stages and variants plus trusted provenance, oracle data, manipulation checks, and scoring inputs. Trusted data stays outside agent workspaces. To try another text, add it under `fixtures/`, update `experiments/config.yaml`, then build the declared fixture.
+Preparation derives source windows, allocation, construction randomness, package identity, paths, and agent IDs. Each flat `FixturePackage` contains one realized stationary or re-keyed regime plus trusted provenance, oracle data, manipulation checks, and scoring inputs. It contains no references or variant catalog. Trusted data stays outside agent workspaces.
 
 ## Configure Experiments
 
-`experiments/config.yaml` is an `ExperimentManifest` with provider bindings, model profiles, an experiment spending ceiling, and an explicit ordered `runs` list. Every run declares:
+`experiments/config.yaml` is an `ExperimentManifest` with model profiles and a map of named runs. The map key is the run ID used by `--run` and stored artifacts; there is no separate `id`. Provider credentials use conventional environment variables such as `OPENAI_API_KEY`, and the experiment authorization is derived by summing its per-run ceilings. Every run declares:
 
-- a prepared fixture package and variant;
-- the exact agent-to-model assignment;
-- shared or isolated Git and optional shared team room;
-- release offsets, wall cutoff, optional per-agent token limit, and spend ceiling; and
-- secret-free labels for later analysis.
+- a clean UTF-8 source and agent count;
+- one model applied uniformly to every inferred agent;
+- `shared` or `isolated` communication;
+- duration strings for releases and cutoff; and
+- one spend ceiling, with optional `rekeyAtStage` and `tokenLimitPerAgent`.
 
 Runs execute sequentially in manifest order; agents within one run execute concurrently. Shared runs expose ordinary peer Git and, when enabled, one public room. Isolated runs expose usable private Git and no peer evidence or activity. Git remains model-chosen and unmetered, and only the assigned origin's pushed `main:solver.py` can receive aggregate checking or final grading.
 
@@ -65,7 +66,7 @@ Validation never resolves credentials, opens provider sessions, or creates a reu
 pnpm puzzle:experiment --config experiments/config.yaml \
   --output artifacts/experiments/example --allow-spend true
 pnpm puzzle:experiment --config experiments/config.yaml \
-  --output artifacts/experiments/example-one --run theron-ware-shared-stationary --allow-spend true
+  --output artifacts/experiments/example-one --run shared --allow-spend true
 ```
 
 A failed run retains its available trace and explicit status, then stops the experiment. Repeating it requires a new run ID in the manifest.
@@ -79,8 +80,8 @@ The final evaluator captures literal pushed `main`, materializes a Git-free solv
 Re-evaluate a completed run without provider access:
 
 ```bash
-pnpm puzzle:evaluate --run-root artifacts/experiments/example/theron-ware-shared-stationary
-pnpm puzzle:analyze --run-root artifacts/experiments/example/theron-ware-shared-stationary
+pnpm puzzle:evaluate --run-root artifacts/experiments/example/shared
+pnpm puzzle:analyze --run-root artifacts/experiments/example/shared
 ```
 
 Re-evaluation appends results atomically without changing frozen inputs or earlier evidence. Analysis scans reachable frozen Git history for overlap, defaults to 32-word spans, and remains separate from status and scoring. Both operations strictly reload and validate the relocatable record before atomically appending one history entry. A directory with a trace but no `run.json` is interrupted, not complete.

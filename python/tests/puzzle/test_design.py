@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from palimpsest.puzzle.definition import WindowPin, decode_fixture_catalog, load_fixture_catalog
+from palimpsest.puzzle.definition import AllocationTier, WindowPin
 from palimpsest.puzzle.design import (
     ParagraphUnit,
     _frequency_distance,
@@ -46,74 +46,6 @@ def test_frequency_distance_uses_platform_independent_logarithms(
     )
 
 
-def test_checked_in_fixture_definitions_are_declarative_and_strict() -> None:
-    catalog = load_fixture_catalog(ROOT / "experiments/fixtures.json")
-
-    assert len(catalog.fixtures) == 5
-    fixture = catalog.fixtures[0]
-    assert fixture.fixture_id == "calibration-theron-ware"
-    assert fixture.source_id == "theron-ware"
-    assert fixture.agent_ids == ("agent-1", "agent-2", "agent-3")
-    assert fixture.stage_count == 6
-    assert [(item.variant_id, item.rekey_from_stage) for item in fixture.variants] == [
-        ("stationary", None),
-        ("rekey", 4),
-    ]
-    assert fixture.rekey_from_stage == 4
-    assert fixture.allocation_constraints.minimum_changed_mass == 0.15
-    assert tuple(tier.name for tier in fixture.allocation_constraints.tiers) == (
-        "strict",
-        "balanced",
-        "fallback",
-    )
-
-    record = {
-        "schemaVersion": 1,
-        "fixtures": [
-            {
-                "fixtureId": "invalid",
-                "source": {
-                    "sourceId": "source",
-                    "window": {
-                        "paragraphStart": 0,
-                        "paragraphEnd": 0,
-                        "wordCount": 0,
-                        "sha256": "",
-                    },
-                },
-                "references": ["reference"],
-                "seed": 1,
-                "agentIds": ["alpha", "beta"],
-                "stageCount": 3,
-                "variants": [
-                    {"variantId": "stationary", "rekeyFromStage": None},
-                    {"variantId": "rekey", "rekeyFromStage": 4},
-                ],
-                "allocationConstraints": {
-                    "minimumAnchors": 1,
-                    "minimumSentinels": 1,
-                    "minimumSpecialistsPerAgent": 1,
-                    "minimumChangedMass": 0.1,
-                    "tiers": [
-                        {
-                            "tier": "default",
-                            "minimumSpecialistOwnerShare": 0.5,
-                            "minimumOwnerOccurrences": 1,
-                            "minimumSentinelOccurrences": 1,
-                            "maximumSoloCoverage": 1,
-                            "maximumRegionDeviation": 1,
-                            "maximumStageDeviation": 1,
-                            "maximumControlDistance": 1,
-                        }
-                    ],
-                },
-            }
-        ],
-    }
-    with pytest.raises(ValueError, match="exceeds stageCount"):
-        decode_fixture_catalog(record)
-
-
 @pytest.mark.parametrize(
     ("agent_ids", "stage_count", "boundary_stage"),
     [
@@ -127,10 +59,15 @@ def test_allocation_supports_declared_fixture_geometry(
     boundary_stage: int,
 ) -> None:
     window = _window()
-    tier = (
-        load_fixture_catalog(ROOT / "experiments/fixtures.json")
-        .fixtures[0]
-        .allocation_constraints.tiers[0]
+    tier = AllocationTier(
+        "strict",
+        0.67,
+        3,
+        3,
+        0.6,
+        0.04,
+        0.12,
+        0.15,
     )
 
     first = initial_allocation(

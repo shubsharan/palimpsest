@@ -49,7 +49,7 @@ describe("agent prompt", () => {
 
     expect(prompt).toContain("hidden one-to-one substitutions");
     expect(prompt).toContain("Punctuation, capitalization patterns, digits");
-    expect(prompt).toContain("plaintext reference material but not the target text");
+    expect(prompt).not.toMatch(/reference material|\/reference/);
     expect(prompt).toContain("at start, 5 seconds, 1 minute");
     expect(prompt).toContain("final grading uses the complete ciphertext");
     expect(prompt).toContain("write only its complete plaintext");

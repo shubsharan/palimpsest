@@ -85,7 +85,6 @@ describe("sandbox Docker image and arguments", () => {
         timeoutMs: 1_000,
         workspacePath: workspace,
         evidencePath: evidence,
-        referenceCorpusPath: reference,
         gitOriginPath: gitOrigin,
       },
       TEST_IDENTITY,
@@ -106,7 +105,7 @@ describe("sandbox Docker image and arguments", () => {
     expect(joined).toContain(String(SANDBOX_POLICY.pids));
     expect(joined).toContain("target=/workspace");
     expect(joined).toContain("target=/evidence,readonly");
-    expect(joined).toContain("target=/reference,readonly");
+    expect(joined).not.toContain("target=/reference");
     expect(joined).toContain(`source=${resolvedGitOrigin},target=/git/origin.git`);
     expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
     expect(joined).not.toContain(resolvedPeerGitOrigin);

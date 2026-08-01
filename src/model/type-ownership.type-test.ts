@@ -60,5 +60,10 @@ export type RecordOwnership = [
   Expect<Equal<ResolvedRunRecord["schedule"], ResolvedRun["schedule"]>>,
   Expect<Equal<ResolvedRunRecord["limits"], ResolvedRun["limits"]>>,
   Expect<Equal<ResolvedRunRecord["labels"], ResolvedRun["labels"]>>,
-  Expect<Equal<keyof ResolvedRunRecord["fixture"], "digest" | "id" | "packagePath" | "variant">>,
+  Expect<
+    Equal<
+      keyof ResolvedRunRecord["fixture"],
+      "digest" | "id" | "packagePath" | "rekeyAtStage" | "source" | "variant"
+    >
+  >,
 ];

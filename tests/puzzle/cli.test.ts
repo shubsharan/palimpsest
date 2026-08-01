@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildFixture } from "../../src/fixture/build.js";
+import { buildFixture, derivedFixtureDefinition } from "../../src/fixture/build.js";
+import { loadResolvedExperiment } from "../../src/experiment/manifest.js";
 import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
@@ -36,12 +37,10 @@ function execute(args: readonly string[]) {
 
 describe("operator CLI contract", () => {
   it("parses only explicit flag values", () => {
-    expect(
-      parseFlags(["--fixture", "calibration-theron-ware", "--output", "artifacts/fixture"]),
-    ).toEqual(
+    expect(parseFlags(["--config", "experiments/config.yaml", "--run", "shared"])).toEqual(
       new Map([
-        ["--fixture", "calibration-theron-ware"],
-        ["--output", "artifacts/fixture"],
+        ["--config", "experiments/config.yaml"],
+        ["--run", "shared"],
       ]),
     );
     expect(() => parseFlags(["--config"])).toThrow("--config requires a value.");
@@ -50,21 +49,23 @@ describe("operator CLI contract", () => {
   it("builds and decodes one package through the real Python boundary", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-fixture-build-"));
     temporaryRoots.push(temporaryRoot);
+    const run = (await loadResolvedExperiment(join(root, "experiments/config.yaml"), root))
+      .runs[0]!;
     const result = await buildFixture({
       root,
-      fixtureId: "calibration-theron-ware",
       output: join(temporaryRoot, "package"),
+      fixture: derivedFixtureDefinition(run),
+      selectedVariant: run.fixture.variant,
     });
-    expect(result.agentIds).toEqual(["agent-1", "agent-2", "agent-3"]);
-    expect(result.stageCount).toBe(6);
-    expect(result.variants).toEqual({
-      stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
-      rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+    expect(result).toMatchObject({
+      fixtureId: expect.stringMatching(/^fixture-[0-9a-f]{16}$/),
+      contentDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      buildId: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      rekeyAtStage: null,
     });
   }, 30_000);
 
   it.each([
-    ["build", []],
     ["validate", []],
     ["experiment", []],
     ["evaluate", []],

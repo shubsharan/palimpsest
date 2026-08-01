@@ -61,7 +61,6 @@ async function evaluationFixture(
   const agentIds = ["agent-1", "agent-2"] as const;
   const digest = (value: string) => createHash("sha256").update(value).digest("hex");
   const ciphertext = "ciphertext\n";
-  const reference = "reference\n";
   const stageContent = "stage\n";
   const plaintext = "clear answer\n";
   const oracleDocument = "{}\n";
@@ -74,12 +73,11 @@ async function evaluationFixture(
     path: join(frozenRoot, `${repository.repositoryId}.git`),
   }));
   await Promise.all([
-    mkdir(join(fixtureRoot, "variants", "stationary", "complete"), { recursive: true }),
-    mkdir(join(fixtureRoot, "variants", "stationary", "references"), { recursive: true }),
-    mkdir(join(fixtureRoot, "variants", "stationary", "private", "agent-1", "stages"), {
+    mkdir(join(fixtureRoot, "complete"), { recursive: true }),
+    mkdir(join(fixtureRoot, "private", "agent-1", "stages"), {
       recursive: true,
     }),
-    mkdir(join(fixtureRoot, "variants", "stationary", "private", "agent-2", "stages"), {
+    mkdir(join(fixtureRoot, "private", "agent-2", "stages"), {
       recursive: true,
     }),
     mkdir(join(fixtureRoot, "oracle"), { recursive: true }),
@@ -104,12 +102,13 @@ async function evaluationFixture(
   const stages = agentIds.map((agentId) => ({
     agentId,
     ordinal: 1,
-    sourcePath: `variants/stationary/private/${agentId}/stages/stage-01.txt`,
+    sourcePath: `private/${agentId}/stages/stage-01.txt`,
     sha256: digest(stageContent),
   }));
   const fixtureContent = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fixtureId: "evaluation-fixture",
+    constructionId: `construction-${"c".repeat(64)}`,
     window: { sha256: digest(plaintext) },
     allocation: { path: "oracle/allocation.json", sha256: digest(oracleDocument) },
     oracleDesign: { path: "oracle/design.json", sha256: digest(oracleDocument) },
@@ -119,42 +118,16 @@ async function evaluationFixture(
     },
     agentIds,
     stageCount: 1,
-    variants: {
-      stationary: {
-        variantId: "stationary",
-        rekeyFromStage: null,
-        buildId: `build-${"b".repeat(64)}`,
-        publicCiphertextPath: "variants/stationary/complete/ciphertext.txt",
-        publicCiphertextSha256: digest(ciphertext),
-        referenceCorpusPath: "variants/stationary/references",
-        referenceFiles: [
-          {
-            sourceId: "reference",
-            sourceSha256: digest(reference),
-            path: "variants/stationary/references/reference.txt",
-            byteLength: Buffer.byteLength(reference),
-            sha256: digest(reference),
-          },
-        ],
-        stages,
-      },
-    },
+    rekeyAtStage: null,
+    buildId: `build-${"b".repeat(64)}`,
+    publicCiphertextPath: "complete/ciphertext.txt",
+    publicCiphertextSha256: digest(ciphertext),
+    stages,
   };
   await Promise.all([
-    writeFile(
-      join(fixtureRoot, "variants", "stationary", "complete", "ciphertext.txt"),
-      ciphertext,
-      "utf8",
-    ),
-    writeFile(
-      join(fixtureRoot, "variants", "stationary", "references", "reference.txt"),
-      reference,
-    ),
+    writeFile(join(fixtureRoot, "complete", "ciphertext.txt"), ciphertext, "utf8"),
     ...agentIds.map((agentId) =>
-      writeFile(
-        join(fixtureRoot, "variants", "stationary", "private", agentId, "stages", "stage-01.txt"),
-        stageContent,
-      ),
+      writeFile(join(fixtureRoot, "private", agentId, "stages", "stage-01.txt"), stageContent),
     ),
     writeFile(join(fixtureRoot, "oracle", "plaintext.txt"), plaintext, "utf8"),
     writeFile(join(fixtureRoot, "oracle", "allocation.json"), oracleDocument, "utf8"),

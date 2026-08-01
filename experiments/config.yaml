@@ -1,91 +1,18 @@
-schemaVersion: 1
-experimentName: theron-ware-unlimited-1h
+schemaVersion: 2
+name: theron-ware-unlimited-1h
 
-# Every experiment input lives here. Add ordinary UTF-8 text files under fixtures/
-# and name the source/reference files this experiment should evaluate before it runs.
-fixtures:
-  - fixtureId: theron-ware
-    source:
-      path: fixtures/corpus/pg133.txt
-      format: gutenberg-text
-      window:
-        paragraphStart: 1
-        paragraphEnd: 196
-        wordCount: 18023
-        sha256: 605d43d789782765eaa9f0156551791c95afe1167e5fef5c05a960a7704c232b
-    references:
-      - { path: fixtures/corpus/middlemarch.txt, format: gutenberg-text }
-      - { path: fixtures/corpus/moby-dick.txt, format: gutenberg-text }
-      - { path: fixtures/corpus/jane-eyre.txt, format: gutenberg-text }
-    seed: 130013
-    agentIds: [agent-1, agent-2, agent-3]
-    stageCount: 6
-    variants:
-      - { variantId: stationary, rekeyFromStage: null }
-      - { variantId: rekey, rekeyFromStage: 4 }
-    allocationConstraints:
-      minimumAnchors: 12
-      minimumSentinels: 6
-      minimumSpecialistsPerAgent: 3
-      minimumChangedMass: 0.15
-      tiers:
-        - {
-            tier: strict,
-            minimumSpecialistOwnerShare: 0.67,
-            minimumOwnerOccurrences: 3,
-            minimumSentinelOccurrences: 3,
-            maximumSoloCoverage: 0.6,
-            maximumRegionDeviation: 0.04,
-            maximumStageDeviation: 0.12,
-            maximumControlDistance: 0.15,
-          }
-        - {
-            tier: balanced,
-            minimumSpecialistOwnerShare: 0.6,
-            minimumOwnerOccurrences: 2,
-            minimumSentinelOccurrences: 2,
-            maximumSoloCoverage: 0.67,
-            maximumRegionDeviation: 0.07,
-            maximumStageDeviation: 0.18,
-            maximumControlDistance: 0.25,
-          }
-        - {
-            tier: fallback,
-            minimumSpecialistOwnerShare: 0.55,
-            minimumOwnerOccurrences: 2,
-            minimumSentinelOccurrences: 1,
-            maximumSoloCoverage: 0.75,
-            maximumRegionDeviation: 0.1,
-            maximumStageDeviation: 0.25,
-            maximumControlDistance: 0.4,
-          }
-
-providers:
-  openai: { driver: openai, apiKeyEnv: OPENAI_API_KEY }
 models:
   sol:
     provider: openai
     model: gpt-5.6-sol
-    settings: { maxOutputTokens: 32768 }
-    providerOptions:
-      {
-        openai:
-          {
-            reasoningEffort: medium,
-            reasoningSummary: detailed,
-            serviceTier: default,
-            store: false,
-          },
-      }
-totalSpendCeilingCents: 1000
+    reasoningEffort: medium
+
 runs:
-  - id: theron-ware-shared-stationary-unlimited-1h
-    fixture:
-      { fixtureId: theron-ware, packagePath: artifacts/fixtures/theron-ware, variant: stationary }
-    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
-    capabilities: { git: shared, teamRoom: enabled }
-    schedule:
-      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
-    limits: { tokenLimitPerAgent: null, spendCeilingCents: 1000 }
-    labels:
-      { fixture: theron-ware, communication: shared, keying: stationary, tokenPolicy: unlimited }
+  shared:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 3
+    model: sol
+    communication: shared
+    releases: [0m, 5m, 10m, 20m, 30m, 40m]
+    cutoff: 1h
+    spendCeilingCents: 1000

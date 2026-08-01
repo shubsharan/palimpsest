@@ -1,11 +1,11 @@
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { loadFixturePackage } from "./package.js";
-import { requiredFlag } from "../flags.js";
 import { runProcess } from "../process.js";
 import { runPythonJson } from "../python.js";
-import { loadExperimentManifest } from "../experiment/manifest.js";
+import { loadResolvedExperiment, validateRunAgainstFixture } from "../experiment/manifest.js";
+import type { ResolvedRun } from "../experiment/contracts.js";
 import { createDockerCommandSandbox, dockerHostEnvironment } from "../sandbox/container.js";
 import { SANDBOX_IMAGE_TAG } from "../sandbox/contracts.js";
 import { sandboxDockerfileDigest } from "../sandbox/docker.js";
@@ -14,6 +14,7 @@ export interface BuildFixtureOptions {
   root: string;
   output: string;
   fixture?: Record<string, unknown>;
+  selectedVariant?: string;
   /** @deprecated Use the fixture declared in experiments/config.yaml. */
   fixtureId?: string;
 }
@@ -24,11 +25,14 @@ export interface BuildFixtureResult {
   packagePath: string;
   agentIds: readonly string[];
   stageCount: number;
-  variants: Readonly<Record<string, string>>;
+  buildId: string;
+  rekeyAtStage: number | null;
 }
 
 export interface BuildFixturesResult {
-  fixtures: readonly Pick<BuildFixtureResult, "fixtureId" | "contentDigest" | "packagePath">[];
+  fixtures: readonly (Pick<BuildFixtureResult, "fixtureId" | "contentDigest" | "packagePath"> & {
+    runIds: readonly string[];
+  })[];
 }
 
 function buildResult(value: unknown): BuildFixtureResult {
@@ -45,8 +49,9 @@ function buildResult(value: unknown): BuildFixtureResult {
     !Number.isSafeInteger(result.stageCount) ||
     result.stageCount === undefined ||
     result.stageCount < 1 ||
-    typeof result.variants !== "object" ||
-    result.variants === null
+    typeof result.buildId !== "string" ||
+    !/^build-[0-9a-f]{64}$/.test(result.buildId) ||
+    (result.rekeyAtStage !== null && !Number.isSafeInteger(result.rekeyAtStage))
   ) {
     throw new Error("Fixture build result is invalid.");
   }
@@ -64,6 +69,9 @@ export async function buildFixture(options: BuildFixtureOptions): Promise<BuildF
       output,
       "--definition-json",
       JSON.stringify(options.fixture),
+      ...(options.selectedVariant === undefined
+        ? []
+        : ["--selected-variant", options.selectedVariant]),
     ]),
   );
   const fixture = await loadFixturePackage(output);
@@ -74,39 +82,150 @@ export async function buildFixture(options: BuildFixtureOptions): Promise<BuildF
     fixture.contentDigest !== result.contentDigest ||
     fixture.stageCount !== result.stageCount ||
     fixture.agentIds.join("\0") !== result.agentIds.join("\0") ||
-    Object.entries(result.variants).some(
-      ([variantId, buildId]) => fixture.variants[variantId]?.buildId !== buildId,
-    )
+    fixture.buildId !== result.buildId ||
+    fixture.rekeyAtStage !== result.rekeyAtStage
   ) {
     throw new Error("Fixture package does not match the builder result.");
   }
   return { ...result, packagePath: output };
 }
 
+async function reuseBuiltFixture(run: ResolvedRun): Promise<BuildFixtureResult | undefined> {
+  try {
+    const existing = await stat(run.fixture.packageRoot);
+    if (!existing.isDirectory()) {
+      throw new Error(`Derived fixture path is not a directory: ${run.fixture.packageRoot}`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  const fixture = await loadFixturePackage(run.fixture.packageRoot);
+  validateRunAgainstFixture(run, fixture);
+  if (
+    fixture.fixtureId !== run.fixture.fixtureId ||
+    fixture.variantId !== run.fixture.variant ||
+    fixture.rekeyAtStage !== (run.fixture.rekeyAtStage ?? null)
+  ) {
+    throw new Error(`Existing derived fixture does not match run ${run.id}.`);
+  }
+  return {
+    fixtureId: fixture.fixtureId,
+    contentDigest: fixture.contentDigest,
+    packagePath: run.fixture.packageRoot,
+    agentIds: fixture.agentIds,
+    stageCount: fixture.stageCount,
+    buildId: fixture.buildId,
+    rekeyAtStage: fixture.rekeyAtStage,
+  };
+}
+
+export function derivedFixtureDefinition(run: ResolvedRun): Record<string, unknown> {
+  const fixtureId = run.fixture.fixtureId;
+  const source = run.fixture.source;
+  if (fixtureId === undefined || source === undefined) {
+    throw new Error(`Run ${run.id} is missing its derived fixture inputs.`);
+  }
+  const stageCount = run.schedule.releaseOffsetsMs.length;
+  const rekeyAtStage = run.fixture.rekeyAtStage ?? Math.floor(stageCount / 2) + 1;
+  return {
+    fixtureId,
+    source: {
+      path: source,
+      format: "plain-text",
+      window: { paragraphStart: 0, paragraphEnd: 0, wordCount: 0, sha256: "" },
+    },
+    references: [],
+    seed: Number.parseInt(fixtureId.slice(-12), 16),
+    agentIds: Object.keys(run.assignment),
+    stageCount,
+    variants: [
+      { variantId: "stationary", rekeyFromStage: null },
+      { variantId: `rekey-stage-${String(rekeyAtStage)}`, rekeyFromStage: rekeyAtStage },
+    ],
+    allocationConstraints: {
+      minimumAnchors: 12,
+      minimumSentinels: 6,
+      minimumSpecialistsPerAgent: 3,
+      minimumChangedMass: 0.15,
+      tiers: [
+        {
+          tier: "strict",
+          minimumSpecialistOwnerShare: 0.67,
+          minimumOwnerOccurrences: 3,
+          minimumSentinelOccurrences: 3,
+          maximumSoloCoverage: 0.6,
+          maximumRegionDeviation: 0.04,
+          maximumStageDeviation: 0.12,
+          maximumControlDistance: 0.15,
+        },
+        {
+          tier: "balanced",
+          minimumSpecialistOwnerShare: 0.6,
+          minimumOwnerOccurrences: 2,
+          minimumSentinelOccurrences: 2,
+          maximumSoloCoverage: 0.67,
+          maximumRegionDeviation: 0.07,
+          maximumStageDeviation: 0.18,
+          maximumControlDistance: 0.25,
+        },
+        {
+          tier: "fallback",
+          minimumSpecialistOwnerShare: 0.55,
+          minimumOwnerOccurrences: 2,
+          minimumSentinelOccurrences: 1,
+          maximumSoloCoverage: 0.75,
+          maximumRegionDeviation: 0.1,
+          maximumStageDeviation: 0.25,
+          maximumControlDistance: 0.4,
+        },
+      ],
+    },
+  };
+}
+
 export async function buildFixtureFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
-): Promise<BuildFixtureResult> {
+): Promise<BuildFixturesResult> {
   for (const flag of flags.keys()) {
-    if (flag !== "--fixture" && flag !== "--all" && flag !== "--output") {
+    if (flag !== "--config" && flag !== "--run") {
       throw new Error(`Unknown build option ${flag}.`);
     }
   }
-  const all = flags.get("--all");
-  if (all !== undefined && all !== "true") {
-    throw new Error("--all must be exactly true when provided.");
+  const configPath = resolve(root, flags.get("--config") ?? "experiments/config.yaml");
+  const experiment = await loadResolvedExperiment(configPath, root);
+  const selectedRun = flags.get("--run");
+  const runs =
+    selectedRun === undefined
+      ? experiment.runs
+      : experiment.runs.filter(({ id }) => id === selectedRun);
+  if (runs.length === 0) throw new Error(`Unknown experiment run ${selectedRun}.`);
+
+  const grouped = new Map<string, typeof runs>();
+  for (const run of runs) {
+    const peers = grouped.get(run.fixture.packageRoot) ?? [];
+    grouped.set(run.fixture.packageRoot, [...peers, run]);
   }
-  if (all === "true") throw new Error("--all is no longer supported; select one declared fixture.");
-  const fixtureId = requiredFlag(flags, "--fixture");
-  const manifest = await loadExperimentManifest(resolve(root, "experiments/config.yaml"));
-  const fixture = manifest.fixtures?.find((candidate) => candidate.fixtureId === fixtureId);
-  if (fixture === undefined)
-    throw new Error(`Unknown fixture ${fixtureId} in experiments/config.yaml.`);
-  return buildFixture({
-    root,
-    output: requiredFlag(flags, "--output"),
-    fixture,
-  });
+  const fixtures: BuildFixturesResult["fixtures"][number][] = [];
+  for (const packageRuns of grouped.values()) {
+    const run = packageRuns[0]!;
+    const result =
+      (await reuseBuiltFixture(run)) ??
+      (await buildFixture({
+        root,
+        output: run.fixture.packageRoot,
+        fixture: derivedFixtureDefinition(run),
+        selectedVariant: run.fixture.variant,
+      }));
+    fixtures.push({
+      fixtureId: result.fixtureId,
+      contentDigest: result.contentDigest,
+      packagePath: result.packagePath,
+      runIds: packageRuns.map(({ id }) => id),
+    });
+  }
+  return { fixtures };
 }
 
 export function sandboxDockerBuildArguments(sourceDigest: string): readonly string[] {

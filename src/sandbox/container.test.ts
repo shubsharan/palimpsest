@@ -93,7 +93,6 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       timeoutMs: 1_000,
       workspacePath: workspace,
       evidencePath: evidence,
-      referenceCorpusPath: reference,
       gitOriginPath: gitOrigin,
     },
   };

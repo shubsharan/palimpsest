@@ -24,11 +24,24 @@ const binding: ModelBinding = {
 
 function fixture(): FixturePackage {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fixtureId: "fixture",
+    constructionId: `construction-${"c".repeat(64)}`,
     contentDigest: "a".repeat(64),
     agentIds,
     stageCount: 1,
+    rekeyAtStage: null,
+    buildId: `build-${"b".repeat(64)}`,
+    publicCiphertextPath: "complete/ciphertext.txt",
+    publicCiphertextSha256: "e".repeat(64),
+    stages: agentIds.map((agentId) => ({
+      agentId,
+      ordinal: 1,
+      sourcePath: `private/${agentId}/stage-01.txt`,
+      sha256: "1".repeat(64),
+    })),
+    variantId: "stationary",
+    rekeyFromStage: null,
     variants: {
       stationary: {
         variantId: "stationary",
@@ -36,16 +49,6 @@ function fixture(): FixturePackage {
         buildId: `build-${"b".repeat(64)}`,
         publicCiphertextPath: "variants/stationary/ciphertext.txt",
         publicCiphertextSha256: "e".repeat(64),
-        referenceCorpusPath: "variants/stationary/references",
-        referenceFiles: [
-          {
-            sourceId: "reference",
-            sourceSha256: "f".repeat(64),
-            path: "variants/stationary/references/reference.txt",
-            byteLength: 1,
-            sha256: "f".repeat(64),
-          },
-        ],
         stages: agentIds.map((agentId) => ({
           agentId,
           ordinal: 1,
@@ -69,6 +72,7 @@ function experiment(packagePath: string): ResolvedExperiment {
   });
   return {
     schemaVersion: 1,
+    name: "execution-test",
     providers: {
       provider: { driver: "openai-compatible", baseURL: "https://provider.invalid/v1" },
     },
