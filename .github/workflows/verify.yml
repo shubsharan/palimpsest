@@ -8,9 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  quality:
-    name: quality
+  verify:
+    name: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -46,89 +50,5 @@ jobs:
           pnpm install --frozen-lockfile
           uv sync --frozen --project python
 
-      - name: Run quality checks
-        run: pnpm check
-
-  fast-typescript:
-    name: fast TypeScript
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Node.js 26.5.0
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 26.5.0
-          package-manager-cache: false
-
-      - name: Set up Python 3.12.4
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: 3.12.4
-
-      - name: Set up uv 0.11.14
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: 0.11.14
-          enable-cache: false
-
-      - name: Install pnpm 10.14.0
-        run: |
-          npm install --global corepack@0.34.0
-          corepack enable
-          corepack prepare pnpm@10.14.0 --activate
-
-      - name: Install locked dependencies
-        run: |
-          pnpm install --frozen-lockfile
-          uv sync --frozen --project python
-
-      - name: Run TypeScript unit tests
-        run: pnpm test:unit:ts
-
-      - name: Run TypeScript contract tests
-        run: pnpm test:contract:ts
-
-  fast-python:
-    name: fast Python
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Node.js 26.5.0
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 26.5.0
-          package-manager-cache: false
-
-      - name: Set up Python 3.12.4
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: 3.12.4
-
-      - name: Set up uv 0.11.14
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: 0.11.14
-          enable-cache: false
-
-      - name: Install pnpm 10.14.0
-        run: |
-          npm install --global corepack@0.34.0
-          corepack enable
-          corepack prepare pnpm@10.14.0 --activate
-
-      - name: Install locked Python dependencies
-        run: uv sync --frozen --project python
-
-      - name: Run Python unit tests
-        run: pnpm test:unit:py
-
-      - name: Run Python contract tests
-        run: pnpm test:contract:py
+      - name: Run fast verification
+        run: pnpm verify
