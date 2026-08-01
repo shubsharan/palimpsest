@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -6,39 +7,25 @@ import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.
 import { parseDocument } from "yaml";
 
 import experimentSchema from "../../experiments/schema.json" with { type: "json" };
+import { generateAgentIds, type JsonValue, type ProviderConnection } from "../model/contracts.js";
 import type {
-  JsonValue,
-  ModelDeclaration,
-  ModelProfile,
-  ProviderConnection,
-} from "../model/contracts.js";
-import type {
+  AuthoredRun,
   ExperimentManifest,
-  FixtureReference,
   FixturePackageMetadata,
   ResolvedExperiment,
-  ResolvedFixtureReference,
   ResolvedRun,
   RunDeclaration,
 } from "./contracts.js";
 
-const ajv = new Ajv2020({
-  allErrors: true,
-  strict: true,
-  strictRequired: false,
-  validateFormats: true,
-});
-ajv.addFormat("uri", {
-  type: "string",
-  validate(value: string): boolean {
-    try {
-      return new URL(value).protocol.length > 0;
-    } catch {
-      return false;
-    }
-  },
-});
+const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
 const validateSchema: ValidateFunction = ajv.compile(experimentSchema);
+const DURATION = /^(0|[1-9][0-9]*)(ms|s|m|h)$/;
+const DURATION_FACTORS = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 } as const;
+const CREDENTIAL_ENV = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_GENERATIVE_AI_API_KEY",
+} as const;
 
 function structuralError(error: ErrorObject): string {
   let path = error.instancePath || "/";
@@ -52,19 +39,16 @@ function structuralError(error: ErrorObject): string {
 }
 
 export function parseExperimentYaml(source: string): unknown {
-  const document = parseDocument(source, {
-    schema: "core",
-    merge: false,
-    uniqueKeys: true,
-  });
+  const document = parseDocument(source, { schema: "core", merge: false, uniqueKeys: true });
   if (document.errors.length > 0) {
     throw new Error(`Experiment YAML is invalid: ${document.errors[0]!.message}`);
   }
   try {
     return document.toJS({ json: true, maxAliasCount: 0 });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Experiment YAML is invalid: ${detail}`);
+    throw new Error(
+      `Experiment YAML is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -79,28 +63,6 @@ export function validateExperimentManifest(value: unknown): ExperimentManifest {
 function normalizedKey(key: string): string {
   return key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
-
-const requestControlKeys = new Set([
-  "abortsignal",
-  "activetools",
-  "headers",
-  "instructions",
-  "maxretries",
-  "messages",
-  "model",
-  "onabort",
-  "onend",
-  "onfinish",
-  "onstart",
-  "onstepfinish",
-  "onstepstart",
-  "prompt",
-  "stopwhen",
-  "system",
-  "timeout",
-  "toolchoice",
-  "tools",
-]);
 
 function secretBearingKey(key: string): boolean {
   const normalized = normalizedKey(key);
@@ -120,11 +82,22 @@ function secretBearingKey(key: string): boolean {
   );
 }
 
-function validateJsonValue(
-  value: unknown,
-  path: string,
-  rejectRequestControls: boolean,
-): asserts value is JsonValue {
+const REQUEST_CONTROL_KEYS = new Set([
+  "abortsignal",
+  "headers",
+  "instructions",
+  "maxretries",
+  "messages",
+  "model",
+  "prompt",
+  "stopwhen",
+  "system",
+  "timeout",
+  "toolchoice",
+  "tools",
+]);
+
+function validateJsonValue(value: unknown, path: string): asserts value is JsonValue {
   if (
     value === null ||
     typeof value === "string" ||
@@ -134,31 +107,22 @@ function validateJsonValue(
     return;
   }
   if (Array.isArray(value)) {
-    for (const [index, child] of value.entries()) {
-      validateJsonValue(child, `${path}[${String(index)}]`, rejectRequestControls);
-    }
+    value.forEach((child, index) => validateJsonValue(child, `${path}[${String(index)}]`));
     return;
   }
-  if (typeof value !== "object") {
-    throw new Error(`${path} must contain only JSON-compatible values.`);
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (typeof value !== "object" || value === null) {
     throw new Error(`${path} must contain only JSON-compatible values.`);
   }
   for (const [key, child] of Object.entries(value)) {
-    const childPath = `${path}.${key}`;
+    if (secretBearingKey(key)) throw new Error(`${path}.${key} is secret-bearing.`);
     const normalized = normalizedKey(key);
-    if (secretBearingKey(key)) {
-      throw new Error(`${childPath} is secret-bearing.`);
+    if (REQUEST_CONTROL_KEYS.has(normalized)) {
+      throw new Error(`${path}.${key} cannot override model request control.`);
     }
-    if (rejectRequestControls && requestControlKeys.has(normalized)) {
-      throw new Error(`${childPath} cannot override model request control.`);
+    if (normalized === "fallback" || normalized === "fallbacks") {
+      throw new Error(`${path}.${key} cannot configure provider fallback.`);
     }
-    if (rejectRequestControls && (normalized === "fallback" || normalized === "fallbacks")) {
-      throw new Error(`${childPath} cannot configure provider fallback.`);
-    }
-    validateJsonValue(child, childPath, rejectRequestControls);
+    validateJsonValue(child, `${path}.${key}`);
   }
 }
 
@@ -166,16 +130,7 @@ export function validateProviderOptions(
   value: Readonly<Record<string, unknown>>,
   path = "providerOptions",
 ): asserts value is Readonly<Record<string, JsonValue>> {
-  try {
-    validateJsonValue(value, path, true);
-  } catch (error) {
-    if (error instanceof Error && error.message.endsWith(" is secret-bearing.")) {
-      throw new Error(
-        error.message.replace(/ is secret-bearing\.$/, " is a secret-bearing provider option."),
-      );
-    }
-    throw error;
-  }
+  validateJsonValue(value, path);
 }
 
 function safeInteger(value: unknown, path: string, minimum = 0): number {
@@ -183,6 +138,15 @@ function safeInteger(value: unknown, path: string, minimum = 0): number {
     throw new Error(`${path} must be a safe integer of at least ${String(minimum)}.`);
   }
   return value as number;
+}
+
+export function parseDuration(value: string, path: string): number {
+  const match = DURATION.exec(value);
+  if (match === null)
+    throw new Error(`${path} must be an integer duration ending in ms, s, m, or h.`);
+  const amount = Number(match[1]);
+  const milliseconds = amount * DURATION_FACTORS[match[2] as keyof typeof DURATION_FACTORS];
+  return safeInteger(milliseconds, path);
 }
 
 export function validateRunSchedule(
@@ -196,14 +160,12 @@ export function validateRunSchedule(
       `${path}.releaseOffsetsMs must contain exactly ${String(expectedStageCount)} stage offsets.`,
     );
   }
-  if (releaseOffsetsMs.length === 0) {
+  if (releaseOffsetsMs.length === 0)
     throw new Error(`${path}.releaseOffsetsMs must contain at least one stage offset.`);
-  }
   for (const [index, offset] of releaseOffsetsMs.entries()) {
     safeInteger(offset, `${path}.releaseOffsetsMs[${String(index)}]`);
-    if (index === 0 && offset !== 0) {
+    if (index === 0 && offset !== 0)
       throw new Error(`${path}.releaseOffsetsMs must begin at zero.`);
-    }
     if (index > 0 && offset <= releaseOffsetsMs[index - 1]!) {
       throw new Error(`${path}.releaseOffsetsMs must be strictly increasing.`);
     }
@@ -212,146 +174,6 @@ export function validateRunSchedule(
   if (cutoffMs <= releaseOffsetsMs.at(-1)!) {
     throw new Error(`${path}.cutoffMs must be after the final stage release.`);
   }
-}
-
-function assertProviderReferences(manifest: ExperimentManifest): void {
-  for (const [name, provider] of Object.entries(manifest.providers)) {
-    if (provider.driver !== "openai-compatible") continue;
-    const endpoint = new URL(provider.baseURL);
-    if (endpoint.username.length > 0 || endpoint.password.length > 0) {
-      throw new Error(`providers.${name}.baseURL must not contain literal credentials.`);
-    }
-    const secretParameter = [...endpoint.searchParams.keys()].find(secretBearingKey);
-    if (secretParameter !== undefined) {
-      throw new Error(
-        `providers.${name}.baseURL query parameter ${secretParameter} is secret-bearing.`,
-      );
-    }
-  }
-  for (const [name, model] of Object.entries(manifest.models)) {
-    if (!(model.provider in manifest.providers)) {
-      throw new Error(`models.${name}.provider references unknown provider ${model.provider}.`);
-    }
-    validateProviderOptions(model.providerOptions ?? {}, `models.${name}.providerOptions`);
-  }
-}
-
-function assertRuns(manifest: ExperimentManifest): void {
-  const fixtureIds = new Set<string>();
-  for (const [index, fixture] of (manifest.fixtures ?? []).entries()) {
-    const fixtureId = fixture.fixtureId;
-    if (typeof fixtureId !== "string" || !/^[A-Za-z][A-Za-z0-9-]*$/.test(fixtureId)) {
-      throw new Error(`fixtures[${String(index)}].fixtureId must be a canonical identifier.`);
-    }
-    if (fixtureIds.has(fixtureId))
-      throw new Error(`fixtures contains duplicate fixtureId ${fixtureId}.`);
-    fixtureIds.add(fixtureId);
-    for (const [fileIndex, file] of [
-      fixture.source,
-      ...(fixture.references as unknown[]),
-    ].entries()) {
-      if (
-        typeof file !== "object" ||
-        file === null ||
-        typeof (file as { path?: unknown }).path !== "string"
-      ) {
-        throw new Error(`fixtures[${String(index)}] has an invalid declared text file.`);
-      }
-      const path = (file as { path: string }).path;
-      if (!path.startsWith("fixtures/")) {
-        throw new Error(
-          `fixtures[${String(index)}] text file ${String(fileIndex)} must be under fixtures/.`,
-        );
-      }
-    }
-  }
-  const ids = new Set<string>();
-  let authorizedSpend = 0;
-  for (const [index, run] of manifest.runs.entries()) {
-    const path = `runs[${String(index)}]`;
-    const fixtureId = (run.fixture as FixtureReference & { fixtureId?: unknown }).fixtureId;
-    if (ids.has(run.id)) {
-      throw new Error(`${path}.id duplicates experiment run id ${run.id}.`);
-    }
-    ids.add(run.id);
-    if (
-      manifest.fixtures !== undefined &&
-      (typeof fixtureId !== "string" || !fixtureIds.has(fixtureId))
-    ) {
-      throw new Error(`${path}.fixture.fixtureId references an undeclared fixture.`);
-    }
-    for (const [agentId, modelProfileId] of Object.entries(run.assignment)) {
-      if (!(modelProfileId in manifest.models)) {
-        throw new Error(
-          `${path}.assignment.${agentId} references unknown model profile ${modelProfileId}.`,
-        );
-      }
-    }
-    validateRunSchedule(
-      run.schedule.releaseOffsetsMs,
-      run.schedule.cutoffMs,
-      undefined,
-      `${path}.schedule`,
-    );
-    if (run.limits.tokenLimitPerAgent !== null) {
-      safeInteger(run.limits.tokenLimitPerAgent, `${path}.limits.tokenLimitPerAgent`, 1);
-    }
-    const runSpend = safeInteger(run.limits.spendCeilingCents, `${path}.limits.spendCeilingCents`);
-    authorizedSpend += runSpend;
-    if (!Number.isSafeInteger(authorizedSpend)) {
-      throw new Error("The sum of run spend ceilings must be a safe integer.");
-    }
-    validateJsonValue(run.labels, `${path}.labels`, false);
-  }
-  const totalSpend = safeInteger(manifest.totalSpendCeilingCents, "totalSpendCeilingCents");
-  if (authorizedSpend > totalSpend) {
-    throw new Error(
-      `totalSpendCeilingCents must cover the ${String(authorizedSpend)}-cent run authorization.`,
-    );
-  }
-}
-
-function resolvedPackagePath(repositoryRoot: string, configuredPath: string, path: string): string {
-  if (isAbsolute(configuredPath)) {
-    throw new Error(`${path} must be relative to the repository.`);
-  }
-  const absolutePath = resolve(repositoryRoot, configuredPath);
-  const difference = relative(repositoryRoot, absolutePath);
-  if (
-    difference.length === 0 ||
-    difference === ".." ||
-    difference.startsWith(`..${sep}`) ||
-    isAbsolute(difference)
-  ) {
-    throw new Error(`${path} must remain inside the repository.`);
-  }
-  return absolutePath;
-}
-
-function cloneProvider(provider: ProviderConnection): ProviderConnection {
-  if (provider.driver !== "openai-compatible") return { ...provider };
-  return {
-    driver: provider.driver,
-    baseURL: provider.baseURL,
-    ...(provider.apiKeyEnv === undefined ? {} : { apiKeyEnv: provider.apiKeyEnv }),
-    ...(provider.headersEnv === undefined ? {} : { headersEnv: { ...provider.headersEnv } }),
-  };
-}
-
-function cloneModels(
-  models: Readonly<Record<string, ModelDeclaration>>,
-): Record<string, ModelProfile> {
-  return Object.fromEntries(
-    Object.entries(models).map(([name, model]) => [
-      name,
-      {
-        provider: model.provider,
-        model: model.model,
-        settings: { ...model.settings },
-        providerOptions: { ...model.providerOptions },
-      },
-    ]),
-  );
 }
 
 function canonicalJson(value: unknown): string {
@@ -367,11 +189,152 @@ function canonicalJson(value: unknown): string {
   return encoded;
 }
 
+function containedPath(repositoryRoot: string, configuredPath: string, path: string): string {
+  if (isAbsolute(configuredPath)) throw new Error(`${path} must be relative to the repository.`);
+  const absolutePath = resolve(repositoryRoot, configuredPath);
+  const difference = relative(repositoryRoot, absolutePath);
+  if (
+    difference.length === 0 ||
+    difference === ".." ||
+    difference.startsWith(`..${sep}`) ||
+    isAbsolute(difference)
+  ) {
+    throw new Error(`${path} must remain inside the repository.`);
+  }
+  return absolutePath;
+}
+
+function fixtureIdentity(
+  run: AuthoredRun,
+  repositoryRoot: string,
+): { constructionId: string; fixtureId: string; variant: string } {
+  const sourcePath = containedPath(repositoryRoot, run.source, "run.source");
+  let sourceDigest: string;
+  try {
+    sourceDigest = createHash("sha256").update(readFileSync(sourcePath)).digest("hex");
+  } catch (error) {
+    throw new Error(`run.source must name a readable source file: ${run.source}`, { cause: error });
+  }
+  const constructionInputs = {
+    source: run.source,
+    sourceDigest,
+    agents: run.agents,
+    stages: run.releases.length,
+  };
+  const constructionDigest = createHash("sha256")
+    .update(canonicalJson(constructionInputs))
+    .digest("hex");
+  const constructionId = `construction-${constructionDigest}`;
+  const realizationDigest = createHash("sha256")
+    .update(
+      canonicalJson({
+        constructionId,
+        rekeyAtStage: run.rekeyAtStage ?? null,
+      }),
+    )
+    .digest("hex");
+  return {
+    constructionId,
+    fixtureId: `fixture-${realizationDigest.slice(0, 16)}`,
+    variant:
+      run.rekeyAtStage === undefined ? "stationary" : `rekey-stage-${String(run.rekeyAtStage)}`,
+  };
+}
+
+function resolveRun(
+  id: string,
+  run: AuthoredRun,
+  manifest: ExperimentManifest,
+  repositoryRoot: string,
+): ResolvedRun {
+  if (!(run.model in manifest.models))
+    throw new Error(`runs.${id}.model references unknown model ${run.model}.`);
+  const releaseOffsetsMs = run.releases.map((duration, index) =>
+    parseDuration(duration, `runs.${id}.releases[${String(index)}]`),
+  );
+  const cutoffMs = parseDuration(run.cutoff, `runs.${id}.cutoff`);
+  validateRunSchedule(releaseOffsetsMs, cutoffMs, releaseOffsetsMs.length, `runs.${id}`);
+  if (run.rekeyAtStage !== undefined && run.rekeyAtStage > releaseOffsetsMs.length) {
+    throw new Error(
+      `runs.${id}.rekeyAtStage exceeds its ${String(releaseOffsetsMs.length)} stages.`,
+    );
+  }
+  const agentIds = generateAgentIds(run.agents);
+  const identity = fixtureIdentity(run, repositoryRoot);
+  const packagePath = `artifacts/fixtures/${identity.fixtureId}`;
+  return {
+    id,
+    fixture: {
+      ...identity,
+      packagePath,
+      packageRoot: containedPath(repositoryRoot, packagePath, `runs.${id}.packagePath`),
+      source: run.source,
+      rekeyAtStage: run.rekeyAtStage ?? null,
+    },
+    assignment: Object.fromEntries(agentIds.map((agentId) => [agentId, run.model])),
+    capabilities:
+      run.communication === "shared"
+        ? { git: "shared", teamRoom: "enabled" }
+        : { git: "isolated", teamRoom: "disabled" },
+    schedule: { releaseOffsetsMs, cutoffMs },
+    limits: {
+      tokenLimitPerAgent: run.tokenLimitPerAgent ?? null,
+      spendCeilingCents: run.spendCeilingCents,
+    },
+    labels: {
+      source: run.source,
+      communication: run.communication,
+      keying: run.rekeyAtStage === undefined ? "stationary" : "rekey",
+      tokenPolicy: run.tokenLimitPerAgent === undefined ? "unlimited" : "limited",
+    },
+  };
+}
+
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   if (typeof value !== "object" || value === null || seen.has(value)) return value;
   seen.add(value);
-  for (const child of Object.values(value)) deepFreeze(child, seen);
+  Object.values(value).forEach((child) => deepFreeze(child, seen));
   return Object.freeze(value);
+}
+
+export function resolveExperiment(
+  value: unknown,
+  repositoryRoot = resolve("."),
+): ResolvedExperiment {
+  const manifest = structuredClone(validateExperimentManifest(value));
+  const root = resolve(repositoryRoot);
+  const providers: Record<string, ProviderConnection> = {};
+  const models = Object.fromEntries(
+    Object.entries(manifest.models).map(([id, model]) => {
+      providers[model.provider] ??= {
+        driver: model.provider,
+        apiKeyEnv: CREDENTIAL_ENV[model.provider],
+      };
+      const providerOptions =
+        model.reasoningEffort === undefined
+          ? {}
+          : { [model.provider]: { reasoningEffort: model.reasoningEffort } };
+      return [id, { provider: model.provider, model: model.model, settings: {}, providerOptions }];
+    }),
+  );
+  const runs = Object.entries(manifest.runs).map(([id, run]) =>
+    resolveRun(id, run, manifest, root),
+  );
+  const totalSpendCeilingCents = runs.reduce((total, run) => {
+    const next = total + run.limits.spendCeilingCents;
+    if (!Number.isSafeInteger(next))
+      throw new Error("The sum of run spend ceilings must be a safe integer.");
+    return next;
+  }, 0);
+  return deepFreeze({
+    schemaVersion: 1,
+    name: manifest.name,
+    providers,
+    models,
+    totalSpendCeilingCents,
+    runs,
+    manifestDigest: createHash("sha256").update(canonicalJson(manifest)).digest("hex"),
+  });
 }
 
 export function validateRunAgainstFixture(
@@ -390,7 +353,7 @@ export function validateRunAgainstFixture(
     );
   }
   if (!(run.fixture.variant in fixture.variants)) {
-    throw new Error(`Run ${run.id} references unknown fixture variant ${run.fixture.variant}.`);
+    throw new Error(`Run ${run.id} references unknown fixture realization ${run.fixture.variant}.`);
   }
   validateRunSchedule(
     run.schedule.releaseOffsetsMs,
@@ -398,49 +361,6 @@ export function validateRunAgainstFixture(
     fixture.stageCount,
     `Run ${run.id} schedule`,
   );
-}
-
-export function resolveExperiment(
-  value: unknown,
-  repositoryRoot = resolve("."),
-): ResolvedExperiment {
-  const manifest = structuredClone(validateExperimentManifest(value));
-  assertProviderReferences(manifest);
-  assertRuns(manifest);
-  const root = resolve(repositoryRoot);
-
-  return deepFreeze({
-    schemaVersion: 1,
-    ...(manifest.experimentName === undefined ? {} : { experimentName: manifest.experimentName }),
-    ...(manifest.fixtures === undefined ? {} : { fixtures: structuredClone(manifest.fixtures) }),
-    providers: Object.fromEntries(
-      Object.entries(manifest.providers).map(([name, provider]) => [name, cloneProvider(provider)]),
-    ),
-    models: cloneModels(manifest.models),
-    totalSpendCeilingCents: manifest.totalSpendCeilingCents,
-    runs: manifest.runs.map((run, index) => ({
-      id: run.id,
-      fixture: {
-        fixtureId: (run.fixture as FixtureReference & { fixtureId?: string }).fixtureId!,
-        packagePath: run.fixture.packagePath,
-        packageRoot: resolvedPackagePath(
-          root,
-          run.fixture.packagePath,
-          `runs[${String(index)}].fixture.packagePath`,
-        ),
-        variant: run.fixture.variant,
-      } as ResolvedFixtureReference & { fixtureId: string },
-      assignment: { ...run.assignment },
-      capabilities: { ...run.capabilities },
-      schedule: {
-        releaseOffsetsMs: [...run.schedule.releaseOffsetsMs],
-        cutoffMs: run.schedule.cutoffMs,
-      },
-      limits: { ...run.limits },
-      labels: structuredClone(run.labels),
-    })),
-    manifestDigest: createHash("sha256").update(canonicalJson(manifest)).digest("hex"),
-  });
 }
 
 export async function loadExperimentManifest(path: string): Promise<ExperimentManifest> {

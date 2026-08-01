@@ -1,162 +1,78 @@
 # Feature Specification: Lean Experiment Engine
 
-**Feature Branch**: `feature/021-lean-experiment-engine`  
-**Created**: 2026-07-31  
-**Status**: Draft  
-**Input**: User description: "Recenter Palimpsest on experiment design with flexible fixtures and explicit experiment configurations, retaining only infrastructure and verification that directly support the science."
+**Feature Branch**: `feature/022-streamlined-experiment-config` **Created**: 2026-07-31 **Status**: Implemented
 
-## User Scenarios & Testing _(mandatory)_
+## User Story 1 - Describe Named Runs
 
-### User Story 1 - Prepare Different Puzzle Fixtures (Priority: P1)
+As a researcher, I edit one small YAML file containing named runs and only the controls that can change the experiment.
 
-As a researcher, I can describe and prepare word-substitution fixtures with different agent counts, stage counts, source windows, reference material, and key variants without changing runner source code.
+Acceptance:
 
-**Why this priority**: Flexible, deterministic puzzle inputs are the foundation for asking new scientific questions without turning each experiment into an engineering project.
+1. The run map key is the identifier accepted by `--run` and stored with artifacts; no separate `id` is authored.
+2. Each run declares source, agent count, one model, shared or isolated communication, releases, cutoff, and one spend ceiling.
+3. `rekeyAtStage` and `tokenLimitPerAgent` are optional; omission means stationary and unlimited.
+4. Legacy construction, assignment, capability, label, credential, output-token, and aggregate-spend fields are rejected.
 
-**Independent Test**: Prepare a two-agent, three-stage fixture and a four-agent, eight-stage fixture from declarations alone, then confirm that repeated preparation yields identical packages and that each package passes its declared allocation and manipulation checks.
+## User Story 2 - Prepare Deterministic Material
 
-**Acceptance Scenarios**:
+As a researcher, I build all or one named run directly from the experiment config without managing fixture definitions or package paths.
 
-1. **Given** a valid fixture definition and available corpus inputs, **When** the researcher prepares it twice, **Then** both packages have the same content digest, agent-visible evidence, oracle, and manipulation-check results.
-2. **Given** a fixture definition with a stationary variant and a re-key variant, **When** the package is prepared, **Then** the variants share the declared pre-boundary evidence and differ only according to the declared re-key boundary and controls.
-3. **Given** a definition whose allocation cannot satisfy its declared scientific constraints, **When** preparation is requested, **Then** preparation fails explicitly without publishing a partial package.
+Acceptance:
 
----
+1. `puzzle:build --config <yaml> [--run <name>]` derives and atomically publishes required packages.
+2. Agent IDs, source window, construction randomness, allocation, identity, and paths are deterministic engine-owned values.
+3. Source byte or geometry changes alter derived provenance and identity; identical inputs are reproducible.
+4. A package contains one flat stationary or re-keyed realization and no references or variant map.
+5. Stationary and re-keyed realizations with the same source and geometry share construction identity, allocation, base-key construction, and pre-boundary evidence while retaining distinct realized package identities.
 
-### User Story 2 - Execute Explicit Experiment Configurations (Priority: P1)
+## User Story 3 - Validate and Execute
 
-As a researcher, I can declare an ordered list of runs over prepared fixtures, assign models and communication conditions per run, validate the exact configuration, and execute it without changing source code or coordinating a separate study state machine.
+As a researcher, I validate the exact built experiment and execute its runs without hidden orchestration or duplicated authorization.
 
-**Why this priority**: The experiment declaration must be the genuine source of run variation so engineering machinery does not dictate or obscure the scientific design.
+Acceptance:
 
-**Independent Test**: Execute a provider-free manifest containing multiple runs over different fixture geometries, schedules, model bindings, and communication conditions; confirm runs start in manifest order, agents within a run are concurrent, and no undeclared run or retry occurs.
+1. Strict `ms`, `s`, `m`, and `h` durations resolve to milliseconds frozen in run records.
+2. One model applies uniformly to inferred agents; provider credentials and communication capabilities are inferred.
+3. The experiment authorization is the sum of per-run ceilings.
+4. Runs execute sequentially in map order; agents within one run execute concurrently.
+5. Missing or drifted packages, invalid configuration, failed sandbox/smoke checks, or missing spend authorization stop before provider access.
 
-**Acceptance Scenarios**:
+## User Story 4 - Inspect Complete Evidence
 
-1. **Given** a valid manifest with several explicit runs, **When** the experiment executes, **Then** runs execute sequentially in declared order while sessions inside each run begin concurrently.
-2. **Given** paired shared and isolated runs with identical non-communication inputs, **When** they execute, **Then** shared agents see ordinary peer Git and the optional team room while isolated agents receive usable private Git and no peer evidence or activity.
-3. **Given** one concurrent session reports an infrastructure failure, **When** the failure occurs, **Then** peer sessions quiesce independently, available work is frozen and evaluated, an infrastructure-error record is published, and the experiment stops before the next run without retry or replacement.
-4. **Given** an invalid, drifted, or insufficiently authorized configuration, **When** execution is requested, **Then** it stops before any provider session is opened.
+As a researcher or reviewer, I inspect one coherent record and can re-evaluate every frozen canonical origin without rerunning model sessions.
 
----
+Acceptance:
 
-### User Story 3 - Inspect and Re-evaluate Complete Run Evidence (Priority: P2)
+1. The record freezes resolved source, construction, fixture, build, and content identities, re-key boundary, agents, model, communication, milliseconds, limits, spend, usage, releases, topology, and evaluations.
+2. Shared runs evaluate one canonical origin; isolated runs evaluate every agent origin without selecting a best result.
+3. Missing publication and missing integration remain explicit outcomes.
+4. Re-evaluation and overlap analysis append history atomically without altering prior evidence.
 
-As a researcher or reviewer, I can inspect one coherent record of the declared run, model behavior, frozen repositories, and scores, and can re-evaluate the frozen published solvers without rerunning model sessions.
+## Functional Requirements
 
-**Why this priority**: Scientific interpretation depends on complete, legible evidence rather than orchestration metadata or a selected best result.
+- **FR-001**: The authored manifest MUST use `schemaVersion: 2`, `name`, `models`, and a non-empty map of named runs and MUST reject unknown fields and duplicate YAML keys.
+- **FR-002**: Run IDs MUST be required unique map keys, human-readable selectors, and not scientific inputs.
+- **FR-003**: Every run MUST require source, 2-64 agents, a known model, `shared` or `isolated` communication, non-empty releases, cutoff, and a non-negative safe-integer spend ceiling.
+- **FR-004**: Releases and cutoff MUST use strict integer `ms`, `s`, `m`, or `h` durations; releases MUST begin at zero, increase strictly, and finish before the cutoff.
+- **FR-005**: `rekeyAtStage`, when present, MUST fit the stage geometry. `tokenLimitPerAgent`, when present, MUST be a positive safe integer.
+- **FR-006**: The engine MUST infer ordered agent IDs, uniform model assignments, provider credential environment names, Git/room capabilities, and aggregate authorization.
+- **FR-007**: The engine MUST derive source windows, construction randomness, allocation, package identity, and artifact paths from the run and source bytes.
+- **FR-008**: Prepared schema-v2 packages MUST contain exactly one realized key regime, resolved provenance and re-key boundary, complete stage geometry, trusted oracle and scoring inputs, and a whole-tree content digest.
+- **FR-009**: Reference material MUST be absent from authored configuration, serialized packages, prompts, agent sandboxes, validation, and overlap analysis.
+- **FR-010**: The active authored contract MUST NOT expose source bounds, counts, hashes, formats, fixture IDs, package paths, seeds, variants, allocation thresholds, assignments, capability objects, labels, model output-token settings, credential names, or an experiment spend ceiling.
+- **FR-011**: Build MUST prepare all unique derived packages or the selected run and MUST never overwrite a non-empty package path.
+- **FR-012**: Validation and execution MUST reject missing or drifted packages before provider access.
+- **FR-013**: Execution MUST reject missing explicit spend authorization before sandbox work, then repeat exact validation, one sandbox probe, and one representative provider-free smoke before provider access.
+- **FR-014**: Runs MUST execute sequentially and sessions within a run concurrently. No failure may trigger retry, replacement, peer cancellation, automated merge, repair, or resume.
+- **FR-015**: Git use MUST remain model-chosen and unmetered. Only pushed canonical `main` is checkable and gradeable, and every canonical origin MUST be evaluated without best-result selection.
+- **FR-016**: The runner MUST impose no roles, turns, checkpoints, consensus, reports, commit cadence, or coordination procedure.
+- **FR-017**: One append-only trace and one atomic run record MUST preserve resolved inputs, observations, topology, infrastructure status, and evaluations while excluding secrets, hidden reasoning, oracle data, keys, references, and unreleased evidence.
+- **FR-018**: Re-evaluation and analysis MUST be provider-free, validate frozen evidence before use, and atomically append history without changing earlier evidence.
 
-**Independent Test**: Complete one shared and one isolated provider-free run, verify that every canonical origin is evaluated and retained, then re-evaluate each frozen run and reproduce its scores without provider access.
+## Edge Cases
 
-**Acceptance Scenarios**:
+Reject malformed durations, unsafe or unreadable source paths, invalid team sizes, unknown models, invalid re-key boundaries, zero token limits, duplicate YAML run keys, removed legacy fields, missing packages, package drift, and spend sums outside safe-integer range. A trace without `run.json` is interrupted, not complete or resumable.
 
-1. **Given** a completed shared run, **When** final evaluation occurs, **Then** the one shared canonical origin is evaluated and its exact published-main commit and result are recorded.
-2. **Given** a completed isolated run, **When** final evaluation occurs, **Then** every agent's canonical origin is evaluated independently, including missing or non-integrated solver outcomes.
-3. **Given** a completed run record and frozen origins, **When** re-evaluation is requested, **Then** a new evaluation result is appended atomically without changing the frozen run configuration, trace, or prior results.
-4. **Given** optional overlap analysis, **When** it is run after publication, **Then** its observations are retained separately from run success and scoring.
-5. **Given** a completed run whose fixture package or trace has drifted, **When** re-evaluation is requested, **Then** it fails before solver execution without rewriting prior evidence.
+## Scope
 
-### Edge Cases
-
-- A fixture definition names duplicate agents, no agents, no stages, an unavailable source or reference, an unknown variant, or a re-key boundary outside the stage range.
-- An experiment assigns a model to an agent absent from the fixture, omits a fixture agent, repeats a run ID, uses a schedule with the wrong stage count, or names a changed fixture digest.
-- A cutoff occurs before the final release, a token limit is zero or unsafe, or a monetary ceiling exceeds experiment authorization.
-- A process exits after trace creation but before final record publication; the run directory remains inspectable as interrupted and is never interpreted as complete.
-- An agent finishes without pushing `main`, pushes an invalid solver, or leaves useful work only on another ref; these remain recorded outcomes for that origin.
-- Provider-reported identity or usage is missing, differs from the request, or cannot be normalized; the absence or discrepancy is recorded without a success-shaped fallback.
-- Re-evaluation encounters a missing frozen origin, changed fixture package, redirected or structurally invalid trace, changed frozen content, solver timeout, malformed output, or cleanup failure; validation fails without rewriting prior evidence.
-
-## Puzzle & Observation Boundaries _(mandatory)_
-
-**Puzzle Behavior**: Agents solve declared deterministic word-substitution fixtures assembled from private staged evidence. A fixture may vary agent and stage geometry and may expose stationary or partial re-key variants, but Palimpsest remains this puzzle rather than a generic puzzle framework.
-
-**Agent Instructions & Tools**: Every agent receives the shared objective, cipher family, stable team identity, its currently released private evidence, target-excluded references, ordinary local tools, the communication surface declared for the run, an assigned Git origin with a neutral `solver.py`, and aggregate checking of only that origin's pushed `main`. Instructions do not assign roles, turns, algorithms, branches beyond the published ref, checkpoints, consensus, or intermediate reports.
-
-**Environmental Constraints**: Releases follow the run's frozen schedule independent of model behavior. The declared cutoff and optional token limit bound sessions. Shared runs expose peer Git activity and may expose an append-only room; isolated runs expose only private Git and owner activity. Provider credentials, oracle data, unreleased stages, and host resources remain unavailable to agents, and final solver execution remains isolated from the network and trusted data.
-
-**Observable Outcomes**: The record retains resolved secret-free inputs, stage releases, requested and actual model identities, normalized usage, responses and provider-returned safe summaries, tool and checker activity, Git and optional room activity, termination, frozen origins and workspaces, every canonical-origin evaluation, infrastructure errors, and optional post-publication analyses. Incorrect work, no publication, repeated checking, duplicated effort, raw sharing, conflicts, and missing integration remain outcomes.
-
-**Infrastructure Failures**: Invalid or drifted configuration, unavailable inputs, sandbox failure, provider transport failure, trace or freeze failure, and evaluation isolation or cleanup failure are reported separately from model behavior. An abrupt process interruption may leave a trace without a final record; no recovery or validity state is inferred.
-
-**Verification Boundary**: Ordinary development checks remain fast, layered, provider-free, and advisory. CI runs only static, unit, and host-contract checks; material fixture regression, deterministic acceptance, and real-container behavior remain explicit local tiers. Before provider-backed work, the exact manifest and fixture packages are validated, the configured sandbox is probed once, one representative provider-free smoke run is completed, and the operator explicitly authorizes spend. The resolved configuration, each run's exact fixture identity, the shared smoke identity, and sandbox validation outcome are retained with every run; no repository-wide receipt or clean-commit lock substitutes for those checks.
-
-**Out-of-Scope Claims**: The feature does not prove reasoning, collaboration value, belief revision, source novelty, security against adversarial agents, deterministic model behavior, or general benchmark validity. It does not add automated statistical conclusions, a hosted experiment service, arbitrary puzzle engines, or prescribed collaboration workflow.
-
-## Requirements _(mandatory)_
-
-### Functional Requirements
-
-- **FR-001**: Researchers MUST be able to describe fixture source selection, references, scientific seed, agent identifiers, stage count, variants, re-key boundaries, and scientifically meaningful allocation constraints in one fixture definition.
-- **FR-002**: Fixture preparation MUST support at least two agents with three stages and four agents with eight stages without source-code changes.
-- **FR-003**: Fixture preparation MUST be deterministic for identical definitions and referenced bytes and MUST identify the complete package tree with a stable digest over the canonical manifest without its digest plus the sorted relative path and SHA-256 of every regular package file except `fixture.json`.
-- **FR-004**: A prepared fixture MUST contain ordered agent-visible stages, variants, target-excluded references, trusted oracle data, construction provenance, manipulation checks, and the scoring contract needed to execute and interpret it.
-- **FR-005**: Trusted oracle data, keys, labels, expectations, and manipulation-check results MUST remain outside agent-visible workspaces and evidence.
-- **FR-006**: Invalid or unsatisfied fixture definitions MUST fail before a prepared package is published.
-- **FR-007**: Researchers MUST be able to declare provider connections, model profiles, an experiment spending ceiling, and an explicit ordered run list in one experiment manifest.
-- **FR-008**: Each run MUST declare a unique run ID, prepared fixture, variant, exact agent-to-model assignment, Git visibility, team-room availability, release offsets, cutoff, optional token limit, run spending ceiling, and analysis labels.
-- **FR-009**: Manifest validation MUST require agent assignments to match fixture agents exactly, release offsets to match fixture stages, variants and fixture digests to exist, run IDs to be unique, credentials to be environment references, and run ceilings to fit experiment authorization.
-- **FR-010**: Run schedules MUST start at zero, increase strictly, and release their final stage before a positive cutoff; token limits MUST be either absent or positive safe integers.
-- **FR-011**: Experiment runs MUST execute sequentially in manifest order, while model sessions inside one run remain concurrent and independent.
-- **FR-012**: Shared and isolated communication configurations MUST preserve team identity and every non-communication input while exposing only the communication and peer-activity surfaces declared for the run.
-- **FR-013**: Every assigned origin MUST begin from the same neutral solver scaffold; Git operations MUST remain model-chosen and unmetered, and only pushed `main` may receive aggregate checking or final grading.
-- **FR-014**: The runner MUST NOT require roles, turns, checkpoints, consensus, intermediate files, reports, Git operations, or a prescribed coordination sequence.
-- **FR-015**: A session infrastructure failure MUST NOT cancel peer sessions; after peers quiesce, the runner MUST freeze and evaluate available work, publish an infrastructure-error record, stop before the next run, and MUST NOT trigger automatic retry, replacement, merging, repair, or reinterpretation.
-- **FR-016**: Repeating a run after failure MUST require a newly declared run ID.
-- **FR-017**: Execution MUST reject missing spend authorization before sandbox or smoke work, then rerun configuration-scoped validation against the exact manifest and every referenced fixture package, probe the sandbox once, and complete one provider-free smoke path before opening a provider session. Full-manifest execution MUST smoke the first declared run; selected execution MUST smoke exactly the selected run.
-- **FR-018**: The system MUST publish one normalized run record atomically only after complete session results and frozen topology exist. A thrown setup, lifecycle, freeze, or evaluation failure MUST append and flush one `infrastructure.error` event when a trace exists, propagate the error, publish no partial record, and leave the directory inspectable as interrupted.
-- **FR-019**: The run record MUST freeze the resolved secret-free run configuration, fixture digest, requested and actual model identities, normalized usage, release and activity evidence, terminations, frozen topology, infrastructure failures, and every evaluation result.
-- **FR-020**: Traces MUST be append-only and retain model responses, safe provider-returned summaries when available, tool calls and results, checker use, Git activity, optional room activity, releases, and lifecycle events in observed order. Publication and re-evaluation MUST require canonical relative paths `trace.jsonl` and `trace.meta.json` and structurally validate the current trace without sealing its appendable contents.
-- **FR-021**: Records and traces MUST exclude credential values, hidden reasoning, complete provider payloads, oracle data, keys, and unreleased evidence.
-- **FR-022**: Final evaluation MUST execute the same declared `python3 solver.py` interface used by checking against the exact captured `main` commit from every canonical origin.
-- **FR-023**: A shared run MUST retain the result for its one shared origin; an isolated run MUST retain one result for every agent origin without selecting a best result.
-- **FR-024**: Missing publication, invalid execution, incomplete integration, and incorrect reconstruction MUST remain explicit evaluation outcomes rather than invalidating the run.
-- **FR-025**: Researchers MUST be able to re-evaluate frozen origins without provider access only when the loaded fixture package digest equals the recorded fixture digest and the current canonical trace is structurally valid, preserving earlier evaluation results and frozen evidence.
-- **FR-026**: Optional overlap analysis MUST run only over frozen records after publication and MUST NOT alter run status, scoring, Git behavior, or evaluation selection.
-- **FR-027**: The active system MUST use fixture, experiment, run, and evaluation concepts rather than fixed block IDs, fixed condition IDs, study phases, balanced orders, receipts, reservations, locks, replacement lineage, resume state, or automatic retries.
-- **FR-028**: The existing five checked-in fixtures and study matrix MUST remain reproducible as an example preset expressed entirely through the new fixture and experiment declarations.
-- **FR-029**: Existing run artifacts MAY remain in Git history but MUST NOT require a compatibility reader, importer, or migration path in the active runtime.
-- **FR-030**: Active project documentation MUST describe the lean fixture-to-experiment-to-run-record flow and remove superseded study-platform and feature-history guidance from the working tree.
-- **FR-031**: Development verification MUST expose separate static, unit, host-contract, material, deterministic acceptance, and real-container tiers, while keeping exact experiment validation and paid empirical execution outside repository test commands.
-- **FR-032**: The default repository test and hosted CI paths MUST exclude full checked-in fixture construction, deterministic experiment acceptance, real Docker behavior, provider access, and exact experiment validation.
-- **FR-033**: Python MUST be the authoritative test owner for corpus parsing, fixture bytes and digests, cipher and re-key mechanics, manipulation checks, checker disclosure, and scoring; TypeScript MUST test only the narrow Python process/package boundary without rebuilding the same material for determinism.
-- **FR-034**: Unit and host-contract TypeScript tests MUST support bounded file parallelism; timing-sensitive lifecycle tests MUST use deterministic phase coordination or configurable test deadlines while preserving production deadlines.
-- **FR-035**: Every test MUST remove the temporary filesystem and labeled container resources it creates without deleting unrelated operator state.
-- **FR-036**: Hosted development CI MUST run static, TypeScript, and Python feedback as separate advisory jobs, while sandbox-image construction remains a separate advisory smoke workflow.
-- **FR-037**: A run record MUST retain exact validation for its own fixture and one shared smoke snapshot naming the declared run used for the representative smoke; the smoke fixture MAY differ from a later run's fixture in the same manifest.
-- **FR-038**: Package scripts and documentation MUST compose stable verification tiers rather than raw test-file lists or dependency installation hidden inside checks.
-
-### Key Entities
-
-- **Fixture Definition**: Researcher's declarative scientific inputs for constructing one family of puzzle variants.
-- **Fixture Package**: Prepared deterministic, digest-addressed puzzle material used by runs, containing separately bounded agent-visible and trusted data.
-- **Experiment Manifest**: Providers, models, total authorization, and the explicit ordered set of runs to execute; its resolved digest identifies the experiment.
-- **Run Declaration**: One fully specified fixture, model, communication, schedule, resource, and analysis configuration.
-- **Run Record**: The normalized durable record of resolved inputs, observations, frozen outputs, failures, and evaluation history for one run.
-- **Evaluation Result**: One execution and score outcome for one exact canonical-origin `main` commit.
-
-## Success Criteria _(mandatory)_
-
-### Measurable Outcomes
-
-- **SC-001**: A researcher can add and prepare both a two-agent/three-stage fixture and a four-agent/eight-stage fixture by changing declarations and corpus inputs only.
-- **SC-002**: Repeated preparation of each example fixture produces identical content digests, agent-visible stages, oracle data, and manipulation-check results in 100% of test repetitions.
-- **SC-003**: Two manifests can vary fixture geometry, variants, schedules, models, and communication surfaces and execute provider-free without source or schema edits.
-- **SC-004**: Every attempted provider-backed execution passes exact configuration validation and explicit spending authorization before the first provider request, with zero requests made on validation failure.
-- **SC-005**: Every completed shared run retains exactly one canonical-origin evaluation and every completed isolated run retains exactly one evaluation per fixture agent.
-- **SC-006**: Re-evaluation reproduces deterministic execution status and score for unchanged frozen inputs while preserving all earlier results.
-- **SC-007**: Automated verification detects any leakage of credentials, oracle data, keys, unreleased evidence, hidden reasoning, or complete provider payloads into agent-visible or durable observation surfaces.
-- **SC-008**: No active runtime interface requires the historical five block IDs, `CS`/`CR`/`IS`/`IR`, calibration or validation phases, balanced orders, receipts, reservations, replacement lineage, or fixed agent/stage counts.
-- **SC-009**: The provider-free end-to-end suite covers multiple explicit runs, concurrent agents, sequential run order, both communication modes, failure-stop behavior, and every canonical-origin evaluation without prescribed model workflow.
-- **SC-010**: Three consecutive bounded-parallel unit and host-contract runs pass without flakes, and the warm default test path completes within ten seconds on the reference development machine.
-- **SC-011**: Default verification makes zero Docker or provider calls, performs no full checked-in fixture build, and leaves no temporary resource delta.
-- **SC-012**: Hosted CI visibly runs behavioral tests while material, deterministic acceptance, real-container, exact experiment validation, and paid execution remain absent from every hosted workflow.
-- **SC-013**: Full-manifest execution records one first-run smoke snapshot for every run record, selected execution records the selected-run smoke, and missing authorization creates neither a sandbox nor a provider adapter.
-
-## Assumptions
-
-- Palimpsest remains a local word-substitution puzzle environment; supporting arbitrary puzzle families is outside scope.
-- Prepared fixture packages are trusted operator inputs and are not mounted wholesale into agent containers.
-- Run IDs are immutable experiment identifiers. Repetition is expressed as a new declaration with a new ID rather than hidden retry metadata.
-- Public in-code interface names remain unversioned. Serialized documents carry a numeric `schemaVersion` only so incompatible stored data fails explicitly.
-- Existing provider adapters, Docker isolation, published-main checker, deterministic Python mechanics, neutral solver scaffold, and optional append-only team room are reused where they directly support the new flow.
-- Existing run and study artifacts have archival value through Git history only; the active runtime does not read or migrate them.
+Palimpsest remains a local word-substitution research environment. It does not add a hosted service, generic puzzle framework, automatic statistical conclusions, prescribed collaboration workflow, or claims of reasoning, collaboration value, belief revision, deterministic live behavior, or general benchmark validity.

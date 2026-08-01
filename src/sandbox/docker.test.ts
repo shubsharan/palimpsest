@@ -8,8 +8,10 @@ import {
   SANDBOX_CONTAINER_LABEL,
   SANDBOX_POLICY,
   SANDBOX_PROFILE_LABEL,
+  SANDBOX_RESOURCE_LABEL,
   SANDBOX_SOURCE_LABEL,
   SandboxInfrastructureError,
+  sandboxImageTag,
   type SandboxIdentity,
 } from "./contracts.js";
 import {
@@ -21,7 +23,7 @@ import {
 } from "./docker.js";
 
 const TEST_IDENTITY: SandboxIdentity = {
-  imageTag: "palimpsest-puzzle-sandbox:0.1.0",
+  imageTag: `palimpsest-puzzle-sandbox:sha256-${"2".repeat(64)}`,
   imageId: `sha256:${"1".repeat(64)}`,
   sourceDigest: "2".repeat(64),
   profileVersion: 1,
@@ -39,6 +41,14 @@ afterEach(async () => {
 });
 
 describe("sandbox Docker image and arguments", () => {
+  it("derives isolated image tags from validated source digests", () => {
+    expect(sandboxImageTag("a".repeat(64))).toBe(
+      `palimpsest-puzzle-sandbox:sha256-${"a".repeat(64)}`,
+    );
+    expect(sandboxImageTag("a".repeat(64))).not.toBe(sandboxImageTag("b".repeat(64)));
+    expect(() => sandboxImageTag("invalid")).toThrow(/64 lowercase hexadecimal/);
+  });
+
   it("validates the source-labelled immutable image identity", () => {
     const inspection = {
       Id: TEST_IDENTITY.imageId,
@@ -85,12 +95,13 @@ describe("sandbox Docker image and arguments", () => {
         timeoutMs: 1_000,
         workspacePath: workspace,
         evidencePath: evidence,
-        referenceCorpusPath: reference,
         gitOriginPath: gitOrigin,
       },
       TEST_IDENTITY,
       "palimpsest-agent-test",
       { uid: 501, gid: 20 },
+      "controller-1",
+      { "org.testcontainers.session-id": "session-1" },
     );
     const joined = args.join("\n");
     const resolvedGitOrigin = await realpath(gitOrigin);
@@ -99,14 +110,16 @@ describe("sandbox Docker image and arguments", () => {
     const shellIndex = args.indexOf("/bin/sh");
 
     expect(args.slice(0, 3)).toEqual(["create", "--name", "palimpsest-agent-test"]);
-    expect(joined).toContain(`${SANDBOX_CONTAINER_LABEL}=1`);
+    expect(joined).toContain(`${SANDBOX_CONTAINER_LABEL}=controller-1`);
+    expect(joined).toContain(`${SANDBOX_RESOURCE_LABEL}=agent`);
+    expect(joined).toContain("org.testcontainers.session-id=session-1");
     expect(joined).toContain("--read-only");
     expect(joined).toContain("none");
     expect(joined).toContain(String(SANDBOX_POLICY.memoryBytes));
     expect(joined).toContain(String(SANDBOX_POLICY.pids));
     expect(joined).toContain("target=/workspace");
     expect(joined).toContain("target=/evidence,readonly");
-    expect(joined).toContain("target=/reference,readonly");
+    expect(joined).not.toContain("target=/reference");
     expect(joined).toContain(`source=${resolvedGitOrigin},target=/git/origin.git`);
     expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
     expect(joined).not.toContain(resolvedPeerGitOrigin);

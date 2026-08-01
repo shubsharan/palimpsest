@@ -84,16 +84,16 @@ describe("lean research boundary", () => {
       properties?: Record<string, unknown>;
     };
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.properties).toHaveProperty("providers");
+    expect(schema.properties).toHaveProperty("name");
     expect(schema.properties).toHaveProperty("models");
     expect(schema.properties).toHaveProperty("runs");
     expect(schema.properties).not.toHaveProperty("phases");
     expect(schema.properties).not.toHaveProperty("conditions");
-    expect(manifestSource).toContain("schemaVersion: 1");
+    expect(manifestSource).toContain("schemaVersion: 2");
     expect(manifestSource).toContain("runs:");
-    expect(manifestSource).toContain("capabilities:");
-    expect(manifestSource).toContain("experimentName:");
-    expect(manifestSource).toContain("fixtures:");
+    expect(manifestSource).toContain("communication:");
+    expect(manifestSource).toContain("name:");
+    expect(manifestSource).not.toContain("fixtures:");
   });
 
   test("keeps current guidance on the Feature 021 scientific flow", async () => {
@@ -102,7 +102,10 @@ describe("lean research boundary", () => {
       readFile("specs/021-lean-experiment-engine/quickstart.md", "utf8"),
       readFile("AGENTS.md", "utf8"),
     ]);
-    expect(proposal).toMatch(/FixtureDefinition.*FixturePackage.*ExperimentManifest.*RunRecord/s);
+    expect(proposal).toContain("Each named run declares a source");
+    expect(proposal).toContain("FixturePackage");
+    expect(proposal).toContain("ExperimentManifest");
+    expect(proposal).toContain("RunRecord");
     expect(quickstart).toContain("pnpm puzzle:validate");
     expect(quickstart).toContain("--allow-spend true");
     expect(agents).toContain("specs/021-lean-experiment-engine/plan.md");

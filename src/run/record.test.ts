@@ -37,6 +37,8 @@ function record(): RunRecord {
       id: "run-1",
       fixture: {
         id: "fixture",
+        constructionId: `construction-${"c".repeat(64)}`,
+        buildId: `build-${"d".repeat(64)}`,
         packagePath: "fixture",
         digest: "b".repeat(64),
         variant: "stationary",
@@ -187,9 +189,31 @@ describe("run records", () => {
     expect(decodeRunRecord(JSON.parse(await readFile(path, "utf8")))).toMatchObject({
       schemaVersion: 1,
       runId: "run-1",
+      configuration: {
+        run: {
+          fixture: {
+            constructionId: `construction-${"c".repeat(64)}`,
+            buildId: `build-${"d".repeat(64)}`,
+          },
+        },
+      },
     });
     await expect(publishRunRecord(root, record())).rejects.toMatchObject({ code: "EEXIST" });
     expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it.each([
+    ["missing constructionId", "constructionId", undefined],
+    ["malformed constructionId", "constructionId", "construction-invalid"],
+    ["missing buildId", "buildId", undefined],
+    ["malformed buildId", "buildId", "build-invalid"],
+  ] as const)("rejects %s", (_name, field, replacement) => {
+    const value = JSON.parse(JSON.stringify(record())) as Record<string, unknown>;
+    const configuration = value.configuration as RunRecord["configuration"];
+    const fixture = configuration.run.fixture as unknown as Record<string, unknown>;
+    if (replacement === undefined) delete fixture[field];
+    else fixture[field] = replacement;
+    expect(() => decodeRunRecord(value)).toThrow(new RegExp(field, "i"));
   });
 
   it.each([

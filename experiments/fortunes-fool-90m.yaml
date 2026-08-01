@@ -1,5 +1,5 @@
 schemaVersion: 2
-name: theron-ware-unlimited-1h
+name: fortunes-fool-unlimited-90m
 
 models:
   sol:
@@ -14,5 +14,5 @@ runs:
     model: sol
     communication: shared
     releases: [0m, 5m, 10m, 20m, 30m, 40m]
-    cutoff: 1h
+    cutoff: 90m
     spendCeilingCents: 1000

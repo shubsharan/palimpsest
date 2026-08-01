@@ -24,11 +24,24 @@ const binding: ModelBinding = {
 
 function fixture(): FixturePackage {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fixtureId: "fixture",
+    constructionId: `construction-${"c".repeat(64)}`,
     contentDigest: "a".repeat(64),
     agentIds,
     stageCount: 1,
+    rekeyAtStage: null,
+    buildId: `build-${"b".repeat(64)}`,
+    publicCiphertextPath: "complete/ciphertext.txt",
+    publicCiphertextSha256: "e".repeat(64),
+    stages: agentIds.map((agentId) => ({
+      agentId,
+      ordinal: 1,
+      sourcePath: `private/${agentId}/stage-01.txt`,
+      sha256: "1".repeat(64),
+    })),
+    variantId: "stationary",
+    rekeyFromStage: null,
     variants: {
       stationary: {
         variantId: "stationary",
@@ -36,16 +49,6 @@ function fixture(): FixturePackage {
         buildId: `build-${"b".repeat(64)}`,
         publicCiphertextPath: "variants/stationary/ciphertext.txt",
         publicCiphertextSha256: "e".repeat(64),
-        referenceCorpusPath: "variants/stationary/references",
-        referenceFiles: [
-          {
-            sourceId: "reference",
-            sourceSha256: "f".repeat(64),
-            path: "variants/stationary/references/reference.txt",
-            byteLength: 1,
-            sha256: "f".repeat(64),
-          },
-        ],
         stages: agentIds.map((agentId) => ({
           agentId,
           ordinal: 1,
@@ -60,7 +63,12 @@ function fixture(): FixturePackage {
 function experiment(packagePath: string): ResolvedExperiment {
   const run = (id: string) => ({
     id,
-    fixture: { packagePath: "fixtures/package", packageRoot: packagePath, variant: "stationary" },
+    fixture: {
+      constructionId: `construction-${"c".repeat(64)}`,
+      packagePath: "fixtures/package",
+      packageRoot: packagePath,
+      variant: "stationary",
+    },
     assignment: { "agent-1": "research", "agent-2": "research" },
     capabilities: { git: "shared" as const, teamRoom: "disabled" as const },
     schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
@@ -69,6 +77,7 @@ function experiment(packagePath: string): ResolvedExperiment {
   });
   return {
     schemaVersion: 1,
+    name: "execution-test",
     providers: {
       provider: { driver: "openai-compatible", baseURL: "https://provider.invalid/v1" },
     },
@@ -281,8 +290,10 @@ describe("experiment orchestration", () => {
   it("smoke-tests the selected run before opening a provider adapter", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
     const packagePath = join(root, "fixture");
+    const selectedPackagePath = join(root, "fixture-b");
     const sandbox = new FakeCommandSandbox();
     const calls: string[] = [];
+    const fixtureLoads: string[] = [];
     let adapterCalls = 0;
 
     await expect(
@@ -293,8 +304,23 @@ describe("experiment orchestration", () => {
         runId: "run-b",
         allowSpend: true,
         dependencies: {
-          loadExperiment: async () => experiment(packagePath),
-          loadFixture: async () => fixture(),
+          loadExperiment: async () => {
+            const value = experiment(packagePath);
+            return {
+              ...value,
+              runs: [
+                value.runs[0]!,
+                {
+                  ...value.runs[1]!,
+                  fixture: { ...value.runs[1]!.fixture, packageRoot: selectedPackagePath },
+                },
+              ],
+            };
+          },
+          loadFixture: async (path) => {
+            fixtureLoads.push(path);
+            return fixture();
+          },
           createSandbox: async () => sandbox,
           createAdapter: () => {
             adapterCalls += 1;
@@ -308,6 +334,39 @@ describe("experiment orchestration", () => {
       }),
     ).rejects.toThrow("selected smoke failed");
     expect(calls).toEqual(["run-b-validation"]);
+    expect(fixtureLoads).toEqual([selectedPackagePath]);
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("rejects package construction drift before sandbox or provider access", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    let sandboxCalls = 0;
+    let adapterCalls = 0;
+    await expect(
+      runExperiment({
+        root,
+        configPath: "manifest.yaml",
+        output: "experiment",
+        allowSpend: true,
+        dependencies: {
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => ({
+            ...fixture(),
+            constructionId: `construction-${"d".repeat(64)}`,
+          }),
+          createSandbox: async () => {
+            sandboxCalls += 1;
+            return new FakeCommandSandbox();
+          },
+          createAdapter: () => {
+            adapterCalls += 1;
+            return adapter();
+          },
+        },
+      }),
+    ).rejects.toThrow(/constructionId.*does not match/i);
+    expect(sandboxCalls).toBe(0);
     expect(adapterCalls).toBe(0);
   });
 

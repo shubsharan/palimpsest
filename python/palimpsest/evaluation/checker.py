@@ -13,8 +13,8 @@ def _fixture_variant(
 ) -> tuple[tuple[str, ...], int, dict[tuple[str, int], Path]]:
     package_path = fixture_root / "fixture.json"
     value = json.loads(package_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("schemaVersion") != 1:
-        raise ValueError("Fixture package must use schemaVersion 1.")
+    if not isinstance(value, dict) or value.get("schemaVersion") not in {1, 2}:
+        raise ValueError("Fixture package must use a supported schema version.")
     raw_agents = value.get("agentIds")
     stage_count = value.get("stageCount")
     raw_variants = value.get("variants")
@@ -25,13 +25,22 @@ def _fixture_variant(
         or isinstance(stage_count, bool)
         or not isinstance(stage_count, int)
         or stage_count < 1
-        or not isinstance(raw_variants, dict)
+        or (value.get("schemaVersion") == 1 and not isinstance(raw_variants, dict))
     ):
         raise ValueError("Fixture package geometry is invalid.")
-    raw_variant = raw_variants.get(variant_id)
-    if not isinstance(raw_variant, dict) or raw_variant.get("variantId") != variant_id:
-        raise ValueError(f"Unknown fixture variant: {variant_id}.")
-    raw_stages = raw_variant.get("stages")
+    if value.get("schemaVersion") == 2:
+        rekey_at_stage = value.get("rekeyAtStage")
+        expected_variant = (
+            "stationary" if rekey_at_stage is None else f"rekey-stage-{rekey_at_stage}"
+        )
+        if variant_id != expected_variant:
+            raise ValueError(f"Unknown fixture realization: {variant_id}.")
+        raw_stages = value.get("stages")
+    else:
+        raw_variant = raw_variants.get(variant_id)
+        if not isinstance(raw_variant, dict) or raw_variant.get("variantId") != variant_id:
+            raise ValueError(f"Unknown fixture variant: {variant_id}.")
+        raw_stages = raw_variant.get("stages")
     if not isinstance(raw_stages, list):
         raise ValueError(f"Fixture variant {variant_id} stages are invalid.")
     stage_paths: dict[tuple[str, int], Path] = {}

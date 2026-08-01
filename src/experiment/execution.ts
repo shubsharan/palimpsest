@@ -232,8 +232,16 @@ export async function validateExperimentExecution(options: {
   const configPath = resolve(root, options.configPath);
   const manifestPath = repositoryRelativePath(root, configPath, "Experiment manifest");
   const experiment = await service.loadExperiment(configPath, root);
+  const selectedRun =
+    options.selectedRunId === undefined
+      ? undefined
+      : experiment.runs.find(({ id }) => id === options.selectedRunId);
+  if (options.selectedRunId !== undefined && selectedRun === undefined) {
+    throw new Error(`Unknown experiment run ${options.selectedRunId}.`);
+  }
+  const runs = selectedRun === undefined ? experiment.runs : [selectedRun];
   const fixtures = new Map<string, FixturePackage>();
-  for (const run of experiment.runs) {
+  for (const run of runs) {
     let fixture = fixtures.get(run.fixture.packageRoot);
     if (fixture === undefined) {
       fixture = await service.loadFixture(run.fixture.packageRoot);
@@ -245,14 +253,16 @@ export async function validateExperimentExecution(options: {
         `Run ${run.id} package fixtureId ${fixture.fixtureId} does not match its declared fixture.`,
       );
     }
+    if (fixture.constructionId !== run.fixture.constructionId) {
+      throw new Error(
+        `Run ${run.id} package constructionId ${fixture.constructionId} does not match its declared construction.`,
+      );
+    }
     validateRunAgainstFixture(run, fixture);
   }
-  const smokeRun =
-    options.selectedRunId === undefined
-      ? experiment.runs[0]
-      : experiment.runs.find(({ id }) => id === options.selectedRunId);
+  const smokeRun = selectedRun ?? experiment.runs[0];
   if (smokeRun === undefined) {
-    throw new Error(`Unknown experiment run ${String(options.selectedRunId)}.`);
+    throw new Error("Experiment manifest must contain at least one run.");
   }
   const sandbox = await service.createSandbox(root);
   let smoke: RunValidationSnapshot["smoke"] | undefined;
@@ -382,9 +392,15 @@ export async function runExperiment(options: {
         id: run.id,
         fixture: {
           id: fixture.fixtureId,
+          constructionId: fixture.constructionId,
+          buildId: fixture.buildId,
           packagePath: run.fixture.packagePath,
           digest: fixture.contentDigest,
           variant: run.fixture.variant,
+          ...(run.fixture.source === undefined ? {} : { source: run.fixture.source }),
+          ...(run.fixture.rekeyAtStage === undefined
+            ? {}
+            : { rekeyAtStage: run.fixture.rekeyAtStage }),
         },
         assignment: run.assignment,
         capabilities: run.capabilities,

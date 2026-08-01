@@ -71,7 +71,6 @@ export interface RunExecutionConfig extends Pick<
   buildId: string;
   artifactRoot: string;
   buildRoot: string;
-  referenceCorpusPath: string;
   agentIds: readonly AgentId[];
   agentStages: Readonly<Record<AgentId, readonly string[]>>;
 }
@@ -239,7 +238,6 @@ export function validateRunExecutionConfig(value: unknown): RunExecutionConfig {
     buildId,
     artifactRoot: requireNonEmptyString(value, "artifactRoot"),
     buildRoot: requireNonEmptyString(value, "buildRoot"),
-    referenceCorpusPath: requireNonEmptyString(value, "referenceCorpusPath"),
     agentIds,
     agentStages,
     schedule: { releaseOffsetsMs: [...(releaseOffsetsMs as number[])], cutoffMs },
@@ -351,7 +349,6 @@ async function openAgentLeases(options: {
   git: GitEnvironment;
   agentIds: readonly AgentId[];
   evidencePaths: Record<AgentId, string>;
-  referenceCorpusPath: string;
   clock: MonotonicClock;
   cutoffAt: number;
   signal: AbortSignal;
@@ -376,7 +373,6 @@ async function openAgentLeases(options: {
         profile: "agent",
         workspacePath: workspace.path,
         evidencePath,
-        referenceCorpusPath: options.referenceCorpusPath,
         gitOriginPath: repository.path,
         timeoutMs: Math.min(30_000, remainingMs),
         signal: options.signal,
@@ -532,7 +528,6 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
       git,
       agentIds: config.agentIds,
       evidencePaths,
-      referenceCorpusPath: config.referenceCorpusPath,
       clock: options.clock,
       cutoffAt,
       signal: globalController.signal,
@@ -792,7 +787,6 @@ export async function runPreparedFixture(
     buildId: variant.buildId,
     artifactRoot: output,
     buildRoot: fixtureRoot,
-    referenceCorpusPath: absoluteFrom(fixtureRoot, variant.referenceCorpusPath),
     agentIds: fixture.agentIds,
     agentStages,
     capabilities: options.capabilities,

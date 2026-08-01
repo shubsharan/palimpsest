@@ -8,6 +8,7 @@ import { readJsonObject } from "../python.js";
 
 const DIGEST = /^[0-9a-f]{64}$/;
 const BUILD_ID = /^build-[0-9a-f]{64}$/;
+const CONSTRUCTION_ID = /^construction-[0-9a-f]{64}$/;
 
 export interface FixtureStage {
   ordinal: number;
@@ -16,32 +17,27 @@ export interface FixtureStage {
   sha256: string;
 }
 
-export interface FixtureReferenceFile {
-  sourceId: string;
-  sourceSha256: string;
-  path: string;
-  byteLength: number;
-  sha256: string;
-}
-
-export interface FixtureVariant {
+export interface FixtureRealization {
   variantId: string;
   rekeyFromStage: number | null;
   buildId: string;
   publicCiphertextPath: string;
   publicCiphertextSha256: string;
-  referenceCorpusPath: string;
-  referenceFiles: readonly FixtureReferenceFile[];
   stages: readonly FixtureStage[];
 }
 
-export interface FixturePackage {
-  schemaVersion: 1;
+export type FixtureVariant = FixtureRealization;
+
+export interface FixturePackage extends FixtureRealization {
+  schemaVersion: 2;
   fixtureId: string;
+  constructionId: string;
   contentDigest: string;
   agentIds: readonly AgentId[];
   stageCount: number;
-  variants: Readonly<Record<string, FixtureVariant>>;
+  rekeyAtStage: number | null;
+  /** Internal compatibility projection for the resolved runner. Not serialized. */
+  variants: Readonly<Record<string, FixtureRealization>>;
 }
 
 interface PackageFileDigest {
@@ -63,6 +59,12 @@ function text(value: unknown, name: string): string {
   return value;
 }
 
+function digest(value: unknown, name: string): string {
+  const result = text(value, name);
+  if (!DIGEST.test(result)) throw new Error(`${name} must be a lowercase SHA-256 digest.`);
+  return result;
+}
+
 function relativePath(value: unknown, name: string): string {
   const path = text(value, name);
   if (
@@ -76,157 +78,115 @@ function relativePath(value: unknown, name: string): string {
   return path;
 }
 
+function decodeStages(
+  value: unknown,
+  agentIds: readonly AgentId[],
+  stageCount: number,
+): FixtureStage[] {
+  if (!Array.isArray(value)) throw new Error("Fixture package stages must be an array.");
+  const stages = value.map((raw, index): FixtureStage => {
+    const stage = record(raw, `Fixture stage ${String(index + 1)}`);
+    if (!isAgentId(stage.agentId) || !agentIds.includes(stage.agentId)) {
+      throw new Error("Fixture stage agent is not declared.");
+    }
+    if (
+      !Number.isSafeInteger(stage.ordinal) ||
+      (stage.ordinal as number) < 1 ||
+      (stage.ordinal as number) > stageCount
+    ) {
+      throw new Error("Fixture stage ordinal is invalid.");
+    }
+    return {
+      agentId: stage.agentId,
+      ordinal: stage.ordinal as number,
+      sourcePath: relativePath(stage.sourcePath, "Fixture stage sourcePath"),
+      sha256: digest(stage.sha256, "Fixture stage sha256"),
+    };
+  });
+  for (const agentId of agentIds) {
+    const ordinals = stages
+      .filter((stage) => stage.agentId === agentId)
+      .map((stage) => stage.ordinal)
+      .sort((left, right) => left - right);
+    if (ordinals.join(",") !== Array.from({ length: stageCount }, (_, i) => i + 1).join(",")) {
+      throw new Error(`Fixture package must contain every stage for ${agentId}.`);
+    }
+  }
+  return stages;
+}
+
 export function decodeFixturePackage(value: unknown): FixturePackage {
   const root = record(value, "Fixture package");
-  if (root.schemaVersion !== 1) throw new Error("Unsupported fixture package schema version.");
+  if (root.schemaVersion !== 2) throw new Error("Unsupported fixture package schema version.");
   const fixtureId = text(root.fixtureId, "Fixture package fixtureId");
-  const contentDigest = text(root.contentDigest, "Fixture package contentDigest");
-  if (!DIGEST.test(contentDigest)) throw new Error("Fixture package contentDigest is invalid.");
-  if (!Array.isArray(root.agentIds) || root.agentIds.length === 0) {
-    throw new Error("Fixture package agentIds must be non-empty.");
+  const constructionId = text(root.constructionId, "Fixture package constructionId");
+  if (!CONSTRUCTION_ID.test(constructionId)) {
+    throw new Error("Fixture package constructionId is invalid.");
   }
-  const agentIds = root.agentIds.map((value, index) => {
-    if (!isAgentId(value))
+  const contentDigest = digest(root.contentDigest, "Fixture package contentDigest");
+  if (!Array.isArray(root.agentIds) || root.agentIds.length < 2) {
+    throw new Error("Fixture package agentIds must contain at least two agents.");
+  }
+  const agentIds = root.agentIds.map((agent, index) => {
+    if (!isAgentId(agent))
       throw new Error(`Fixture package agentIds[${String(index)}] is invalid.`);
-    return value;
+    return agent;
   });
-  if (new Set(agentIds).size !== agentIds.length) {
+  if (new Set(agentIds).size !== agentIds.length)
     throw new Error("Fixture package agentIds must be unique.");
-  }
   if (!Number.isSafeInteger(root.stageCount) || (root.stageCount as number) < 1) {
-    throw new Error("Fixture package stageCount must be a positive safe integer.");
+    throw new Error("Fixture package stageCount must be positive.");
   }
   const stageCount = root.stageCount as number;
-  const variantsValue = record(root.variants, "Fixture package variants");
-  const variants = Object.fromEntries(
-    Object.entries(variantsValue).map(([key, value]) => {
-      const item = record(value, `Fixture variant ${key}`);
-      const variantId = text(item.variantId, `Fixture variant ${key} variantId`);
-      if (variantId !== key) throw new Error(`Fixture variant ${key} key and identity differ.`);
-      const rekeyFromStage = item.rekeyFromStage;
-      if (
-        rekeyFromStage !== null &&
-        (!Number.isSafeInteger(rekeyFromStage) ||
-          (rekeyFromStage as number) < 2 ||
-          (rekeyFromStage as number) > stageCount)
-      ) {
-        throw new Error(`Fixture variant ${key} rekeyFromStage is outside the fixture.`);
-      }
-      const buildId = text(item.buildId, `Fixture variant ${key} buildId`);
-      if (!BUILD_ID.test(buildId)) throw new Error(`Fixture variant ${key} buildId is invalid.`);
-      if (!Array.isArray(item.stages))
-        throw new Error(`Fixture variant ${key} stages are missing.`);
-      const stages = item.stages.map((value, index): FixtureStage => {
-        const stage = record(value, `Fixture variant ${key} stage ${String(index + 1)}`);
-        if (!isAgentId(stage.agentId) || !agentIds.includes(stage.agentId)) {
-          throw new Error(`Fixture variant ${key} stage agent is not declared.`);
-        }
-        if (
-          !Number.isSafeInteger(stage.ordinal) ||
-          (stage.ordinal as number) < 1 ||
-          (stage.ordinal as number) > stageCount
-        ) {
-          throw new Error(`Fixture variant ${key} stage ordinal is invalid.`);
-        }
-        return {
-          agentId: stage.agentId,
-          ordinal: stage.ordinal as number,
-          sourcePath: relativePath(stage.sourcePath, `Fixture variant ${key} stage sourcePath`),
-          sha256: text(stage.sha256, `Fixture variant ${key} stage sha256`),
-        };
-      });
-      if (stages.some(({ sha256 }) => !DIGEST.test(sha256))) {
-        throw new Error(`Fixture variant ${key} stage sha256 is invalid.`);
-      }
-      const referenceCorpusPath = relativePath(
-        item.referenceCorpusPath,
-        `Fixture variant ${key} referenceCorpusPath`,
-      );
-      if (!Array.isArray(item.referenceFiles) || item.referenceFiles.length === 0) {
-        throw new Error(`Fixture variant ${key} referenceFiles must be non-empty.`);
-      }
-      const referenceFiles = item.referenceFiles.map((value, index): FixtureReferenceFile => {
-        const reference = record(
-          value,
-          `Fixture variant ${key} reference file ${String(index + 1)}`,
-        );
-        const path = relativePath(reference.path, `Fixture variant ${key} reference file path`);
-        if (!path.startsWith(`${referenceCorpusPath}/`)) {
-          throw new Error(`Fixture variant ${key} reference file is outside its corpus.`);
-        }
-        const sourceSha256 = text(
-          reference.sourceSha256,
-          `Fixture variant ${key} reference sourceSha256`,
-        );
-        const sha256 = text(reference.sha256, `Fixture variant ${key} reference sha256`);
-        if (!DIGEST.test(sourceSha256) || !DIGEST.test(sha256)) {
-          throw new Error(`Fixture variant ${key} reference digest is invalid.`);
-        }
-        if (!Number.isSafeInteger(reference.byteLength) || (reference.byteLength as number) < 1) {
-          throw new Error(`Fixture variant ${key} reference byteLength is invalid.`);
-        }
-        return {
-          sourceId: text(reference.sourceId, `Fixture variant ${key} reference sourceId`),
-          sourceSha256,
-          path,
-          byteLength: reference.byteLength as number,
-          sha256,
-        };
-      });
-      if (new Set(referenceFiles.map(({ path }) => path)).size !== referenceFiles.length) {
-        throw new Error(`Fixture variant ${key} reference file paths must be unique.`);
-      }
-      for (const agentId of agentIds) {
-        const ordinals = stages
-          .filter((stage) => stage.agentId === agentId)
-          .map((stage) => stage.ordinal)
-          .sort((left, right) => left - right);
-        if (ordinals.join(",") !== Array.from({ length: stageCount }, (_, i) => i + 1).join(",")) {
-          throw new Error(`Fixture variant ${key} must contain every stage for ${agentId}.`);
-        }
-      }
-      const publicCiphertextSha256 = text(
-        item.publicCiphertextSha256,
-        `Fixture variant ${key} publicCiphertextSha256`,
-      );
-      if (!DIGEST.test(publicCiphertextSha256)) {
-        throw new Error(`Fixture variant ${key} publicCiphertextSha256 is invalid.`);
-      }
-      return [
-        key,
-        {
-          variantId,
-          rekeyFromStage: rekeyFromStage as number | null,
-          buildId,
-          publicCiphertextPath: relativePath(
-            item.publicCiphertextPath,
-            `Fixture variant ${key} publicCiphertextPath`,
-          ),
-          publicCiphertextSha256,
-          referenceCorpusPath,
-          referenceFiles,
-          stages,
-        },
-      ];
-    }),
+  const rekeyAtStage = root.rekeyAtStage;
+  if (
+    rekeyAtStage !== null &&
+    (!Number.isSafeInteger(rekeyAtStage) ||
+      (rekeyAtStage as number) < 2 ||
+      (rekeyAtStage as number) > stageCount)
+  ) {
+    throw new Error("Fixture package rekeyAtStage is outside the fixture.");
+  }
+  const buildId = text(root.buildId, "Fixture package buildId");
+  if (!BUILD_ID.test(buildId)) throw new Error("Fixture package buildId is invalid.");
+  const publicCiphertextPath = relativePath(
+    root.publicCiphertextPath,
+    "Fixture package publicCiphertextPath",
   );
-  if (Object.keys(variants).length === 0) throw new Error("Fixture package has no variants.");
-  return { schemaVersion: 1, fixtureId, contentDigest, agentIds, stageCount, variants };
+  const publicCiphertextSha256 = digest(
+    root.publicCiphertextSha256,
+    "Fixture package publicCiphertextSha256",
+  );
+  const stages = decodeStages(root.stages, agentIds, stageCount);
+  const variantId = rekeyAtStage === null ? "stationary" : `rekey-stage-${String(rekeyAtStage)}`;
+  const realization: FixtureRealization = {
+    variantId,
+    rekeyFromStage: rekeyAtStage as number | null,
+    buildId,
+    publicCiphertextPath,
+    publicCiphertextSha256,
+    stages,
+  };
+  return {
+    schemaVersion: 2,
+    fixtureId,
+    constructionId,
+    contentDigest,
+    agentIds,
+    stageCount,
+    rekeyAtStage: rekeyAtStage as number | null,
+    ...realization,
+    variants: { [variantId]: realization },
+  };
 }
 
 async function verifyFile(
   packageRoot: string,
   path: string,
   expectedDigest: string,
-  expectedBytes?: number,
 ): Promise<void> {
-  if (!DIGEST.test(expectedDigest))
-    throw new Error(`Fixture package digest for ${path} is invalid.`);
   const bytes = await readFile(join(packageRoot, path));
-  if (
-    createHash("sha256").update(bytes).digest("hex") !== expectedDigest ||
-    (expectedBytes !== undefined && bytes.byteLength !== expectedBytes)
-  ) {
+  if (createHash("sha256").update(bytes).digest("hex") !== expectedDigest) {
     throw new Error(`Fixture package file ${path} does not match its declared digest.`);
   }
 }
@@ -270,29 +230,27 @@ export async function loadFixturePackage(packageRoot: string): Promise<FixturePa
   const manipulationCheck = record(raw.manipulationCheck, "Fixture package manipulationCheck");
   const window = record(raw.window, "Fixture package window");
   await Promise.all([
-    verifyFile(packageRoot, "oracle/plaintext.txt", text(window.sha256, "Fixture window sha256")),
+    verifyFile(packageRoot, "oracle/plaintext.txt", digest(window.sha256, "Fixture window sha256")),
     ...[allocation, oracleDesign, manipulationCheck].map((item) =>
       verifyFile(
         packageRoot,
         relativePath(item.path, "Fixture oracle path"),
-        text(item.sha256, "Fixture oracle sha256"),
+        digest(item.sha256, "Fixture oracle sha256"),
       ),
     ),
-    ...Object.values(fixture.variants).flatMap((variant) => [
-      verifyFile(packageRoot, variant.publicCiphertextPath, variant.publicCiphertextSha256),
-      ...variant.referenceFiles.map((reference) =>
-        verifyFile(packageRoot, reference.path, reference.sha256, reference.byteLength),
-      ),
-      ...variant.stages.map((stage) => verifyFile(packageRoot, stage.sourcePath, stage.sha256)),
-    ]),
+    verifyFile(packageRoot, fixture.publicCiphertextPath, fixture.publicCiphertextSha256),
+    ...fixture.stages.map((stage) => verifyFile(packageRoot, stage.sourcePath, stage.sha256)),
   ]);
   return fixture;
 }
 
-export function selectFixtureVariant(fixture: FixturePackage, variantId: string): FixtureVariant {
-  const variant = fixture.variants[variantId];
-  if (variant === undefined) {
-    throw new Error(`Fixture ${fixture.fixtureId} does not contain variant ${variantId}.`);
+export function selectFixtureVariant(
+  fixture: FixturePackage,
+  variantId: string,
+): FixtureRealization {
+  const realization = fixture.variants[variantId];
+  if (realization === undefined) {
+    throw new Error(`Fixture ${fixture.fixtureId} is not the requested realization ${variantId}.`);
   }
-  return variant;
+  return realization;
 }

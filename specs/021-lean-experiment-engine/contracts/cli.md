@@ -1,16 +1,14 @@
 # CLI Contract
 
-All commands emit one JSON result on success, diagnostics on stderr, and a non-zero exit status on failure. Output roots must not already contain a published result.
+All commands emit one JSON result on success and fail non-zero with diagnostics.
 
-## Build Fixtures
+## Build Derived Packages
 
 ```bash
-pnpm puzzle:build --fixture <fixture-id> --output <package-dir>
-pnpm puzzle:build --all true --output <packages-dir>
+pnpm puzzle:build --config <manifest.yaml> [--run <run-id>]
 ```
 
-- Reads fixture definitions from `experiments/fixtures.json`; `--root` may select another repository root.
-- Publishes `<package-dir>/fixture.json` atomically only after construction and manipulation checks pass.
+The command decodes schema v2, derives package identities and paths, and atomically prepares every run's package or the selected named run. Identical derived packages are built once. Existing non-empty output paths are never overwritten.
 
 ## Validate an Experiment
 
@@ -18,8 +16,7 @@ pnpm puzzle:build --all true --output <packages-dir>
 pnpm puzzle:validate --config <manifest.yaml>
 ```
 
-- Decodes the manifest and every referenced package, verifies package bytes/digests and run relationships, probes the configured sandbox once, and smoke-runs the first declared run.
-- Never resolves credentials or opens provider sessions and does not create a reusable receipt.
+Validation strictly decodes every run and derived package, rejects missing or drifted package bytes, probes the sandbox once, and smoke-runs the first declared run. It never resolves credentials or opens provider sessions.
 
 ## Execute an Experiment
 
@@ -28,23 +25,15 @@ pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --allo
 pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --run <run-id> --allow-spend true
 ```
 
-- Without `--run`, executes every declared run sequentially in manifest order; with it, executes exactly the named run.
-- Rejects missing `--allow-spend true` before sandbox or smoke work, then repeats validation immediately before execution. With `--run`, the provider-free smoke path exercises that selected run; full-manifest execution exercises the first declared run. Authorization does not raise manifest ceilings, resolve credentials, or permit provider access before validation succeeds.
-- Runs agents concurrently and independently. A session infrastructure result allows peers to quiesce, then freezes and evaluates available state and publishes an infrastructure-error `run.json` before stopping.
-- A thrown setup, lifecycle, freeze, or evaluation failure appends an `infrastructure.error` event when `trace.jsonl` exists, publishes no `run.json`, and stops before later runs. No failure triggers retry, replacement, peer cancellation, or resume.
+Without `--run`, named runs execute sequentially in map order; agents within a run execute concurrently. With `--run`, only that map key executes and supplies the smoke run. Missing spend authorization fails before sandbox work. Exact validation repeats before provider access, and authorization cannot exceed the sum of the selected runs' declared ceilings.
 
-## Re-evaluate a Run
+A session infrastructure result lets peers quiesce before freezing and evaluation, publishes an infrastructure-error record when possible, and stops later runs. No failure triggers retry, replacement, peer cancellation, merge, repair, or resume.
+
+## Re-evaluate and Analyze
 
 ```bash
 pnpm puzzle:evaluate --run-root <run-dir>
+pnpm puzzle:analyze --run-root <run-dir> [--minimum-words <n>]
 ```
 
-- Requires canonical `trace.jsonl` and `trace.meta.json`, structurally validates the current appendable trace, and requires the loaded package digest to match the recorded fixture digest before using the frozen origins; no provider or live workspace is consulted.
-- Appends a timestamped evaluation batch beside `run.json`; prior results and frozen fields are unchanged.
-
-### `pnpm puzzle:analyze --run-root <directory> [--minimum-words <n>]`
-
-- Defaults `--minimum-words` to 32 and rejects values below 8.
-- Strictly decodes the run record, validates the canonical trace, fixture digest, contained run-relative topology, and every frozen-tree seal before scanning.
-- Scans all blobs reachable from every frozen shared or isolated origin, appends one typed overlap-analysis history entry atomically, and leaves run status, evaluation batches, trace bytes, and frozen evidence unchanged.
-- A failed validation or scan leaves `run.json` byte-for-byte unchanged and removes any staging file.
+Both commands are provider-free. They strictly validate the current record, canonical trace, fixture digest, topology, and frozen trees before atomically appending one typed history entry.

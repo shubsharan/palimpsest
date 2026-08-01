@@ -363,6 +363,7 @@ def _write_references(
     sources: tuple[SourceDefinition, ...],
     variant_id: str,
 ) -> tuple[ReferenceFile, ...]:
+    (destination / "variants" / variant_id / "references").mkdir(parents=True, exist_ok=True)
     artifacts: list[ReferenceFile] = []
     for document in build_reference_corpus(sources):
         relative = Path("variants") / variant_id / "references" / f"{document.document_id}.txt"
@@ -503,14 +504,10 @@ def _source(root: Path, definition: TextFileDefinition) -> SourceDefinition:
 
 
 def _build_into(root: Path, destination: Path, fixture: FixtureDefinition) -> FixturePackage:
-    if fixture.window.is_discovery:
-        raise ValueError(
-            f"Fixture {fixture.fixture_id} must be discovered and pinned before a normal build."
-        )
     source = _source(root, fixture.source)
     reference_sources = tuple(_source(root, reference) for reference in fixture.references)
 
-    design = design_fixture(_paragraph_units(source), fixture, discover=False)
+    design = design_fixture(_paragraph_units(source), fixture, discover=fixture.window.is_discovery)
     pair = _prepare_pair(design)
     changed_types = design.allocation.design.changed_types
 
@@ -594,6 +591,7 @@ def _build_into(root: Path, destination: Path, fixture: FixtureDefinition) -> Fi
     )
     package = FixturePackage(
         fixture_id=fixture.fixture_id,
+        construction_id=fixture.construction_id,
         content_digest="0" * 64,
         source=TargetSource(source.source_id, source.sha256),
         references=tuple(
@@ -636,13 +634,98 @@ def build_fixture(root: Path, output: Path, fixture_definition: object) -> Fixtu
         raise
 
 
+def _realized_manifest(
+    destination: Path, package: FixturePackage, selected_variant: str
+) -> dict[str, Any]:
+    try:
+        realization = package.variants[selected_variant]
+    except KeyError as error:
+        raise ValueError(f"Unknown selected fixture realization: {selected_variant}.") from error
+
+    complete_path = Path("complete/ciphertext.txt")
+    (destination / complete_path).parent.mkdir(parents=True, exist_ok=True)
+    os.replace(destination / realization.public_ciphertext_path, destination / complete_path)
+    stages: list[dict[str, Any]] = []
+    for stage in realization.stages:
+        source_path = Path("private") / stage.agent_id / "stages" / stage.source_path.name
+        (destination / source_path).parent.mkdir(parents=True, exist_ok=True)
+        os.replace(destination / stage.source_path, destination / source_path)
+        stage_record = stage.to_dict()
+        stage_record["sourcePath"] = source_path.as_posix()
+        stages.append(stage_record)
+    shutil.rmtree(destination / "variants")
+    if realization.rekey_from_stage is None:
+        for key_path in package.oracle_key_paths:
+            if key_path != package.base_key_path:
+                (destination / key_path).unlink()
+
+    source_record = package.source.to_dict()
+    record: dict[str, Any] = {
+        "schemaVersion": 2,
+        "fixtureId": package.fixture_id,
+        "contentDigest": "0" * 64,
+        "constructionId": package.construction_id,
+        "source": source_record,
+        "window": package.window.to_dict(),
+        "agentIds": list(package.agent_ids),
+        "stageCount": package.stage_count,
+        "allocation": package.allocation.to_dict(),
+        "oracleDesign": package.oracle_design.to_dict(),
+        "baseKeyPath": package.base_key_path.as_posix(),
+        "manipulationCheck": package.manipulation_check.to_dict(),
+        "rekeyAtStage": realization.rekey_from_stage,
+        "buildId": realization.build_id,
+        "publicCiphertextPath": complete_path.as_posix(),
+        "publicCiphertextSha256": realization.public_ciphertext_sha256,
+        "stages": stages,
+    }
+    (destination / "fixture.json").unlink()
+    manifest = dict(record)
+    del manifest["contentDigest"]
+    files = [
+        {
+            "path": path.relative_to(destination).as_posix(),
+            "sha256": sha256_hex(path.read_bytes()),
+        }
+        for path in destination.rglob("*")
+        if path.is_file()
+    ]
+    files.sort(key=lambda item: item["path"])
+    record["contentDigest"] = sha256_hex(
+        canonical_json_bytes({"manifest": manifest, "files": files})
+    )
+    _write(destination / "fixture.json", canonical_json_bytes(record))
+    return record
+
+
+def build_realized_fixture(
+    root: Path,
+    output: Path,
+    fixture_definition: object,
+    selected_variant: str,
+) -> dict[str, Any]:
+    root = root.resolve()
+    output = output.resolve()
+    _assert_available_output(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
+    try:
+        package = _build_into(root, staging, decode_fixture_definition(fixture_definition))
+        record = _realized_manifest(staging, package, selected_variant)
+        _publish_staging(staging, output)
+        return record
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
 def discover_fixture(root: Path, output: Path, fixture_definition: object) -> dict[str, Any]:
     root = root.resolve()
     output = output.resolve()
     _assert_available_output(output)
     fixture = decode_fixture_definition(fixture_definition)
     if not fixture.window.is_discovery:
-        raise ValueError(f"Fixture {fixture_id} already has a committed discovery window.")
+        raise ValueError(f"Fixture {fixture.fixture_id} already has a committed discovery window.")
     source = _source(root, fixture.source)
     design = design_fixture(_paragraph_units(source), fixture, discover=True)
     pair = _prepare_pair(design)
@@ -679,11 +762,23 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--definition-json", required=True)
+    parser.add_argument("--selected-variant")
     parser.add_argument("--discover", choices=("true",))
     args = parser.parse_args()
     definition = json.loads(args.definition_json)
     if args.discover == "true":
         result = discover_fixture(args.root, args.output, definition)
+    elif args.selected_variant is not None:
+        record = build_realized_fixture(args.root, args.output, definition, args.selected_variant)
+        result = {
+            "fixtureId": record["fixtureId"],
+            "contentDigest": record["contentDigest"],
+            "packagePath": str(args.output.resolve()),
+            "agentIds": record["agentIds"],
+            "stageCount": record["stageCount"],
+            "buildId": record["buildId"],
+            "rekeyAtStage": record["rekeyAtStage"],
+        }
     else:
         package = build_fixture(args.root, args.output, definition)
         result = {

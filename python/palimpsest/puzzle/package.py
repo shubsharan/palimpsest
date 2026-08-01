@@ -535,8 +535,6 @@ class BuildVariant:
             raise ValueError(
                 f"Build {self.variant_id} reference corpus path must use its variant tree."
             )
-        if not self.reference_files:
-            raise ValueError("Build referenceFiles must be non-empty.")
         reference_paths = tuple(item.path for item in self.reference_files)
         if len(set(reference_paths)) != len(reference_paths):
             raise ValueError("Build referenceFiles paths must be unique.")
@@ -631,7 +629,9 @@ class BuildVariant:
         if len(roots) < 2:
             raise ValueError(f"{name} privateStageRoots must contain at least two agents.")
         raw_stages = _array(record["stages"], f"{name} stages")
-        raw_reference_files = _array(record["referenceFiles"], f"{name} referenceFiles")
+        raw_reference_files = _array(
+            record["referenceFiles"], f"{name} referenceFiles", allow_empty=True
+        )
         raw_transitions = _array(
             record["keyTransitions"], f"{name} keyTransitions", allow_empty=True
         )
@@ -751,6 +751,7 @@ class ManipulationCheck:
 @dataclass(frozen=True)
 class FixturePackage:
     fixture_id: str
+    construction_id: str
     content_digest: str
     source: TargetSource
     references: tuple[ReferenceSource, ...]
@@ -766,6 +767,7 @@ class FixturePackage:
 
     def __post_init__(self) -> None:
         _identifier(self.fixture_id, "Fixture package fixtureId")
+        _prefixed_digest(self.construction_id, "construction-", "Fixture constructionId")
         _digest(self.content_digest, "Fixture package contentDigest")
         _safe_integer(self.seed, "Fixture seed")
         if len(self.agent_ids) < 2 or len(set(self.agent_ids)) != len(self.agent_ids):
@@ -775,8 +777,6 @@ class FixturePackage:
         if self.stage_count < 2:
             raise ValueError("Fixture package stageCount must be at least 2.")
         reference_ids = tuple(reference.source_id for reference in self.references)
-        if not reference_ids:
-            raise ValueError("Puzzle references must be non-empty.")
         if len(set(reference_ids)) != len(reference_ids):
             raise ValueError("Puzzle reference source IDs must be unique.")
         if self.source.source_id in reference_ids:
@@ -848,6 +848,7 @@ class FixturePackage:
         return {
             "schemaVersion": 1,
             "fixtureId": self.fixture_id,
+            "constructionId": self.construction_id,
             "contentDigest": self.content_digest,
             "source": self.source.to_dict(),
             "references": [reference.to_dict() for reference in self.references],
@@ -885,6 +886,7 @@ class FixturePackage:
                 {
                     "schemaVersion",
                     "fixtureId",
+                    "constructionId",
                     "contentDigest",
                     "source",
                     "references",
@@ -903,12 +905,15 @@ class FixturePackage:
         if _integer(record["schemaVersion"], f"{name} schemaVersion") != 1:
             raise ValueError("Unsupported fixture package schema version.")
         agent_ids = _strings(record["agentIds"], f"{name} agentIds")
-        raw_references = _array(record["references"], f"{name} references")
+        raw_references = _array(record["references"], f"{name} references", allow_empty=True)
         variants = _record(record["variants"], f"{name} variants")
         if not variants:
             raise ValueError(f"{name} variants must be non-empty.")
         package = cls(
             fixture_id=_identifier(record["fixtureId"], f"{name} fixtureId"),
+            construction_id=_prefixed_digest(
+                record["constructionId"], "construction-", f"{name} constructionId"
+            ),
             content_digest=_digest(record["contentDigest"], f"{name} contentDigest"),
             source=TargetSource.from_dict(record["source"]),
             references=tuple(

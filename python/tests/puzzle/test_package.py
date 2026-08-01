@@ -106,6 +106,7 @@ def _package(
     }
     package = FixturePackage(
         fixture_id=f"fixture-{len(agent_ids)}-{stage_count}",
+        construction_id="construction-" + "c" * 64,
         content_digest="0" * 64,
         source=TargetSource("source", "1" * 64),
         references=(ReferenceSource("reference", "2" * 64),),
@@ -162,22 +163,22 @@ def _package(
             ("alpha", "beta"),
             3,
             2,
-            "dad88ab4799ce34d0dda1b1a4badf0376ad82b72a8272b8267b37897eb150ab5",
-            "22d0759f03609e7566b99bbadf1d1376e51c4551d555e5f9ee5c9d87105699d6",
+            "35f5c91ad60703b62e14d54f7c2d46b0f2d1f5d49f304758a78d2e62990e4c33",
+            "b34ed5a2c48983bde8e5b1269584438f29d146f9c4811b05e23fa95b2cd4b3ed",
         ),
         (
             ("alpha", "beta", "gamma"),
             6,
             4,
-            "e6325f00f13b3b352fdb3ad78e0ae59ed3632dbe454099b09cbf8b279692842f",
-            "ace6037cc4affe2d3e623d14356c3a8c7170a5e83af1541731e1dc7c46e569db",
+            "81da6acd4a08e3be9dbd16a975e1a27dd49aa89181966aeacaf08533ebeb42d8",
+            "5841bb8c2b79e1233073ef57b373edc8ab503454a2ba728aa4e99bb7301dd214",
         ),
         (
             ("alpha", "beta", "gamma", "delta"),
             8,
             5,
-            "b9b6ef815223c3da3ee53cd4829017f53b7bf46dad10c3d0efa9f47dbb0c1131",
-            "cb88c1eb4a4b235f9376bce0e1f07a0d38697cc0db4e13d98aaceb236910e4d8",
+            "aa1507adf5797745a782c430962d53205614843ce325cb30afde8dbac4586439",
+            "addef2ff8a5b3261c1e09adc9cf4920d5d00a1ed0b6cdb63796626a406c0e46c",
         ),
     ],
 )

@@ -1,18 +1,42 @@
 import type {
   AgentId,
   JsonObject,
-  ModelDeclaration,
   ModelProfile,
   ProviderConnection,
+  ProviderDriver,
 } from "../model/contracts.js";
 
 export type GitVisibility = "shared" | "isolated";
 export type TeamRoomAvailability = "enabled" | "disabled";
+export type Communication = "shared" | "isolated";
 
-export type AgentAssignment = Record<AgentId, string>;
+export interface AuthoredModel {
+  provider: Exclude<ProviderDriver, "openai-compatible">;
+  model: string;
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+}
 
+export interface AuthoredRun {
+  source: string;
+  agents: number;
+  model: string;
+  communication: Communication;
+  releases: string[];
+  cutoff: string;
+  spendCeilingCents: number;
+  rekeyAtStage?: number;
+  tokenLimitPerAgent?: number;
+}
+
+export interface ExperimentManifest {
+  schemaVersion: 2;
+  name: string;
+  models: Record<string, AuthoredModel>;
+  runs: Record<string, AuthoredRun>;
+}
+
+/** Internal, fully resolved contracts frozen in run records. */
 export interface FixtureReference {
-  /** Research-authored path, relative to the repository root. */
   packagePath: string;
   variant: string;
 }
@@ -32,6 +56,8 @@ export interface ExperimentLimits {
   spendCeilingCents: number;
 }
 
+export type AgentAssignment = Record<AgentId, string>;
+
 export interface RunDeclaration {
   id: string;
   fixture: FixtureReference;
@@ -42,34 +68,28 @@ export interface RunDeclaration {
   labels: JsonObject;
 }
 
-export interface ExperimentManifest {
-  schemaVersion: 1;
-  /** Human-readable name recorded with every resolved experiment. */
-  experimentName?: string;
-  /** Fixture definitions consumed by this experiment. Their file paths are repository-relative. */
-  fixtures?: readonly Record<string, unknown>[];
-  providers: Record<string, ProviderConnection>;
-  models: Record<string, ModelDeclaration>;
-  totalSpendCeilingCents: number;
-  runs: RunDeclaration[];
-}
-
 export interface ResolvedFixtureReference extends FixtureReference {
-  /** Runtime-only absolute root. Never serialize this field as the authored fixture path. */
-  readonly packageRoot: string;
+  constructionId: string;
+  fixtureId?: string;
+  packageRoot: string;
+  source?: string;
+  rekeyAtStage?: number | null;
 }
 
 export interface ResolvedRun extends Omit<RunDeclaration, "fixture"> {
   readonly fixture: ResolvedFixtureReference;
 }
 
-export interface ResolvedExperiment extends Omit<ExperimentManifest, "models" | "runs"> {
+export interface ResolvedExperiment {
+  readonly schemaVersion: 1;
+  readonly name: string;
+  readonly providers: Readonly<Record<string, ProviderConnection>>;
   readonly models: Readonly<Record<string, ModelProfile>>;
+  readonly totalSpendCeilingCents: number;
   readonly runs: readonly ResolvedRun[];
   readonly manifestDigest: string;
 }
 
-/** The fixture fields needed for experiment validation without owning package contracts. */
 export interface FixturePackageMetadata {
   readonly agentIds: readonly AgentId[];
   readonly stageCount: number;

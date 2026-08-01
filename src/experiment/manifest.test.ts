@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -5,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   loadExperimentManifest,
   loadResolvedExperiment,
+  parseDuration,
   parseExperimentYaml,
   resolveExperiment,
   validateExperimentManifest,
@@ -12,6 +15,7 @@ import {
   validateRunAgainstFixture,
 } from "./manifest.js";
 import type { ExperimentManifest } from "./contracts.js";
+import { derivedFixtureDefinition } from "../fixture/build.js";
 
 const fixture = (name: string): string => resolve("tests", "fixtures", "config", name);
 
@@ -21,100 +25,120 @@ async function validManifest(): Promise<ExperimentManifest> {
 
 describe("experiment manifest", () => {
   it("parses YAML while rejecting duplicate keys and aliases", () => {
+    expect(() => parseExperimentYaml("schemaVersion: 2\nschemaVersion: 2\n")).toThrow(
+      /map keys must be unique/i,
+    );
     expect(() =>
-      parseExperimentYaml(`
-schemaVersion: 1
-schemaVersion: 1
-`),
-    ).toThrow(/map keys must be unique/i);
-
-    expect(() =>
-      parseExperimentYaml(`
-schemaVersion: 1
-value: &shared { nested: true }
-copy: *shared
-`),
+      parseExperimentYaml("schemaVersion: 2\nvalue: &shared { nested: true }\ncopy: *shared\n"),
     ).toThrow(/alias/i);
   });
 
-  it("resolves explicit ordered runs without reading credentials or fixture packages", async () => {
+  it("resolves named runs and derives every non-scientific field", async () => {
     const experiment = resolveExperiment(await validManifest(), resolve("."));
-
-    expect(experiment.runs.map((run) => run.id)).toEqual(["shared-stationary", "isolated-rekey"]);
+    expect(experiment.runs.map(({ id }) => id)).toEqual(["shared", "isolated-rekey"]);
     expect(experiment.runs[0]).toMatchObject({
-      fixture: {
-        packagePath: "tests/fixtures/config/packages/three-agent.json",
-        packageRoot: fixture("packages/three-agent.json"),
-        variant: "stationary",
-      },
-      assignment: {
-        "agent-1": "gpt",
-        "agent-2": "claude",
-        "agent-3": "gemini",
-      },
+      assignment: { "agent-1": "gpt", "agent-2": "gpt", "agent-3": "gpt" },
       capabilities: { git: "shared", teamRoom: "enabled" },
-      limits: { tokenLimitPerAgent: 200_000, spendCeilingCents: 10_000 },
-      labels: { cohort: "baseline", replicate: 1 },
+      schedule: {
+        releaseOffsetsMs: [0, 300_000, 600_000, 1_200_000, 1_800_000, 2_400_000],
+        cutoffMs: 3_600_000,
+      },
+      limits: { tokenLimitPerAgent: null, spendCeilingCents: 10_000 },
+      fixture: {
+        source: "fixtures/corpus/fortunes-fool.txt",
+        variant: "stationary",
+        rekeyAtStage: null,
+      },
+    });
+    expect(experiment.runs[1]!.fixture.variant).toBe("rekey-stage-4");
+    expect(experiment.providers).toEqual({
+      openai: { driver: "openai", apiKeyEnv: "OPENAI_API_KEY" },
     });
     expect(experiment.models.gpt).toEqual({
       provider: "openai",
       model: "gpt-research",
-      settings: { maxOutputTokens: 4096, temperature: 0.2, topP: 0.9, seed: 7 },
-      providerOptions: {},
+      settings: {},
+      providerOptions: { openai: { reasoningEffort: "medium" } },
     });
+    expect(experiment.totalSpendCeilingCents).toBe(20_000);
     expect(experiment.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(JSON.stringify(experiment)).not.toContain("RESEARCH_OPENAI_KEY_VALUE");
-    expect(Object.isFrozen(experiment)).toBe(true);
-    expect(Object.isFrozen(experiment.runs)).toBe(true);
     expect(Object.isFrozen(experiment.runs[0]!.labels)).toBe(true);
   });
 
-  it("accepts a materially different fixture geometry and resource policy", async () => {
-    const experiment = await loadResolvedExperiment(fixture("varied.yaml"), resolve("."));
-    const run = experiment.runs[0]!;
-
+  it("accepts different run geometry and strict duration units", async () => {
+    const run = (await loadResolvedExperiment(fixture("varied.yaml"), resolve("."))).runs[0]!;
     expect(run.assignment).toEqual({ "agent-1": "local", "agent-2": "local" });
     expect(run.schedule).toEqual({ releaseOffsetsMs: [0, 500, 1_500], cutoffMs: 2_500 });
-    expect(run.limits).toEqual({ tokenLimitPerAgent: null, spendCeilingCents: 0 });
     expect(run.capabilities).toEqual({ git: "isolated", teamRoom: "disabled" });
+    expect(parseDuration("1h", "duration")).toBe(3_600_000);
+    expect(() => parseDuration("1.5h", "duration")).toThrow(/integer duration/i);
   });
 
-  it("loads the checked-in explicit-run preset", async () => {
-    const experiment = await loadResolvedExperiment(
-      resolve("experiments", "config.yaml"),
-      resolve("."),
-    );
-
-    expect(experiment.runs).toHaveLength(20);
-    expect(new Set(experiment.runs.map((run) => run.fixture.packagePath))).toHaveProperty(
-      "size",
-      5,
-    );
-    expect(experiment.runs.every((run) => Object.keys(run.assignment).length === 3)).toBe(true);
+  it("shares construction identity across stationary and re-keyed realizations", async () => {
+    const [stationary, rekey] = resolveExperiment(await validManifest(), resolve(".")).runs;
+    expect(stationary!.fixture.constructionId).toBe(rekey!.fixture.constructionId);
+    expect(stationary!.fixture.fixtureId).not.toBe(rekey!.fixture.fixtureId);
+    expect(stationary!.fixture.packagePath).not.toBe(rekey!.fixture.packagePath);
+    expect(derivedFixtureDefinition(stationary!).seed).toBe(derivedFixtureDefinition(rekey!).seed);
   });
 
-  it("validates each run against decoded fixture package metadata", async () => {
-    const manifest = await validManifest();
-    const run = manifest.runs[0]!;
+  it("derives stable package identities from source bytes and geometry", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "palimpsest-manifest-"));
+    try {
+      const manifest = await validManifest();
+      const withSource = (
+        agents = 3,
+        releases = manifest.runs.shared!.releases,
+      ): ExperimentManifest => ({
+        ...manifest,
+        runs: {
+          shared: { ...manifest.runs.shared!, source: "fixtures/source.txt", agents, releases },
+        },
+      });
+      await mkdir(resolve(root, "fixtures"));
+      await writeFile(resolve(root, "fixtures/source.txt"), "first source\n", "utf8");
+      const first = resolveExperiment(withSource(), root).runs[0]!.fixture;
+      expect(resolveExperiment(withSource(), root).runs[0]!.fixture.constructionId).toBe(
+        first.constructionId,
+      );
+      await writeFile(resolve(root, "fixtures/source.txt"), "changed source\n", "utf8");
+      expect(resolveExperiment(withSource(), root).runs[0]!.fixture.constructionId).not.toBe(
+        first.constructionId,
+      );
+      await writeFile(resolve(root, "fixtures/source.txt"), "first source\n", "utf8");
+      expect(resolveExperiment(withSource(4), root).runs[0]!.fixture.constructionId).not.toBe(
+        first.constructionId,
+      );
+      expect(
+        resolveExperiment(withSource(3, manifest.runs.shared!.releases.slice(0, -1)), root).runs[0]!
+          .fixture.constructionId,
+      ).not.toBe(first.constructionId);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads the checked-in minimal preset", async () => {
+    const experiment = await loadResolvedExperiment(resolve("experiments/config.yaml"));
+    expect(experiment.name).toBe("theron-ware-unlimited-1h");
+    expect(experiment.runs.map(({ id }) => id)).toEqual(["shared"]);
+    expect(experiment.runs[0]!.assignment).toHaveProperty("agent-3", "sol");
+  });
+
+  it("validates resolved runs against realized fixture metadata", async () => {
+    const run = resolveExperiment(await validManifest()).runs[0]!;
     const metadata = {
       agentIds: ["agent-1", "agent-2", "agent-3"] as const,
       stageCount: 6,
-      variants: { stationary: {}, rekey: {} },
+      variants: { stationary: {} },
     };
-
     expect(() => validateRunAgainstFixture(run, metadata)).not.toThrow();
     expect(() =>
       validateRunAgainstFixture(
-        { ...run, assignment: { "agent-1": "gpt", "agent-2": "claude" } },
+        { ...run, assignment: { "agent-1": "gpt", "agent-2": "gpt" } },
         metadata,
       ),
     ).toThrow(/exactly the fixture agents/i);
-    expect(() =>
-      validateRunAgainstFixture(
-        { ...run, fixture: { ...run.fixture, variant: "missing" } },
-        metadata,
-      ),
-    ).toThrow(/unknown fixture variant/i);
     expect(() =>
       validateRunAgainstFixture(
         { ...run, schedule: { releaseOffsetsMs: [0, 1], cutoffMs: 2 } },
@@ -124,83 +148,57 @@ copy: *shared
   });
 
   it.each([
-    ["schedule-drift.yaml", /releaseOffsetsMs.*strictly increasing/i],
-    ["duplicate-run-id.yaml", /duplicates experiment run id/i],
-    ["secret-bearing.yaml", /secret-bearing provider option/i],
-    ["secret-label.yaml", /labels.*secret-bearing/i],
-    ["ceiling-overflow.yaml", /totalSpendCeilingCents.*run authorization/i],
+    ["schedule-drift.yaml", /strictly increasing/i],
+    ["duplicate-run-id.yaml", /map keys must be unique/i],
+    ["secret-bearing.yaml", /apiKey|additional properties|invalid/i],
+    ["secret-label.yaml", /labels|additional properties|invalid/i],
+    ["ceiling-overflow.yaml", /sum of run spend ceilings.*safe integer/i],
   ])("rejects the %s fixture", async (name, error) => {
     await expect(
       loadExperimentManifest(fixture(name)).then((manifest) => resolveExperiment(manifest)),
     ).rejects.toThrow(error);
   });
 
-  it("rejects compatibility and unknown structural fields", async () => {
+  it("rejects legacy and unknown authored fields", async () => {
     const manifest = await validManifest();
-
-    expect(() => validateExperimentManifest({ ...manifest, schemaVersion: 4 })).toThrow(
-      /schemaVersion|invalid/i,
+    expect(() => validateExperimentManifest({ ...manifest, schemaVersion: 1 })).toThrow(
+      /schemaVersion/i,
     );
-    expect(() => validateExperimentManifest({ ...manifest, blocks: [] })).toThrow(
-      /blocks|invalid/i,
-    );
-    expect(() => validateExperimentManifest({ ...manifest, runs: [] })).toThrow(/runs|invalid/i);
+    expect(() => validateExperimentManifest({ ...manifest, fixtures: [] })).toThrow(/fixtures/i);
+    expect(() => validateExperimentManifest({ ...manifest, runs: [] })).toThrow(/runs/i);
+    expect(() =>
+      validateExperimentManifest({
+        ...manifest,
+        runs: { ...manifest.runs, extra: { ...manifest.runs.shared, wordCount: 18_000 } },
+      }),
+    ).toThrow(/wordCount/i);
   });
 
-  it.each([
-    {
-      name: "unknown model provider",
-      change(manifest: ExperimentManifest) {
-        manifest.models.gpt!.provider = "missing";
-      },
-      error: /models\.gpt\.provider.*missing/i,
-    },
-    {
-      name: "unknown assigned model profile",
-      change(manifest: ExperimentManifest) {
-        manifest.runs[0]!.assignment["agent-2"] = "missing";
-      },
-      error: /runs\[0\].*agent-2.*missing/i,
-    },
-    {
-      name: "credential-bearing provider URL",
-      change(manifest: ExperimentManifest) {
-        const provider = manifest.providers.local!;
-        if (provider.driver === "openai-compatible") {
-          provider.baseURL = "https://literal:secret@example.invalid/v1";
-        }
-      },
-      error: /baseURL.*literal credentials/i,
-    },
-    {
-      name: "fixture outside the repository",
-      change(manifest: ExperimentManifest) {
-        manifest.runs[0]!.fixture.packagePath = "../fixture.json";
-      },
-      error: /packagePath.*repository/i,
-    },
-    {
-      name: "unsafe spend arithmetic",
-      change(manifest: ExperimentManifest) {
-        manifest.totalSpendCeilingCents = Number.MAX_SAFE_INTEGER;
-        manifest.runs[0]!.limits.spendCeilingCents = Number.MAX_SAFE_INTEGER;
-      },
-      error: /sum of run spend ceilings.*safe integer/i,
-    },
-  ])("rejects $name", async ({ change, error }) => {
-    const manifest = structuredClone(await validManifest());
-    change(manifest);
-    expect(() => resolveExperiment(manifest, resolve("."))).toThrow(error);
+  it("rejects unknown models, unsafe paths, re-key overflow, and spend overflow", async () => {
+    const manifest = await validManifest();
+    expect(() =>
+      resolveExperiment({
+        ...manifest,
+        runs: { ...manifest.runs, shared: { ...manifest.runs.shared!, model: "missing" } },
+      }),
+    ).toThrow(/unknown model/i);
+    expect(() =>
+      validateExperimentManifest({
+        ...manifest,
+        runs: { ...manifest.runs, shared: { ...manifest.runs.shared!, source: "../outside.txt" } },
+      }),
+    ).toThrow(/source/i);
+    expect(() =>
+      resolveExperiment({
+        ...manifest,
+        runs: { ...manifest.runs, shared: { ...manifest.runs.shared!, rekeyAtStage: 7 } },
+      }),
+    ).toThrow(/rekeyAtStage exceeds/i);
   });
 
-  it.each([
-    { authorization: "Bearer literal" },
-    { nested: { maxRetries: 2 } },
-    { anthropic: { fallbacks: [{ model: "other" }] } },
-    { nested: { clientSecret: "literal" } },
-  ])("rejects secret, call-control, and fallback provider options: %j", (options) => {
-    expect(() => validateProviderOptions(options, "models.test.providerOptions")).toThrow(
-      /models\.test\.providerOptions/,
+  it("defensively rejects secret-bearing provider options", () => {
+    expect(() => validateProviderOptions({ nested: { clientSecret: "literal" } })).toThrow(
+      /secret-bearing/i,
     );
   });
 });

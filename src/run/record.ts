@@ -20,11 +20,15 @@ import { JsonlObservationLog } from "../trace.js";
 
 const DIGEST = /^[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
+const CONSTRUCTION_ID = /^construction-[0-9a-f]{64}$/;
+const BUILD_ID = /^build-[0-9a-f]{64}$/;
 
 export type ResolvedRunRecord = Readonly<Omit<ResolvedRun, "fixture">> & {
   readonly fixture: Readonly<
-    Omit<ResolvedRun["fixture"], "packageRoot"> & {
+    Pick<ResolvedRun["fixture"], "packagePath" | "variant" | "source" | "rekeyAtStage"> & {
       id: string;
+      constructionId: string;
+      buildId: string;
       digest: string;
     }
   >;
@@ -399,11 +403,21 @@ function resolvedRun(value: unknown): ResolvedRunRecord {
     ["id", "fixture", "assignment", "capabilities", "schedule", "limits", "labels"],
     "Run configuration",
   );
-  const fixture = exactObject(
-    decoded.fixture,
-    ["id", "packagePath", "digest", "variant"],
-    "Run fixture",
-  );
+  const fixture = object(decoded.fixture, "Run fixture");
+  const allowedFixtureFields = new Set([
+    "id",
+    "constructionId",
+    "buildId",
+    "packagePath",
+    "digest",
+    "variant",
+    "source",
+    "rekeyAtStage",
+  ]);
+  const unknownFixtureField = Object.keys(fixture).find((key) => !allowedFixtureFields.has(key));
+  if (unknownFixtureField !== undefined) {
+    throw new Error(`Run fixture contains unknown field ${unknownFixtureField}.`);
+  }
   const assignmentValue = object(decoded.assignment, "Run assignment");
   const assignmentEntries = Object.entries(assignmentValue);
   if (assignmentEntries.length === 0) throw new Error("Run assignment must be non-empty.");
@@ -452,9 +466,30 @@ function resolvedRun(value: unknown): ResolvedRunRecord {
     id: text(decoded.id, "Run id"),
     fixture: {
       id: text(fixture.id, "Run fixture id"),
+      constructionId: (() => {
+        const value = text(fixture.constructionId, "Run fixture constructionId");
+        if (!CONSTRUCTION_ID.test(value)) throw new Error("Run fixture constructionId is invalid.");
+        return value;
+      })(),
+      buildId: (() => {
+        const value = text(fixture.buildId, "Run fixture buildId");
+        if (!BUILD_ID.test(value)) throw new Error("Run fixture buildId is invalid.");
+        return value;
+      })(),
       packagePath: relativePath(fixture.packagePath, "Run fixture packagePath"),
       digest: digest(fixture.digest, "Run fixture digest"),
       variant: text(fixture.variant, "Run fixture variant"),
+      ...(fixture.source === undefined
+        ? {}
+        : { source: relativePath(fixture.source, "Run fixture source") }),
+      ...(fixture.rekeyAtStage === undefined
+        ? {}
+        : {
+            rekeyAtStage:
+              fixture.rekeyAtStage === null
+                ? null
+                : integer(fixture.rekeyAtStage, 2, "Run fixture rekeyAtStage"),
+          }),
     },
     assignment,
     capabilities: { git: capabilities.git, teamRoom: capabilities.teamRoom },

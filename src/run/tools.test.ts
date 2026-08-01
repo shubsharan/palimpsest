@@ -92,7 +92,6 @@ async function toolFixture(
     profile: "agent",
     workspacePath: workspace,
     evidencePath: evidence,
-    referenceCorpusPath: reference,
     gitOriginPath: gitOrigin,
     timeoutMs: 1_000,
   });
@@ -217,7 +216,6 @@ describe("agent tools", () => {
         command: "pwd",
         workspacePath: fixture.workspace,
         evidencePath: fixture.evidence,
-        referenceCorpusPath: fixture.reference,
         gitOriginPath: fixture.gitOrigin,
       }),
     ]);

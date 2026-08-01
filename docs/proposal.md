@@ -10,9 +10,9 @@ The project is a local puzzle and an observational research artifact. It is not 
 
 Every word type in a prepared text is replaced by another word type under a hidden bijection. Punctuation, capitalization patterns, digits, and paragraph structure remain visible. The result resembles English at the token level while its vocabulary has been systematically reassigned.
 
-A `FixtureDefinition` declares the target source and window, target-excluded references, scientific seed, agent IDs, stage count, key variants, re-key boundaries, and allocation constraints. Deterministic preparation produces a `FixturePackage` containing ordered private stages, stationary or partial re-key variants, provenance, trusted oracle data, manipulation checks, and the scoring contract.
+Each named run declares a source, agent count, release schedule, and optional re-key boundary. Deterministic preparation derives the source window, agent IDs, allocation, construction randomness, package identity, and artifact path, then produces one flat `FixturePackage` containing ordered private stages for that realized key regime, provenance, trusted oracle data, manipulation checks, and the scoring contract.
 
-Fixture geometry is an experimental input. A researcher can prepare different agent counts, stage counts, sources, schedules, and variants without changing runner code. Search limits and construction mechanics remain internal unless they affect the scientific meaning of the fixture.
+Fixture geometry is an experimental input. A researcher can prepare different agent counts, stage counts, sources, schedules, and re-key boundaries without changing runner code. Search limits and construction mechanics remain engine-owned policy rather than authored configuration.
 
 Trusted package data records allocation and manipulation checks. Agent-visible stages contain no plaintext, key, oracle, expectation, scientific label, or manipulation-check result.
 
@@ -30,17 +30,17 @@ One run cannot isolate every cause. Comparisons are scientifically meaningful on
 
 ## Treatments
 
-An `ExperimentManifest` lists concrete runs in execution order. Each run selects one prepared fixture variant and declares the exact agent-to-model assignment, Git visibility, optional team room, release offsets, cutoff, token limit, spend ceiling, and analysis labels.
+An `ExperimentManifest` maps human-readable run IDs to concrete runs in execution order. Each run declares one source, team size, uniformly applied model, `shared` or `isolated` communication, release durations, cutoff, spend ceiling, and optional re-key or token limit. Conventional credential variables and the aggregate spend authorization are derived.
 
 Shared runs give the team one ordinary peer-visible Git origin and may expose one append-only public discussion room. Isolated runs give each agent an independent usable origin and no peer evidence or activity. Communication is declared directly rather than encoded in fixed condition IDs, so researchers can compose the comparisons their question requires.
 
-Stationary and re-key variants provide another treatment axis. Paired variants can share the same allocation and pre-boundary evidence while changing declared mappings only at the re-key boundary. The package's deterministic checks establish that mechanical relationship; model behavior remains an empirical outcome.
+Stationary and re-keyed runs provide another treatment axis. Paired packages can share the same allocation and pre-boundary evidence while changing mappings only at the declared re-key boundary. The package's deterministic checks establish that mechanical relationship; model behavior remains an empirical outcome.
 
 Team identity, objective, private evidence allocation, schedule, model resources, tools other than peer communication, and evaluation boundary should remain equal across communication-paired runs. The manifest makes these inputs reviewable instead of generating them through a hidden study state machine.
 
 ## Agent Experience
 
-Persistent model sessions begin together and receive the same concise objective, team identity, puzzle family, schedule, limits, target-excluded references, currently released private evidence, and evaluation boundary. Evidence appears on the declared monotonic schedule independent of model turns, tool use, checking, or apparent progress.
+Persistent model sessions begin together and receive the same concise objective, team identity, puzzle family, schedule, limits, currently released private evidence, and evaluation boundary. Evidence appears on the declared monotonic schedule independent of model turns, tool use, checking, or apparent progress.
 
 Every assigned origin begins with the same neutral `solver.py` scaffold. Git commands are model-chosen and unmetered, but only code pushed to the assigned origin's literal `main` branch can receive aggregate checker feedback or a final grade. Agents may work independently, centralize, duplicate effort, create conflicts, share raw evidence when a channel exists, or publish nothing.
 

@@ -1,21 +1,20 @@
-schemaVersion: 1
-providers:
-  fixture: { driver: openai, apiKeyEnv: FIXTURE_KEY }
-models:
-  fixture: { provider: fixture, model: fixture-model }
-totalSpendCeilingCents: 199
+schemaVersion: 2
+name: ceiling-overflow
+models: { fixture: { provider: openai, model: fixture-model } }
 runs:
-  - id: first
-    fixture: { packagePath: tests/fixtures/config/packages/fixture.json, variant: stationary }
-    assignment: { agent-1: fixture }
-    capabilities: { git: shared, teamRoom: enabled }
-    schedule: { releaseOffsetsMs: [0], cutoffMs: 10 }
-    limits: { tokenLimitPerAgent: 100, spendCeilingCents: 100 }
-    labels: {}
-  - id: second
-    fixture: { packagePath: tests/fixtures/config/packages/fixture.json, variant: rekey }
-    assignment: { agent-1: fixture }
-    capabilities: { git: isolated, teamRoom: disabled }
-    schedule: { releaseOffsetsMs: [0], cutoffMs: 10 }
-    limits: { tokenLimitPerAgent: 100, spendCeilingCents: 100 }
-    labels: {}
+  first:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 2
+    model: fixture
+    communication: shared
+    releases: [0ms, 1ms]
+    cutoff: 2ms
+    spendCeilingCents: 9007199254740991
+  second:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 2
+    model: fixture
+    communication: isolated
+    releases: [0ms, 1ms]
+    cutoff: 2ms
+    spendCeilingCents: 1

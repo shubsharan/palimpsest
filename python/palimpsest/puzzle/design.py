@@ -218,7 +218,7 @@ def _hash(value: str) -> str:
 
 def initial_allocation(
     window: ParagraphWindow,
-    fixture_id: str,
+    construction_id: str,
     seed: int,
     tier: AllocationTier,
     *,
@@ -238,7 +238,7 @@ def initial_allocation(
                 -paragraph.word_count,
                 _hash(
                     "palimpsest-block:v1:"
-                    f"{seed}:{fixture_id}:{tier.name}:{region_name}:{paragraph.sha256}"
+                    f"{seed}:{construction_id}:{tier.name}:{region_name}:{paragraph.sha256}"
                 ),
                 paragraph.ordinal,
             ),
@@ -248,7 +248,7 @@ def initial_allocation(
         for paragraph in ranked:
             paragraph_rank = _hash(
                 "palimpsest-block:v1:"
-                f"{seed}:{fixture_id}:{tier.name}:{region_name}:{paragraph.sha256}"
+                f"{seed}:{construction_id}:{tier.name}:{region_name}:{paragraph.sha256}"
             )
             cell = min(
                 range(cell_count),
@@ -786,12 +786,12 @@ def allocate_window(
     for tier in fixture.allocation_constraints.tiers:
         allocation = initial_allocation(
             window,
-            fixture.fixture_id,
+            fixture.construction_id,
             fixture.seed,
             tier,
             agent_ids=fixture.agent_ids,
             stage_count=fixture.stage_count,
-            boundary_stage=fixture.rekey_from_stage,
+            boundary_stage=fixture.stage_count // 2 + 1,
         )
         design, reasons, _ = _attempt_oracle(
             window.paragraphs,

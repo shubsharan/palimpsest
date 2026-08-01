@@ -7,6 +7,7 @@ import type {
   ModelSession,
   ModelTurn,
 } from "../model/contracts.js";
+import { SandboxInfrastructureError } from "../sandbox/contracts.js";
 import { runAgentSession } from "./session.js";
 
 function createTools(): AgentToolSet {
@@ -282,30 +283,13 @@ describe("model session lifecycle", () => {
     expect(cancel).toHaveBeenCalledWith("time-exhausted");
   });
 
-  it("traces a recovered indeterminate command and lets the model continue", async () => {
-    const turns: ModelTurn[] = [
-      {
-        toolCalls: [{ id: "command-1", name: "run_command", arguments: { command: "work" } }],
-        usage: { inputTokens: 1, outputTokens: 1 },
-      },
-      {
-        toolCalls: [],
-        finalResponse: "inspected and recovered",
-        usage: { inputTokens: 1, outputTokens: 1 },
-      },
-    ];
+  it("stops the session when a command sandbox reports an infrastructure failure", async () => {
     const observe = vi.fn();
     const tools: AgentToolSet = {
       definitions: [],
-      execute: async () => ({
-        exitCode: null,
-        stdout: "",
-        stderr: "The interrupted command was not replayed.",
-        timedOut: false,
-        outputExceeded: false,
-        indeterminate: true,
-        sandboxGeneration: 2,
-      }),
+      execute: async () => {
+        throw new SandboxInfrastructureError("Docker command execution was interrupted.");
+      },
     };
 
     await expect(
@@ -314,11 +298,10 @@ describe("model session lifecycle", () => {
         model: binding(),
         prompt: "solve",
         adapter: adapterWith({
-          async respond() {
-            const turn = turns.shift();
-            if (turn === undefined) throw new Error("Unexpected model turn.");
-            return turn;
-          },
+          respond: async () => ({
+            toolCalls: [{ id: "command-1", name: "run_command", arguments: { command: "work" } }],
+            usage: { inputTokens: 1, outputTokens: 1 },
+          }),
         }),
         tools,
         tokenBudget: 20,
@@ -327,12 +310,12 @@ describe("model session lifecycle", () => {
         observe,
       }),
     ).resolves.toMatchObject({
-      state: "finished",
-      finalResponse: "inspected and recovered",
+      state: "infrastructure-error",
+      terminationReason: "Docker command execution was interrupted.",
     });
     expect(observe).toHaveBeenCalledWith(
-      "sandbox.recovered",
-      { callId: "command-1", sandboxGeneration: 2 },
+      "infrastructure.error",
+      { component: "command-sandbox", error: "Docker command execution was interrupted." },
       "agent-1",
     );
   });

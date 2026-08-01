@@ -8,6 +8,7 @@ from ._decode import (
     _digest,
     _identifier,
     _integer,
+    _prefixed_digest,
     _ratio,
     _record,
     _safe_integer,
@@ -64,8 +65,9 @@ class AllocationConstraints:
 @dataclass(frozen=True)
 class FixtureDefinition:
     fixture_id: str
-    source: "TextFileDefinition"
-    references: tuple["TextFileDefinition", ...]
+    construction_id: str
+    source: TextFileDefinition
+    references: tuple[TextFileDefinition, ...]
     seed: int
     window: WindowPin
     agent_ids: tuple[str, ...]
@@ -223,6 +225,7 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         frozenset(
             {
                 "fixtureId",
+                "constructionId",
                 "source",
                 "references",
                 "seed",
@@ -234,6 +237,9 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         ),
     )
     fixture_id = _identifier(record["fixtureId"], f"{name} fixtureId")
+    construction_id = _prefixed_digest(
+        record["constructionId"], "construction-", f"{name} constructionId"
+    )
     source_record = _record(
         record["source"], f"{name} source", frozenset({"path", "format", "window"})
     )
@@ -241,8 +247,8 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         {"path": source_record["path"], "format": source_record["format"]}, f"{name} source"
     )
     raw_references = record["references"]
-    if not isinstance(raw_references, list) or not raw_references:
-        raise ValueError(f"{name} references must be a non-empty array.")
+    if not isinstance(raw_references, list):
+        raise ValueError(f"{name} references must be an array.")
     references = tuple(
         _decode_text_file(reference, f"{name} references[{index}]")
         for index, reference in enumerate(raw_references)
@@ -285,6 +291,7 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         raise ValueError(f"{name} re-key variants must share one boundary.")
     return FixtureDefinition(
         fixture_id=fixture_id,
+        construction_id=construction_id,
         source=source,
         references=references,
         seed=_safe_integer(record["seed"], f"{name} seed"),
@@ -307,8 +314,7 @@ def decode_fixture_catalog(value: object) -> FixtureCatalog:
         raise ValueError("Fixture catalog fixtures must be a non-empty array.")
     fixtures: list[FixtureDefinition] = []
     seen: set[str] = set()
-    for index, raw in enumerate(raw_fixtures):
-        name = f"Fixture catalog fixtures[{index}]"
+    for raw in raw_fixtures:
         fixture = decode_fixture_definition(raw)
         fixture_id = fixture.fixture_id
         if fixture_id in seen:

@@ -27,7 +27,6 @@ function config(agentCount: number, stageCount: number): RunExecutionConfig {
     buildId: `build-${"b".repeat(64)}`,
     artifactRoot: "/tmp/palimpsest/run",
     buildRoot: "/tmp/palimpsest/fixture",
-    referenceCorpusPath: "/tmp/palimpsest/fixture/references",
     agentIds,
     agentStages: Object.fromEntries(
       agentIds.map((agentId) => [
@@ -44,10 +43,9 @@ function config(agentCount: number, stageCount: number): RunExecutionConfig {
 
 async function executionFixture(root: string, stageCount = 2) {
   const buildRoot = join(root, "fixture");
-  const referenceCorpusPath = join(buildRoot, "references");
   const artifactRoot = join(root, "run");
   const agentIds = generateAgentIds(2);
-  await mkdir(referenceCorpusPath, { recursive: true });
+  await mkdir(buildRoot, { recursive: true });
   const agentStages = Object.fromEntries(
     await Promise.all(
       agentIds.map(async (agentId) => {
@@ -61,7 +59,7 @@ async function executionFixture(root: string, stageCount = 2) {
       }),
     ),
   ) as Record<AgentId, readonly string[]>;
-  return { buildRoot, referenceCorpusPath, artifactRoot, agentIds, agentStages };
+  return { buildRoot, artifactRoot, agentIds, agentStages };
 }
 
 interface ClockWaiter {
@@ -154,8 +152,7 @@ describe("run execution configuration", () => {
   it("starts every agent session before any session is allowed to finish", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-concurrent-sessions-"));
     try {
-      const { buildRoot, referenceCorpusPath, artifactRoot, agentIds, agentStages } =
-        await executionFixture(root);
+      const { buildRoot, artifactRoot, agentIds, agentStages } = await executionFixture(root);
       const started = new Set<AgentId>();
       let releaseAgents: (() => void) | undefined;
       const allAgentsStarted = new Promise<void>((resolve) => {
@@ -192,7 +189,6 @@ describe("run execution configuration", () => {
           ...config(2, 2),
           artifactRoot,
           buildRoot,
-          referenceCorpusPath,
           agentStages,
           schedule: { releaseOffsetsMs: [0, 1_000], cutoffMs: 2_000 },
         },
@@ -217,8 +213,7 @@ describe("run execution configuration", () => {
   it("completes the declared release schedule after every session finishes early", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-early-sessions-"));
     try {
-      const { buildRoot, referenceCorpusPath, artifactRoot, agentIds, agentStages } =
-        await executionFixture(root);
+      const { buildRoot, artifactRoot, agentIds, agentStages } = await executionFixture(root);
       const finished = new Set<AgentId>();
       const binding: ModelBinding = {
         profile: "fixture",
@@ -246,7 +241,6 @@ describe("run execution configuration", () => {
           ...config(2, 2),
           artifactRoot,
           buildRoot,
-          referenceCorpusPath,
           agentStages,
           schedule: { releaseOffsetsMs: [0, 1_000], cutoffMs: 2_000 },
         },

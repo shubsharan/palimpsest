@@ -11,10 +11,14 @@ import {
   type SandboxIdentity,
   type SolverSandboxCommand,
 } from "./contracts.js";
-import { dockerHostEnvironment, DockerCommandSandbox } from "./container.js";
+import {
+  createDockerCommandSandbox,
+  dockerHostEnvironment,
+  DockerCommandSandbox,
+} from "./container.js";
 
 const TEST_IDENTITY: SandboxIdentity = {
-  imageTag: "palimpsest-puzzle-sandbox:0.1.0",
+  imageTag: `palimpsest-puzzle-sandbox:sha256-${"2".repeat(64)}`,
   imageId: `sha256:${"1".repeat(64)}`,
   sourceDigest: "2".repeat(64),
   profileVersion: 1,
@@ -22,7 +26,6 @@ const TEST_IDENTITY: SandboxIdentity = {
 const TEST_TIMING = {
   cleanupTimeoutMs: 300,
   pollIntervalMs: 10,
-  recoveryProbeTimeoutMs: 25,
 } as const;
 const temporaryRoots: string[] = [];
 
@@ -63,6 +66,7 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       "  exit 125",
       "fi",
       'if [ "$1" = "exec" ]; then',
+      '  if [ "$mode" = "stalled-exec" ]; then sleep 5; fi',
       '  printf "command output"',
       '  printf "command diagnostic" >&2',
       "  exit 7",
@@ -76,6 +80,9 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       "  else",
       '    printf \'[{"State":{"Status":"running","ExitCode":0,"OOMKilled":false,"Error":""}}]\'',
       "  fi",
+      "fi",
+      'if [ "$1" = "ps" ]; then',
+      '  printf "existing resource=agent controller=other status=Up"',
       "fi",
       'if [ "$1" = "rm" ] && [ "$mode" = "cleanup-failure" ]; then',
       '  printf "cleanup unavailable" >&2',
@@ -93,7 +100,6 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       timeoutMs: 1_000,
       workspacePath: workspace,
       evidencePath: evidence,
-      referenceCorpusPath: reference,
       gitOriginPath: gitOrigin,
     },
   };
@@ -219,6 +225,26 @@ describe("sandbox container lifecycle", () => {
     expect(environment).not.toHaveProperty("PALIMPSEST_SENTINEL");
   });
 
+  it("bounds sandbox image inspection before container work begins", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-image-inspection-"));
+    temporaryRoots.push(root);
+    const dockerfileRoot = join(root, "containers", "puzzle-sandbox");
+    const executable = join(root, "docker");
+    await mkdir(dockerfileRoot, { recursive: true });
+    await Promise.all([
+      writeFile(join(dockerfileRoot, "Dockerfile"), "FROM scratch\n"),
+      writeFile(executable, "#!/bin/sh\nsleep 5\n", { mode: 0o755 }),
+    ]);
+
+    await expect(
+      createDockerCommandSandbox({
+        root,
+        dockerCommand: executable,
+        inspectionTimeoutMs: 50,
+      }),
+    ).rejects.toThrow("Docker image inspection exceeded its 50 ms deadline.");
+  });
+
   it("executes multiple commands through one lease and removes it only when closed", async () => {
     const fixture = await dockerFixture("success");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
@@ -230,11 +256,9 @@ describe("sandbox container lifecycle", () => {
       stderr: "command diagnostic",
       timedOut: false,
       outputExceeded: false,
-      sandboxGeneration: 1,
     });
     await expect(lease.execute({ command: "false", timeoutMs: 1_000 })).resolves.toMatchObject({
       exitCode: 7,
-      sandboxGeneration: 1,
     });
     expect((await readFile(fixture.log, "utf8")).trim().split("\n")).toEqual([
       "create",
@@ -336,24 +360,22 @@ describe("sandbox container lifecycle", () => {
     const lease = await sandbox.openAgentLease(fixture.request);
 
     await expect(lease.execute({ command: "exit 7", timeoutMs: 100 })).rejects.toThrow(
-      "Docker did not recover before the command deadline.",
+      "Docker container inspection timed out.",
+    );
+    await expect(lease.execute({ command: "true", timeoutMs: 100 })).rejects.toThrow(
+      "Agent sandbox lease is unusable",
     );
     await lease.close();
   });
 
-  it("replaces an interrupted lease without replaying the command", async () => {
+  it("terminates an interrupted lease without replaying or replacing the command", async () => {
     const fixture = await dockerFixture("interrupt-once");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
     const lease = await sandbox.openAgentLease(fixture.request);
 
-    await expect(
-      lease.execute({ command: "touch durable", timeoutMs: 1_000 }),
-    ).resolves.toMatchObject({
-      exitCode: null,
-      indeterminate: true,
-      sandboxGeneration: 2,
-      stderr: expect.stringContaining("was not replayed"),
-    });
+    await expect(lease.execute({ command: "touch durable", timeoutMs: 1_000 })).rejects.toThrow(
+      "Sandbox runtime interrupted command execution",
+    );
     expect(
       (await readFile(fixture.log, "utf8"))
         .trim()
@@ -361,12 +383,26 @@ describe("sandbox container lifecycle", () => {
         .filter((entry) => entry === "exec"),
     ).toHaveLength(1);
 
-    await expect(
-      lease.execute({ command: "test -e durable", timeoutMs: 1_000 }),
-    ).resolves.toMatchObject({
-      exitCode: 7,
-      sandboxGeneration: 2,
+    await expect(lease.execute({ command: "test -e durable", timeoutMs: 1_000 })).rejects.toThrow(
+      "Agent sandbox lease is unusable",
+    );
+    const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
+    expect(operations.filter((entry) => entry === "create")).toHaveLength(1);
+    await lease.close();
+  });
+
+  it("makes a timed-out lease terminal after removing its container", async () => {
+    const fixture = await dockerFixture("stalled-exec");
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
+    const lease = await sandbox.openAgentLease(fixture.request);
+
+    await expect(lease.execute({ command: "sleep", timeoutMs: 100 })).resolves.toMatchObject({
+      timedOut: true,
     });
+    await expect(lease.execute({ command: "true", timeoutMs: 100 })).rejects.toThrow(
+      "Agent sandbox lease is unusable",
+    );
+    expect((await readFile(fixture.log, "utf8")).trim().split("\n").at(-1)).toBe("rm");
     await lease.close();
   });
 
@@ -389,14 +425,16 @@ describe("sandbox container lifecycle", () => {
     const fixture = await dockerFixture("stalled-create");
     const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
-    await expect(
-      sandbox.openAgentLease({ ...fixture.request, timeoutMs: 100 }),
-    ).rejects.toBeInstanceOf(SandboxInfrastructureError);
+    await expect(sandbox.openAgentLease({ ...fixture.request, timeoutMs: 100 })).rejects.toThrow(
+      /Active Palimpsest containers:\nexisting resource=agent controller=other status=Up/,
+    );
     const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
     expect(operations).toContain("rm");
-    expect(operations.every((operation) => operation === "create" || operation === "rm")).toBe(
-      true,
-    );
+    expect(
+      operations.every(
+        (operation) => operation === "create" || operation === "rm" || operation === "ps",
+      ),
+    ).toBe(true);
   });
 
   it("cancels agent lease creation and still cleans up", async () => {
