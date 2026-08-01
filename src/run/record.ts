@@ -40,6 +40,7 @@ export interface RunValidationSnapshot {
   };
   readonly sandbox: SandboxIdentity;
   readonly smoke: {
+    readonly sourceRunId: string;
     readonly runId: string;
     readonly fixtureId: string;
     readonly variantId: string;
@@ -487,7 +488,7 @@ function validationSnapshot(value: unknown): RunValidationSnapshot {
   );
   const smoke = exactObject(
     decoded.smoke,
-    ["runId", "fixtureId", "variantId", "fixtureDigest", "agentIds", "stageCount"],
+    ["sourceRunId", "runId", "fixtureId", "variantId", "fixtureDigest", "agentIds", "stageCount"],
     "Validation smoke",
   );
   if (typeof decoded.spendAuthorized !== "boolean")
@@ -502,6 +503,7 @@ function validationSnapshot(value: unknown): RunValidationSnapshot {
     },
     sandbox: sandboxIdentity(decoded.sandbox, "Validation sandbox"),
     smoke: {
+      sourceRunId: text(smoke.sourceRunId, "Validation smoke sourceRunId"),
       runId: text(smoke.runId, "Validation smoke runId"),
       fixtureId: text(smoke.fixtureId, "Validation smoke fixtureId"),
       variantId: text(smoke.variantId, "Validation smoke variantId"),
@@ -858,13 +860,20 @@ function validateRelationships(record: RunRecord): void {
     validation.fixture.packagePath !== record.configuration.run.fixture.packagePath ||
     validation.fixture.fixtureId !== record.configuration.run.fixture.id ||
     validation.fixture.contentDigest !== record.configuration.run.fixture.digest ||
-    validation.smoke.fixtureId !== record.configuration.run.fixture.id ||
-    validation.smoke.variantId !== record.configuration.run.fixture.variant ||
-    validation.smoke.fixtureDigest !== record.configuration.run.fixture.digest ||
-    !same(validation.smoke.agentIds, agents) ||
-    validation.smoke.stageCount !== record.configuration.run.schedule.releaseOffsetsMs.length
+    !validation.spendAuthorized
   )
     throw new Error("Validation snapshot differs from the resolved run configuration.");
+  if (
+    validation.smoke.runId !== `${validation.smoke.sourceRunId}-validation` ||
+    (validation.smoke.sourceRunId === record.runId &&
+      (validation.smoke.fixtureId !== record.configuration.run.fixture.id ||
+        validation.smoke.variantId !== record.configuration.run.fixture.variant ||
+        validation.smoke.fixtureDigest !== record.configuration.run.fixture.digest ||
+        !same(validation.smoke.agentIds, agents) ||
+        validation.smoke.stageCount !== record.configuration.run.schedule.releaseOffsetsMs.length))
+  ) {
+    throw new Error("Validation smoke differs from its source run configuration.");
+  }
   if (
     !same(
       record.configuration.models.map(({ agentId }) => agentId),

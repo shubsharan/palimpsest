@@ -12,8 +12,10 @@ Replace the frozen five-block study platform with one direct path from declarati
 **Language/Version**: TypeScript 7.0 on Node.js 26.5; Python 3.12.4  
 **Primary Dependencies**: AI SDK provider adapters, Ajv, YAML, Zod; Python standard library and RFC 8785 canonical JSON  
 **Storage**: Trusted local files, prepared fixture-package directories, append-only JSONL traces, frozen Git repositories/workspaces, and atomically published JSON records  
-**Testing**: Vitest 4.1, pytest 9.1, deterministic fake clocks/model adapters, Git integration tests, and Docker sandbox tests  
-**Target Platform**: Local macOS/Linux operator host with Linux agent and evaluator containers  
+**Testing**: Vitest 4.1 named unit/contract/acceptance/Docker projects, pytest 9.1 unit/contract/material markers, deterministic fake clocks/model adapters, Git contract tests, and explicit local Docker sandbox tests
+
+**Target Platform**: Local macOS/Linux operator host with Linux agent and evaluator containers
+
 **Project Type**: Local CLI and deterministic research toolkit  
 **Performance Goals**: Validation completes before any provider request; runs start sequentially without overlap; agents inside one run start concurrently; fixture preparation and scoring remain deterministic for fixed inputs  
 **Constraints**: No hosted service, database, automatic retry/recovery, arbitrary puzzle plugin system, credential persistence, oracle exposure, hidden-reasoning capture, or prescribed agent workflow  
@@ -88,9 +90,11 @@ tests/                       # cross-boundary TypeScript tests
 3. Replace the study planner with manifest-order execution. Resolve one run, validate its exact fixture and resource relationships, smoke-test the selected run when requested, then run independent concurrent agent sessions using the declared communication topology.
 4. Collapse durable attempt/study artifacts into an atomic run record plus append-only trace. Freeze first, structurally validate the canonical trace, evaluate every canonical origin, publish only complete records, and allow later evaluation/analysis results to be appended through atomic record replacement after fixture and trace drift checks.
 5. Express the historical five-block matrix as example declarations, remove compatibility and orchestration infrastructure, then rewrite active documentation around the scientific flow.
+6. Split repository verification by cost and evidence: bounded-parallel static/unit/host-contract feedback in advisory CI; local material, deterministic acceptance, and real-container tiers; and exact one-smoke experiment validation only at the provider-access boundary. Give each invariant one language/layer owner, remove duplicate fixture and transitional architecture checks, and require test-owned resource cleanup.
 
 ## Governance Change
 
 | Change | Current Experimental Need | Simpler Observation Rejected Because |
 | --- | --- | --- |
 | Replace constitution section requiring a clean revision-bound preflight receipt | Experiments must vary manifests and prepared fixtures as genuine run inputs while validating what will actually execute | Keeping the receipt retains source/commit ceremony and stale-receipt machinery that does not validate fixture selection or experimental relationships; removing the gate entirely would permit spend before sandbox and provider-free checks |
+| Layer repository verification and keep consequential checks local | Fast behavioral feedback is needed on ordinary changes without confusing it with exact experiment readiness or empirical evidence | One all-inclusive suite silently requires Docker and rebuilds scientific material on every edit; CI with no tests misses behavior; CI with every tier violates the consequence boundary and wastes time |

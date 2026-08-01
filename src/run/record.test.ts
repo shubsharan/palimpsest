@@ -63,6 +63,7 @@ function record(): RunRecord {
         profileVersion: 1,
       },
       smoke: {
+        sourceRunId: "run-1",
         runId: "run-1-validation",
         fixtureId: "fixture",
         variantId: "stationary",
@@ -217,6 +218,37 @@ describe("run records", () => {
       },
     ],
     [
+      "legacy smoke without sourceRunId",
+      (value: Record<string, unknown>) => {
+        const configuration = value.configuration as RunRecord["configuration"];
+        const { sourceRunId: _sourceRunId, ...smoke } = configuration.validation.smoke;
+        return {
+          ...value,
+          configuration: {
+            ...configuration,
+            validation: { ...configuration.validation, smoke },
+          },
+        };
+      },
+    ],
+    [
+      "smoke run ID unrelated to its source run",
+      () => {
+        const value = record();
+        const { digest: _digest, ...configuration } = value.configuration;
+        return {
+          ...value,
+          configuration: freezeRunConfiguration({
+            ...configuration,
+            validation: {
+              ...configuration.validation,
+              smoke: { ...configuration.validation.smoke, runId: "unrelated-validation" },
+            },
+          }),
+        };
+      },
+    ],
+    [
       "origin mismatch",
       (value: Record<string, unknown>) => {
         const topology = value.topology as RunRecord["topology"];
@@ -288,6 +320,20 @@ describe("run records", () => {
       },
     ],
     [
+      "missing spend authorization",
+      () => {
+        const value = record();
+        const { digest: _digest, ...configuration } = value.configuration;
+        return {
+          ...value,
+          configuration: freezeRunConfiguration({
+            ...configuration,
+            validation: { ...configuration.validation, spendAuthorized: false },
+          }),
+        };
+      },
+    ],
+    [
       "frozen main commit that contradicts automatic evaluation",
       () => {
         const value = record();
@@ -302,6 +348,31 @@ describe("run records", () => {
     ],
   ])("rejects a %s", (_name, corrupt) => {
     expect(() => decodeRunRecord(corrupt())).toThrow();
+  });
+
+  it("accepts shared smoke evidence from another manifest run", () => {
+    const value = record();
+    const { digest: _digest, ...configuration } = value.configuration;
+    expect(() =>
+      decodeRunRecord({
+        ...value,
+        configuration: freezeRunConfiguration({
+          ...configuration,
+          validation: {
+            ...configuration.validation,
+            smoke: {
+              sourceRunId: "run-0",
+              runId: "run-0-validation",
+              fixtureId: "other-fixture",
+              variantId: "rekeyed",
+              fixtureDigest: "9".repeat(64),
+              agentIds: ["agent-1", "agent-2"],
+              stageCount: 6,
+            },
+          },
+        }),
+      }),
+    ).not.toThrow();
   });
 
   it("loads a complete record after the repository and run tree move", async () => {

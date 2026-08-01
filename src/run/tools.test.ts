@@ -9,7 +9,7 @@ import { runGit } from "../git.js";
 import { PublishedSolverInfrastructureError } from "../evaluation/published-solver.js";
 import { SandboxInfrastructureError } from "../sandbox/contracts.js";
 import { createAgentTools, type CheckerHook, TOOL_DEFINITIONS } from "./tools.js";
-import { FakeCommandSandbox } from "../test-helpers.js";
+import { FakeCommandSandbox } from "../../tests/support/fake-command-sandbox.js";
 
 const SUCCESS = {
   exitCode: 0,

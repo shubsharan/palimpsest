@@ -17,6 +17,10 @@ packages = ["palimpsest"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers"]
+markers = [
+  "contract: host filesystem and command-line boundary tests",
+  "material: full-corpus and checked-in fixture regression tests",
+]
 pythonpath = ["."]
 testpaths = ["tests"]
 

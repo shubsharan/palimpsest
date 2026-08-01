@@ -88,6 +88,31 @@
 - Add version suffixes to code names: rejected because no parallel public versions exist and the suffix adds migration ceremony.
 - Omit stored schema versions: rejected because incompatible archival data should fail explicitly rather than decode ambiguously.
 
+## Decision: Layer verification by cost and evidence
+
+**Rationale**: Ordinary edits need fast behavioral feedback, while full fixture construction, deterministic experiment acceptance, real-container behavior, and exact selected-input validation answer different questions at different costs. Static, unit, and host-contract checks therefore form the portable advisory path. Material, acceptance, and Docker checks remain explicit local tiers, and `puzzle:validate` remains the only exact pre-provider gate.
+
+Python owns scientific material and scoring invariants. TypeScript owns orchestration and stored contracts, with one narrow process/package smoke across the language boundary. Fake sandboxes own exhaustive failure classification; real Docker owns representative adapter fidelity and containment. Test files may run concurrently only when they own and clean their resources and do not rely on wall-clock races.
+
+**Alternatives considered**:
+
+- Keep one serialized suite: rejected because nine process-heavy files dominate feedback and hide safe file-level parallelism.
+- Run every tier in CI: rejected because real-container and deterministic material checks are consequential local evidence, not ordinary development gates.
+- Keep CI static-only: rejected because manifest, trace, record, and orchestration regressions would receive no behavioral feedback.
+- Duplicate fixture determinism in both languages: rejected because it adds runtime without testing a second contract.
+
+## Decision: Share one representative smoke across a manifest execution
+
+**Rationale**: Every run and package is decoded and relationship-validated, while one provider-free run proves the common orchestration and sandbox path immediately before execution. Full-manifest execution uses the first declared run; selected execution uses the selected run. Each run record retains its own exact fixture validation and the shared smoke's explicit source run, avoiding a false claim that every run was smoke-executed.
+
+Missing spend authorization is rejected before the sandbox probe or smoke because `puzzle:validate` is the intentional provider-free command. Provider adapters and credentials remain unavailable until the exact validation and representative smoke succeed.
+
+**Alternatives considered**:
+
+- Smoke every declared run: rejected because it duplicates deterministic provider-free execution despite a common runtime path.
+- Reuse an earlier standalone validation result: rejected because files and sandbox state may drift before execution.
+- Record the representative smoke as if it matched every run: rejected because that overstates the evidence for manifests with different fixture geometry.
+
 ## Decision: Make a clean break and preserve one historical preset
 
 **Rationale**: Git history already archives old schemas and studies. The active tree should teach only the lean path, while example definitions for the existing five fixtures and twenty runs demonstrate that prior scientific inputs remain expressible.

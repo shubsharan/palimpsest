@@ -61,7 +61,7 @@ Validate the exact manifest, package digests and relationships, sandbox, and pro
 pnpm puzzle:validate --config experiments/config.yaml
 ```
 
-Validation never resolves credentials, opens provider sessions, or creates a reusable receipt. Provider-backed execution repeats the same checks immediately before access and requires explicit spend authorization:
+Validation never resolves credentials, opens provider sessions, or creates a reusable receipt. Provider-backed execution rejects missing explicit spend authorization before sandbox work, then repeats the same checks immediately before access:
 
 ```bash
 pnpm puzzle:experiment --config experiments/config.yaml \
@@ -87,13 +87,26 @@ pnpm puzzle:analyze --run-root artifacts/experiments/example/theron-ware-shared-
 
 Re-evaluation appends results atomically without changing frozen inputs or earlier evidence. Analysis scans reachable frozen Git history for overlap, defaults to 32-word spans, and remains separate from status and scoring. Both operations strictly reload and validate the relocatable record before atomically appending one history entry. A directory with a trace but no `run.json` is interrupted, not complete.
 
-## Development Check
+## Verification
 
 ```bash
 pnpm check
+pnpm test
+pnpm verify
 ```
 
-Development checks are fast advisory feedback. Before paid or findings-bearing work, use `puzzle:validate` and let `puzzle:experiment` repeat exact config/package/sandbox validation before the explicit spend gate. No provider-free verification command needs credentials or a billable request.
+`check` verifies tool versions, formatting, lint, and TypeScript types. `test` runs the fast unit and contract lanes. `verify` composes both and is the ordinary advisory development gate used by hosted CI and the optional pre-push hook. It does not build or exercise Docker, rebuild the checked-in fixture corpus, or validate a particular experiment.
+
+Before a findings-bearing run, exercise the slower provider-free lanes locally:
+
+```bash
+pnpm verify:full
+pnpm puzzle:validate --config experiments/config.yaml
+```
+
+`verify:full` adds material fixture regression, provider-free experiment acceptance, the sandbox image build, and representative real-Docker tests. `puzzle:validate` is a separate consequential gate: it validates the exact manifest and packages, probes the sandbox once, and smokes the first declared run. When `puzzle:experiment` receives `--run`, its repeated validation smokes that selected run instead. A green development or full verification suite is not exact experiment validation and is not empirical model evidence.
+
+Provider-backed execution repeats exact validation immediately before access and requires `--allow-spend true`. No verification or validation command needs credentials or makes a billable request; only `puzzle:experiment` can open provider sessions.
 
 Generated packages and runs belong under the ignored `artifacts/` directory.
 

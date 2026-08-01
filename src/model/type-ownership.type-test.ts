@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-
 import type { AgentAssignment, ResolvedRun, RunDeclaration } from "../experiment/contracts.js";
 import type {
   AgentSessionResult,
@@ -21,7 +19,7 @@ type Equal<Left, Right> =
     : false;
 type Expect<Value extends true> = Value;
 
-type ModelOwnership = [
+export type ModelOwnership = [
   Expect<Equal<ProviderConnection["driver"], ProviderDriver>>,
   Expect<Equal<ModelBinding["settings"], ModelSettings>>,
   Expect<Equal<ModelSessionContext["tools"], readonly ToolDefinition[]>>,
@@ -29,7 +27,7 @@ type ModelOwnership = [
   Expect<Equal<AgentSessionResult["model"], ModelBinding>>,
 ];
 
-type ExperimentOwnership = [
+export type ExperimentOwnership = [
   Expect<Equal<RunDeclaration["assignment"], AgentAssignment>>,
   Expect<Equal<ResolvedRun["capabilities"], RunDeclaration["capabilities"]>>,
   Expect<Equal<ResolvedRun["schedule"], RunDeclaration["schedule"]>>,
@@ -42,7 +40,7 @@ type ExperimentOwnership = [
   Expect<Equal<RunPreparedFixtureOptions["limits"], ResolvedRun["limits"]>>,
 ];
 
-type ProducedRunState = Expect<
+export type ProducedRunState = Expect<
   Equal<
     keyof RunExecutionResult,
     | "frozen"
@@ -56,7 +54,7 @@ type ProducedRunState = Expect<
   >
 >;
 
-type RecordOwnership = [
+export type RecordOwnership = [
   Expect<Equal<ResolvedRunRecord["assignment"], ResolvedRun["assignment"]>>,
   Expect<Equal<ResolvedRunRecord["capabilities"], ResolvedRun["capabilities"]>>,
   Expect<Equal<ResolvedRunRecord["schedule"], ResolvedRun["schedule"]>>,
@@ -64,14 +62,3 @@ type RecordOwnership = [
   Expect<Equal<ResolvedRunRecord["labels"], ResolvedRun["labels"]>>,
   Expect<Equal<keyof ResolvedRunRecord["fixture"], "digest" | "id" | "packagePath" | "variant">>,
 ];
-
-describe("canonical type ownership", () => {
-  it("keeps dependent contracts linked to their canonical owners", () => {
-    const proof:
-      | ModelOwnership[number]
-      | ExperimentOwnership[number]
-      | RecordOwnership[number]
-      | ProducedRunState = true;
-    expect(proof).toBe(true);
-  });
-});

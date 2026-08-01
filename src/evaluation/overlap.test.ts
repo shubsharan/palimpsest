@@ -10,7 +10,7 @@ import { computeFixturePackageContentDigest } from "../fixture/package.js";
 import { runGit, type FrozenGitEnvironment, type GitRepository } from "../git.js";
 import { freezeRunConfiguration, publishRunRecord, type RunRecord } from "../run/record.js";
 import { sealTree } from "../seal.js";
-import { FakeCommandSandbox } from "../test-helpers.js";
+import { FakeCommandSandbox } from "../../tests/support/fake-command-sandbox.js";
 import { JsonlObservationLog } from "../trace.js";
 
 const PLAINTEXT =
@@ -188,6 +188,7 @@ async function analysisArtifact(mode: "shared" | "isolated") {
       fixture: { packagePath: "fixture", fixtureId: "analysis-fixture", contentDigest: digest },
       sandbox,
       smoke: {
+        sourceRunId: "run",
         runId: "run-validation",
         fixtureId: "analysis-fixture",
         variantId: "stationary",

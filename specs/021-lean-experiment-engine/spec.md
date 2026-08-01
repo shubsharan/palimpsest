@@ -78,7 +78,7 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 
 **Infrastructure Failures**: Invalid or drifted configuration, unavailable inputs, sandbox failure, provider transport failure, trace or freeze failure, and evaluation isolation or cleanup failure are reported separately from model behavior. An abrupt process interruption may leave a trace without a final record; no recovery or validity state is inferred.
 
-**Verification Boundary**: Ordinary development checks remain fast and advisory. Before provider-backed work, the exact manifest and fixture packages are validated, the configured sandbox is probed, a provider-free smoke run is completed, and the operator explicitly authorizes spend. The resolved configuration, fixture and sandbox identities, and validation outcome are retained with each run; no repository-wide receipt or clean-commit lock substitutes for those checks.
+**Verification Boundary**: Ordinary development checks remain fast, layered, provider-free, and advisory. CI runs only static, unit, and host-contract checks; material fixture regression, deterministic acceptance, and real-container behavior remain explicit local tiers. Before provider-backed work, the exact manifest and fixture packages are validated, the configured sandbox is probed once, one representative provider-free smoke run is completed, and the operator explicitly authorizes spend. The resolved configuration, each run's exact fixture identity, the shared smoke identity, and sandbox validation outcome are retained with every run; no repository-wide receipt or clean-commit lock substitutes for those checks.
 
 **Out-of-Scope Claims**: The feature does not prove reasoning, collaboration value, belief revision, source novelty, security against adversarial agents, deterministic model behavior, or general benchmark validity. It does not add automated statistical conclusions, a hosted experiment service, arbitrary puzzle engines, or prescribed collaboration workflow.
 
@@ -102,7 +102,7 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 - **FR-014**: The runner MUST NOT require roles, turns, checkpoints, consensus, intermediate files, reports, Git operations, or a prescribed coordination sequence.
 - **FR-015**: A session infrastructure failure MUST NOT cancel peer sessions; after peers quiesce, the runner MUST freeze and evaluate available work, publish an infrastructure-error record, stop before the next run, and MUST NOT trigger automatic retry, replacement, merging, repair, or reinterpretation.
 - **FR-016**: Repeating a run after failure MUST require a newly declared run ID.
-- **FR-017**: Execution MUST rerun configuration-scoped validation against the exact manifest and fixture packages, probe the sandbox, complete a provider-free smoke path, and require explicit spend authorization before opening a provider session.
+- **FR-017**: Execution MUST reject missing spend authorization before sandbox or smoke work, then rerun configuration-scoped validation against the exact manifest and every referenced fixture package, probe the sandbox once, and complete one provider-free smoke path before opening a provider session. Full-manifest execution MUST smoke the first declared run; selected execution MUST smoke exactly the selected run.
 - **FR-018**: The system MUST publish one normalized run record atomically only after complete session results and frozen topology exist. A thrown setup, lifecycle, freeze, or evaluation failure MUST append and flush one `infrastructure.error` event when a trace exists, propagate the error, publish no partial record, and leave the directory inspectable as interrupted.
 - **FR-019**: The run record MUST freeze the resolved secret-free run configuration, fixture digest, requested and actual model identities, normalized usage, release and activity evidence, terminations, frozen topology, infrastructure failures, and every evaluation result.
 - **FR-020**: Traces MUST be append-only and retain model responses, safe provider-returned summaries when available, tool calls and results, checker use, Git activity, optional room activity, releases, and lifecycle events in observed order. Publication and re-evaluation MUST require canonical relative paths `trace.jsonl` and `trace.meta.json` and structurally validate the current trace without sealing its appendable contents.
@@ -116,6 +116,14 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 - **FR-028**: The existing five checked-in fixtures and study matrix MUST remain reproducible as an example preset expressed entirely through the new fixture and experiment declarations.
 - **FR-029**: Existing run artifacts MAY remain in Git history but MUST NOT require a compatibility reader, importer, or migration path in the active runtime.
 - **FR-030**: Active project documentation MUST describe the lean fixture-to-experiment-to-run-record flow and remove superseded study-platform and feature-history guidance from the working tree.
+- **FR-031**: Development verification MUST expose separate static, unit, host-contract, material, deterministic acceptance, and real-container tiers, while keeping exact experiment validation and paid empirical execution outside repository test commands.
+- **FR-032**: The default repository test and hosted CI paths MUST exclude full checked-in fixture construction, deterministic experiment acceptance, real Docker behavior, provider access, and exact experiment validation.
+- **FR-033**: Python MUST be the authoritative test owner for corpus parsing, fixture bytes and digests, cipher and re-key mechanics, manipulation checks, checker disclosure, and scoring; TypeScript MUST test only the narrow Python process/package boundary without rebuilding the same material for determinism.
+- **FR-034**: Unit and host-contract TypeScript tests MUST support bounded file parallelism; timing-sensitive lifecycle tests MUST use deterministic phase coordination or configurable test deadlines while preserving production deadlines.
+- **FR-035**: Every test MUST remove the temporary filesystem and labeled container resources it creates without deleting unrelated operator state.
+- **FR-036**: Hosted development CI MUST run static, TypeScript, and Python feedback as separate advisory jobs, while sandbox-image construction remains a separate advisory smoke workflow.
+- **FR-037**: A run record MUST retain exact validation for its own fixture and one shared smoke snapshot naming the declared run used for the representative smoke; the smoke fixture MAY differ from a later run's fixture in the same manifest.
+- **FR-038**: Package scripts and documentation MUST compose stable verification tiers rather than raw test-file lists or dependency installation hidden inside checks.
 
 ### Key Entities
 
@@ -139,6 +147,10 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 - **SC-007**: Automated verification detects any leakage of credentials, oracle data, keys, unreleased evidence, hidden reasoning, or complete provider payloads into agent-visible or durable observation surfaces.
 - **SC-008**: No active runtime interface requires the historical five block IDs, `CS`/`CR`/`IS`/`IR`, calibration or validation phases, balanced orders, receipts, reservations, replacement lineage, or fixed agent/stage counts.
 - **SC-009**: The provider-free end-to-end suite covers multiple explicit runs, concurrent agents, sequential run order, both communication modes, failure-stop behavior, and every canonical-origin evaluation without prescribed model workflow.
+- **SC-010**: Three consecutive bounded-parallel unit and host-contract runs pass without flakes, and the warm default test path completes within ten seconds on the reference development machine.
+- **SC-011**: Default verification makes zero Docker or provider calls, performs no full checked-in fixture build, and leaves no temporary resource delta.
+- **SC-012**: Hosted CI visibly runs behavioral tests while material, deterministic acceptance, real-container, exact experiment validation, and paid execution remain absent from every hosted workflow.
+- **SC-013**: Full-manifest execution records one first-run smoke snapshot for every run record, selected execution records the selected-run smoke, and missing authorization creates neither a sandbox nor a provider adapter.
 
 ## Assumptions
 

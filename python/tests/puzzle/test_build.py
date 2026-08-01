@@ -11,6 +11,7 @@ from palimpsest.puzzle.definition import load_fixture_catalog
 from palimpsest.puzzle.package import FixturePackage
 
 ROOT = Path(__file__).resolve().parents[3]
+pytestmark = pytest.mark.material
 EXPECTED_ARTIFACT_DIGESTS = {
     "calibration-theron-ware": "350c3c2f63eefb23206babd11578a318a9fe15ac241928734134c5893876258d",
     "validation-custom-country": "9ad2e36c4087feb2aee03b6962c9aec468dbef1d3d002c2015474847f6066e97",

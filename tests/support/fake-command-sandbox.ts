@@ -6,7 +6,7 @@ import type {
   SandboxCommandResult,
   SandboxIdentity,
   SolverSandboxCommand,
-} from "./sandbox/contracts.js";
+} from "../../src/sandbox/contracts.js";
 
 export const TEST_SANDBOX_IDENTITY: SandboxIdentity = {
   imageTag: "palimpsest-puzzle-sandbox:0.1.0",

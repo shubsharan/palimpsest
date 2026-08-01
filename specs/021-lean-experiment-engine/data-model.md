@@ -84,9 +84,16 @@ Internal immutable projection created immediately before execution.
 - Verified `FixturePackage` identity and selected variant.
 - Fully resolved secret-free model bindings and agent assignments.
 - Communication topology, schedule, resource limits, spending authorization, labels, and sandbox identity.
-- Validation outcome identifying the provider-free smoke path completed for these exact inputs.
+- Exact package validation for the current run plus a shared validation snapshot identifying the declared run used for the representative provider-free smoke path.
 
 Credentials are resolved only at provider-call boundaries and are never part of this value.
+
+### ExperimentValidationSnapshot
+
+- Exact manifest path and digest, configured sandbox identity, validation timestamp, and explicit spend authorization.
+- `fixture`: the current run's exact package path, fixture ID, and content digest.
+- `smoke`: one representative provider-free run with an explicit `sourceRunId`, validation-run ID, fixture ID/digest, variant, agent IDs, and stage count.
+- Full-manifest execution uses the first declared run as `sourceRunId`; selected execution uses the selected run. The smoke fixture need not equal a later run's exact fixture, but the snapshot is shared only after every run/package relationship validates and the sandbox probe succeeds.
 
 ## RunRecord
 
@@ -114,7 +121,7 @@ setup/lifecycle/freeze/evaluation throw --> interrupted directory (trace may exi
 published -- re-evaluate/analyze --> atomically replaced RunRecord with appended history
 ```
 
-- Provider access is forbidden before `validated` and explicit spend authorization.
+- Missing spend authorization is rejected before sandbox or smoke work. Provider access and adapter construction are forbidden until every run/package relationship validates, the sandbox probe succeeds, and the representative smoke completes.
 - Final publication occurs only after sessions stop and available repositories/workspaces are frozen.
 - A session infrastructure result does not cancel peers; after every session quiesces, complete session results and available topology are frozen, evaluated, and published with `status: infrastructure-error`, then the experiment stops.
 - A thrown setup, lifecycle, freeze, or evaluation failure appends and flushes one `infrastructure.error` event when the trace exists, propagates, and publishes no partial `RunRecord`.

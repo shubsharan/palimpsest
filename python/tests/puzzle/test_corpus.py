@@ -16,6 +16,7 @@ from palimpsest.puzzle.corpus import (
 from palimpsest.puzzle.text import word_tokens
 
 ROOT = Path(__file__).resolve().parents[3]
+pytestmark = pytest.mark.material
 
 
 def test_registry_verifies_every_checked_in_source() -> None:

@@ -2,5 +2,5 @@
 
 set -eu
 
-printf '%s\n' 'Running the local CI equivalent before push...'
+printf '%s\n' 'Running fast advisory verification before push...'
 pnpm ci:local

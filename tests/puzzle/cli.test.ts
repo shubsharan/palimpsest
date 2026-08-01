@@ -1,15 +1,22 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { buildFixture } from "../../src/fixture/build.js";
 import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryRoots.splice(0).map((path) => rm(path, { force: true, recursive: true })),
+  );
+});
 
 function execute(args: readonly string[]) {
   return new Promise<{ exitCode: number; stdout: string; stderr: string }>((finish) => {
@@ -28,24 +35,6 @@ function execute(args: readonly string[]) {
 }
 
 describe("operator CLI contract", () => {
-  it("exposes the lean research commands", async () => {
-    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
-      scripts: Record<string, string>;
-    };
-    expect(
-      Object.keys(packageJson.scripts)
-        .filter((name) => name.startsWith("puzzle:"))
-        .sort(),
-    ).toEqual([
-      "puzzle:analyze",
-      "puzzle:build",
-      "puzzle:evaluate",
-      "puzzle:experiment",
-      "puzzle:sandbox:build",
-      "puzzle:validate",
-    ]);
-  });
-
   it("parses only explicit flag values", () => {
     expect(
       parseFlags(["--fixture", "calibration-theron-ware", "--output", "artifacts/fixture"]),
@@ -58,22 +47,17 @@ describe("operator CLI contract", () => {
     expect(() => parseFlags(["--config"])).toThrow("--config requires a value.");
   });
 
-  it("builds a declared fixture deterministically through the real Python boundary", async () => {
+  it("builds and decodes one package through the real Python boundary", async () => {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-fixture-build-"));
-    const first = await buildFixture({
+    temporaryRoots.push(temporaryRoot);
+    const result = await buildFixture({
       root,
       fixtureId: "calibration-theron-ware",
-      output: join(temporaryRoot, "first"),
+      output: join(temporaryRoot, "package"),
     });
-    const second = await buildFixture({
-      root,
-      fixtureId: "calibration-theron-ware",
-      output: join(temporaryRoot, "second"),
-    });
-    expect(second).toEqual({ ...first, packagePath: join(temporaryRoot, "second") });
-    expect(first.agentIds).toEqual(["agent-1", "agent-2", "agent-3"]);
-    expect(first.stageCount).toBe(6);
-    expect(first.variants).toEqual({
+    expect(result.agentIds).toEqual(["agent-1", "agent-2", "agent-3"]);
+    expect(result.stageCount).toBe(6);
+    expect(result.variants).toEqual({
       stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
       rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
     });

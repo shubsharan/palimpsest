@@ -13,7 +13,7 @@ import {
   PublishedSolverSubmissionError,
   runPublishedSolver,
 } from "./published-solver.js";
-import { FakeCommandSandbox } from "../test-helpers.js";
+import { FakeCommandSandbox } from "../../tests/support/fake-command-sandbox.js";
 
 const temporaryRoots: string[] = [];
 

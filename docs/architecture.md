@@ -34,7 +34,7 @@ Runs execute sequentially in manifest order to avoid undeclared cross-run conten
 
 ## Run Runtime
 
-Immediately before execution, the runner validates the exact manifest and packages, probes the configured sandbox, completes the provider-free smoke path, and requires explicit operator spend authorization. Invalid configuration, package drift, sandbox failure, or missing authorization stops before provider access.
+Provider-backed execution first rejects missing explicit operator spend authorization. The runner then validates the exact manifest and packages, probes the configured sandbox, and completes the provider-free smoke path before provider access. Invalid configuration, package drift, sandbox failure, smoke failure, or missing authorization creates no provider adapter or request.
 
 For each run, TypeScript:
 
@@ -83,12 +83,16 @@ pnpm puzzle:evaluate --run-root <run-dir>
 pnpm puzzle:analyze --run-root <run-dir> [--minimum-words <n>]
 ```
 
-Commands emit one JSON result on success and non-zero diagnostics on failure. Validation is provider-free and creates no reusable receipt. Experiment execution repeats the same validation immediately before provider access; `--allow-spend` authorizes only the ceilings already declared in the manifest.
+Commands emit one JSON result on success and non-zero diagnostics on failure. Validation is provider-free and creates no reusable receipt. Experiment execution rejects missing `--allow-spend true` before sandbox work, then repeats the same validation immediately before provider access; authorization applies only to the ceilings already declared in the manifest.
 
 ## Verification And Failure Semantics
 
-Ordinary `pnpm check` remains fast advisory development feedback. Consequential validation is scoped to the selected experiment: exact manifest and package decoding, fixture digest checks, sandbox probe, provider-free smoke execution, and explicit spend authorization occur immediately before provider sessions. The resolved inputs, validation result, and sandbox identity are retained in each run record.
+Verification is layered by cost and evidence. `pnpm check` verifies tool versions, formatting, lint, and TypeScript types. `pnpm test` runs parallel unit and contract lanes, and `pnpm verify` composes those fast advisory development checks. `pnpm verify:full` additionally runs material fixture regression, provider-free experiment acceptance, the sandbox image build, and serial representative real-Docker tests. It remains provider-free.
+
+Hosted advisory CI runs quality, fast TypeScript, and fast Python jobs independently. Sandbox image construction is a separate path-filtered advisory workflow. Hosted CI never runs material or acceptance suites, real-Docker tests, `puzzle:validate`, or provider-backed work. The local pre-push hook invokes `pnpm ci:local`, which assumes locked dependencies are already installed and runs the fast `verify` surface.
+
+Consequential validation remains separate and scoped to the selected experiment. `puzzle:validate` performs exact manifest and package decoding, fixture digest checks, one sandbox probe, and one provider-free smoke execution for the first declared run. After rejecting missing spend authorization, provider-backed execution repeats exact validation before opening sessions; `puzzle:experiment --run` smokes that selected run instead. The resolved inputs, validation result, and sandbox identity are retained in each run record.
 
 Deterministic tests cover variable fixture geometry, construction and manipulation checks, treatment parity, fake-clock releases, shared visibility, isolated non-observability, secret exclusion, published-main checking, every-origin evaluation, scoring, and record publication. Invalid inputs fail before spend. Provider transport, sandbox, tracing, freezing, and evaluator failures are reported separately from model mistakes, no publication, conflicts, or missing integration.
 
-No verification command needs provider credentials or a billable request. The system makes no compatibility promise for historical study, phase, attempt, receipt, or reservation records; Git history is their archive.
+No verification or validation command needs provider credentials or makes a billable request. Green mechanical tests are neither exact experiment validation nor empirical model evidence. The system makes no compatibility promise for historical study, phase, attempt, receipt, or reservation records; Git history is their archive.

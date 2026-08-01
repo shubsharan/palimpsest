@@ -166,7 +166,7 @@ export interface ExperimentValidation {
   sandbox: CommandSandbox;
   manifestPath: string;
   validatedAt: string;
-  smokes?: ReadonlyMap<ResolvedRun["id"], RunValidationSnapshot["smoke"]>;
+  smoke?: RunValidationSnapshot["smoke"];
 }
 
 export interface ExperimentValidationReport extends Pick<ResolvedExperiment, "manifestDigest"> {
@@ -241,43 +241,43 @@ export async function validateExperimentExecution(options: {
     }
     validateRunAgainstFixture(run, fixture);
   }
+  const smokeRun =
+    options.selectedRunId === undefined
+      ? experiment.runs[0]
+      : experiment.runs.find(({ id }) => id === options.selectedRunId);
+  if (smokeRun === undefined) {
+    throw new Error(`Unknown experiment run ${String(options.selectedRunId)}.`);
+  }
   const sandbox = await service.createSandbox(root);
-  let smokes: Map<ResolvedRun["id"], RunValidationSnapshot["smoke"]> | undefined;
+  let smoke: RunValidationSnapshot["smoke"] | undefined;
   if (options.smoke !== false) {
-    const runs =
-      options.selectedRunId === undefined
-        ? experiment.runs
-        : experiment.runs.filter(({ id }) => id === options.selectedRunId);
-    if (runs.length === 0) throw new Error(`Unknown experiment run ${options.selectedRunId}.`);
-    smokes = new Map();
     const scratch = await mkdtemp(join(tmpdir(), "palimpsest-validation-"));
     try {
-      for (const run of runs) {
-        const fixture = fixtures.get(run.fixture.packageRoot)!;
-        await service.run({
-          root,
-          fixtureRoot: run.fixture.packageRoot,
-          output: join(scratch, run.id),
-          experimentId: experiment.manifestDigest,
-          runId: `${run.id}-validation`,
-          variantId: run.fixture.variant,
-          agents: createFixtureAgentRuntimes(fixture.agentIds),
-          capabilities: run.capabilities,
-          schedule: run.schedule,
-          limits: { ...run.limits, spendCeilingCents: 0 },
-          labels: run.labels,
-          sandbox,
-          clock: acceleratedClock(),
-        });
-        smokes.set(run.id, {
-          runId: `${run.id}-validation`,
-          fixtureId: fixture.fixtureId,
-          variantId: run.fixture.variant,
-          fixtureDigest: fixture.contentDigest,
-          agentIds: fixture.agentIds,
-          stageCount: fixture.stageCount,
-        });
-      }
+      const fixture = fixtures.get(smokeRun.fixture.packageRoot)!;
+      await service.run({
+        root,
+        fixtureRoot: smokeRun.fixture.packageRoot,
+        output: join(scratch, smokeRun.id),
+        experimentId: experiment.manifestDigest,
+        runId: `${smokeRun.id}-validation`,
+        variantId: smokeRun.fixture.variant,
+        agents: createFixtureAgentRuntimes(fixture.agentIds),
+        capabilities: smokeRun.capabilities,
+        schedule: smokeRun.schedule,
+        limits: { ...smokeRun.limits, spendCeilingCents: 0 },
+        labels: smokeRun.labels,
+        sandbox,
+        clock: acceleratedClock(),
+      });
+      smoke = {
+        sourceRunId: smokeRun.id,
+        runId: `${smokeRun.id}-validation`,
+        fixtureId: fixture.fixtureId,
+        variantId: smokeRun.fixture.variant,
+        fixtureDigest: fixture.contentDigest,
+        agentIds: fixture.agentIds,
+        stageCount: fixture.stageCount,
+      };
     } finally {
       await makeValidationScratchRemovable(scratch);
       await rm(scratch, { recursive: true, force: true });
@@ -289,7 +289,7 @@ export async function validateExperimentExecution(options: {
     sandbox,
     manifestPath,
     validatedAt: new Date().toISOString(),
-    ...(smokes === undefined ? {} : { smokes }),
+    ...(smoke === undefined ? {} : { smoke }),
   };
 }
 
@@ -302,6 +302,9 @@ export async function runExperiment(options: {
   env?: NodeJS.ProcessEnv;
   dependencies?: Partial<ExperimentDependencies>;
 }): Promise<readonly RunRecord[]> {
+  if (!options.allowSpend) {
+    throw new Error("Provider-backed execution requires --allow-spend true.");
+  }
   const root = resolve(options.root);
   const output = resolve(root, options.output);
   const service = dependencies(options.dependencies);
@@ -311,9 +314,6 @@ export async function runExperiment(options: {
     ...(options.runId === undefined ? {} : { selectedRunId: options.runId }),
     dependencies: service,
   });
-  if (!options.allowSpend) {
-    throw new Error("Provider-backed execution requires --allow-spend true.");
-  }
   const selected =
     options.runId === undefined
       ? validated.experiment.runs
@@ -322,7 +322,7 @@ export async function runExperiment(options: {
   await mkdir(dirname(output), { recursive: true });
   await mkdir(output, { recursive: false });
   const records: RunRecord[] = [];
-  if (validated.smokes === undefined || selected.some(({ id }) => !validated.smokes?.has(id))) {
+  if (validated.smoke === undefined) {
     throw new Error("Provider-backed execution requires a completed provider-free smoke run.");
   }
   for (const run of selected) {
@@ -396,7 +396,7 @@ export async function runExperiment(options: {
           contentDigest: fixture.contentDigest,
         },
         sandbox: validated.sandbox.identity,
-        smoke: validated.smokes.get(run.id)!,
+        smoke: validated.smoke,
         validatedAt: validated.validatedAt,
         spendAuthorized: options.allowSpend,
       },

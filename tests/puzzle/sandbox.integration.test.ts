@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -21,6 +21,7 @@ import type { AgentId } from "../../src/model/contracts.js";
 const execFileAsync = promisify(execFile);
 const originalApiKey = process.env.OPENAI_API_KEY;
 const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+const temporaryRoots: string[] = [];
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -50,6 +51,7 @@ async function sandboxContainerCount(labelValue: string): Promise<number> {
 
 async function agentFixture(communicationMode: GitCommunicationMode = "shared") {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-integration-"));
+  temporaryRoots.push(root);
   const git = await createGitEnvironment(join(root, "git"), communicationMode, AGENTS);
   const workspace = git.workspaces[0];
   if (!workspace) throw new Error("Expected agent-1 workspace.");
@@ -83,12 +85,15 @@ async function agentFixture(communicationMode: GitCommunicationMode = "shared") 
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   if (originalApiKey === undefined) {
     delete process.env.OPENAI_API_KEY;
   } else {
     process.env.OPENAI_API_KEY = originalApiKey;
   }
+  await Promise.all(
+    temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
+  );
 });
 
 describe("real Docker command containment", () => {

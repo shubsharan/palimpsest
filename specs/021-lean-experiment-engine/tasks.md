@@ -88,3 +88,16 @@
 ## Implementation Strategy
 
 Complete US1 and the manifest decoder first to establish the minimum fixture-to-run path. Then replace the study executor, publish complete run evidence, and delete superseded machinery rather than maintaining two runtimes.
+
+## Phase 8: Fast Layered Verification
+
+**Goal**: Give ordinary development, consequential local verification, exact experiment validation, and empirical execution distinct commands and evidence boundaries while removing redundant work.
+
+- [x] T040 Amend Feature 021 requirements, plan, research, data model, contracts, and quickstart for layered verification and a shared representative smoke
+- [x] T041 [P] Change experiment validation and the strict run-record decoder to validate every run/package, probe once, smoke the first or selected run, record `sourceRunId`, and reject missing spend authorization before sandbox work
+- [x] T042 [P] Classify Vitest and pytest suites as unit, contract, material, acceptance, or Docker with bounded parallelism and explicit local-only consequential tiers
+- [x] T043 [P] Remove duplicate fixture, transitional architecture, script-string, version-process, and runtime-wrapped type assertions while retaining one authoritative owner per invariant
+- [x] T044 Add deterministic lifecycle deadlines, test-owned temporary resource cleanup, and compact shared test builders without weakening production behavior
+- [x] T045 Recompose package scripts and the pre-push hook around `check`, CI-safe `test`, `verify`, explicit consequential tiers, and dependency-free `ci:local`
+- [x] T046 Split advisory hosted verification into parallel quality/TypeScript/Python jobs and a separately triggered sandbox-image smoke workflow without consequential or provider-backed checks
+- [x] T047 Run focused schema/runtime tests, three repeated parallel fast suites, full provider-free verification including material/acceptance/Docker tiers, script/doc integrity checks, and `git diff --check`

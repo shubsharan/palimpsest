@@ -18,7 +18,7 @@ import { runPythonJson } from "../python.js";
 import { freezeRunConfiguration, publishRunRecord, type RunRecord } from "../run/record.js";
 import type { SandboxCommandResult, SolverSandboxCommand } from "../sandbox/contracts.js";
 import { sealTree } from "../seal.js";
-import { FakeCommandSandbox } from "../test-helpers.js";
+import { FakeCommandSandbox } from "../../tests/support/fake-command-sandbox.js";
 import { JsonlObservationLog } from "../trace.js";
 
 vi.mock("../python.js", async () => {
@@ -233,6 +233,7 @@ function runRecord(
       },
       sandbox: new FakeCommandSandbox().identity,
       smoke: {
+        sourceRunId: "run",
         runId: "run-validation",
         fixtureId: "evaluation-fixture",
         variantId: "stationary",

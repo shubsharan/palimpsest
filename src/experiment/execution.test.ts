@@ -9,7 +9,7 @@ import { runExperiment, runExperimentFromFlags } from "./execution.js";
 import type { FixturePackage } from "../fixture/package.js";
 import type { AgentId, ModelAdapter, ModelBinding } from "../model/contracts.js";
 import type { RunPreparedFixtureOptions, RunPreparedFixtureResult } from "../run/execution.js";
-import { FakeCommandSandbox } from "../test-helpers.js";
+import { FakeCommandSandbox } from "../../tests/support/fake-command-sandbox.js";
 import { JsonlObservationLog } from "../trace.js";
 
 const agentIds = ["agent-1", "agent-2"] as const satisfies readonly AgentId[];
@@ -149,10 +149,13 @@ async function fakeResult(
 }
 
 describe("experiment orchestration", () => {
-  it("validates provider-free and checks spend authorization before adapters", async () => {
+  it("rejects missing spend authorization before validation or adapters", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
     const packagePath = join(root, "fixture");
     const sandbox = new FakeCommandSandbox();
+    let loadCalls = 0;
+    let fixtureCalls = 0;
+    let sandboxCalls = 0;
     let adapterCalls = 0;
     let smokeCalls = 0;
 
@@ -163,9 +166,18 @@ describe("experiment orchestration", () => {
         output: "experiment",
         allowSpend: false,
         dependencies: {
-          loadExperiment: async () => experiment(packagePath),
-          loadFixture: async () => fixture(),
-          createSandbox: async () => sandbox,
+          loadExperiment: async () => {
+            loadCalls += 1;
+            return experiment(packagePath);
+          },
+          loadFixture: async () => {
+            fixtureCalls += 1;
+            return fixture();
+          },
+          createSandbox: async () => {
+            sandboxCalls += 1;
+            return sandbox;
+          },
           run: async (options) => {
             smokeCalls += 1;
             return fakeResult(options, sandbox);
@@ -177,7 +189,10 @@ describe("experiment orchestration", () => {
         },
       }),
     ).rejects.toThrow(/allow-spend true/i);
-    expect(smokeCalls).toBe(2);
+    expect(loadCalls).toBe(0);
+    expect(fixtureCalls).toBe(0);
+    expect(sandboxCalls).toBe(0);
+    expect(smokeCalls).toBe(0);
     expect(adapterCalls).toBe(0);
   });
 
@@ -187,6 +202,8 @@ describe("experiment orchestration", () => {
     const secondPackagePath = join(root, "fixture-b");
     const sandbox = new FakeCommandSandbox();
     const calls: string[] = [];
+    const fixtureLoads: string[] = [];
+    let sandboxCalls = 0;
     const records = await runExperiment({
       root,
       configPath: "manifest.yaml",
@@ -210,11 +227,16 @@ describe("experiment orchestration", () => {
             ],
           };
         },
-        loadFixture: async (path) =>
-          path === secondPackagePath
+        loadFixture: async (path) => {
+          fixtureLoads.push(path);
+          return path === secondPackagePath
             ? { ...fixture(), fixtureId: "fixture-b", contentDigest: "2".repeat(64) }
-            : fixture(),
-        createSandbox: async () => sandbox,
+            : fixture();
+        },
+        createSandbox: async () => {
+          sandboxCalls += 1;
+          return sandbox;
+        },
         createAdapter: () => adapter(),
         run: async (options) => {
           calls.push(options.runId);
@@ -231,13 +253,23 @@ describe("experiment orchestration", () => {
       },
     });
 
-    expect(calls).toEqual(["run-a-validation", "run-b-validation", "run-a", "run-b"]);
+    expect(fixtureLoads).toEqual([packagePath, secondPackagePath]);
+    expect(sandboxCalls).toBe(1);
+    expect(calls).toEqual(["run-a-validation", "run-a", "run-b"]);
     expect(records.map(({ runId }) => runId)).toEqual(["run-a", "run-b"]);
+    expect(records.map(({ configuration }) => configuration.validation.smoke.sourceRunId)).toEqual([
+      "run-a",
+      "run-a",
+    ]);
     expect(records.map(({ configuration }) => configuration.validation.smoke.runId)).toEqual([
       "run-a-validation",
-      "run-b-validation",
+      "run-a-validation",
     ]);
     expect(records.map(({ configuration }) => configuration.validation.smoke.fixtureId)).toEqual([
+      "fixture",
+      "fixture",
+    ]);
+    expect(records.map(({ configuration }) => configuration.validation.fixture.fixtureId)).toEqual([
       "fixture",
       "fixture-b",
     ]);
@@ -279,6 +311,46 @@ describe("experiment orchestration", () => {
     expect(adapterCalls).toBe(0);
   });
 
+  it.each(["manifest", "fixture", "sandbox", "smoke"] as const)(
+    "does not construct adapters when %s validation fails",
+    async (failure) => {
+      const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+      const packagePath = join(root, "fixture");
+      const sandbox = new FakeCommandSandbox();
+      let adapterCalls = 0;
+
+      await expect(
+        runExperiment({
+          root,
+          configPath: "manifest.yaml",
+          output: "experiment",
+          allowSpend: true,
+          dependencies: {
+            loadExperiment: async () => {
+              if (failure === "manifest") throw new Error("manifest failed");
+              return experiment(packagePath);
+            },
+            loadFixture: async () =>
+              failure === "fixture" ? { ...fixture(), stageCount: 2 } : fixture(),
+            createSandbox: async () => {
+              if (failure === "sandbox") throw new Error("sandbox failed");
+              return sandbox;
+            },
+            run: async (options) => {
+              if (failure === "smoke") throw new Error("smoke failed");
+              return fakeResult(options, sandbox);
+            },
+            createAdapter: () => {
+              adapterCalls += 1;
+              return adapter();
+            },
+          },
+        }),
+      ).rejects.toThrow();
+      expect(adapterCalls).toBe(0);
+    },
+  );
+
   it("stops at the first failed run without replacement or retry", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
     const packagePath = join(root, "fixture");
@@ -303,7 +375,7 @@ describe("experiment orchestration", () => {
         },
       }),
     ).rejects.toThrow("run failed");
-    expect(calls).toEqual(["run-a-validation", "run-b-validation", "run-a"]);
+    expect(calls).toEqual(["run-a-validation", "run-a"]);
   });
 
   it("records a thrown evaluation failure without publishing or starting a later run", async () => {
@@ -332,7 +404,7 @@ describe("experiment orchestration", () => {
         },
       }),
     ).rejects.toThrow("evaluation failed");
-    expect(calls).toEqual(["run-a-validation", "run-b-validation", "run-a"]);
+    expect(calls).toEqual(["run-a-validation", "run-a"]);
     await expect(readFile(join(root, "experiment", "run-a", "run.json"), "utf8")).rejects.toThrow();
     await expect(
       readFile(join(root, "experiment", "run-a", "trace.jsonl"), "utf8"),
@@ -383,7 +455,7 @@ describe("experiment orchestration", () => {
         },
       }),
     ).rejects.toThrow(/run run-a ended with an infrastructure error/i);
-    expect(calls).toEqual(["run-a-validation", "run-b-validation", "run-a"]);
+    expect(calls).toEqual(["run-a-validation", "run-a"]);
     const published = JSON.parse(
       await readFile(join(root, "experiment", "run-a", "run.json"), "utf8"),
     ) as { status: string; sessions: { state: string }[] };
