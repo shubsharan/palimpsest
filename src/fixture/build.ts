@@ -7,8 +7,12 @@ import { runPythonJson } from "../python.js";
 import { loadResolvedExperiment, validateRunAgainstFixture } from "../experiment/manifest.js";
 import type { ResolvedRun } from "../experiment/contracts.js";
 import { createDockerCommandSandbox, dockerHostEnvironment } from "../sandbox/container.js";
-import { SANDBOX_IMAGE_TAG } from "../sandbox/contracts.js";
-import { sandboxDockerfileDigest } from "../sandbox/docker.js";
+import { SandboxInfrastructureError, sandboxImageTag } from "../sandbox/contracts.js";
+import {
+  parseSandboxImageInspection,
+  sandboxDockerfileDigest,
+  validateSandboxImageInspection,
+} from "../sandbox/docker.js";
 
 export interface BuildFixtureOptions {
   root: string;
@@ -233,7 +237,7 @@ export function sandboxDockerBuildArguments(sourceDigest: string): readonly stri
     "build",
     "--provenance=false",
     "--tag",
-    SANDBOX_IMAGE_TAG,
+    sandboxImageTag(sourceDigest),
     "--build-arg",
     `PALIMPSEST_SANDBOX_SOURCE_DIGEST=${sourceDigest}`,
     "containers/puzzle-sandbox",
@@ -245,7 +249,11 @@ async function buildImage(root: string, sourceDigest: string): Promise<void> {
     cwd: root,
     env: dockerHostEnvironment(),
     stdio: "stderr",
+    deadline: performance.now() + 600_000,
   });
+  if (result.timedOut) {
+    throw new Error("Docker sandbox build exceeded its 10 minute deadline.");
+  }
   if (result.signal !== null || result.exitCode !== 0) {
     throw new Error(
       `Docker sandbox build failed${result.signal === null ? ` with exit ${String(result.exitCode)}` : ` from ${result.signal}`}.`,
@@ -253,8 +261,42 @@ async function buildImage(root: string, sourceDigest: string): Promise<void> {
   }
 }
 
+async function sandboxImageAvailable(root: string, sourceDigest: string): Promise<boolean> {
+  const imageTag = sandboxImageTag(sourceDigest);
+  const result = await runProcess("docker", ["image", "inspect", imageTag], {
+    cwd: root,
+    env: dockerHostEnvironment(),
+    deadline: performance.now() + 10_000,
+  });
+  if (result.timedOut) {
+    throw new Error("Docker image inspection exceeded its 10 second deadline.");
+  }
+  if (result.signal !== null) {
+    throw new Error(`Docker image inspection was terminated by ${result.signal}.`);
+  }
+  if (result.exitCode === 0) {
+    try {
+      validateSandboxImageInspection(
+        parseSandboxImageInspection(result.stdout.toString("utf8")),
+        sourceDigest,
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof SandboxInfrastructureError) return false;
+      throw error;
+    }
+  }
+  const diagnostic = result.stderr.toString("utf8").toLowerCase();
+  if (diagnostic.includes("no such image") || diagnostic.includes("no such object")) return false;
+  throw new Error(
+    `Docker image inspection failed with exit ${String(result.exitCode)}: ${diagnostic.trim() || "no error detail"}`,
+  );
+}
+
 export async function buildSandbox(root = resolve(".")) {
   const sourceDigest = await sandboxDockerfileDigest(root);
-  await buildImage(root, sourceDigest);
+  if (!(await sandboxImageAvailable(root, sourceDigest))) {
+    await buildImage(root, sourceDigest);
+  }
   return (await createDockerCommandSandbox({ root })).identity;
 }

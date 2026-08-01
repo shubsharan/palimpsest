@@ -9,7 +9,7 @@ describe("fixture build boundary", () => {
       "build",
       "--provenance=false",
       "--tag",
-      "palimpsest-puzzle-sandbox:0.1.0",
+      `palimpsest-puzzle-sandbox:sha256-${sourceDigest}`,
       "--build-arg",
       `PALIMPSEST_SANDBOX_SOURCE_DIGEST=${sourceDigest}`,
       "containers/puzzle-sandbox",

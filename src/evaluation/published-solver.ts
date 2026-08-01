@@ -246,12 +246,7 @@ export async function executePublishedSolver(options: {
     outputPath,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
-  if (
-    execution.exitCode !== 0 ||
-    execution.timedOut ||
-    execution.outputExceeded ||
-    execution.indeterminate === true
-  ) {
+  if (execution.exitCode !== 0 || execution.timedOut || execution.outputExceeded) {
     return {
       kind: "submission-error",
       execution,

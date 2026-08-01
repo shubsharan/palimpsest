@@ -9,7 +9,7 @@ import type {
 } from "../../src/sandbox/contracts.js";
 
 export const TEST_SANDBOX_IDENTITY: SandboxIdentity = {
-  imageTag: "palimpsest-puzzle-sandbox:0.1.0",
+  imageTag: `palimpsest-puzzle-sandbox:sha256-${"2".repeat(64)}`,
   imageId: `sha256:${"1".repeat(64)}`,
   sourceDigest: "2".repeat(64),
   profileVersion: 1,

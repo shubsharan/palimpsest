@@ -1,8 +1,18 @@
-export const SANDBOX_IMAGE_TAG = "palimpsest-puzzle-sandbox:0.1.0";
+export const SANDBOX_IMAGE_REPOSITORY = "palimpsest-puzzle-sandbox";
 export const SANDBOX_DOCKERFILE_PATH = "containers/puzzle-sandbox/Dockerfile";
 export const SANDBOX_PROFILE_LABEL = "org.palimpsest.puzzle-sandbox.profile-version";
 export const SANDBOX_SOURCE_LABEL = "org.palimpsest.puzzle-sandbox.source-digest";
 export const SANDBOX_CONTAINER_LABEL = "org.palimpsest.puzzle-sandbox.command";
+export const SANDBOX_RESOURCE_LABEL = "org.palimpsest.puzzle-sandbox.resource";
+
+export type SandboxContainerLabels = Readonly<Record<string, string>>;
+
+export function sandboxImageTag(sourceDigest: string): string {
+  if (!/^[0-9a-f]{64}$/.test(sourceDigest)) {
+    throw new Error("Sandbox source digest must be 64 lowercase hexadecimal characters.");
+  }
+  return `${SANDBOX_IMAGE_REPOSITORY}:sha256-${sourceDigest}`;
+}
 
 export const SANDBOX_PATHS = {
   workspace: "/workspace",
@@ -62,8 +72,6 @@ export interface SandboxCommandResult {
   timedOut: boolean;
   outputExceeded: boolean;
   outputFailure?: string;
-  indeterminate?: true;
-  sandboxGeneration?: number;
 }
 
 export interface SandboxIdentity {

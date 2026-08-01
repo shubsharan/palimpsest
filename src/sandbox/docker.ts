@@ -5,17 +5,19 @@ import { join, posix, resolve } from "node:path";
 import {
   SANDBOX_CONTAINER_LABEL,
   SANDBOX_DOCKERFILE_PATH,
-  SANDBOX_IMAGE_TAG,
   SANDBOX_PATHS,
   SANDBOX_POLICY,
   SANDBOX_PROFILE_LABEL,
+  SANDBOX_RESOURCE_LABEL,
   SANDBOX_SOURCE_LABEL,
   SandboxInfrastructureError,
   type AgentSandboxLeaseRequest,
   type BaseSandboxCommand,
   type SandboxCommand,
+  type SandboxContainerLabels,
   type SandboxIdentity,
   type SolverSandboxCommand,
+  sandboxImageTag,
   validateSandboxCommand,
 } from "./contracts.js";
 import { validateRelativeWorkspacePath } from "./workspace.js";
@@ -75,7 +77,7 @@ export function validateSandboxImageInspection(
     );
   }
   return {
-    imageTag: SANDBOX_IMAGE_TAG,
+    imageTag: sandboxImageTag(expectedSourceDigest),
     imageId,
     sourceDigest: expectedSourceDigest,
     profileVersion: 1,
@@ -117,12 +119,35 @@ function mountArgument(source: string, target: string, readOnly: boolean): strin
   return `type=bind,source=${source},target=${target}${readOnly ? ",readonly" : ""}`;
 }
 
+function labelArguments(
+  profile: SandboxCommand["profile"],
+  controllerId: string,
+  labels: SandboxContainerLabels,
+): string[] {
+  const reserved = new Set([SANDBOX_CONTAINER_LABEL, SANDBOX_RESOURCE_LABEL]);
+  const entries = Object.entries(labels).sort(([left], [right]) => left.localeCompare(right));
+  for (const [name, value] of entries) {
+    if (reserved.has(name)) throw new Error(`Sandbox label ${name} is reserved.`);
+    if (name.length === 0 || name.includes("\0") || value.includes("\0")) {
+      throw new Error("Sandbox labels must use non-empty, non-NUL names and non-NUL values.");
+    }
+  }
+  return [
+    "--label",
+    `${SANDBOX_CONTAINER_LABEL}=${controllerId}`,
+    "--label",
+    `${SANDBOX_RESOURCE_LABEL}=${profile}`,
+    ...entries.flatMap(([name, value]) => ["--label", `${name}=${value}`]),
+  ];
+}
+
 export async function buildDockerCreateArguments(
   request: SandboxCommand,
   identity: SandboxIdentity,
   containerName: string,
   user: { uid: number; gid: number },
   containerLabelValue = "1",
+  containerLabels: SandboxContainerLabels = {},
 ): Promise<string[]> {
   validateSandboxCommand(request);
   const mounts: Array<{ source: string; target: string; readOnly: boolean }> = [];
@@ -176,8 +201,7 @@ export async function buildDockerCreateArguments(
     "create",
     "--name",
     containerName,
-    "--label",
-    `${SANDBOX_CONTAINER_LABEL}=${containerLabelValue}`,
+    ...labelArguments(request.profile, containerLabelValue, containerLabels),
     "--network",
     SANDBOX_POLICY.network,
     "--read-only",
@@ -281,6 +305,7 @@ export function buildAgentDockerCreateArguments(
   containerName: string,
   user: { uid: number; gid: number },
   containerLabelValue = "1",
+  containerLabels: SandboxContainerLabels = {},
 ): Promise<string[]> {
   return buildDockerCreateArguments(
     {
@@ -296,5 +321,6 @@ export function buildAgentDockerCreateArguments(
     containerName,
     user,
     containerLabelValue,
+    containerLabels,
   );
 }

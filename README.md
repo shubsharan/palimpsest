@@ -103,7 +103,7 @@ pnpm verify:full
 pnpm puzzle:validate --config experiments/config.yaml
 ```
 
-`verify:full` adds material fixture regression, provider-free experiment acceptance, the sandbox image build, and representative real-Docker tests. `puzzle:validate` is a separate consequential gate: it validates the exact manifest and packages, probes the sandbox once, and smokes the first declared run. When `puzzle:experiment` receives `--run`, its repeated validation smokes that selected run instead. A green development or full verification suite is not exact experiment validation and is not empirical model evidence.
+`verify:full` adds material fixture regression, provider-free experiment acceptance, a cached source-digest sandbox image build, and representative real-Docker tests. The Docker tests use the production sandbox path plus a test-only resource reaper; they neither reuse containers nor require Compose. `puzzle:validate` is a separate consequential gate: it validates the exact manifest and packages, probes the sandbox once, and smokes the first declared run. When `puzzle:experiment` receives `--run`, its repeated validation smokes that selected run instead. A green development or full verification suite is not exact experiment validation and is not empirical model evidence.
 
 Provider-backed execution repeats exact validation immediately before access and requires `--allow-spend true`. No verification or validation command needs credentials or makes a billable request; only `puzzle:experiment` can open provider sessions.
 
