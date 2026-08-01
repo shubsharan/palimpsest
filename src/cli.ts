@@ -2,6 +2,7 @@ import { buildFixtureFromFlags, buildSandbox } from "./fixture/build.js";
 import { analyzeRunFromFlags } from "./evaluation/overlap.js";
 import { evaluateRunFromFlags } from "./evaluation/evaluator.js";
 import { runExperimentFromFlags, validateExperimentFromFlags } from "./experiment/execution.js";
+import { isExperimentWorker, superviseExperiment } from "./experiment/supervisor.js";
 import { parseFlags } from "./flags.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -17,7 +18,31 @@ switch (command) {
     result = await buildFixtureFromFlags(flags);
     break;
   case "experiment":
-    result = await runExperimentFromFlags(flags);
+    if (!isExperimentWorker()) {
+      const exitCode = await superviseExperiment({
+        root: process.cwd(),
+        flags,
+        argv: process.argv.slice(2),
+        workerScript: process.argv[1]!,
+        execArgv: process.execArgv,
+      });
+      process.exitCode = exitCode;
+      break;
+    }
+    {
+      const controller = new AbortController();
+      const interrupt = (signal: NodeJS.Signals) => controller.abort(signal);
+      const interruptSignal = () => interrupt("SIGINT");
+      const terminateSignal = () => interrupt("SIGTERM");
+      process.once("SIGINT", interruptSignal);
+      process.once("SIGTERM", terminateSignal);
+      try {
+        result = await runExperimentFromFlags(flags, undefined, controller.signal);
+      } finally {
+        process.removeListener("SIGINT", interruptSignal);
+        process.removeListener("SIGTERM", terminateSignal);
+      }
+    }
     break;
   case "validate":
     result = await validateExperimentFromFlags(flags);
@@ -34,4 +59,4 @@ switch (command) {
     );
 }
 
-process.stdout.write(`${JSON.stringify(result)}\n`);
+if (result !== undefined) process.stdout.write(`${JSON.stringify(result)}\n`);

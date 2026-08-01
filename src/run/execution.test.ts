@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -132,6 +132,47 @@ describe("run execution configuration", () => {
         capabilities: { ...isolated.capabilities, teamRoom: "enabled" },
       }),
     ).toThrow(/isolated run cannot expose a shared team room/i);
+  });
+
+  it("records an external interruption without freezing a run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-interrupted-run-"));
+    try {
+      const { buildRoot, artifactRoot, agentIds, agentStages } = await executionFixture(root);
+      const controller = new AbortController();
+      controller.abort("SIGINT");
+      const binding: ModelBinding = {
+        profile: "fixture",
+        provider: "fixture",
+        driver: "openai-compatible",
+        requestedModel: "interruption-probe",
+        settings: {},
+        providerOptions: {},
+      };
+      const adapter: ModelAdapter = {
+        openSession: () => ({
+          respond: async () => ({ toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 } }),
+        }),
+      };
+
+      await expect(
+        executeRun({
+          config: { ...config(2, 2), artifactRoot, buildRoot, agentStages },
+          agents: Object.fromEntries(
+            agentIds.map((agentId) => [agentId, { model: binding, adapter }]),
+          ) as Record<AgentId, { model: ModelBinding; adapter: ModelAdapter }>,
+          checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+          sandbox: new FakeCommandSandbox(),
+          clock: new ManualClock(),
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("Experiment interrupted by external signal.");
+      await expect(readFile(join(artifactRoot, "trace.jsonl"), "utf8")).resolves.toContain(
+        '"kind":"infrastructure.error"',
+      );
+      await expect(readFile(join(artifactRoot, "frozen", "tree.json"), "utf8")).rejects.toThrow();
+    } finally {
+      await removeTestRoot(root);
+    }
   });
 
   it("rejects schedule or assignment geometry that differs from the package", () => {

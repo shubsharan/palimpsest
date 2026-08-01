@@ -315,6 +315,7 @@ export async function runExperiment(options: {
   output: string;
   runId?: string;
   allowSpend: boolean;
+  signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
   dependencies?: Partial<ExperimentDependencies>;
 }): Promise<readonly RunRecord[]> {
@@ -360,6 +361,7 @@ export async function runExperiment(options: {
       limits: run.limits,
       labels: run.labels,
       sandbox: validated.sandbox,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     let evaluations;
     try {
@@ -522,6 +524,7 @@ export async function validateExperimentFromFlags(
 export function runExperimentFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
+  signal?: AbortSignal,
 ): Promise<readonly RunRecord[]> {
   for (const flag of flags.keys()) {
     if (!["--config", "--output", "--run", "--allow-spend"].includes(flag)) {
@@ -537,6 +540,7 @@ export function runExperimentFromFlags(
     configPath: requiredFlag(flags, "--config"),
     output: requiredFlag(flags, "--output"),
     allowSpend: allowSpend === "true",
+    ...(signal === undefined ? {} : { signal }),
     ...(flags.has("--run") ? { runId: requiredFlag(flags, "--run") } : {}),
   });
 }

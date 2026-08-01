@@ -109,6 +109,7 @@ export interface ExecuteRunOptions {
   sandbox: CommandSandbox;
   clock: MonotonicClock;
   gitPollIntervalMs?: number;
+  signal?: AbortSignal;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -466,6 +467,9 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
   });
 
   const globalController = new AbortController();
+  const interrupt = () => globalController.abort("external-interruption");
+  if (options.signal?.aborted) interrupt();
+  else options.signal?.addEventListener("abort", interrupt, { once: true });
   const scheduleController = new AbortController();
   const wallController = new AbortController();
   const stopScheduleAtWallTime = () => scheduleController.abort();
@@ -508,6 +512,9 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
   let primaryFailure: { error: unknown } | undefined;
 
   try {
+    if (globalController.signal.aborted) {
+      throw new Error("Experiment interrupted by external signal.");
+    }
     for (const monitor of monitors) {
       await monitor.start();
       startedMonitors = [...startedMonitors, monitor];
@@ -608,6 +615,7 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
     stagePublishing === undefined ? [] : await Promise.allSettled([stagePublishing]);
   wallController.abort("release-schedule-ended");
   globalController.signal.removeEventListener("abort", stopScheduleAtWallTime);
+  options.signal?.removeEventListener("abort", interrupt);
 
   const quiesceTasks: Promise<unknown>[] = [wallTime];
   if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
@@ -676,6 +684,13 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
       new Error("Attempt sessions did not produce a result."),
     );
   }
+  if (globalController.signal.reason === "external-interruption") {
+    return await throwWithInfrastructureEvent(
+      observationLog,
+      "lifecycle",
+      new Error("Experiment interrupted by external signal."),
+    );
+  }
   const completedSessions = sessions;
 
   try {
@@ -731,6 +746,7 @@ export interface RunPreparedFixtureOptions extends Pick<
   agents: AgentRuntimeMap;
   sandbox?: CommandSandbox;
   clock?: MonotonicClock;
+  signal?: AbortSignal;
 }
 
 export interface RunPreparedFixtureResult extends RunExecutionResult {
@@ -801,6 +817,7 @@ export async function runPreparedFixture(
     checker: createChecker(root, fixtureRoot, variant.variantId),
     sandbox,
     clock: options.clock ?? systemMonotonicClock,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   return { ...result, runRoot: output };
 }
