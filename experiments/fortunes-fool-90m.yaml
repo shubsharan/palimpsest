@@ -1,0 +1,18 @@
+schemaVersion: 2
+name: fortunes-fool-unlimited-90m
+
+models:
+  sol:
+    provider: openai
+    model: gpt-5.6-sol
+    reasoningEffort: medium
+
+runs:
+  shared:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 3
+    model: sol
+    communication: shared
+    releases: [0m, 5m, 10m, 20m, 30m, 40m]
+    cutoff: 90m
+    spendCeilingCents: 1000
