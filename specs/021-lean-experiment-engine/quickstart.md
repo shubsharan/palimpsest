@@ -26,6 +26,9 @@ After validation succeeds and the configured credential environment variables ar
 pnpm puzzle:experiment --config experiments/config.yaml --output artifacts/experiments/example --allow-spend true
 pnpm puzzle:experiment --config experiments/config.yaml --output artifacts/experiments/example-one --run theron-ware-shared-stationary --allow-spend true
 pnpm puzzle:evaluate --run-root artifacts/experiments/example/theron-ware-shared-stationary
+pnpm puzzle:analyze --run-root artifacts/experiments/example/theron-ware-shared-stationary
 ```
 
 The experiment command repeats validation before provider access. Inspect each run's `run.json` and `trace.jsonl`; a directory with no `run.json` is interrupted rather than complete.
+
+The analysis command is provider-free. It defaults to 32-word spans; `--minimum-words` may lower the threshold no further than 8. Re-evaluation and analysis validate the relocated artifact tree and append one typed history entry without changing frozen evidence or trace bytes.

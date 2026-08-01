@@ -11,10 +11,10 @@ from .score import score_reconstruction
 def _fixture_variant(
     fixture_root: Path, variant_id: str
 ) -> tuple[tuple[str, ...], int, dict[tuple[str, int], Path]]:
-    manifest_path = fixture_root / "fixture.json"
-    value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    package_path = fixture_root / "fixture.json"
+    value = json.loads(package_path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("schemaVersion") != 1:
-        raise ValueError("Fixture package manifest must use schemaVersion 1.")
+        raise ValueError("Fixture package must use schemaVersion 1.")
     raw_agents = value.get("agentIds")
     stage_count = value.get("stageCount")
     raw_variants = value.get("variants")

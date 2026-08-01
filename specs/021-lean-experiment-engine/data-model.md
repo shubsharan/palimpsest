@@ -99,7 +99,7 @@ Durable normalized record for one run.
 - `releases`: ordered release observations tied to agent, stage, variant, and visible file digest.
 - `sessions`: requested/actual model identity, normalized usage, final response when present, safe returned summaries when available, termination, and infrastructure error when applicable.
 - `topology`: frozen shared or isolated repositories and agent workspaces with exact captured origin IDs, `main` commits when present, and tree seals.
-- `evaluations`: append-only logical history of `EvaluationResult` values.
+- `evaluations`: append-only logical history of ordered `EvaluationBatch` values.
 - `analyses`: append-only logical history of optional post-publication analysis results.
 - `infrastructureFailure`: explicit failure category and message when run-level infrastructure failed.
 
@@ -122,15 +122,15 @@ published -- re-evaluate/analyze --> atomically replaced RunRecord with appended
 - Re-evaluation additionally requires the currently loaded package digest to equal the recorded fixture digest before solver execution.
 - Re-evaluation and analysis cannot alter configuration, trace, topology, earlier results, or status.
 
-## EvaluationResult
+## EvaluationBatch and EvaluationResult
 
-One outcome for one canonical origin at one frozen commit.
+An evaluation batch records one complete pass over every canonical origin. It has one `evaluationId`, `evaluatedAt` timestamp, `kind` (`automatic` or `review`), and ordered `results`. The first batch is automatic; every later batch is a review.
 
-- `evaluationId`, `evaluatedAt`, and `originId`.
-- `agentIds` served by the origin.
+Each `EvaluationResult` is one outcome for one canonical origin at one frozen commit.
+
+- `originId` and the ordered `agentIds` served by that origin.
 - Captured literal `main` commit or explicit missing-publication status.
 - Solver interface, isolated execution result, bounded output identity, aggregate reconstruction score when available, and explicit error status otherwise.
-- `kind`: `automatic` for final run evaluation or `review` for later re-evaluation.
 
 ### Canonical-Origin Rule
 

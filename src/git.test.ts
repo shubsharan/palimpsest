@@ -12,7 +12,7 @@ import {
   runGit,
   SOLVER_SCAFFOLD,
 } from "./git.js";
-import type { AgentId } from "./model.js";
+import type { AgentId } from "./model/contracts.js";
 
 const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
 

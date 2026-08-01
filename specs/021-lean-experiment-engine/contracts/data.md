@@ -4,7 +4,7 @@ Public interface names are `FixtureDefinition`, `FixturePackage`, `ExperimentMan
 
 ## FixtureDefinition
 
-`experiments/blocks.json` contains a `fixtures` array. Each definition has:
+`experiments/fixtures.json` contains a `fixtures` array. Each definition has:
 
 ```json
 {
@@ -67,6 +67,6 @@ Run IDs are unique within the manifest. Assignment keys exactly equal package ag
 
 ## RunRecord and Trace
 
-`run.json` freezes the manifest digest, resolved run, package content digest, requested/actual model bindings, complete session results, canonical relative trace paths `trace.jsonl` and `trace.meta.json`, sandbox identity, frozen Git/workspace topology, explicit infrastructure status, and ordered evaluation/analysis history. One shared origin or every isolated agent origin must have an evaluation entry; none is selected as best. A directory without `run.json` is interrupted, not a partial record.
+`run.json` is decoded by one strict schema-v1 decoder. It rejects unknown fields, malformed nested values, inconsistent agent/origin sets, absolute paths, traversal, and paths that escape the relocated run or fixture root. It freezes creation/publication timestamps, manifest and resolved-run digests, the complete resolved secret-free configuration, one shared validation snapshot, staged releases, requested/actual model bindings, complete session outcomes and explicit session infrastructure failures, canonical relative trace paths `trace.jsonl` and `trace.meta.json`, sandbox identity, run-relative frozen Git/workspace topology and outputs, and ordered evaluation-batch and overlap-analysis history. One shared origin or every isolated agent origin must appear in each automatic evaluation batch; none is selected as best. A directory without `run.json` is interrupted, not a partial record.
 
-`trace.jsonl` is append-only and records lifecycle, releases, responses, safe returned summaries, tools, checker calls, Git/room activity, termination, freezing, evaluation, and infrastructure errors. Publication and re-evaluation reopen the canonical trace to validate JSONL structure, sequential event numbers, and non-regressing timestamps; they do not seal it with a hash, event count, or immutable prefix. Re-evaluation also requires the current package digest to match `run.fixture.digest` before solver execution. Neither surface may contain credentials, hidden reasoning, full provider payloads, keys, oracle content, or unreleased evidence.
+`trace.jsonl` is append-only and records lifecycle, releases, responses, safe returned summaries, tools, checker calls, Git/room activity, termination, freezing, evaluation, and infrastructure errors. Publication creates `run.json` once. Re-evaluation and overlap analysis strictly load it, validate JSONL structure, sequential event numbers, non-regressing timestamps, fixture digest, contained topology, and frozen-tree seals, then append exactly one typed history entry by atomic replacement. Frozen configuration, status, scores, topology, and trace bytes remain unchanged; failed operations leave the prior record intact and remove staging files. Neither surface may contain credentials, hidden reasoning, full provider payloads, keys, oracle content, or unreleased evidence.

@@ -12,11 +12,46 @@ import {
 
 const REMOVED_RUNTIME_PATHS = [
   "src/artifacts.ts",
+  "src/activity.ts",
+  "src/attempt-runtime.ts",
+  "src/build.ts",
+  "src/checker.ts",
   "src/condition.ts",
+  "src/config.ts",
   "src/configured-run.ts",
+  "src/evaluate.ts",
+  "src/experiment.ts",
+  "src/fixture-package.ts",
+  "src/fixture.ts",
+  "src/model.ts",
   "src/offline.ts",
   "src/preflight.ts",
+  "src/prompt.ts",
+  "src/provider.ts",
+  "src/records.ts",
+  "src/released-stage.ts",
+  "src/reveal.ts",
+  "src/run.ts",
+  "src/session.ts",
   "src/study.ts",
+  "src/team-channel.ts",
+  "src/tools.ts",
+] as const;
+
+const CONSOLIDATED_RUNTIME_PATHS = [
+  "src/experiment/execution.ts",
+  "src/experiment/manifest.ts",
+  "src/evaluation/evaluator.ts",
+  "src/evaluation/overlap.ts",
+  "src/fixture/build.ts",
+  "src/fixture/package.ts",
+  "src/model/ai-sdk-adapter.ts",
+  "src/model/contracts.ts",
+  "src/run/execution.ts",
+  "src/run/record.ts",
+  "src/run/runtime.ts",
+  "src/run/session.ts",
+  "src/run/tools.ts",
 ] as const;
 
 const REMOVED_SPEC_ROOTS = [
@@ -73,6 +108,7 @@ describe("lean research boundary", () => {
     const paths = await activeRepositoryPaths();
     expect(paths.filter((path) => path.endsWith("package.json"))).toEqual(["package.json"]);
     expect(paths).toContain("src/cli.ts");
+    for (const path of CONSOLIDATED_RUNTIME_PATHS) expect(paths).toContain(path);
     expect(
       paths
         .filter((path) => path.endsWith(".py") && !path.startsWith("python/tests/"))
@@ -89,6 +125,7 @@ describe("lean research boundary", () => {
       "puzzle:validate": "tsx src/cli.ts validate",
       "puzzle:experiment": "tsx src/cli.ts experiment",
       "puzzle:evaluate": "tsx src/cli.ts evaluate",
+      "puzzle:analyze": "tsx src/cli.ts analyze",
     });
     expect(packageJson.scripts).not.toHaveProperty("puzzle:run");
     expect(packageJson.scripts).not.toHaveProperty("puzzle:offline");
@@ -113,6 +150,8 @@ describe("lean research boundary", () => {
     expect(manifestSource).toContain("schemaVersion: 1");
     expect(manifestSource).toContain("runs:");
     expect(manifestSource).toContain("capabilities:");
+    await expect(stat("experiments/fixtures.json")).resolves.toBeDefined();
+    await expect(stat("experiments/blocks.json")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("has no active fixed-condition or study-state runtime", async () => {

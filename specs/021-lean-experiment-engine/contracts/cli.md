@@ -9,7 +9,7 @@ pnpm puzzle:build --fixture <fixture-id> --output <package-dir>
 pnpm puzzle:build --all true --output <packages-dir>
 ```
 
-- Reads fixture definitions from `experiments/blocks.json`; `--root` may select another repository root.
+- Reads fixture definitions from `experiments/fixtures.json`; `--root` may select another repository root.
 - Publishes `<package-dir>/fixture.json` atomically only after construction and manipulation checks pass.
 
 ## Validate an Experiment
@@ -42,4 +42,9 @@ pnpm puzzle:evaluate --run-root <run-dir>
 - Requires canonical `trace.jsonl` and `trace.meta.json`, structurally validates the current appendable trace, and requires the loaded package digest to match the recorded fixture digest before using the frozen origins; no provider or live workspace is consulted.
 - Appends a timestamped evaluation batch beside `run.json`; prior results and frozen fields are unchanged.
 
-Optional post-publication overlap observation remains available through the provider-free Python analysis module and never affects run status or scores.
+### `pnpm puzzle:analyze --run-root <directory> [--minimum-words <n>]`
+
+- Defaults `--minimum-words` to 32 and rejects values below 8.
+- Strictly decodes the run record, validates the canonical trace, fixture digest, contained run-relative topology, and every frozen-tree seal before scanning.
+- Scans all blobs reachable from every frozen shared or isolated origin, appends one typed overlap-analysis history entry atomically, and leaves run status, evaluation batches, trace bytes, and frozen evidence unchanged.
+- A failed validation or scan leaves `run.json` byte-for-byte unchanged and removes any staging file.

@@ -1,6 +1,7 @@
-import { buildFixtureFromFlags, buildSandbox } from "./build.js";
-import { evaluateRunFromFlags } from "./evaluate.js";
-import { runExperimentFromFlags, validateExperimentFromFlags } from "./experiment.js";
+import { buildFixtureFromFlags, buildSandbox } from "./fixture/build.js";
+import { analyzeRunFromFlags } from "./evaluation/overlap.js";
+import { evaluateRunFromFlags } from "./evaluation/evaluator.js";
+import { runExperimentFromFlags, validateExperimentFromFlags } from "./experiment/execution.js";
 import { parseFlags } from "./flags.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -23,6 +24,9 @@ switch (command) {
     break;
   case "evaluate":
     result = await evaluateRunFromFlags(flags);
+    break;
+  case "analyze":
+    result = await analyzeRunFromFlags(flags);
     break;
   default:
     throw new Error(

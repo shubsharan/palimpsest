@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 from palimpsest.puzzle import build as build_module
-from palimpsest.puzzle.block import load_fixture_catalog
-from palimpsest.puzzle.manifest import FixturePackage
+from palimpsest.puzzle.definition import load_fixture_catalog
+from palimpsest.puzzle.package import FixturePackage
 
 ROOT = Path(__file__).resolve().parents[3]
 EXPECTED_ARTIFACT_DIGESTS = {
@@ -37,7 +37,7 @@ def built_fixtures(
 ) -> Mapping[str, tuple[FixturePackage, Path]]:
     output = tmp_path_factory.mktemp("fixture-packages")
     result: dict[str, tuple[FixturePackage, Path]] = {}
-    for definition in load_fixture_catalog(ROOT / "experiments/blocks.json").fixtures:
+    for definition in load_fixture_catalog(ROOT / "experiments/fixtures.json").fixtures:
         destination = output / definition.fixture_id
         package = build_module.build_fixture(ROOT, destination, definition.fixture_id)
         result[definition.fixture_id] = package, destination
@@ -72,6 +72,15 @@ def test_existing_fixtures_retain_stable_scientific_artifacts(
                 content = (root / reference.path).read_bytes()
                 assert len(content) == reference.byte_length
                 assert hashlib.sha256(content).hexdigest() == reference.sha256
+
+    calibration, _ = built_fixtures["calibration-theron-ware"]
+    assert calibration.content_digest == (
+        "331e0a673980d8a14184528891df46c161bb4837d77b8f04f7701c4d691f4d93"
+    )
+    assert {name: variant.build_id for name, variant in calibration.variants.items()} == {
+        "stationary": "build-655d86ff2ea73553dafdca95f96f41aa5057c3343cf791d6bb37599e4d62a457",
+        "rekey": "build-ebcfd2582438abb25713581cf2cd083a0aab44ceddc4f8a60af19f9d6f25af5a",
+    }
 
 
 def test_declared_variants_share_plaintext_and_diverge_only_at_rekey(

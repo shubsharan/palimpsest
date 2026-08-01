@@ -58,15 +58,28 @@ specs/021-lean-experiment-engine/
 ### Source Code (repository root)
 
 ```text
-src/                         # configuration, runtime, artifacts, CLI, Git, sandbox, evaluation
-python/palimpsest/           # deterministic fixture construction, checking, scoring, overlap
-experiments/                 # example fixture definitions and experiment manifests
-fixtures/corpus/             # provenance-pinned local corpus inputs
-tests/ and python/tests/      # contract, integration, puzzle, and safety verification
-docs/                        # proposal, architecture, and roadmap
+src/
+├── cli.ts
+├── experiment/              # manifest contracts, validation, ordered execution
+├── fixture/                 # build, package decoder, provider-free smoke model
+├── run/                     # execution, runtime, record, session, releases, tools
+├── evaluation/              # evaluator, overlap, checker, published solver
+├── model/                   # provider-neutral contracts and AI SDK adapter
+├── sandbox/
+└── git.ts, trace.ts, canonical.ts, seal.ts, python.ts, process.ts, flags.ts
+python/
+├── pyproject.toml
+├── uv.lock
+├── palimpsest/
+│   ├── puzzle/              # definition, design/allocation, package, build, primitives
+│   └── evaluation/
+└── tests/
+experiments/                 # research-authored declarations
+fixtures/                    # provenance-pinned corpus inputs
+tests/                       # cross-boundary TypeScript tests
 ```
 
-**Structure Decision**: Keep the existing single TypeScript application and Python research package. Refactor their current modules around the new domain boundaries and delete obsolete study modules rather than introducing packages, services, databases, or a parallel compatibility runtime.
+**Structure Decision**: Keep the existing single TypeScript application and root-level Python research project. Reorganize within those language boundaries, use explicit imports without barrel files, and delete obsolete modules rather than introducing packages, workspaces, services, databases, or compatibility layers.
 
 ## Implementation Approach
 

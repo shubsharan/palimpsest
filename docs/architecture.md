@@ -12,7 +12,7 @@ Python constructs and scores deterministic word-substitution fixtures. TypeScrip
 
 ## Fixture Preparation
 
-`experiments/blocks.json` contains `FixtureDefinition` values. A definition declares source provenance and window, target-excluded references, seed, agent IDs, stage count, available variants, re-key boundaries, and scientifically meaningful allocation constraints. Unknown fields and invalid geometry fail before output publication.
+`experiments/fixtures.json` contains `FixtureDefinition` values. A definition declares source provenance and window, target-excluded references, seed, agent IDs, stage count, available variants, re-key boundaries, and scientifically meaningful allocation constraints. Unknown fields and invalid geometry fail before output publication.
 
 `puzzle:build` invokes the deterministic Python builder and atomically publishes a `FixturePackage`. The package contains:
 
@@ -65,11 +65,11 @@ Checker and evaluator executions use separate one-shot sandboxes with a Git-free
 
 ## Records And Evaluation
 
-Each run owns an append-only `trace.jsonl` and one atomically published `run.json` `RunRecord`. The trace records secret-free chronological observations. The record freezes the resolved run and package digest, model bindings and usage, releases, trace identity, sandbox identity, frozen topology, session outcomes, infrastructure status, and ordered evaluation and analysis history.
+Each run owns an append-only `trace.jsonl` and one atomically published `run.json` `RunRecord`. The trace records secret-free chronological observations. One strict schema-v1 decoder rejects unknown fields, malformed nested values, inconsistent agents/origins, absolute paths, traversal, and escaped topology. The record freezes timestamps, the resolved run and digest, one shared validation snapshot, package digest, model bindings and usage, releases, trace identity, sandbox identity, relocatable frozen topology, session outcomes and infrastructure failures, run status, and ordered evaluation-batch and analysis history.
 
 A shared run has one canonical origin. An isolated run has one canonical origin per fixture agent, ordered by the package agent list. Final evaluation captures and scores every origin, including missing or invalid publications; no best result is selected. `puzzle:evaluate` later reuses only the frozen package and origins and appends new results through atomic replacement without altering prior evidence.
 
-Optional raw-overlap analysis may report obvious copied spans after publication. It does not warn agents, block Git, invalidate runs, or change scores. A trace without `run.json` is an interrupted directory, not a recoverable phase or an implicitly valid run.
+`puzzle:analyze` validates the record, trace, fixture, contained topology, and frozen-tree seals before scanning every blob reachable from every frozen canonical origin for raw overlap. It defaults to a 32-word threshold and rejects values below 8. It does not warn agents, block Git, invalidate runs, or change scores. Re-evaluation and analysis strictly load the existing record, append one typed history entry, and atomically replace `run.json`; failures preserve the prior bytes and clean staging files. A trace without `run.json` is an interrupted directory, not a recoverable phase or an implicitly valid run.
 
 ## Operator Surface
 
@@ -80,6 +80,7 @@ pnpm puzzle:validate --config <manifest.yaml>
 pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --allow-spend true
 pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --run <run-id> --allow-spend true
 pnpm puzzle:evaluate --run-root <run-dir>
+pnpm puzzle:analyze --run-root <run-dir> [--minimum-words <n>]
 ```
 
 Commands emit one JSON result on success and non-zero diagnostics on failure. Validation is provider-free and creates no reusable receipt. Experiment execution repeats the same validation immediately before provider access; `--allow-spend` authorizes only the ceilings already declared in the manifest.

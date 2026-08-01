@@ -12,6 +12,7 @@
     "format:check": "oxfmt --config oxfmt.json --check README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs experiments fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml --check python",
     "lint": "oxlint --deny-warnings src tools tests vitest.config.ts && uv run --offline --frozen --project python ruff check --config python/pyproject.toml python",
     "puzzle:build": "tsx src/cli.ts build",
+    "puzzle:analyze": "tsx src/cli.ts analyze",
     "puzzle:evaluate": "tsx src/cli.ts evaluate",
     "puzzle:experiment": "tsx src/cli.ts experiment",
     "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",

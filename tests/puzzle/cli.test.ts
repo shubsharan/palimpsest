@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { buildFixture } from "../../src/build.js";
+import { buildFixture } from "../../src/fixture/build.js";
 import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
@@ -37,6 +37,7 @@ describe("operator CLI contract", () => {
         .filter((name) => name.startsWith("puzzle:"))
         .sort(),
     ).toEqual([
+      "puzzle:analyze",
       "puzzle:build",
       "puzzle:evaluate",
       "puzzle:experiment",
@@ -83,6 +84,7 @@ describe("operator CLI contract", () => {
     ["validate", []],
     ["experiment", []],
     ["evaluate", []],
+    ["analyze", []],
   ])("%s failures are stderr-only and nonzero", async (command, args) => {
     const result = await execute([command, ...args]);
     expect(result.exitCode).not.toBe(0);

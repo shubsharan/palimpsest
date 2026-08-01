@@ -12,7 +12,7 @@ This is a puzzle and an observational research artifact. It is not a hosted serv
 - [Feature 021 specification](specs/021-lean-experiment-engine/spec.md): active requirements for the lean experiment engine.
 - [Feature 021 quickstart](specs/021-lean-experiment-engine/quickstart.md): provider-free verification and operator commands.
 - [Experiment schema](experiments/schema.json): strict manifest contract.
-- [Fixture definitions](experiments/blocks.json): historical and variable-geometry puzzle declarations.
+- [Fixture definitions](experiments/fixtures.json): historical and variable-geometry puzzle declarations.
 - [Example experiment](experiments/config.yaml): the historical five-fixture matrix expressed as explicit runs.
 
 ## Setup
@@ -28,7 +28,7 @@ The first bootstrap may use the network. Model-authored commands and canonical s
 
 ## Prepare Fixtures
 
-`experiments/blocks.json` contains `FixtureDefinition` values. Each declares source provenance, target-excluded references, seed, agent IDs, stage count, key variants, re-key boundaries, and scientifically meaningful allocation constraints.
+`experiments/fixtures.json` contains `FixtureDefinition` values. Each declares source provenance, target-excluded references, seed, agent IDs, stage count, key variants, re-key boundaries, and scientifically meaningful allocation constraints.
 
 Build one fixture or the complete example set without provider access:
 
@@ -82,9 +82,10 @@ Re-evaluate a completed run without provider access:
 
 ```bash
 pnpm puzzle:evaluate --run-root artifacts/experiments/example/theron-ware-shared-stationary
+pnpm puzzle:analyze --run-root artifacts/experiments/example/theron-ware-shared-stationary
 ```
 
-Re-evaluation appends results atomically without changing frozen inputs or earlier evidence. A directory with a trace but no `run.json` is interrupted, not complete.
+Re-evaluation appends results atomically without changing frozen inputs or earlier evidence. Analysis scans reachable frozen Git history for overlap, defaults to 32-word spans, and remains separate from status and scoring. Both operations strictly reload and validate the relocatable record before atomically appending one history entry. A directory with a trace but no `run.json` is interrupted, not complete.
 
 ## Development Check
 

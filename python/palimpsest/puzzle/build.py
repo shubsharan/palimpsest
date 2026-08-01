@@ -11,17 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from ..serialization import canonical_json_bytes, sha256_hex
-from .block import (
-    AllocationResult,
-    FixtureDesign,
-    ParagraphAssignment,
-    ParagraphUnit,
-    design_fixture,
-    load_fixture_catalog,
-)
-from .block import (
-    OracleDesign as BlockOracleDesign,
-)
 from .cipher import apply_mapping, stationary_key
 from .corpus import (
     SourceDefinition,
@@ -30,7 +19,18 @@ from .corpus import (
     load_source_registry,
     serialize_paragraphs,
 )
-from .manifest import (
+from .definition import load_fixture_catalog
+from .design import (
+    AllocationResult,
+    FixtureDesign,
+    ParagraphAssignment,
+    ParagraphUnit,
+    design_fixture,
+)
+from .design import (
+    OracleDesign as FixtureOracleDesign,
+)
+from .package import (
     AllocationMetrics,
     AllocationSummary,
     BuildVariant,
@@ -45,8 +45,8 @@ from .manifest import (
     TierRejection,
     stage_filename,
 )
-from .manifest import (
-    OracleDesign as ManifestOracleDesign,
+from .package import (
+    OracleDesign as PackageOracleDesign,
 )
 from .revision import revise_explicit_types
 from .text import word_tokens
@@ -118,7 +118,7 @@ def _allocation_record(design: FixtureDesign) -> dict[str, Any]:
     }
 
 
-def _control_record(design: BlockOracleDesign) -> list[dict[str, Any]]:
+def _control_record(design: FixtureOracleDesign) -> list[dict[str, Any]]:
     return [
         {
             "changedType": match.changed_type,
@@ -132,7 +132,7 @@ def _control_record(design: BlockOracleDesign) -> list[dict[str, Any]]:
     ]
 
 
-def _oracle_record(design: BlockOracleDesign, agent_ids: tuple[str, ...]) -> dict[str, Any]:
+def _oracle_record(design: FixtureOracleDesign, agent_ids: tuple[str, ...]) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "anchors": list(design.anchors),
@@ -143,7 +143,7 @@ def _oracle_record(design: BlockOracleDesign, agent_ids: tuple[str, ...]) -> dic
     }
 
 
-def _owner_share(design: BlockOracleDesign, agent_ids: tuple[str, ...]) -> float:
+def _owner_share(design: FixtureOracleDesign, agent_ids: tuple[str, ...]) -> float:
     shares: list[float] = []
     for agent_index, agent_id in enumerate(agent_ids):
         for word in design.specialists[agent_id]:
@@ -161,7 +161,7 @@ def _owner_share(design: BlockOracleDesign, agent_ids: tuple[str, ...]) -> float
     return min(shares)
 
 
-def _manifest_metrics(result: AllocationResult) -> AllocationMetrics:
+def _package_metrics(result: AllocationResult) -> AllocationMetrics:
     design = result.design
     metrics = design.metrics
     return AllocationMetrics(
@@ -491,7 +491,7 @@ def _build_into(
     destination: Path,
     fixture_id: str,
 ) -> FixturePackage:
-    catalog = load_fixture_catalog(root / "experiments/blocks.json")
+    catalog = load_fixture_catalog(root / "experiments/fixtures.json")
     fixture = catalog.fixture(fixture_id)
     if fixture.window.is_discovery:
         raise ValueError(
@@ -562,7 +562,7 @@ def _build_into(
     allocation_summary = AllocationSummary(
         allocation_id=design.allocation.allocation.allocation_id,
         tier=design.allocation.tier.name,
-        metrics=_manifest_metrics(design.allocation),
+        metrics=_package_metrics(design.allocation),
         rejected_tiers=tuple(
             TierRejection(rejection.tier, rejection.reasons)
             for rejection in design.allocation.rejected_tiers
@@ -570,7 +570,7 @@ def _build_into(
         path=Path("oracle/allocation.json"),
         sha256=sha256_hex(allocation_bytes),
     )
-    oracle_summary = ManifestOracleDesign(
+    oracle_summary = PackageOracleDesign(
         path=Path("oracle/design.json"),
         sha256=sha256_hex(oracle_bytes),
         anchors_sha256=anchors_sha256,
@@ -634,7 +634,7 @@ def discover_fixture(root: Path, output: Path, fixture_id: str) -> dict[str, Any
     root = root.resolve()
     output = output.resolve()
     _assert_available_output(output)
-    catalog = load_fixture_catalog(root / "experiments/blocks.json")
+    catalog = load_fixture_catalog(root / "experiments/fixtures.json")
     fixture = catalog.fixture(fixture_id)
     if not fixture.window.is_discovery:
         raise ValueError(f"Fixture {fixture_id} already has a committed discovery window.")
@@ -685,7 +685,7 @@ def main() -> None:
     if args.all:
         if args.discover == "true":
             parser.error("--discover requires one --fixture")
-        catalog = load_fixture_catalog(args.root / "experiments/blocks.json")
+        catalog = load_fixture_catalog(args.root / "experiments/fixtures.json")
         results = []
         for fixture in catalog.fixtures:
             package = build_fixture(

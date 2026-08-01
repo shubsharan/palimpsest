@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { isAgentId, type AgentId } from "./model.js";
+import { isAgentId, type AgentId } from "./model/contracts.js";
 
 export interface ObservationEvent {
   sequence: number;

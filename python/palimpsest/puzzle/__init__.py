@@ -1,4 +1,4 @@
-from .manifest import (
+from .package import (
     EvidenceStage,
     FixturePackage,
     ReferenceFile,

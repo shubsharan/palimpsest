@@ -16,11 +16,11 @@ import {
 import { sandboxDockerfileDigest } from "../../src/sandbox/docker.js";
 import { resolveWorkspaceRegularFile } from "../../src/sandbox/workspace.js";
 import { createGitEnvironment, listRemoteRefs, type GitCommunicationMode } from "../../src/git.js";
-import type { AgentId } from "../../src/model.js";
+import type { AgentId } from "../../src/model/contracts.js";
 
 const execFileAsync = promisify(execFile);
 const originalApiKey = process.env.OPENAI_API_KEY;
-const AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -50,7 +50,7 @@ async function sandboxContainerCount(labelValue: string): Promise<number> {
 
 async function agentFixture(communicationMode: GitCommunicationMode = "shared") {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-integration-"));
-  const git = await createGitEnvironment(join(root, "git"), communicationMode, AGENT_IDS);
+  const git = await createGitEnvironment(join(root, "git"), communicationMode, AGENTS);
   const workspace = git.workspaces[0];
   if (!workspace) throw new Error("Expected agent-1 workspace.");
   const repository = git.repositories.find(
