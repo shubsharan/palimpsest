@@ -12,7 +12,7 @@ Python constructs and scores deterministic word-substitution fixtures. TypeScrip
 
 ## Fixture Preparation
 
-`experiments/fixtures.json` contains `FixtureDefinition` values. A definition declares source provenance and window, target-excluded references, seed, agent IDs, stage count, available variants, re-key boundaries, and scientifically meaningful allocation constraints. Unknown fields and invalid geometry fail before output publication.
+`experiments/config.yaml` contains the experiment name, explicit fixture definitions, and runs. Each fixture names its source and target-excluded reference files directly under `fixtures/`, so adding a text input never requires a separate registry or config file. Unknown fields and invalid geometry fail before output publication.
 
 `puzzle:build` invokes the deterministic Python builder and atomically publishes a `FixturePackage`. The package contains:
 
@@ -75,7 +75,6 @@ A shared run has one canonical origin. An isolated run has one canonical origin 
 
 ```bash
 pnpm puzzle:build --fixture <fixture-id> --output <package-dir>
-pnpm puzzle:build --all true --output <packages-dir>
 pnpm puzzle:validate --config <manifest.yaml>
 pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --allow-spend true
 pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --run <run-id> --allow-spend true

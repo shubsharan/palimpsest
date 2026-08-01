@@ -64,8 +64,8 @@ class AllocationConstraints:
 @dataclass(frozen=True)
 class FixtureDefinition:
     fixture_id: str
-    source_id: str
-    references: tuple[str, ...]
+    source: "TextFileDefinition"
+    references: tuple["TextFileDefinition", ...]
     seed: int
     window: WindowPin
     agent_ids: tuple[str, ...]
@@ -119,6 +119,23 @@ def _decode_window(value: object, name: str) -> WindowPin:
         raise ValueError(f"{name} wordCount must be within the declared window envelope.")
     _digest(window_digest, f"{name} sha256")
     return pin
+
+
+@dataclass(frozen=True)
+class TextFileDefinition:
+    path: str
+    source_format: str
+
+
+def _decode_text_file(value: object, name: str) -> TextFileDefinition:
+    record = _record(value, name, frozenset({"path", "format"}))
+    path = record["path"]
+    source_format = record["format"]
+    if not isinstance(path, str) or not path.startswith("fixtures/"):
+        raise ValueError(f"{name} path must name a file under fixtures/.")
+    if source_format not in {"plain-text", "gutenberg-text", "gutenberg-html"}:
+        raise ValueError(f"{name} format is unsupported.")
+    return TextFileDefinition(path, source_format)
 
 
 def _decode_allocation_constraints(value: object, name: str) -> AllocationConstraints:
@@ -198,6 +215,89 @@ def _decode_allocation_constraints(value: object, name: str) -> AllocationConstr
     )
 
 
+def decode_fixture_definition(value: object) -> FixtureDefinition:
+    name = "Fixture definition"
+    record = _record(
+        value,
+        name,
+        frozenset(
+            {
+                "fixtureId",
+                "source",
+                "references",
+                "seed",
+                "agentIds",
+                "stageCount",
+                "variants",
+                "allocationConstraints",
+            }
+        ),
+    )
+    fixture_id = _identifier(record["fixtureId"], f"{name} fixtureId")
+    source_record = _record(
+        record["source"], f"{name} source", frozenset({"path", "format", "window"})
+    )
+    source = _decode_text_file(
+        {"path": source_record["path"], "format": source_record["format"]}, f"{name} source"
+    )
+    raw_references = record["references"]
+    if not isinstance(raw_references, list) or not raw_references:
+        raise ValueError(f"{name} references must be a non-empty array.")
+    references = tuple(
+        _decode_text_file(reference, f"{name} references[{index}]")
+        for index, reference in enumerate(raw_references)
+    )
+    if len({reference.path for reference in references}) != len(references) or source.path in {
+        reference.path for reference in references
+    }:
+        raise ValueError(f"{name} references must be unique and exclude the source.")
+    raw_agents = record["agentIds"]
+    if not isinstance(raw_agents, list) or len(raw_agents) < 2:
+        raise ValueError(f"{name} agentIds must contain at least two agents.")
+    agent_ids = tuple(_identifier(agent, f"{name} agentIds") for agent in raw_agents)
+    if len(set(agent_ids)) != len(agent_ids):
+        raise ValueError(f"{name} agentIds must be unique.")
+    stage_count = _integer(record["stageCount"], f"{name} stageCount", 2)
+    raw_variants = record["variants"]
+    if not isinstance(raw_variants, list) or not raw_variants:
+        raise ValueError(f"{name} variants must be a non-empty array.")
+    variants: list[VariantDefinition] = []
+    variant_ids: set[str] = set()
+    for index, raw_variant in enumerate(raw_variants):
+        variant_name = f"{name} variants[{index}]"
+        variant = _record(raw_variant, variant_name, frozenset({"variantId", "rekeyFromStage"}))
+        variant_id = _identifier(variant["variantId"], f"{variant_name} variantId")
+        if variant_id in variant_ids:
+            raise ValueError(f"{name} contains duplicate variantId {variant_id}.")
+        variant_ids.add(variant_id)
+        raw_boundary = variant["rekeyFromStage"]
+        boundary = (
+            None
+            if raw_boundary is None
+            else _integer(raw_boundary, f"{variant_name} rekeyFromStage", 2)
+        )
+        if boundary is not None and boundary > stage_count:
+            raise ValueError(f"{variant_name} rekeyFromStage exceeds stageCount.")
+        variants.append(VariantDefinition(variant_id, boundary))
+    if sum(variant.rekey_from_stage is None for variant in variants) != 1:
+        raise ValueError(f"{name} must contain exactly one stationary variant.")
+    if len({variant.rekey_from_stage for variant in variants if variant.rekey_from_stage}) != 1:
+        raise ValueError(f"{name} re-key variants must share one boundary.")
+    return FixtureDefinition(
+        fixture_id=fixture_id,
+        source=source,
+        references=references,
+        seed=_safe_integer(record["seed"], f"{name} seed"),
+        window=_decode_window(source_record["window"], f"{name} source window"),
+        agent_ids=agent_ids,
+        stage_count=stage_count,
+        variants=tuple(variants),
+        allocation_constraints=_decode_allocation_constraints(
+            record["allocationConstraints"], f"{name} allocationConstraints"
+        ),
+    )
+
+
 def decode_fixture_catalog(value: object) -> FixtureCatalog:
     root = _record(value, "Fixture catalog", frozenset({"schemaVersion", "fixtures"}))
     if _integer(root["schemaVersion"], "Fixture catalog schemaVersion") != 1:
@@ -209,88 +309,12 @@ def decode_fixture_catalog(value: object) -> FixtureCatalog:
     seen: set[str] = set()
     for index, raw in enumerate(raw_fixtures):
         name = f"Fixture catalog fixtures[{index}]"
-        record = _record(
-            raw,
-            name,
-            frozenset(
-                {
-                    "fixtureId",
-                    "source",
-                    "references",
-                    "seed",
-                    "agentIds",
-                    "stageCount",
-                    "variants",
-                    "allocationConstraints",
-                }
-            ),
-        )
-        fixture_id = _identifier(record["fixtureId"], f"{name} fixtureId")
+        fixture = decode_fixture_definition(raw)
+        fixture_id = fixture.fixture_id
         if fixture_id in seen:
             raise ValueError(f"Fixture catalog contains duplicate fixtureId {fixture_id}.")
         seen.add(fixture_id)
-        source = _record(record["source"], f"{name} source", frozenset({"sourceId", "window"}))
-        source_id = _identifier(source["sourceId"], f"{name} source sourceId")
-        raw_references = record["references"]
-        if not isinstance(raw_references, list) or not raw_references:
-            raise ValueError(f"{name} references must be a non-empty array.")
-        references = tuple(
-            _identifier(reference, f"{name} references[{reference_index}]")
-            for reference_index, reference in enumerate(raw_references)
-        )
-        if len(set(references)) != len(references) or source_id in references:
-            raise ValueError(f"{name} references must be unique and exclude the source.")
-        raw_agents = record["agentIds"]
-        if not isinstance(raw_agents, list) or len(raw_agents) < 2:
-            raise ValueError(f"{name} agentIds must contain at least two agents.")
-        agent_ids = tuple(_identifier(agent, f"{name} agentIds") for agent in raw_agents)
-        if len(set(agent_ids)) != len(agent_ids):
-            raise ValueError(f"{name} agentIds must be unique.")
-        stage_count = _integer(record["stageCount"], f"{name} stageCount", 2)
-        raw_variants = record["variants"]
-        if not isinstance(raw_variants, list) or not raw_variants:
-            raise ValueError(f"{name} variants must be a non-empty array.")
-        variants: list[VariantDefinition] = []
-        variant_ids: set[str] = set()
-        for variant_index, raw_variant in enumerate(raw_variants):
-            variant_name = f"{name} variants[{variant_index}]"
-            variant = _record(
-                raw_variant,
-                variant_name,
-                frozenset({"variantId", "rekeyFromStage"}),
-            )
-            variant_id = _identifier(variant["variantId"], f"{variant_name} variantId")
-            if variant_id in variant_ids:
-                raise ValueError(f"{name} contains duplicate variantId {variant_id}.")
-            variant_ids.add(variant_id)
-            raw_boundary = variant["rekeyFromStage"]
-            boundary = (
-                None
-                if raw_boundary is None
-                else _integer(raw_boundary, f"{variant_name} rekeyFromStage", 2)
-            )
-            if boundary is not None and boundary > stage_count:
-                raise ValueError(f"{variant_name} rekeyFromStage exceeds stageCount.")
-            variants.append(VariantDefinition(variant_id, boundary))
-        if sum(variant.rekey_from_stage is None for variant in variants) != 1:
-            raise ValueError(f"{name} must contain exactly one stationary variant.")
-        if len({variant.rekey_from_stage for variant in variants if variant.rekey_from_stage}) != 1:
-            raise ValueError(f"{name} re-key variants must share one boundary.")
-        fixtures.append(
-            FixtureDefinition(
-                fixture_id=fixture_id,
-                source_id=source_id,
-                references=references,
-                seed=_safe_integer(record["seed"], f"{name} seed"),
-                window=_decode_window(source["window"], f"{name} source window"),
-                agent_ids=agent_ids,
-                stage_count=stage_count,
-                variants=tuple(variants),
-                allocation_constraints=_decode_allocation_constraints(
-                    record["allocationConstraints"], f"{name} allocationConstraints"
-                ),
-            )
-        )
+        fixtures.append(fixture)
     return FixtureCatalog(tuple(fixtures))
 
 

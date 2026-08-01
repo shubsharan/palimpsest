@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -16,10 +17,9 @@ from .corpus import (
     SourceDefinition,
     build_reference_corpus,
     load_paragraphs,
-    load_source_registry,
     serialize_paragraphs,
 )
-from .definition import load_fixture_catalog
+from .definition import FixtureDefinition, TextFileDefinition, decode_fixture_definition
 from .design import (
     AllocationResult,
     FixtureDesign,
@@ -486,23 +486,29 @@ def _build_variant(
     )
 
 
-def _build_into(
-    root: Path,
-    destination: Path,
-    fixture_id: str,
-) -> FixturePackage:
-    catalog = load_fixture_catalog(root / "experiments/fixtures.json")
-    fixture = catalog.fixture(fixture_id)
+def _source(root: Path, definition: TextFileDefinition) -> SourceDefinition:
+    path = (root / definition.path).resolve()
+    if root not in path.parents or not path.is_file():
+        raise ValueError(
+            f"Fixture file {definition.path} must be a regular file inside the repository."
+        )
+    content = path.read_bytes()
+    return SourceDefinition(
+        path=path,
+        source_format=definition.source_format,
+        source_id=path.stem,
+        sha256=sha256_hex(content),
+        byte_length=len(content),
+    )
+
+
+def _build_into(root: Path, destination: Path, fixture: FixtureDefinition) -> FixturePackage:
     if fixture.window.is_discovery:
         raise ValueError(
-            f"Fixture {fixture_id} must be discovered and pinned before a normal build."
+            f"Fixture {fixture.fixture_id} must be discovered and pinned before a normal build."
         )
-    registry = load_source_registry(root)
-    try:
-        source = registry[fixture.source_id]
-        reference_sources = tuple(registry[source_id] for source_id in fixture.references)
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+    source = _source(root, fixture.source)
+    reference_sources = tuple(_source(root, reference) for reference in fixture.references)
 
     design = design_fixture(_paragraph_units(source), fixture, discover=False)
     pair = _prepare_pair(design)
@@ -615,14 +621,14 @@ def _build_into(
     return package
 
 
-def build_fixture(root: Path, output: Path, fixture_id: str) -> FixturePackage:
+def build_fixture(root: Path, output: Path, fixture_definition: object) -> FixturePackage:
     root = root.resolve()
     output = output.resolve()
     _assert_available_output(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
     try:
-        build = _build_into(root, staging, fixture_id)
+        build = _build_into(root, staging, decode_fixture_definition(fixture_definition))
         _publish_staging(staging, output)
         return build
     except BaseException:
@@ -630,19 +636,14 @@ def build_fixture(root: Path, output: Path, fixture_id: str) -> FixturePackage:
         raise
 
 
-def discover_fixture(root: Path, output: Path, fixture_id: str) -> dict[str, Any]:
+def discover_fixture(root: Path, output: Path, fixture_definition: object) -> dict[str, Any]:
     root = root.resolve()
     output = output.resolve()
     _assert_available_output(output)
-    catalog = load_fixture_catalog(root / "experiments/fixtures.json")
-    fixture = catalog.fixture(fixture_id)
+    fixture = decode_fixture_definition(fixture_definition)
     if not fixture.window.is_discovery:
         raise ValueError(f"Fixture {fixture_id} already has a committed discovery window.")
-    registry = load_source_registry(root)
-    try:
-        source = registry[fixture.source_id]
-    except KeyError as error:
-        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+    source = _source(root, fixture.source)
     design = design_fixture(_paragraph_units(source), fixture, discover=True)
     pair = _prepare_pair(design)
     record = {
@@ -677,35 +678,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--output", type=Path, required=True)
-    selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--fixture")
-    selection.add_argument("--all", action="store_true")
+    parser.add_argument("--definition-json", required=True)
     parser.add_argument("--discover", choices=("true",))
     args = parser.parse_args()
-    if args.all:
-        if args.discover == "true":
-            parser.error("--discover requires one --fixture")
-        catalog = load_fixture_catalog(args.root / "experiments/fixtures.json")
-        results = []
-        for fixture in catalog.fixtures:
-            package = build_fixture(
-                args.root,
-                args.output / fixture.fixture_id,
-                fixture.fixture_id,
-            )
-            results.append(
-                {
-                    "fixtureId": package.fixture_id,
-                    "contentDigest": package.content_digest,
-                    "packagePath": str((args.output / fixture.fixture_id).resolve()),
-                }
-            )
-        print(canonical_json_bytes({"fixtures": results}).decode())
-        return
+    definition = json.loads(args.definition_json)
     if args.discover == "true":
-        result = discover_fixture(args.root, args.output, args.fixture)
+        result = discover_fixture(args.root, args.output, definition)
     else:
-        package = build_fixture(args.root, args.output, args.fixture)
+        package = build_fixture(args.root, args.output, definition)
         result = {
             "fixtureId": package.fixture_id,
             "contentDigest": package.content_digest,

@@ -92,7 +92,8 @@ describe("lean research boundary", () => {
     expect(manifestSource).toContain("schemaVersion: 1");
     expect(manifestSource).toContain("runs:");
     expect(manifestSource).toContain("capabilities:");
-    await expect(stat("experiments/fixtures.json")).resolves.toBeDefined();
+    expect(manifestSource).toContain("experimentName:");
+    expect(manifestSource).toContain("fixtures:");
   });
 
   test("keeps current guidance on the Feature 021 scientific flow", async () => {

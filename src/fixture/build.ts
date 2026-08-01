@@ -5,6 +5,7 @@ import { loadFixturePackage } from "./package.js";
 import { requiredFlag } from "../flags.js";
 import { runProcess } from "../process.js";
 import { runPythonJson } from "../python.js";
+import { loadExperimentManifest } from "../experiment/manifest.js";
 import { createDockerCommandSandbox, dockerHostEnvironment } from "../sandbox/container.js";
 import { SANDBOX_IMAGE_TAG } from "../sandbox/contracts.js";
 import { sandboxDockerfileDigest } from "../sandbox/docker.js";
@@ -12,7 +13,9 @@ import { sandboxDockerfileDigest } from "../sandbox/docker.js";
 export interface BuildFixtureOptions {
   root: string;
   output: string;
-  fixtureId: string;
+  fixture?: Record<string, unknown>;
+  /** @deprecated Use the fixture declared in experiments/config.yaml. */
+  fixtureId?: string;
 }
 
 export interface BuildFixtureResult {
@@ -59,14 +62,14 @@ export async function buildFixture(options: BuildFixtureOptions): Promise<BuildF
       root,
       "--output",
       output,
-      "--fixture",
-      options.fixtureId,
+      "--definition-json",
+      JSON.stringify(options.fixture),
     ]),
   );
   const fixture = await loadFixturePackage(output);
   if (
     (await realpath(result.packagePath)) !== (await realpath(output)) ||
-    fixture.fixtureId !== options.fixtureId ||
+    fixture.fixtureId !== options.fixture?.fixtureId ||
     fixture.fixtureId !== result.fixtureId ||
     fixture.contentDigest !== result.contentDigest ||
     fixture.stageCount !== result.stageCount ||
@@ -80,64 +83,10 @@ export async function buildFixture(options: BuildFixtureOptions): Promise<BuildF
   return { ...result, packagePath: output };
 }
 
-export async function buildFixtures(options: {
-  root: string;
-  output: string;
-}): Promise<BuildFixturesResult> {
-  const root = resolve(options.root);
-  const output = resolve(options.output);
-  const value = await runPythonJson(root, "palimpsest.puzzle.build", [
-    "--root",
-    root,
-    "--output",
-    output,
-    "--all",
-  ]);
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Fixture build collection result must be an object.");
-  }
-  const fixtures = (value as { fixtures?: unknown }).fixtures;
-  if (!Array.isArray(fixtures) || fixtures.length === 0) {
-    throw new Error("Fixture build collection must contain at least one fixture.");
-  }
-  const decoded = await Promise.all(
-    fixtures.map(async (candidate) => {
-      if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
-        throw new Error("Fixture build collection entry is invalid.");
-      }
-      const item = candidate as Record<string, unknown>;
-      if (
-        typeof item.fixtureId !== "string" ||
-        typeof item.contentDigest !== "string" ||
-        !/^[0-9a-f]{64}$/.test(item.contentDigest) ||
-        typeof item.packagePath !== "string"
-      ) {
-        throw new Error("Fixture build collection entry is invalid.");
-      }
-      const packagePath = await realpath(item.packagePath);
-      const packageRoot = await realpath(resolve(output, item.fixtureId));
-      const fixture = await loadFixturePackage(packageRoot);
-      if (
-        packagePath !== packageRoot ||
-        fixture.fixtureId !== item.fixtureId ||
-        fixture.contentDigest !== item.contentDigest
-      ) {
-        throw new Error("Fixture package does not match the collection builder result.");
-      }
-      return {
-        fixtureId: item.fixtureId,
-        contentDigest: item.contentDigest,
-        packagePath: packageRoot,
-      };
-    }),
-  );
-  return { fixtures: decoded };
-}
-
-export function buildFixtureFromFlags(
+export async function buildFixtureFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
-): Promise<BuildFixtureResult | BuildFixturesResult> {
+): Promise<BuildFixtureResult> {
   for (const flag of flags.keys()) {
     if (flag !== "--fixture" && flag !== "--all" && flag !== "--output") {
       throw new Error(`Unknown build option ${flag}.`);
@@ -147,14 +96,16 @@ export function buildFixtureFromFlags(
   if (all !== undefined && all !== "true") {
     throw new Error("--all must be exactly true when provided.");
   }
-  if (all === "true") {
-    if (flags.has("--fixture")) throw new Error("--fixture and --all are mutually exclusive.");
-    return buildFixtures({ root, output: requiredFlag(flags, "--output") });
-  }
+  if (all === "true") throw new Error("--all is no longer supported; select one declared fixture.");
+  const fixtureId = requiredFlag(flags, "--fixture");
+  const manifest = await loadExperimentManifest(resolve(root, "experiments/config.yaml"));
+  const fixture = manifest.fixtures?.find((candidate) => candidate.fixtureId === fixtureId);
+  if (fixture === undefined)
+    throw new Error(`Unknown fixture ${fixtureId} in experiments/config.yaml.`);
   return buildFixture({
     root,
     output: requiredFlag(flags, "--output"),
-    fixtureId: requiredFlag(flags, "--fixture"),
+    fixture,
   });
 }
 

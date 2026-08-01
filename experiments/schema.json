@@ -7,6 +7,12 @@
   "required": ["schemaVersion", "providers", "models", "totalSpendCeilingCents", "runs"],
   "properties": {
     "schemaVersion": { "const": 1 },
+    "experimentName": { "type": "string", "minLength": 1 },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fixtureDefinition" }
+    },
     "providers": {
       "type": "object",
       "minProperties": 1,
@@ -107,10 +113,44 @@
     "fixtureReference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["packagePath", "variant"],
+      "required": ["fixtureId", "packagePath", "variant"],
       "properties": {
+        "fixtureId": { "$ref": "#/$defs/identifier" },
         "packagePath": { "type": "string", "minLength": 1 },
         "variant": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "fixtureDefinition": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["fixtureId", "source", "references"],
+      "properties": {
+        "fixtureId": { "$ref": "#/$defs/identifier" },
+        "source": { "$ref": "#/$defs/fixtureSource" },
+        "references": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/textFile" }
+        }
+      }
+    },
+    "textFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^fixtures/" },
+        "format": { "enum": ["plain-text", "gutenberg-text", "gutenberg-html"] }
+      }
+    },
+    "fixtureSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format", "window"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^fixtures/" },
+        "format": { "enum": ["plain-text", "gutenberg-text", "gutenberg-html"] },
+        "window": { "type": "object" }
       }
     },
     "assignment": {

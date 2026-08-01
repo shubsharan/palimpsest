@@ -44,6 +44,10 @@ export interface RunDeclaration {
 
 export interface ExperimentManifest {
   schemaVersion: 1;
+  /** Human-readable name recorded with every resolved experiment. */
+  experimentName?: string;
+  /** Fixture definitions consumed by this experiment. Their file paths are repository-relative. */
+  fixtures?: readonly Record<string, unknown>[];
   providers: Record<string, ProviderConnection>;
   models: Record<string, ModelDeclaration>;
   totalSpendCeilingCents: number;

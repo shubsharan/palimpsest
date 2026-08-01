@@ -12,8 +12,7 @@ This is a puzzle and an observational research artifact. It is not a hosted serv
 - [Feature 021 specification](specs/021-lean-experiment-engine/spec.md): active requirements for the lean experiment engine.
 - [Feature 021 quickstart](specs/021-lean-experiment-engine/quickstart.md): provider-free verification and operator commands.
 - [Experiment schema](experiments/schema.json): strict manifest contract.
-- [Fixture definitions](experiments/fixtures.json): historical and variable-geometry puzzle declarations.
-- [Example experiment](experiments/config.yaml): the historical five-fixture matrix expressed as explicit runs.
+- [Experiment config](experiments/config.yaml): the experiment name, fixture text files, and explicit runs.
 
 ## Setup
 
@@ -28,16 +27,15 @@ The first bootstrap may use the network. Model-authored commands and canonical s
 
 ## Prepare Fixtures
 
-`experiments/fixtures.json` contains `FixtureDefinition` values. Each declares source provenance, target-excluded references, seed, agent IDs, stage count, key variants, re-key boundaries, and scientifically meaningful allocation constraints.
+`experiments/config.yaml` is the only authored experiment file. Its `experimentName` labels the work, and its `fixtures` section names the source and reference text files under `fixtures/` alongside the geometry and allocation inputs.
 
 Build one fixture or the complete example set without provider access:
 
 ```bash
-pnpm puzzle:build --fixture calibration-theron-ware --output artifacts/fixtures/calibration-theron-ware
-pnpm puzzle:build --all true --output artifacts/fixtures
+pnpm puzzle:build --fixture theron-ware --output artifacts/fixtures/theron-ware
 ```
 
-Preparation publishes a deterministic `FixturePackage` containing agent-visible stages and variants plus trusted provenance, oracle data, manipulation checks, and scoring inputs. Trusted data stays outside agent workspaces. Adding a fixture changes declarations and corpus inputs, not runner source.
+Preparation publishes a deterministic `FixturePackage` containing agent-visible stages and variants plus trusted provenance, oracle data, manipulation checks, and scoring inputs. Trusted data stays outside agent workspaces. To try another text, add it under `fixtures/`, update `experiments/config.yaml`, then build the declared fixture.
 
 ## Configure Experiments
 

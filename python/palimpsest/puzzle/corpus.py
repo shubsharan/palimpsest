@@ -208,6 +208,12 @@ def load_paragraphs(source: SourceDefinition) -> tuple[str, ...]:
         parser.feed(body)
         parser.close()
         return tuple(parser.paragraphs)
+    if source.source_format == "plain-text":
+        return tuple(
+            paragraph
+            for candidate in _BLANK_LINES.split(body)
+            if (paragraph := _canonical_paragraph(candidate)) is not None
+        )
     raise ValueError(f"Unsupported source format: {source.source_format}")
 
 

@@ -14,8 +14,10 @@ import type {
 } from "../model/contracts.js";
 import type {
   ExperimentManifest,
+  FixtureReference,
   FixturePackageMetadata,
   ResolvedExperiment,
+  ResolvedFixtureReference,
   ResolvedRun,
   RunDeclaration,
 } from "./contracts.js";
@@ -235,14 +237,49 @@ function assertProviderReferences(manifest: ExperimentManifest): void {
 }
 
 function assertRuns(manifest: ExperimentManifest): void {
+  const fixtureIds = new Set<string>();
+  for (const [index, fixture] of (manifest.fixtures ?? []).entries()) {
+    const fixtureId = fixture.fixtureId;
+    if (typeof fixtureId !== "string" || !/^[A-Za-z][A-Za-z0-9-]*$/.test(fixtureId)) {
+      throw new Error(`fixtures[${String(index)}].fixtureId must be a canonical identifier.`);
+    }
+    if (fixtureIds.has(fixtureId))
+      throw new Error(`fixtures contains duplicate fixtureId ${fixtureId}.`);
+    fixtureIds.add(fixtureId);
+    for (const [fileIndex, file] of [
+      fixture.source,
+      ...(fixture.references as unknown[]),
+    ].entries()) {
+      if (
+        typeof file !== "object" ||
+        file === null ||
+        typeof (file as { path?: unknown }).path !== "string"
+      ) {
+        throw new Error(`fixtures[${String(index)}] has an invalid declared text file.`);
+      }
+      const path = (file as { path: string }).path;
+      if (!path.startsWith("fixtures/")) {
+        throw new Error(
+          `fixtures[${String(index)}] text file ${String(fileIndex)} must be under fixtures/.`,
+        );
+      }
+    }
+  }
   const ids = new Set<string>();
   let authorizedSpend = 0;
   for (const [index, run] of manifest.runs.entries()) {
     const path = `runs[${String(index)}]`;
+    const fixtureId = (run.fixture as FixtureReference & { fixtureId?: unknown }).fixtureId;
     if (ids.has(run.id)) {
       throw new Error(`${path}.id duplicates experiment run id ${run.id}.`);
     }
     ids.add(run.id);
+    if (
+      manifest.fixtures !== undefined &&
+      (typeof fixtureId !== "string" || !fixtureIds.has(fixtureId))
+    ) {
+      throw new Error(`${path}.fixture.fixtureId references an undeclared fixture.`);
+    }
     for (const [agentId, modelProfileId] of Object.entries(run.assignment)) {
       if (!(modelProfileId in manifest.models)) {
         throw new Error(
@@ -374,6 +411,8 @@ export function resolveExperiment(
 
   return deepFreeze({
     schemaVersion: 1,
+    ...(manifest.experimentName === undefined ? {} : { experimentName: manifest.experimentName }),
+    ...(manifest.fixtures === undefined ? {} : { fixtures: structuredClone(manifest.fixtures) }),
     providers: Object.fromEntries(
       Object.entries(manifest.providers).map(([name, provider]) => [name, cloneProvider(provider)]),
     ),
@@ -382,6 +421,7 @@ export function resolveExperiment(
     runs: manifest.runs.map((run, index) => ({
       id: run.id,
       fixture: {
+        fixtureId: (run.fixture as FixtureReference & { fixtureId?: string }).fixtureId!,
         packagePath: run.fixture.packagePath,
         packageRoot: resolvedPackagePath(
           root,
@@ -389,7 +429,7 @@ export function resolveExperiment(
           `runs[${String(index)}].fixture.packagePath`,
         ),
         variant: run.fixture.variant,
-      },
+      } as ResolvedFixtureReference & { fixtureId: string },
       assignment: { ...run.assignment },
       capabilities: { ...run.capabilities },
       schedule: {

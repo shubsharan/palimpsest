@@ -239,6 +239,12 @@ export async function validateExperimentExecution(options: {
       fixture = await service.loadFixture(run.fixture.packageRoot);
       fixtures.set(run.fixture.packageRoot, fixture);
     }
+    const declaredFixtureId = (run.fixture as { fixtureId?: unknown }).fixtureId;
+    if (declaredFixtureId !== undefined && fixture.fixtureId !== declaredFixtureId) {
+      throw new Error(
+        `Run ${run.id} package fixtureId ${fixture.fixtureId} does not match its declared fixture.`,
+      );
+    }
     validateRunAgainstFixture(run, fixture);
   }
   const smokeRun =
