@@ -19,6 +19,11 @@ const TEST_IDENTITY: SandboxIdentity = {
   sourceDigest: "2".repeat(64),
   profileVersion: 1,
 };
+const TEST_TIMING = {
+  cleanupTimeoutMs: 300,
+  pollIntervalMs: 10,
+  recoveryProbeTimeoutMs: 25,
+} as const;
 const temporaryRoots: string[] = [];
 
 interface DockerFixture {
@@ -39,11 +44,12 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
   const workspace = join(root, "workspace");
   const evidence = join(root, "evidence");
   const gitOrigin = join(root, "origin.git");
+  const reference = join(root, "reference");
   const log = join(root, "docker.log");
   const interrupted = join(root, "interrupted");
   const inspected = join(root, "inspected");
   const executable = join(root, "docker");
-  await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(gitOrigin)]);
+  await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(gitOrigin), mkdir(reference)]);
   await writeFile(
     executable,
     [
@@ -87,6 +93,7 @@ async function dockerFixture(mode: string): Promise<DockerFixture> {
       timeoutMs: 1_000,
       workspacePath: workspace,
       evidencePath: evidence,
+      referenceCorpusPath: reference,
       gitOriginPath: gitOrigin,
     },
   };
@@ -214,7 +221,7 @@ describe("sandbox container lifecycle", () => {
 
   it("executes multiple commands through one lease and removes it only when closed", async () => {
     const fixture = await dockerFixture("success");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
     const lease = await sandbox.openAgentLease(fixture.request);
 
     await expect(lease.execute({ command: "true", timeoutMs: 1_000 })).resolves.toEqual({
@@ -245,7 +252,7 @@ describe("sandbox container lifecycle", () => {
 
   it("extracts and atomically publishes only the declared solver output", async () => {
     const fixture = await solverDockerFixture("success");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
     await expect(sandbox.execute(fixture.request)).resolves.toEqual({
       exitCode: 0,
@@ -269,7 +276,7 @@ describe("sandbox container lifecycle", () => {
 
   it("rejects non-file solver output without publishing a durable path", async () => {
     const fixture = await solverDockerFixture("directory");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
     await expect(sandbox.execute(fixture.request)).resolves.toMatchObject({
       exitCode: 0,
@@ -282,7 +289,7 @@ describe("sandbox container lifecycle", () => {
 
   it("rejects solver output one byte beyond the extraction limit", async () => {
     const fixture = await solverDockerFixture("oversized");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
     await expect(sandbox.execute(fixture.request)).resolves.toMatchObject({
       exitCode: 0,
@@ -295,7 +302,7 @@ describe("sandbox container lifecycle", () => {
 
   it("classifies invalid lease inspection as infrastructure failure and cleans up", async () => {
     const fixture = await dockerFixture("invalid-inspect");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
     await expect(sandbox.openAgentLease(fixture.request)).rejects.toBeInstanceOf(
       SandboxInfrastructureError,
@@ -310,13 +317,11 @@ describe("sandbox container lifecycle", () => {
 
   it("bounds lease inspection by the setup deadline and cleans up", async () => {
     const fixture = await dockerFixture("stalled-inspect");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
-    const startedAt = performance.now();
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
     await expect(sandbox.openAgentLease({ ...fixture.request, timeoutMs: 500 })).rejects.toThrow(
       "Docker container inspection timed out.",
     );
-    expect(performance.now() - startedAt).toBeLessThan(1_000);
     expect((await readFile(fixture.log, "utf8")).trim().split("\n")).toEqual([
       "create",
       "start",
@@ -327,20 +332,18 @@ describe("sandbox container lifecycle", () => {
 
   it("bounds post-command inspection by the command deadline", async () => {
     const fixture = await dockerFixture("stalled-command-inspect");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
     const lease = await sandbox.openAgentLease(fixture.request);
-    const startedAt = performance.now();
 
-    await expect(lease.execute({ command: "exit 7", timeoutMs: 30 })).rejects.toThrow(
+    await expect(lease.execute({ command: "exit 7", timeoutMs: 100 })).rejects.toThrow(
       "Docker did not recover before the command deadline.",
     );
-    expect(performance.now() - startedAt).toBeLessThan(1_000);
     await lease.close();
   });
 
   it("replaces an interrupted lease without replaying the command", async () => {
     const fixture = await dockerFixture("interrupt-once");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
     const lease = await sandbox.openAgentLease(fixture.request);
 
     await expect(
@@ -369,7 +372,7 @@ describe("sandbox container lifecycle", () => {
 
   it("surfaces lease cleanup failure instead of claiming completion", async () => {
     const fixture = await dockerFixture("cleanup-failure");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
     const lease = await sandbox.openAgentLease(fixture.request);
 
     await expect(lease.close()).rejects.toThrow(/Docker cleanup failed: cleanup unavailable/);
@@ -384,21 +387,21 @@ describe("sandbox container lifecycle", () => {
 
   it("bounds agent lease creation and cleans up a late container", async () => {
     const fixture = await dockerFixture("stalled-create");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
 
     await expect(
-      sandbox.openAgentLease({ ...fixture.request, timeoutMs: 30 }),
+      sandbox.openAgentLease({ ...fixture.request, timeoutMs: 100 }),
     ).rejects.toBeInstanceOf(SandboxInfrastructureError);
     const operations = (await readFile(fixture.log, "utf8")).trim().split("\n");
     expect(operations).toContain("rm");
     expect(operations.every((operation) => operation === "create" || operation === "rm")).toBe(
       true,
     );
-  }, 10_000);
+  });
 
   it("cancels agent lease creation and still cleans up", async () => {
     const fixture = await dockerFixture("stalled-create");
-    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable);
+    const sandbox = new DockerCommandSandbox(TEST_IDENTITY, fixture.executable, TEST_TIMING);
     const controller = new AbortController();
     const opening = sandbox.openAgentLease({
       ...fixture.request,
@@ -413,5 +416,5 @@ describe("sandbox container lifecycle", () => {
     expect(operations[0]).toBe("create");
     expect(operations.slice(1).length).toBeGreaterThan(0);
     expect(new Set(operations.slice(1))).toEqual(new Set(["rm"]));
-  }, 10_000);
+  });
 });

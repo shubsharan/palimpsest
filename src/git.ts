@@ -1,7 +1,7 @@
 import { chmod, cp, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { generateAgentIds, type AgentId } from "./model.js";
+import type { AgentId } from "./model/contracts.js";
 import { runProcess } from "./process.js";
 import { InfrastructureError, SANDBOX_PATHS } from "./sandbox/contracts.js";
 import { sealTree, type TreeSeal } from "./seal.js";
@@ -158,7 +158,7 @@ async function seedSolverScaffold(root: string, repository: GitRepository): Prom
 export async function createGitEnvironment(
   root: string,
   communicationMode: GitCommunicationMode,
-  agentIds: readonly AgentId[] = generateAgentIds(3),
+  agentIds: readonly AgentId[],
 ): Promise<GitEnvironment> {
   if (agentIds.length < 2 || new Set(agentIds).size !== agentIds.length) {
     throw new Error("Git environment requires at least two unique agent IDs.");

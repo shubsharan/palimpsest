@@ -1,37 +1,14 @@
-schemaVersion: 6
-
-communication: { teamChannel: disabled }
-blocks:
-  - { blockId: calibration-odd-women, sourcePath: fixtures/chronicles-of-break-oday.txt }
-assignment:
-  - { agentId: agent-1, modelProfileId: fixture }
-  - { agentId: agent-2, modelProfileId: fixture }
-  - { agentId: agent-3, modelProfileId: fixture }
+schemaVersion: 1
 providers:
   fixture: { driver: openai, apiKeyEnv: FIXTURE_KEY }
 models:
   fixture: { provider: fixture, model: fixture-model }
-schedule:
-  releaseOffsetsMs: [0, 300000, 300000, 1200000, 1800000, 2400000]
-  cutoffMs: 3600000
-budgets:
-  tokenBudgetPerAgent: 200000
-  perAttemptMonetaryCeilingCents: 10000
-  totalTokenCeiling: 15000000
-  totalMonetaryCeilingCents: 250000
-order: [CS, CR, IR, IS]
-checking:
-  feedbackId: published-runnability-coverage-v1
-scoring:
-  primaryMetricId: normalized-positional-word-v1
-  diagnosticMetricId: palimpsest-diagnostics-v1
-  evaluationPolicyId: all-canonical-main-snapshots-v1
-rubric:
-  rubricId: fixture-behavior-review-v1
-  path: tests/fixtures/config/behavior-rubric.md
-  sha256: 27397411faadcf7048e6d5e832c6d799884cbb9bd2e4d66344d358429902ea5b
-failurePolicy:
-  stopOnInfrastructureFailure: true
-  automaticRetry: false
-  replacement: explicit-appended
-  eligibleClassification: session-infrastructure-error
+totalSpendCeilingCents: 100
+runs:
+  - id: invalid-schedule
+    fixture: { packagePath: tests/fixtures/config/packages/fixture.json, variant: stationary }
+    assignment: { agent-1: fixture }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule: { releaseOffsetsMs: [0, 10, 10], cutoffMs: 20 }
+    limits: { tokenLimitPerAgent: 100, spendCeilingCents: 100 }
+    labels: {}

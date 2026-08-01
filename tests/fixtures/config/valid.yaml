@@ -1,14 +1,4 @@
-schemaVersion: 6
-
-communication: { teamChannel: disabled }
-
-blocks:
-  - { blockId: calibration-odd-women, sourcePath: fixtures/chronicles-of-break-oday.txt }
-
-assignment:
-  - { agentId: agent-1, modelProfileId: gpt }
-  - { agentId: agent-2, modelProfileId: claude }
-  - { agentId: agent-3, modelProfileId: gemini }
+schemaVersion: 1
 
 providers:
   openai: { driver: openai, apiKeyEnv: RESEARCH_OPENAI_KEY }
@@ -28,32 +18,24 @@ models:
   gemini: { provider: google, model: gemini-research }
   local: { provider: local, model: local-research }
 
-schedule:
-  releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
-  cutoffMs: 3600000
+totalSpendCeilingCents: 25000
 
-budgets:
-  tokenBudgetPerAgent: 200000
-  perAttemptMonetaryCeilingCents: 10000
-  totalTokenCeiling: 15000000
-  totalMonetaryCeilingCents: 250000
-
-order: [CS, CR, IR, IS]
-
-checking:
-  feedbackId: published-runnability-coverage-v1
-scoring:
-  primaryMetricId: normalized-positional-word-v1
-  diagnosticMetricId: palimpsest-diagnostics-v1
-  evaluationPolicyId: all-canonical-main-snapshots-v1
-
-rubric:
-  rubricId: fixture-behavior-review-v1
-  path: tests/fixtures/config/behavior-rubric.md
-  sha256: 27397411faadcf7048e6d5e832c6d799884cbb9bd2e4d66344d358429902ea5b
-
-failurePolicy:
-  stopOnInfrastructureFailure: true
-  automaticRetry: false
-  replacement: explicit-appended
-  eligibleClassification: session-infrastructure-error
+runs:
+  - id: shared-stationary
+    fixture: { packagePath: tests/fixtures/config/packages/three-agent.json, variant: stationary }
+    assignment: { agent-1: gpt, agent-2: claude, agent-3: gemini }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
+      cutoffMs: 3600000
+    limits: { tokenLimitPerAgent: 200000, spendCeilingCents: 10000 }
+    labels: { cohort: baseline, replicate: 1 }
+  - id: isolated-rekey
+    fixture: { packagePath: tests/fixtures/config/packages/three-agent.json, variant: rekey }
+    assignment: { agent-1: gpt, agent-2: claude, agent-3: gemini }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
+      cutoffMs: 3600000
+    limits: { tokenLimitPerAgent: 200000, spendCeilingCents: 10000 }
+    labels: { cohort: baseline, replicate: 1 }

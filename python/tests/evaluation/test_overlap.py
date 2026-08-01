@@ -85,6 +85,7 @@ def test_labels_plaintext_and_private_cipher_sources_separately() -> None:
     }
 
 
+@pytest.mark.contract
 def test_cli_preserves_findings_and_echoes_validated_scan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -140,6 +141,7 @@ def test_cli_preserves_findings_and_echoes_validated_scan(
     ]
 
 
+@pytest.mark.contract
 def test_cli_rejects_duplicate_path_and_blob_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

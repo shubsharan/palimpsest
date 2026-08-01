@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { isAgentId, type AgentId } from "./model.js";
+import { isAgentId, type AgentId } from "./model/contracts.js";
 
 export interface ObservationEvent {
   sequence: number;
@@ -120,7 +120,7 @@ function requireEvent(
   return event as ObservationEvent;
 }
 
-export async function readObservationEvents(path: string): Promise<readonly ObservationEvent[]> {
+async function readExistingEvents(path: string): Promise<readonly ObservationEvent[]> {
   const source = await readFile(path, "utf8");
   if (source.length === 0) return [];
   const lines = source.split("\n");
@@ -226,7 +226,7 @@ export class JsonlObservationLog {
     }
     const metadata = requireMetadata(metadataValue, metadataPath);
     const startedAtMs = Date.parse(metadata.startedAt);
-    const events = await readObservationEvents(path);
+    const events = await readExistingEvents(path);
     await writeFile(textPath, renderTextLog(metadata, events), "utf8");
     const last = events.at(-1);
     return new JsonlObservationLog({

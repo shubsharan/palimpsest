@@ -1,344 +1,78 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { buildPuzzle } from "../../src/build.js";
+import { buildFixture } from "../../src/fixture/build.js";
 import { parseFlags } from "../../src/flags.js";
 
 const root = resolve(".");
 const tsxCli = join(root, "node_modules", "tsx", "dist", "cli.mjs");
-const block = "calibration-odd-women";
-const source = join(root, "fixtures/chronicles-of-break-oday.txt");
+const temporaryRoots: string[] = [];
 
-interface CommandResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
+afterEach(async () => {
+  await Promise.all(
+    temporaryRoots.splice(0).map((path) => rm(path, { force: true, recursive: true })),
+  );
+});
 
-interface PackageJson {
-  scripts: Record<string, string>;
-}
-
-function execute(
-  command: string,
-  args: readonly string[],
-  options: { cwd: string; env?: NodeJS.ProcessEnv },
-): Promise<CommandResult> {
-  return new Promise((resolveResult) => {
+function execute(args: readonly string[]) {
+  return new Promise<{ exitCode: number; stdout: string; stderr: string }>((finish) => {
     execFile(
-      command,
-      [...args],
-      {
-        cwd: options.cwd,
-        env: options.env,
-        encoding: "utf8",
-        timeout: 30_000,
-      },
-      (error, stdout, stderr) => {
-        resolveResult({
+      process.execPath,
+      [tsxCli, "src/cli.ts", ...args],
+      { cwd: root, encoding: "utf8", timeout: 30_000 },
+      (error, stdout, stderr) =>
+        finish({
           exitCode: error === null ? 0 : typeof error.code === "number" ? error.code : 1,
           stdout,
           stderr,
-        });
-      },
+        }),
     );
   });
-}
-
-function expectOneJsonObject(stdout: string): Record<string, unknown> {
-  expect(stdout.endsWith("\n")).toBe(true);
-  const lines = stdout.trimEnd().split("\n");
-  expect(lines).toHaveLength(1);
-  const value: unknown = JSON.parse(lines[0] ?? "");
-  expect(value).toEqual(expect.any(Object));
-  expect(Array.isArray(value)).toBe(false);
-  return value as Record<string, unknown>;
-}
-
-async function packageScripts(): Promise<Record<string, string>> {
-  const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as PackageJson;
-  return packageJson.scripts;
-}
-
-async function artifactFiles(directory: string, current = directory): Promise<string[]> {
-  const files: string[] = [];
-  for (const entry of await readdir(current, { withFileTypes: true })) {
-    const path = join(current, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await artifactFiles(directory, path)));
-    } else if (entry.isFile()) {
-      files.push(relative(directory, path));
-    }
-  }
-  return files.sort();
 }
 
 describe("operator CLI contract", () => {
-  it("publishes the five existing commands plus experiment", async () => {
-    const scripts = await packageScripts();
-    const commandNames = Object.keys(scripts)
-      .filter((name) => name.startsWith("puzzle:"))
-      .sort();
-
-    expect(commandNames).toEqual([
-      "puzzle:build",
-      "puzzle:evaluate",
-      "puzzle:experiment",
-      "puzzle:offline",
-      "puzzle:run",
-      "puzzle:sandbox:build",
-    ]);
-    for (const name of commandNames) {
-      expect(scripts[name]?.trim().length).toBeGreaterThan(0);
-    }
-  });
-
-  it("routes the explicit research preflight through the root CLI", async () => {
-    const scripts = await packageScripts();
-    expect(scripts.preflight).toBe("tsx src/cli.ts preflight");
-  });
-
-  it("parses the provider-neutral build, run, phase, replacement, and attempt flags", () => {
+  it("parses only explicit flag values", () => {
     expect(
-      parseFlags([
-        "--",
-        "--block",
-        block,
-        "--source",
-        source,
-        "--config",
-        "experiments/config.yaml",
-        "--condition",
-        "CR",
-        "--phase",
-        "validation",
-        "--study-root",
-        "study",
-        "--replace",
-        "attempt-source",
-        "--output",
-        "attempt",
-        "--build",
-        "build",
-        "--attempt",
-        "attempt",
-      ]),
+      parseFlags(["--fixture", "calibration-theron-ware", "--output", "artifacts/fixture"]),
     ).toEqual(
       new Map([
-        ["--block", block],
-        ["--source", source],
-        ["--config", "experiments/config.yaml"],
-        ["--condition", "CR"],
-        ["--phase", "validation"],
-        ["--study-root", "study"],
-        ["--replace", "attempt-source"],
-        ["--output", "attempt"],
-        ["--build", "build"],
-        ["--attempt", "attempt"],
+        ["--fixture", "calibration-theron-ware"],
+        ["--output", "artifacts/fixture"],
       ]),
     );
-  });
-
-  it("rejects missing flag values and duplicate names explicitly", () => {
     expect(() => parseFlags(["--config"])).toThrow("--config requires a value.");
-    expect(() => parseFlags(["--config", "one", "--config", "two"])).toThrow(
-      "--config may be provided only once.",
-    );
   });
 
-  it("builds one requested block and emits one absolute result", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-cli-"));
-    const output = join(temporaryRoot, "build");
-    const scripts = await packageScripts();
-    const command = scripts["puzzle:build"]?.split(/\s+/);
-    expect(command?.[0]).toBe("tsx");
-
-    const result = await execute(
-      process.execPath,
-      [
-        tsxCli,
-        ...(command?.slice(1) ?? []),
-        "--source",
-        source,
-        "--phase",
-        "calibration",
-        "--block",
-        block,
-        "--output",
-        output,
-      ],
-      { cwd: root },
-    );
-
-    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(expectOneJsonObject(result.stdout)).toEqual({
-      pairedBuildId: expect.stringMatching(/^paired-[0-9a-f]{64}$/),
-      blockId: block,
-      buildPath: output,
-      agentIds: ["agent-1", "agent-2", "agent-3"],
-      stageCount: 6,
-      variants: {
-        stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
-        rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
-      },
-    });
-  }, 30_000);
-
-  it("rejects an invalid phase before creating a build directory", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-phase-"));
-    const output = join(temporaryRoot, "build");
-    const scripts = await packageScripts();
-    const command = scripts["puzzle:build"]?.split(/\s+/);
-
-    const result = await execute(
-      process.execPath,
-      [
-        tsxCli,
-        ...(command?.slice(1) ?? []),
-        "--source",
-        source,
-        "--phase",
-        "pilot",
-        "--output",
-        output,
-      ],
-      { cwd: root },
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("--phase must be exactly calibration or validation");
-    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("rejects non-canonical condition tokens before creating output", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-invalid-condition-"));
-    const output = join(temporaryRoot, "offline");
-    const scripts = await packageScripts();
-    const command = scripts["puzzle:offline"]?.split(/\s+/);
-
-    const result = await execute(
-      process.execPath,
-      [tsxCli, ...(command?.slice(1) ?? []), "--condition", "cr", "--output", output],
-      { cwd: root },
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Condition must be exactly one of CS, CR, IS, or IR.");
-    await expect(access(output)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("requires a published attempt for evaluation", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-evaluate-workspace-"));
-    const scripts = await packageScripts();
-    const command = scripts["puzzle:evaluate"]?.split(/\s+/);
-
-    const result = await execute(
-      process.execPath,
-      [tsxCli, ...(command?.slice(1) ?? []), "--attempt", join(temporaryRoot, "attempt")],
-      { cwd: root },
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("attempt.json");
-    await expect(access(join(temporaryRoot, "attempt", "evaluation"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it.each(["--workspace", "--notes", "--command", "--output-path", "--branch", "--ref"])(
-    "rejects prohibited evaluator option %s",
-    async (flag) => {
-      const scripts = await packageScripts();
-      const command = scripts["puzzle:evaluate"]?.split(/\s+/);
-      const result = await execute(
-        process.execPath,
-        [tsxCli, ...(command?.slice(1) ?? []), "--attempt", "/missing", flag, "value"],
-        { cwd: root },
-      );
-
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toContain(`Unknown evaluate option ${flag}.`);
-    },
-  );
-
-  it("rebuilds one pinned block byte-identically", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-build-determinism-"));
-    const firstOutput = join(temporaryRoot, "first");
-    const secondOutput = join(temporaryRoot, "second");
-    const first = await buildPuzzle({
+  it("builds and decodes one package through the real Python boundary", async () => {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "palimpsest-fixture-build-"));
+    temporaryRoots.push(temporaryRoot);
+    const result = await buildFixture({
       root,
-      output: firstOutput,
-      source,
-      phase: "calibration",
-      block,
+      fixtureId: "calibration-theron-ware",
+      output: join(temporaryRoot, "package"),
     });
-    const second = await buildPuzzle({
-      root,
-      output: secondOutput,
-      source,
-      phase: "calibration",
-      block,
+    expect(result.agentIds).toEqual(["agent-1", "agent-2", "agent-3"]);
+    expect(result.stageCount).toBe(6);
+    expect(result.variants).toEqual({
+      stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
+      rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
     });
-
-    expect(first).toEqual({
-      pairedBuildId: expect.stringMatching(/^paired-[0-9a-f]{64}$/),
-      blockId: block,
-      buildPath: firstOutput,
-      agentIds: ["agent-1", "agent-2", "agent-3"],
-      stageCount: 6,
-      variants: {
-        stationary: expect.stringMatching(/^build-[0-9a-f]{64}$/),
-        rekey: expect.stringMatching(/^build-[0-9a-f]{64}$/),
-      },
-    });
-    expect(second).toEqual({ ...first, buildPath: secondOutput });
-
-    const firstFiles = await artifactFiles(firstOutput);
-    expect(firstFiles).toEqual(await artifactFiles(secondOutput));
-    await Promise.all(
-      firstFiles.map(async (path) => {
-        expect(await readFile(join(firstOutput, path))).toEqual(
-          await readFile(join(secondOutput, path)),
-        );
-      }),
-    );
   }, 30_000);
 
   it.each([
-    ["puzzle:build", []],
-    ["puzzle:run", []],
-    ["puzzle:evaluate", []],
-    ["puzzle:experiment", []],
-    ["puzzle:offline", []],
-    ["puzzle:sandbox:build", []],
-  ])(
-    "%s failures are nonzero, stderr-only, and never success-shaped",
-    async (name, args) => {
-      const scripts = await packageScripts();
-      const command = scripts[name]?.split(/\s+/);
-      expect(command?.[0]).toBe("tsx");
-      const emptyPath = await mkdtemp(join(tmpdir(), "palimpsest-cli-path-"));
-      const result = await execute(
-        process.execPath,
-        [tsxCli, ...(command?.slice(1) ?? []), ...args],
-        {
-          cwd: root,
-          env: name === "puzzle:sandbox:build" ? { ...process.env, PATH: emptyPath } : process.env,
-        },
-      );
-
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stderr.trim().length).toBeGreaterThan(0);
-      expect(result.stdout).toBe("");
-    },
-    30_000,
-  );
+    ["build", []],
+    ["validate", []],
+    ["experiment", []],
+    ["evaluate", []],
+    ["analyze", []],
+  ])("%s failures are stderr-only and nonzero", async (command, args) => {
+    const result = await execute([command, ...args]);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr.trim()).not.toBe("");
+  });
 });

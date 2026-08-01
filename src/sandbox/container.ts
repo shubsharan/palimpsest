@@ -35,6 +35,18 @@ interface ContainerState {
   Error?: unknown;
 }
 
+export interface DockerSandboxTiming {
+  cleanupTimeoutMs?: number;
+  pollIntervalMs?: number;
+  recoveryProbeTimeoutMs?: number;
+}
+
+const DEFAULT_DOCKER_SANDBOX_TIMING = {
+  cleanupTimeoutMs: 5_000,
+  pollIntervalMs: 100,
+  recoveryProbeTimeoutMs: 1_000,
+} as const;
+
 function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -120,10 +132,16 @@ export class DockerCommandSandbox implements CommandSandbox {
   readonly identity: SandboxIdentity;
   readonly containerLabelValue = randomUUID();
   readonly #dockerCommand: string;
+  readonly #timing: Required<DockerSandboxTiming>;
 
-  constructor(identity: SandboxIdentity, dockerCommand = "docker") {
+  constructor(
+    identity: SandboxIdentity,
+    dockerCommand = "docker",
+    timing: DockerSandboxTiming = {},
+  ) {
     this.identity = identity;
     this.#dockerCommand = dockerCommand;
+    this.#timing = { ...DEFAULT_DOCKER_SANDBOX_TIMING, ...timing };
   }
 
   async #runDocker(
@@ -142,7 +160,7 @@ export class DockerCommandSandbox implements CommandSandbox {
   }
 
   async #remove(containerName: string, settleLateCreation = false): Promise<void> {
-    const deadline = performance.now() + 5_000;
+    const deadline = performance.now() + this.#timing.cleanupTimeoutMs;
     while (true) {
       const remainingBeforeAttempt = deadline - performance.now();
       if (remainingBeforeAttempt <= (settleLateCreation ? 250 : 0)) return;
@@ -161,7 +179,9 @@ export class DockerCommandSandbox implements CommandSandbox {
       if (!settleLateCreation) return;
       const remainingMs = Math.ceil(deadline - performance.now());
       if (remainingMs <= 100) return;
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(100, remainingMs)));
+      await new Promise((resolveDelay) =>
+        setTimeout(resolveDelay, Math.min(this.#timing.pollIntervalMs, remainingMs)),
+      );
     }
   }
 
@@ -316,7 +336,10 @@ export class DockerCommandSandbox implements CommandSandbox {
   async #waitForDocker(deadline: number, signal?: AbortSignal): Promise<void> {
     while (performance.now() < deadline) {
       if (signal?.aborted) throw abortError();
-      const probeDeadline = Math.min(deadline, performance.now() + 1_000);
+      const probeDeadline = Math.min(
+        deadline,
+        performance.now() + this.#timing.recoveryProbeTimeoutMs,
+      );
       try {
         const result = await this.#runDocker(["info", "--format", "{{.ServerVersion}}"], {
           deadline: probeDeadline,
@@ -334,7 +357,9 @@ export class DockerCommandSandbox implements CommandSandbox {
       }
       const remainingMs = Math.ceil(deadline - performance.now());
       if (remainingMs <= 0) break;
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(100, remainingMs)));
+      await new Promise((resolveDelay) =>
+        setTimeout(resolveDelay, Math.min(this.#timing.pollIntervalMs, remainingMs)),
+      );
     }
     throw new SandboxInfrastructureError("Docker did not recover before the command deadline.");
   }

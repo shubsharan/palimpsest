@@ -1,0 +1,14 @@
+schemaVersion: 1
+providers:
+  local: { driver: openai-compatible, baseURL: "http://127.0.0.1:4000/v1" }
+models:
+  local: { provider: local, model: small-local-model }
+totalSpendCeilingCents: 0
+runs:
+  - id: two-agent-three-stage
+    fixture: { packagePath: tests/fixtures/config/packages/two-agent.json, variant: rekey-late }
+    assignment: { agent-1: local, agent-2: local }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule: { releaseOffsetsMs: [0, 500, 1500], cutoffMs: 2500 }
+    limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 }
+    labels: { geometry: two-by-three, corpus: synthetic }

@@ -1,10 +1,8 @@
-import { buildPuzzleFromFlags, buildSandbox } from "./build.js";
-import { runConfiguredPuzzleFromFlags } from "./configured-run.js";
-import { evaluatePuzzleFromFlags } from "./evaluate.js";
-import { runExperimentFromFlags } from "./experiment.js";
+import { buildFixtureFromFlags, buildSandbox } from "./fixture/build.js";
+import { analyzeRunFromFlags } from "./evaluation/overlap.js";
+import { evaluateRunFromFlags } from "./evaluation/evaluator.js";
+import { runExperimentFromFlags, validateExperimentFromFlags } from "./experiment/execution.js";
 import { parseFlags } from "./flags.js";
-import { runOfflinePuzzleFromFlags } from "./offline.js";
-import { runPreflight } from "./preflight.js";
 
 const [command, ...args] = process.argv.slice(2);
 const flags = parseFlags(args);
@@ -12,25 +10,23 @@ const flags = parseFlags(args);
 let result: unknown;
 switch (command) {
   case "sandbox-build":
+    if (flags.size > 0) throw new Error("sandbox-build does not accept options.");
     result = await buildSandbox();
     break;
   case "build":
-    result = await buildPuzzleFromFlags(flags);
-    break;
-  case "run":
-    result = await runConfiguredPuzzleFromFlags(flags);
+    result = await buildFixtureFromFlags(flags);
     break;
   case "experiment":
     result = await runExperimentFromFlags(flags);
     break;
+  case "validate":
+    result = await validateExperimentFromFlags(flags);
+    break;
   case "evaluate":
-    result = await evaluatePuzzleFromFlags(flags);
+    result = await evaluateRunFromFlags(flags);
     break;
-  case "offline":
-    result = await runOfflinePuzzleFromFlags(flags);
-    break;
-  case "preflight":
-    result = await runPreflight();
+  case "analyze":
+    result = await analyzeRunFromFlags(flags);
     break;
   default:
     throw new Error(

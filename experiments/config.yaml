@@ -1,19 +1,4 @@
-schemaVersion: 6
-
-communication:
-  teamChannel: enabled
-
-blocks:
-  - blockId: calibration-odd-women
-    sourcePath: fixtures/chronicles-of-break-oday.txt
-
-assignment:
-  - agentId: agent-1
-    modelProfileId: sol
-  - agentId: agent-2
-    modelProfileId: sol
-  - agentId: agent-3
-    modelProfileId: sol
+schemaVersion: 1
 
 providers:
   openai:
@@ -33,33 +18,170 @@ models:
         serviceTier: default
         store: false
 
-schedule:
-  releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000]
-  cutoffMs: 3600000
+totalSpendCeilingCents: 25000
 
-budgets:
-  tokenBudgetPerAgent: null
-  perAttemptMonetaryCeilingCents: 1000
-  totalTokenCeiling: null
-  totalMonetaryCeilingCents: 4000
+runs:
+  - id: theron-ware-shared-stationary
+    fixture: { packagePath: artifacts/fixtures/calibration-theron-ware, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: theron-ware, communication: shared, keying: stationary }
+  - id: theron-ware-shared-rekey
+    fixture: { packagePath: artifacts/fixtures/calibration-theron-ware, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: theron-ware, communication: shared, keying: rekey }
+  - id: theron-ware-isolated-rekey
+    fixture: { packagePath: artifacts/fixtures/calibration-theron-ware, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: theron-ware, communication: isolated, keying: rekey }
+  - id: theron-ware-isolated-stationary
+    fixture: { packagePath: artifacts/fixtures/calibration-theron-ware, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: theron-ware, communication: isolated, keying: stationary }
 
-order: [CS, CR, IR, IS]
+  - id: odd-women-shared-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-odd-women, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: odd-women, communication: shared, keying: stationary }
+  - id: odd-women-shared-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-odd-women, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: odd-women, communication: shared, keying: rekey }
+  - id: odd-women-isolated-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-odd-women, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: odd-women, communication: isolated, keying: rekey }
+  - id: odd-women-isolated-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-odd-women, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: odd-women, communication: isolated, keying: stationary }
 
-checking:
-  feedbackId: published-runnability-coverage-v1
+  - id: pointed-firs-shared-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-pointed-firs, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: pointed-firs, communication: shared, keying: stationary }
+  - id: pointed-firs-shared-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-pointed-firs, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: pointed-firs, communication: shared, keying: rekey }
+  - id: pointed-firs-isolated-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-pointed-firs, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: pointed-firs, communication: isolated, keying: rekey }
+  - id: pointed-firs-isolated-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-pointed-firs, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: pointed-firs, communication: isolated, keying: stationary }
 
-scoring:
-  primaryMetricId: normalized-positional-word-v1
-  diagnosticMetricId: palimpsest-diagnostics-v1
-  evaluationPolicyId: all-canonical-main-snapshots-v1
+  - id: custom-country-shared-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-custom-country, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: custom-country, communication: shared, keying: stationary }
+  - id: custom-country-shared-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-custom-country, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: custom-country, communication: shared, keying: rekey }
+  - id: custom-country-isolated-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-custom-country, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: custom-country, communication: isolated, keying: rekey }
+  - id: custom-country-isolated-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-custom-country, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: custom-country, communication: isolated, keying: stationary }
 
-rubric:
-  rubricId: palimpsest-behavior-review-v1
-  path: experiments/behavior-rubric.md
-  sha256: 1b84bcedd646beee7793e839579b306398801bd38e2c08208c76dda51e51f580
-
-failurePolicy:
-  stopOnInfrastructureFailure: true
-  automaticRetry: false
-  replacement: explicit-appended
-  eligibleClassification: session-infrastructure-error
+  - id: woodlanders-shared-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-woodlanders, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: woodlanders, communication: shared, keying: stationary }
+  - id: woodlanders-shared-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-woodlanders, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: shared, teamRoom: enabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: woodlanders, communication: shared, keying: rekey }
+  - id: woodlanders-isolated-rekey
+    fixture: { packagePath: artifacts/fixtures/validation-woodlanders, variant: rekey }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: woodlanders, communication: isolated, keying: rekey }
+  - id: woodlanders-isolated-stationary
+    fixture: { packagePath: artifacts/fixtures/validation-woodlanders, variant: stationary }
+    assignment: { agent-1: sol, agent-2: sol, agent-3: sol }
+    capabilities: { git: isolated, teamRoom: disabled }
+    schedule:
+      { releaseOffsetsMs: [0, 300000, 600000, 1200000, 1800000, 2400000], cutoffMs: 3600000 }
+    limits: { tokenLimitPerAgent: 500000, spendCeilingCents: 1000 }
+    labels: { fixture: woodlanders, communication: isolated, keying: stationary }

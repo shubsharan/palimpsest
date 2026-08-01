@@ -1,0 +1,295 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "fixtureId": "calibration-theron-ware",
+      "source": {
+        "sourceId": "theron-ware",
+        "window": {
+          "paragraphStart": 1,
+          "paragraphEnd": 196,
+          "wordCount": 18023,
+          "sha256": "605d43d789782765eaa9f0156551791c95afe1167e5fef5c05a960a7704c232b"
+        }
+      },
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "seed": 130013,
+      "agentIds": ["agent-1", "agent-2", "agent-3"],
+      "stageCount": 6,
+      "variants": [
+        { "variantId": "stationary", "rekeyFromStage": null },
+        { "variantId": "rekey", "rekeyFromStage": 4 }
+      ],
+      "allocationConstraints": {
+        "minimumAnchors": 12,
+        "minimumSentinels": 6,
+        "minimumSpecialistsPerAgent": 3,
+        "minimumChangedMass": 0.15,
+        "tiers": [
+          {
+            "tier": "strict",
+            "minimumSpecialistOwnerShare": 0.67,
+            "minimumOwnerOccurrences": 3,
+            "minimumSentinelOccurrences": 3,
+            "maximumSoloCoverage": 0.6,
+            "maximumRegionDeviation": 0.04,
+            "maximumStageDeviation": 0.12,
+            "maximumControlDistance": 0.15
+          },
+          {
+            "tier": "balanced",
+            "minimumSpecialistOwnerShare": 0.6,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 2,
+            "maximumSoloCoverage": 0.67,
+            "maximumRegionDeviation": 0.07,
+            "maximumStageDeviation": 0.18,
+            "maximumControlDistance": 0.25
+          },
+          {
+            "tier": "fallback",
+            "minimumSpecialistOwnerShare": 0.55,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 1,
+            "maximumSoloCoverage": 0.75,
+            "maximumRegionDeviation": 0.1,
+            "maximumStageDeviation": 0.25,
+            "maximumControlDistance": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "fixtureId": "validation-odd-women",
+      "source": {
+        "sourceId": "odd-women",
+        "window": {
+          "paragraphStart": 1,
+          "paragraphEnd": 311,
+          "wordCount": 18048,
+          "sha256": "2df07815fedd8ba9972ba2954508f3e16ffd50542246164683accbfd0274fc7e"
+        }
+      },
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "seed": 4313013,
+      "agentIds": ["agent-1", "agent-2", "agent-3"],
+      "stageCount": 6,
+      "variants": [
+        { "variantId": "stationary", "rekeyFromStage": null },
+        { "variantId": "rekey", "rekeyFromStage": 4 }
+      ],
+      "allocationConstraints": {
+        "minimumAnchors": 12,
+        "minimumSentinels": 6,
+        "minimumSpecialistsPerAgent": 3,
+        "minimumChangedMass": 0.15,
+        "tiers": [
+          {
+            "tier": "strict",
+            "minimumSpecialistOwnerShare": 0.67,
+            "minimumOwnerOccurrences": 3,
+            "minimumSentinelOccurrences": 3,
+            "maximumSoloCoverage": 0.6,
+            "maximumRegionDeviation": 0.04,
+            "maximumStageDeviation": 0.12,
+            "maximumControlDistance": 0.15
+          },
+          {
+            "tier": "balanced",
+            "minimumSpecialistOwnerShare": 0.6,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 2,
+            "maximumSoloCoverage": 0.67,
+            "maximumRegionDeviation": 0.07,
+            "maximumStageDeviation": 0.18,
+            "maximumControlDistance": 0.25
+          },
+          {
+            "tier": "fallback",
+            "minimumSpecialistOwnerShare": 0.55,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 1,
+            "maximumSoloCoverage": 0.75,
+            "maximumRegionDeviation": 0.1,
+            "maximumStageDeviation": 0.25,
+            "maximumControlDistance": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "fixtureId": "validation-pointed-firs",
+      "source": {
+        "sourceId": "pointed-firs",
+        "window": {
+          "paragraphStart": 1,
+          "paragraphEnd": 181,
+          "wordCount": 18139,
+          "sha256": "7af4245a42684f7882db0e541c7acfb6a192fb1d507b2b24ff494cd6c59f349d"
+        }
+      },
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "seed": 367013,
+      "agentIds": ["agent-1", "agent-2", "agent-3"],
+      "stageCount": 6,
+      "variants": [
+        { "variantId": "stationary", "rekeyFromStage": null },
+        { "variantId": "rekey", "rekeyFromStage": 4 }
+      ],
+      "allocationConstraints": {
+        "minimumAnchors": 12,
+        "minimumSentinels": 6,
+        "minimumSpecialistsPerAgent": 3,
+        "minimumChangedMass": 0.15,
+        "tiers": [
+          {
+            "tier": "strict",
+            "minimumSpecialistOwnerShare": 0.67,
+            "minimumOwnerOccurrences": 3,
+            "minimumSentinelOccurrences": 3,
+            "maximumSoloCoverage": 0.6,
+            "maximumRegionDeviation": 0.04,
+            "maximumStageDeviation": 0.12,
+            "maximumControlDistance": 0.15
+          },
+          {
+            "tier": "balanced",
+            "minimumSpecialistOwnerShare": 0.6,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 2,
+            "maximumSoloCoverage": 0.67,
+            "maximumRegionDeviation": 0.07,
+            "maximumStageDeviation": 0.18,
+            "maximumControlDistance": 0.25
+          },
+          {
+            "tier": "fallback",
+            "minimumSpecialistOwnerShare": 0.55,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 1,
+            "maximumSoloCoverage": 0.75,
+            "maximumRegionDeviation": 0.1,
+            "maximumStageDeviation": 0.25,
+            "maximumControlDistance": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "fixtureId": "validation-custom-country",
+      "source": {
+        "sourceId": "custom-country",
+        "window": {
+          "paragraphStart": 1,
+          "paragraphEnd": 238,
+          "wordCount": 18130,
+          "sha256": "79e39976ab41f348fe37e3fb365a08789d86e9cb66907a214f4b5b1ddb4b7fc8"
+        }
+      },
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "seed": 11052013,
+      "agentIds": ["agent-1", "agent-2", "agent-3"],
+      "stageCount": 6,
+      "variants": [
+        { "variantId": "stationary", "rekeyFromStage": null },
+        { "variantId": "rekey", "rekeyFromStage": 4 }
+      ],
+      "allocationConstraints": {
+        "minimumAnchors": 12,
+        "minimumSentinels": 6,
+        "minimumSpecialistsPerAgent": 3,
+        "minimumChangedMass": 0.15,
+        "tiers": [
+          {
+            "tier": "strict",
+            "minimumSpecialistOwnerShare": 0.67,
+            "minimumOwnerOccurrences": 3,
+            "minimumSentinelOccurrences": 3,
+            "maximumSoloCoverage": 0.6,
+            "maximumRegionDeviation": 0.04,
+            "maximumStageDeviation": 0.12,
+            "maximumControlDistance": 0.15
+          },
+          {
+            "tier": "balanced",
+            "minimumSpecialistOwnerShare": 0.6,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 2,
+            "maximumSoloCoverage": 0.67,
+            "maximumRegionDeviation": 0.07,
+            "maximumStageDeviation": 0.18,
+            "maximumControlDistance": 0.25
+          },
+          {
+            "tier": "fallback",
+            "minimumSpecialistOwnerShare": 0.55,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 1,
+            "maximumSoloCoverage": 0.75,
+            "maximumRegionDeviation": 0.1,
+            "maximumStageDeviation": 0.25,
+            "maximumControlDistance": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "fixtureId": "validation-woodlanders",
+      "source": {
+        "sourceId": "woodlanders",
+        "window": {
+          "paragraphStart": 1,
+          "paragraphEnd": 246,
+          "wordCount": 18067,
+          "sha256": "088f9cac353c0ff6a04639eef903c5002eb7a404a0aa269a35cf30f4f5afb4f9"
+        }
+      },
+      "references": ["middlemarch", "moby-dick", "jane-eyre"],
+      "seed": 482013,
+      "agentIds": ["agent-1", "agent-2", "agent-3"],
+      "stageCount": 6,
+      "variants": [
+        { "variantId": "stationary", "rekeyFromStage": null },
+        { "variantId": "rekey", "rekeyFromStage": 4 }
+      ],
+      "allocationConstraints": {
+        "minimumAnchors": 12,
+        "minimumSentinels": 6,
+        "minimumSpecialistsPerAgent": 3,
+        "minimumChangedMass": 0.15,
+        "tiers": [
+          {
+            "tier": "strict",
+            "minimumSpecialistOwnerShare": 0.67,
+            "minimumOwnerOccurrences": 3,
+            "minimumSentinelOccurrences": 3,
+            "maximumSoloCoverage": 0.6,
+            "maximumRegionDeviation": 0.04,
+            "maximumStageDeviation": 0.12,
+            "maximumControlDistance": 0.15
+          },
+          {
+            "tier": "balanced",
+            "minimumSpecialistOwnerShare": 0.6,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 2,
+            "maximumSoloCoverage": 0.67,
+            "maximumRegionDeviation": 0.07,
+            "maximumStageDeviation": 0.18,
+            "maximumControlDistance": 0.25
+          },
+          {
+            "tier": "fallback",
+            "minimumSpecialistOwnerShare": 0.55,
+            "minimumOwnerOccurrences": 2,
+            "minimumSentinelOccurrences": 1,
+            "maximumSoloCoverage": 0.75,
+            "maximumRegionDeviation": 0.1,
+            "maximumStageDeviation": 0.25,
+            "maximumControlDistance": 0.4
+          }
+        ]
+      }
+    }
+  ]
+}

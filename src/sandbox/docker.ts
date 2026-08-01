@@ -142,6 +142,15 @@ export async function buildDockerCreateArguments(
         readOnly: true,
       },
       {
+        source: await requireMountSource(
+          request.referenceCorpusPath,
+          "directory",
+          "reference corpus",
+        ),
+        target: SANDBOX_PATHS.reference,
+        readOnly: true,
+      },
+      {
         source: await requireMountSource(request.gitOriginPath, "directory", "Git origin"),
         target: SANDBOX_PATHS.gitOrigin,
         readOnly: false,
@@ -289,6 +298,7 @@ export function buildAgentDockerCreateArguments(
       timeoutMs: request.timeoutMs,
       workspacePath: request.workspacePath,
       evidencePath: request.evidencePath,
+      referenceCorpusPath: request.referenceCorpusPath,
       gitOriginPath: request.gitOriginPath,
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     },

@@ -9,6 +9,7 @@
           "end": 15
         }
       },
+      "references": ["jane-eyre", "moby-dick"],
       "seed": 17,
       "agentCount": 3,
       "stageCount": 6,
@@ -41,6 +42,7 @@
           "end": 15
         }
       },
+      "references": ["jane-eyre", "moby-dick"],
       "seed": 0,
       "agentCount": 3,
       "stageCount": 6,
@@ -98,7 +100,7 @@
     "sandbox-build": ["imageTag", "imageId", "sourceDigest", "profileVersion"],
     "build": ["buildId", "buildPath"],
     "run": ["attemptId", "attemptRoot"],
-    "evaluate": ["schemaVersion", "origins", "team"],
+    "evaluate": ["status"],
     "experiment": ["experimentRoot", "buildId", "buildRoot", "completedAttemptCount", "attempts"],
     "offline": ["build", "run", "evaluation"]
   },
@@ -110,7 +112,10 @@
       ["agent-first-evidence", "agent-first-model-request"],
       ["attempt.sessions-ended", "attempt.frozen"],
       ["attempt.frozen", "overlap.observed"],
-      ["overlap.observed", "evaluation.completed"]
+      ["overlap.observed", "reviewer.selection"],
+      ["reviewer.selection", "evaluation.started"],
+      ["reviewer.selection", "evaluation.completed"],
+      ["reviewer.selection", "evaluation.scored"]
     ],
     "sequencesStartAt": 1,
     "sequencesAreContiguous": true,

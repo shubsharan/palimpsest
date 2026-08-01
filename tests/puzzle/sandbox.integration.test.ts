@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -16,11 +16,12 @@ import {
 import { sandboxDockerfileDigest } from "../../src/sandbox/docker.js";
 import { resolveWorkspaceRegularFile } from "../../src/sandbox/workspace.js";
 import { createGitEnvironment, listRemoteRefs, type GitCommunicationMode } from "../../src/git.js";
-import type { AgentId } from "../../src/model.js";
+import type { AgentId } from "../../src/model/contracts.js";
 
 const execFileAsync = promisify(execFile);
 const originalApiKey = process.env.OPENAI_API_KEY;
-const AGENT_IDS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+const AGENTS = ["agent-1", "agent-2", "agent-3"] as const satisfies readonly AgentId[];
+const temporaryRoots: string[] = [];
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -50,7 +51,8 @@ async function sandboxContainerCount(labelValue: string): Promise<number> {
 
 async function agentFixture(communicationMode: GitCommunicationMode = "shared") {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-sandbox-integration-"));
-  const git = await createGitEnvironment(join(root, "git"), communicationMode, AGENT_IDS);
+  temporaryRoots.push(root);
+  const git = await createGitEnvironment(join(root, "git"), communicationMode, AGENTS);
   const workspace = git.workspaces[0];
   if (!workspace) throw new Error("Expected agent-1 workspace.");
   const repository = git.repositories.find(
@@ -83,12 +85,15 @@ async function agentFixture(communicationMode: GitCommunicationMode = "shared") 
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   if (originalApiKey === undefined) {
     delete process.env.OPENAI_API_KEY;
   } else {
     process.env.OPENAI_API_KEY = originalApiKey;
   }
+  await Promise.all(
+    temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
+  );
 });
 
 describe("real Docker command containment", () => {
@@ -101,6 +106,7 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
+      referenceCorpusPath: fixture.reference,
       gitOriginPath: fixture.repository.path,
     });
     expect(sandbox.identity).toEqual({
@@ -112,6 +118,7 @@ describe("real Docker command containment", () => {
     const result = await lease.execute({
       command: [
         'test "$(cat /evidence/stage.txt)" = private-stage',
+        'test "$(cat /reference/reference.txt)" = reference-corpus',
         `test ! -e ${shellQuote(fixture.peerEvidence)}`,
         `test ! -e ${shellQuote(fixture.oracle)}`,
         `test ! -e ${shellQuote(fixture.hostSentinel)}`,
@@ -147,6 +154,7 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
+      referenceCorpusPath: fixture.reference,
       gitOriginPath: fixture.repository.path,
     });
     const result = await lease.execute({
@@ -221,6 +229,7 @@ describe("real Docker command containment", () => {
         "test ! -e .git",
         "test ! -e /git/origin.git/HEAD",
         "test ! -e /evidence/stage.txt",
+        "test ! -e /reference/reference.txt",
         `test ! -e ${shellQuote(fixture.oracle)}`,
         `test ! -e ${shellQuote(fixture.hostSentinel)}`,
         'test -z "${OPENAI_API_KEY+x}"',
@@ -272,6 +281,7 @@ describe("real Docker command containment", () => {
       timeoutMs: 30_000,
       workspacePath: fixture.workspace,
       evidencePath: fixture.evidence,
+      referenceCorpusPath: fixture.reference,
       gitOriginPath: fixture.repository.path,
     });
 

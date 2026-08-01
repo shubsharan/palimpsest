@@ -6,53 +6,50 @@ import os
 import shutil
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from ..serialization import canonical_json_bytes, sha256_hex
-from .block import (
-    AGENT_IDS,
-    BOUNDARY_STAGE,
-    STAGE_COUNT,
-    AllocationResult,
-    BlockDefinition,
-    BlockDesign,
-    ParagraphAssignment,
-    ParagraphUnit,
-    WindowPin,
-    design_block,
-)
-from .block import (
-    OracleDesign as BlockOracleDesign,
-)
 from .cipher import apply_mapping, stationary_key
 from .corpus import (
     SourceDefinition,
+    build_reference_corpus,
     load_paragraphs,
-    load_text_source,
+    load_source_registry,
     serialize_paragraphs,
 )
-from .manifest import (
+from .definition import load_fixture_catalog
+from .design import (
+    AllocationResult,
+    FixtureDesign,
+    ParagraphAssignment,
+    ParagraphUnit,
+    design_fixture,
+)
+from .design import (
+    OracleDesign as FixtureOracleDesign,
+)
+from .package import (
     AllocationMetrics,
     AllocationSummary,
     BuildVariant,
     BuildWindow,
     EvidenceStage,
+    FixturePackage,
     ManipulationCheck,
-    PuzzleBuild,
+    ReferenceFile,
+    ReferenceSource,
     RekeyTransition,
     TargetSource,
     TierRejection,
     stage_filename,
 )
-from .manifest import (
-    OracleDesign as ManifestOracleDesign,
+from .package import (
+    OracleDesign as PackageOracleDesign,
 )
 from .revision import revise_explicit_types
 from .text import word_tokens
-
-MINIMUM_MANIPULATION_MASS = 0.15
 
 
 def _seed_hex(seed: int, domain: str) -> str:
@@ -87,7 +84,7 @@ def _paragraph_units(source: SourceDefinition) -> tuple[ParagraphUnit, ...]:
     )
 
 
-def _allocation_record(design: BlockDesign) -> dict[str, Any]:
+def _allocation_record(design: FixtureDesign) -> dict[str, Any]:
     result = design.allocation
     metrics = result.design.metrics
     return {
@@ -121,7 +118,7 @@ def _allocation_record(design: BlockDesign) -> dict[str, Any]:
     }
 
 
-def _control_record(design: BlockOracleDesign) -> list[dict[str, Any]]:
+def _control_record(design: FixtureOracleDesign) -> list[dict[str, Any]]:
     return [
         {
             "changedType": match.changed_type,
@@ -135,20 +132,20 @@ def _control_record(design: BlockOracleDesign) -> list[dict[str, Any]]:
     ]
 
 
-def _oracle_record(design: BlockOracleDesign) -> dict[str, Any]:
+def _oracle_record(design: FixtureOracleDesign, agent_ids: tuple[str, ...]) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "anchors": list(design.anchors),
         "sentinels": list(design.sentinels),
-        "specialists": {agent_id: list(design.specialists[agent_id]) for agent_id in AGENT_IDS},
+        "specialists": {agent_id: list(design.specialists[agent_id]) for agent_id in agent_ids},
         "controls": _control_record(design),
         "changedTypes": list(design.changed_types),
     }
 
 
-def _owner_share(design: BlockOracleDesign) -> float:
+def _owner_share(design: FixtureOracleDesign, agent_ids: tuple[str, ...]) -> float:
     shares: list[float] = []
-    for agent_index, agent_id in enumerate(AGENT_IDS):
+    for agent_index, agent_id in enumerate(agent_ids):
         for word in design.specialists[agent_id]:
             exposure = design.profiles[word].exposures
             pre_total = exposure[0] + exposure[2] + exposure[4]
@@ -164,17 +161,19 @@ def _owner_share(design: BlockOracleDesign) -> float:
     return min(shares)
 
 
-def _manifest_metrics(result: AllocationResult) -> AllocationMetrics:
+def _package_metrics(result: AllocationResult) -> AllocationMetrics:
     design = result.design
     metrics = design.metrics
     return AllocationMetrics(
         region_deviation=metrics.region_deviation,
         stage_deviation=metrics.stage_deviation,
         solo_changed_set_coverage=max(metrics.solo_coverage.values()),
-        min_owner_share=_owner_share(design),
+        min_owner_share=_owner_share(design, result.allocation.agent_ids),
         anchor_count=len(design.anchors),
         sentinel_count=len(design.sentinels),
-        specialist_counts={agent_id: len(design.specialists[agent_id]) for agent_id in AGENT_IDS},
+        specialist_counts={
+            agent_id: len(design.specialists[agent_id]) for agent_id in result.allocation.agent_ids
+        },
         min_owner_occurrences_per_region=metrics.min_owner_occurrences_per_region,
         min_sentinel_occurrences_per_agent_region=(
             metrics.min_sentinel_occurrences_per_agent_region
@@ -198,17 +197,23 @@ def _variant_stage_bytes(
     *,
     base_key: dict[str, str],
     revised_key: dict[str, str],
-    variant_id: str,
+    agent_ids: tuple[str, ...],
+    stage_count: int,
+    rekey_from_stage: int | None,
 ) -> tuple[dict[tuple[str, int], bytes], dict[tuple[str, int], bytes]]:
     plaintext: dict[tuple[str, int], bytes] = {}
     ciphertext: dict[tuple[str, int], bytes] = {}
-    for agent_id in AGENT_IDS:
-        for stage in range(1, STAGE_COUNT + 1):
+    for agent_id in agent_ids:
+        for stage in range(1, stage_count + 1):
             cell = tuple(
                 item for item in assignments if item.agent_id == agent_id and item.stage == stage
             )
             plain = _stage_plaintext(cell)
-            key = revised_key if variant_id == "rekey" and stage >= BOUNDARY_STAGE else base_key
+            key = (
+                revised_key
+                if rekey_from_stage is not None and stage >= rekey_from_stage
+                else base_key
+            )
             plaintext[agent_id, stage] = plain.encode("utf-8")
             ciphertext[agent_id, stage] = apply_mapping(plain, key).encode("utf-8")
     return plaintext, ciphertext
@@ -217,17 +222,20 @@ def _variant_stage_bytes(
 def _manipulation_masses(
     assignments: tuple[ParagraphAssignment, ...],
     changed_types: frozenset[str],
+    *,
+    agent_ids: tuple[str, ...],
+    boundary_stage: int,
 ) -> tuple[float, dict[str, float]]:
-    changed_by_agent = {agent_id: 0 for agent_id in AGENT_IDS}
-    total_by_agent = {agent_id: 0 for agent_id in AGENT_IDS}
+    changed_by_agent = {agent_id: 0 for agent_id in agent_ids}
+    total_by_agent = {agent_id: 0 for agent_id in agent_ids}
     for item in assignments:
-        if item.stage < BOUNDARY_STAGE:
+        if item.stage < boundary_stage:
             continue
         counts = item.paragraph.counts()
         total_by_agent[item.agent_id] += item.paragraph.word_count
         changed_by_agent[item.agent_id] += sum(counts[word] for word in changed_types)
     masses = {
-        agent_id: changed_by_agent[agent_id] / total_by_agent[agent_id] for agent_id in AGENT_IDS
+        agent_id: changed_by_agent[agent_id] / total_by_agent[agent_id] for agent_id in agent_ids
     }
     total = sum(total_by_agent.values())
     return sum(changed_by_agent.values()) / total, masses
@@ -241,14 +249,17 @@ def validate_pair(
     stationary_old_key_loss: float,
     rekey_old_key_loss: float,
     changed_token_mass_by_agent: Mapping[str, float],
+    agent_ids: tuple[str, ...],
+    stage_count: int,
+    minimum_changed_mass: float,
 ) -> None:
     expected = {
-        (agent_id, ordinal) for agent_id in AGENT_IDS for ordinal in range(1, STAGE_COUNT + 1)
+        (agent_id, ordinal) for agent_id in agent_ids for ordinal in range(1, stage_count + 1)
     }
     if set(stationary_stage_bytes) != expected or set(rekey_stage_bytes) != expected:
         raise ValueError("Paired variants must contain complete matching stage geometry.")
-    if boundary_stage != BOUNDARY_STAGE:
-        raise ValueError("Paired variants must use the stage-four boundary.")
+    if not 2 <= boundary_stage <= stage_count:
+        raise ValueError("Paired variants must use a valid re-key boundary.")
     if any(
         stationary_stage_bytes[key] != rekey_stage_bytes[key]
         for key in expected
@@ -257,10 +268,10 @@ def validate_pair(
         raise ValueError("Paired variants diverge before the manipulation boundary.")
     if stationary_old_key_loss != 0:
         raise ValueError("Stationary old-key loss must be zero.")
-    if rekey_old_key_loss < MINIMUM_MANIPULATION_MASS:
+    if rekey_old_key_loss < minimum_changed_mass:
         raise ValueError("Re-key old-key loss is below the declared minimum.")
-    if set(changed_token_mass_by_agent) != set(AGENT_IDS) or any(
-        mass < MINIMUM_MANIPULATION_MASS for mass in changed_token_mass_by_agent.values()
+    if set(changed_token_mass_by_agent) != set(agent_ids) or any(
+        mass < minimum_changed_mass for mass in changed_token_mass_by_agent.values()
     ):
         raise ValueError("Every agent must receive the minimum post-boundary changed mass.")
 
@@ -276,47 +287,59 @@ class PreparedPair:
     manipulation_check: dict[str, Any]
 
 
-def _prepare_pair(design: BlockDesign) -> PreparedPair:
+def _prepare_pair(design: FixtureDesign) -> PreparedPair:
     window_plaintext = serialize_paragraphs(
         tuple(paragraph.text for paragraph in design.window.paragraphs)
     )
     base_key = stationary_key(
         sorted(set(_words(window_plaintext))),
-        _seed_hex(design.block.seed, "base-key"),
+        _seed_hex(design.fixture.seed, "base-key"),
     )
     changed_types = design.allocation.design.changed_types
     revised_key = revise_explicit_types(
         prior_key=base_key,
         changed_types=changed_types,
         stable_controls=tuple(match.control_type for match in design.allocation.design.controls),
-        seed_hex=_seed_hex(design.block.seed, "rekey-stage-04"),
+        seed_hex=_seed_hex(
+            design.fixture.seed,
+            f"rekey-stage-{design.fixture.rekey_from_stage:02d}",
+        ),
     )
     assignments = design.allocation.allocation.assignments
     plaintext_stage_bytes, stationary_stage_bytes = _variant_stage_bytes(
         assignments,
         base_key=base_key,
         revised_key=revised_key,
-        variant_id="stationary",
+        agent_ids=design.fixture.agent_ids,
+        stage_count=design.fixture.stage_count,
+        rekey_from_stage=None,
     )
     rekey_plaintext, rekey_stage_bytes = _variant_stage_bytes(
         assignments,
         base_key=base_key,
         revised_key=revised_key,
-        variant_id="rekey",
+        agent_ids=design.fixture.agent_ids,
+        stage_count=design.fixture.stage_count,
+        rekey_from_stage=design.fixture.rekey_from_stage,
     )
     if plaintext_stage_bytes != rekey_plaintext:
         raise RuntimeError("Paired variants do not share one plaintext allocation.")
     rekey_loss, changed_mass_by_agent = _manipulation_masses(
         assignments,
         frozenset(changed_types),
+        agent_ids=design.fixture.agent_ids,
+        boundary_stage=design.fixture.rekey_from_stage,
     )
     validate_pair(
         stationary_stage_bytes=stationary_stage_bytes,
         rekey_stage_bytes=rekey_stage_bytes,
-        boundary_stage=BOUNDARY_STAGE,
+        boundary_stage=design.fixture.rekey_from_stage,
         stationary_old_key_loss=0.0,
         rekey_old_key_loss=rekey_loss,
         changed_token_mass_by_agent=changed_mass_by_agent,
+        agent_ids=design.fixture.agent_ids,
+        stage_count=design.fixture.stage_count,
+        minimum_changed_mass=design.fixture.allocation_constraints.minimum_changed_mass,
     )
     return PreparedPair(
         window_plaintext=window_plaintext,
@@ -335,12 +358,34 @@ def _prepare_pair(design: BlockDesign) -> PreparedPair:
     )
 
 
+def _write_references(
+    destination: Path,
+    sources: tuple[SourceDefinition, ...],
+    variant_id: str,
+) -> tuple[ReferenceFile, ...]:
+    artifacts: list[ReferenceFile] = []
+    for document in build_reference_corpus(sources):
+        relative = Path("variants") / variant_id / "references" / f"{document.document_id}.txt"
+        content = document.content.encode("utf-8")
+        written = _write(destination / relative, content)
+        artifacts.append(
+            ReferenceFile(
+                source_id=document.source_id,
+                source_sha256=document.sha256,
+                path=relative,
+                byte_length=int(written["byteLength"]),
+                sha256=str(written["sha256"]),
+            )
+        )
+    return tuple(artifacts)
+
+
 def _complete_ciphertext(
-    design: BlockDesign,
+    design: FixtureDesign,
     *,
     base_key: dict[str, str],
     revised_key: dict[str, str],
-    variant_id: str,
+    rekey_from_stage: int | None,
 ) -> bytes:
     assignment_by_ordinal = {
         item.paragraph.ordinal: item for item in design.allocation.allocation.assignments
@@ -350,7 +395,7 @@ def _complete_ciphertext(
         assignment = assignment_by_ordinal[paragraph.ordinal]
         key = (
             revised_key
-            if variant_id == "rekey" and assignment.stage >= BOUNDARY_STAGE
+            if rekey_from_stage is not None and assignment.stage >= rekey_from_stage
             else base_key
         )
         rendered.append(apply_mapping(paragraph.text, key))
@@ -359,24 +404,26 @@ def _complete_ciphertext(
 
 def _build_variant(
     destination: Path,
-    design: BlockDesign,
+    design: FixtureDesign,
     *,
     variant_id: str,
+    rekey_from_stage: int | None,
     stage_bytes: Mapping[tuple[str, int], bytes],
     base_key: dict[str, str],
     revised_key: dict[str, str],
+    reference_sources: tuple[SourceDefinition, ...],
     changed_symbols_sha256: str,
 ) -> BuildVariant:
     stages: list[EvidenceStage] = []
-    for agent_id in AGENT_IDS:
-        for ordinal in range(1, STAGE_COUNT + 1):
+    for agent_id in design.fixture.agent_ids:
+        for ordinal in range(1, design.fixture.stage_count + 1):
             relative = (
                 Path("variants")
                 / variant_id
                 / "private"
                 / agent_id
                 / "stages"
-                / stage_filename(ordinal, STAGE_COUNT)
+                / stage_filename(ordinal, design.fixture.stage_count)
             )
             content = stage_bytes[agent_id, ordinal]
             _write(destination / relative, content)
@@ -384,7 +431,7 @@ def _build_variant(
                 EvidenceStage(
                     agent_id=agent_id,
                     ordinal=ordinal,
-                    key_version=(1 if variant_id == "rekey" and ordinal >= BOUNDARY_STAGE else 0),
+                    key_version=int(rekey_from_stage is not None and ordinal >= rekey_from_stage),
                     source_path=relative,
                     token_count=len(_words(content.decode("utf-8"))),
                     sha256=sha256_hex(content),
@@ -395,38 +442,44 @@ def _build_variant(
         design,
         base_key=base_key,
         revised_key=revised_key,
-        variant_id=variant_id,
+        rekey_from_stage=rekey_from_stage,
     )
     complete_record = _write(destination / complete_path, complete)
+    references = _write_references(destination, reference_sources, variant_id)
     transitions = (
         ()
-        if variant_id == "stationary"
+        if rekey_from_stage is None
         else (
             RekeyTransition(
-                at_stage=BOUNDARY_STAGE,
+                at_stage=rekey_from_stage,
                 key_version=1,
-                key_path=Path("oracle/keys/rekey-stage-04.json"),
+                key_path=Path(f"oracle/keys/rekey-stage-{rekey_from_stage:02d}.json"),
                 changed_symbols_sha256=changed_symbols_sha256,
             ),
         )
     )
     basis = {
         "schemaVersion": 1,
-        "blockId": design.block.block_id,
+        "fixtureId": design.fixture.fixture_id,
         "variantId": variant_id,
         "allocationId": design.allocation.allocation.allocation_id,
         "windowSha256": design.window.sha256,
         "complete": complete_record,
+        "references": [reference.to_dict() for reference in references],
         "stages": [stage.to_dict() for stage in stages],
         "keyTransitions": [transition.to_dict() for transition in transitions],
     }
     return BuildVariant(
         variant_id=variant_id,
+        rekey_from_stage=rekey_from_stage,
         build_id="build-" + sha256_hex(canonical_json_bytes(basis)),
         public_ciphertext_path=complete_path,
+        public_ciphertext_sha256=str(complete_record["sha256"]),
+        reference_corpus_path=Path(f"variants/{variant_id}/references"),
+        reference_files=references,
         private_stage_roots={
             agent_id: Path(f"variants/{variant_id}/private/{agent_id}/stages")
-            for agent_id in AGENT_IDS
+            for agent_id in design.fixture.agent_ids
         },
         stages=tuple(stages),
         key_transitions=transitions,
@@ -434,30 +487,30 @@ def _build_variant(
 
 
 def _build_into(
+    root: Path,
     destination: Path,
-    source_path: Path,
-    phase: str,
-    requested_block_id: str | None,
-) -> PuzzleBuild:
-    source = load_text_source(source_path)
-    if phase not in {"calibration", "validation"}:
-        raise ValueError("Puzzle phase must be calibration or validation.")
-    block_id = requested_block_id or source.source_id
-    block = BlockDefinition(
-        block_id=block_id,
-        phase=phase,
-        source_id=source.source_id,
-        seed=int(source.sha256[:13], 16),
-        window=WindowPin(0, 0, 0, ""),
-        boundary_stage=BOUNDARY_STAGE,
-    )
-    design = design_block(_paragraph_units(source), block, discover=True)
+    fixture_id: str,
+) -> FixturePackage:
+    catalog = load_fixture_catalog(root / "experiments/fixtures.json")
+    fixture = catalog.fixture(fixture_id)
+    if fixture.window.is_discovery:
+        raise ValueError(
+            f"Fixture {fixture_id} must be discovered and pinned before a normal build."
+        )
+    registry = load_source_registry(root)
+    try:
+        source = registry[fixture.source_id]
+        reference_sources = tuple(registry[source_id] for source_id in fixture.references)
+    except KeyError as error:
+        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+
+    design = design_fixture(_paragraph_units(source), fixture, discover=False)
     pair = _prepare_pair(design)
     changed_types = design.allocation.design.changed_types
 
     _write(destination / "oracle/keys/base.json", canonical_json_bytes(pair.base_key))
     _write(
-        destination / "oracle/keys/rekey-stage-04.json",
+        destination / f"oracle/keys/rekey-stage-{fixture.rekey_from_stage:02d}.json",
         canonical_json_bytes(pair.revised_key),
     )
     _write(destination / "oracle/plaintext.txt", pair.window_plaintext.encode("utf-8"))
@@ -466,7 +519,7 @@ def _build_into(
     allocation_bytes = canonical_json_bytes(allocation_record)
     _write(destination / "oracle/allocation.json", allocation_bytes)
 
-    oracle_record = _oracle_record(design.allocation.design)
+    oracle_record = _oracle_record(design.allocation.design, fixture.agent_ids)
     oracle_bytes = canonical_json_bytes(oracle_record)
     _write(destination / "oracle/design.json", oracle_bytes)
     anchors_sha256 = sha256_hex(canonical_json_bytes(oracle_record["anchors"]))
@@ -477,36 +530,39 @@ def _build_into(
 
     for (agent_id, ordinal), content in pair.plaintext_stage_bytes.items():
         _write(
-            destination / "oracle" / "checker" / agent_id / stage_filename(ordinal, STAGE_COUNT),
+            destination
+            / "oracle"
+            / "checker"
+            / agent_id
+            / stage_filename(ordinal, fixture.stage_count),
             content,
         )
 
     manipulation_bytes = canonical_json_bytes(pair.manipulation_check)
     _write(destination / "oracle/manipulation-check.json", manipulation_bytes)
 
-    stationary = _build_variant(
-        destination,
-        design,
-        variant_id="stationary",
-        stage_bytes=pair.stationary_stage_bytes,
-        base_key=pair.base_key,
-        revised_key=pair.revised_key,
-        changed_symbols_sha256=changed_symbols_sha256,
-    )
-    rekey = _build_variant(
-        destination,
-        design,
-        variant_id="rekey",
-        stage_bytes=pair.rekey_stage_bytes,
-        base_key=pair.base_key,
-        revised_key=pair.revised_key,
-        changed_symbols_sha256=changed_symbols_sha256,
-    )
+    variants = {
+        variant.variant_id: _build_variant(
+            destination,
+            design,
+            variant_id=variant.variant_id,
+            rekey_from_stage=variant.rekey_from_stage,
+            stage_bytes=(
+                pair.stationary_stage_bytes
+                if variant.rekey_from_stage is None
+                else pair.rekey_stage_bytes
+            ),
+            base_key=pair.base_key,
+            revised_key=pair.revised_key,
+            reference_sources=reference_sources,
+            changed_symbols_sha256=changed_symbols_sha256,
+        )
+        for variant in fixture.variants
+    }
     allocation_summary = AllocationSummary(
         allocation_id=design.allocation.allocation.allocation_id,
-        evidence_tier=design.allocation.tier.name,
-        control_tier=design.allocation.control_tier,
-        metrics=_manifest_metrics(design.allocation),
+        tier=design.allocation.tier.name,
+        metrics=_package_metrics(design.allocation),
         rejected_tiers=tuple(
             TierRejection(rejection.tier, rejection.reasons)
             for rejection in design.allocation.rejected_tiers
@@ -514,7 +570,7 @@ def _build_into(
         path=Path("oracle/allocation.json"),
         sha256=sha256_hex(allocation_bytes),
     )
-    oracle_summary = ManifestOracleDesign(
+    oracle_summary = PackageOracleDesign(
         path=Path("oracle/design.json"),
         sha256=sha256_hex(oracle_bytes),
         anchors_sha256=anchors_sha256,
@@ -530,58 +586,43 @@ def _build_into(
         rekey_old_key_loss=pair.manipulation_check["rekeyOldKeyLoss"],
         changed_token_mass_by_agent=pair.manipulation_check["changedTokenMassByAgent"],
     )
-    pair_basis = {
-        "schemaVersion": 4,
-        "blockId": block.block_id,
-        "sourceSha256": source.sha256,
-        "windowSha256": design.window.sha256,
-        "allocationSha256": allocation_summary.sha256,
-        "oracleDesignSha256": oracle_summary.sha256,
-        "manipulationSha256": manipulation.sha256,
-        "stationaryBuildId": stationary.build_id,
-        "rekeyBuildId": rekey.build_id,
-    }
-    build = PuzzleBuild(
-        paired_build_id="paired-" + sha256_hex(canonical_json_bytes(pair_basis)),
-        block_id=block.block_id,
+    package = FixturePackage(
+        fixture_id=fixture.fixture_id,
+        content_digest="0" * 64,
         source=TargetSource(source.source_id, source.sha256),
-        seed=block.seed,
+        references=tuple(
+            ReferenceSource(reference.source_id, reference.sha256)
+            for reference in reference_sources
+        ),
+        seed=fixture.seed,
         window=BuildWindow(
             design.window.paragraph_start,
             design.window.paragraph_end,
             design.window.word_count,
             design.window.sha256,
         ),
-        agent_ids=AGENT_IDS,
-        stage_count=STAGE_COUNT,
-        boundary_stage=BOUNDARY_STAGE,
+        agent_ids=fixture.agent_ids,
+        stage_count=fixture.stage_count,
         allocation=allocation_summary,
         oracle_design=oracle_summary,
         base_key_path=Path("oracle/keys/base.json"),
         manipulation_check=manipulation,
-        stationary=stationary,
-        rekey=rekey,
+        variants=variants,
     )
-    PuzzleBuild.from_dict(build.to_dict())
-    _write(destination / "puzzle-build.json", canonical_json_bytes(build.to_dict()))
-    return build
+    package = replace(package, content_digest=package.computed_content_digest(destination))
+    FixturePackage.from_dict(package.to_dict(), destination)
+    _write(destination / "fixture.json", canonical_json_bytes(package.to_dict()))
+    return package
 
 
-def build_puzzle(
-    root: Path,
-    output: Path,
-    source: Path,
-    phase: str,
-    block_id: str | None = None,
-) -> PuzzleBuild:
+def build_fixture(root: Path, output: Path, fixture_id: str) -> FixturePackage:
     root = root.resolve()
-    source = source if source.is_absolute() else root / source
     output = output.resolve()
     _assert_available_output(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
     try:
-        build = _build_into(staging, source, phase, block_id)
+        build = _build_into(root, staging, fixture_id)
         _publish_staging(staging, output)
         return build
     except BaseException:
@@ -589,26 +630,92 @@ def build_puzzle(
         raise
 
 
+def discover_fixture(root: Path, output: Path, fixture_id: str) -> dict[str, Any]:
+    root = root.resolve()
+    output = output.resolve()
+    _assert_available_output(output)
+    catalog = load_fixture_catalog(root / "experiments/fixtures.json")
+    fixture = catalog.fixture(fixture_id)
+    if not fixture.window.is_discovery:
+        raise ValueError(f"Fixture {fixture_id} already has a committed discovery window.")
+    registry = load_source_registry(root)
+    try:
+        source = registry[fixture.source_id]
+    except KeyError as error:
+        raise ValueError(f"Unknown registered corpus: {error.args[0]}") from error
+    design = design_fixture(_paragraph_units(source), fixture, discover=True)
+    pair = _prepare_pair(design)
+    record = {
+        "schemaVersion": 1,
+        "fixtureId": fixture.fixture_id,
+        "window": {
+            "paragraphStart": design.window.paragraph_start,
+            "paragraphEnd": design.window.paragraph_end,
+            "wordCount": design.window.word_count,
+            "sha256": design.window.sha256,
+        },
+        "allocation": _allocation_record(design),
+        "manipulationCheck": pair.manipulation_check,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}-", dir=output.parent))
+    try:
+        _write(staging / "discovery.json", canonical_json_bytes(record))
+        _publish_staging(staging, output)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return {
+        "fixtureId": fixture.fixture_id,
+        "discoveryPath": str((output / "discovery.json").resolve()),
+        "window": record["window"],
+        "tier": design.allocation.tier.name,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--phase", choices=("calibration", "validation"), default="validation")
-    parser.add_argument("--block")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--fixture")
+    selection.add_argument("--all", action="store_true")
+    parser.add_argument("--discover", choices=("true",))
     args = parser.parse_args()
-    build = build_puzzle(args.root, args.output, args.source, args.phase, args.block)
-    result = {
-        "pairedBuildId": build.paired_build_id,
-        "buildPath": str(args.output.resolve()),
-        "blockId": build.block_id,
-        "agentIds": list(build.agent_ids),
-        "stageCount": build.stage_count,
-        "variants": {
-            "stationary": build.stationary.build_id,
-            "rekey": build.rekey.build_id,
-        },
-    }
+    if args.all:
+        if args.discover == "true":
+            parser.error("--discover requires one --fixture")
+        catalog = load_fixture_catalog(args.root / "experiments/fixtures.json")
+        results = []
+        for fixture in catalog.fixtures:
+            package = build_fixture(
+                args.root,
+                args.output / fixture.fixture_id,
+                fixture.fixture_id,
+            )
+            results.append(
+                {
+                    "fixtureId": package.fixture_id,
+                    "contentDigest": package.content_digest,
+                    "packagePath": str((args.output / fixture.fixture_id).resolve()),
+                }
+            )
+        print(canonical_json_bytes({"fixtures": results}).decode())
+        return
+    if args.discover == "true":
+        result = discover_fixture(args.root, args.output, args.fixture)
+    else:
+        package = build_fixture(args.root, args.output, args.fixture)
+        result = {
+            "fixtureId": package.fixture_id,
+            "contentDigest": package.content_digest,
+            "packagePath": str(args.output.resolve()),
+            "agentIds": list(package.agent_ids),
+            "stageCount": package.stage_count,
+            "variants": {
+                variant_id: variant.build_id for variant_id, variant in package.variants.items()
+            },
+        }
     print(canonical_json_bytes(result).decode())
 
 

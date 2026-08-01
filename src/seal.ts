@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { lstat, readdir, readlink } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { hashProtocolSnapshot } from "./condition.js";
+import { contentDigest } from "./canonical.js";
 
 export interface TreeSeal {
   schemaVersion: 1;
@@ -83,7 +83,7 @@ export async function sealTree(root: string): Promise<TreeSeal> {
   const totals = await treeEntries(resolvedRoot, resolvedRoot, entries);
   return {
     schemaVersion: 1,
-    digest: hashProtocolSnapshot({ schemaVersion: 1, entries }),
+    digest: contentDigest({ schemaVersion: 1, entries }),
     ...totals,
   };
 }

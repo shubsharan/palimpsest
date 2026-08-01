@@ -9,6 +9,7 @@ export const SANDBOX_PATHS = {
   submission: "/submission",
   output: "/output",
   evidence: "/evidence",
+  reference: "/reference",
   gitOrigin: "/git/origin.git",
   ciphertext: "/input/ciphertext.txt",
 } as const;
@@ -33,6 +34,7 @@ export interface AgentSandboxLeaseRequest {
   profile: "agent";
   workspacePath: string;
   evidencePath: string;
+  referenceCorpusPath: string;
   gitOriginPath: string;
   timeoutMs: number;
   signal?: AbortSignal;
@@ -42,6 +44,7 @@ export interface AgentSandboxCommand extends BaseSandboxCommand {
   profile: "agent";
   workspacePath: string;
   evidencePath: string;
+  referenceCorpusPath: string;
   gitOriginPath: string;
 }
 

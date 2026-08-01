@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Verification**: Verification tasks are MANDATORY and proportional to the feature's claims. Use fast checks for ordinary development work. Require the full clean-checkout preflight, sandbox rebuild, and fresh deterministic fixture only when authorizing paid or publishable research. Include deterministic puzzle mechanics, independent agent lifecycle, condition-defined peer visibility, identical neutral Git scaffolds, usable private Git in isolated conditions, unmetered model-chosen Git operations, published-main-only blind checking, all-canonical-origin post-freeze grading, identical non-treatment inputs, checker non-disclosure, resource cutoffs, diagnostics, team-product semantics, trace capture, and explicit assertions that the runner does not require a prescribed workflow. Documentation-only work still requires relevant format, link, and consistency validation.
+**Verification**: Verification tasks are MANDATORY and proportional to the feature's claims. Use fast checks for ordinary development work. Immediately before authorizing paid or publishable research, validate the exact experiment manifest and fixture packages, probe the selected sandbox, execute a fresh provider-free smoke run, and require explicit spend authorization. Include deterministic puzzle mechanics, independent agent lifecycle, declared peer visibility, identical neutral Git scaffolds, usable private Git in isolated runs, unmetered model-chosen Git operations, published-main-only checking and grading, identical non-treatment inputs, checker disclosure, resource cutoffs, scoring, trace capture, and explicit assertions that the runner does not require a prescribed workflow. Documentation-only work still requires relevant format, link, and consistency validation.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -68,7 +68,7 @@ Examples of foundational tasks (adjust based on your project):
 
 - [ ] T006 Define the minimum run, session, stage, checker, and evaluation records
 - [ ] T007 [P] Add deterministic puzzle and score fixtures
-- [ ] T008 [P] Establish condition-defined peer visibility, agent-visible inputs, blind checker non-disclosure, and host-safety boundaries
+- [ ] T008 [P] Establish explicit peer-visibility capabilities, agent-visible inputs, aggregate checker disclosure, and host-safety boundaries
 - [ ] T009 Implement explicit model-outcome and infrastructure-failure reporting
 - [ ] T010 Configure fake model sessions and raw observation capture
 - [ ] T011 Setup environment configuration management
@@ -163,7 +163,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Confirm model workarounds remain observable outcomes rather than validity failures
 - [ ] TXXX Run quickstart.md validation
 - [ ] TXXX Run the fast development check
-- [ ] TXXX When the feature will authorize paid or publishable research, run root pnpm preflight from a clean checkout and retain its receipt
+- [ ] TXXX When the feature will authorize paid or publishable research, validate the exact manifest, fixture packages, sandbox, and provider-free smoke path immediately before explicit spend authorization
 
 ---
 

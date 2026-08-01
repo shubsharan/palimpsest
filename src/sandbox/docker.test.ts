@@ -71,13 +71,21 @@ describe("sandbox Docker image and arguments", () => {
     const evidence = join(root, "evidence");
     const gitOrigin = join(root, "agent-1.git");
     const peerGitOrigin = join(root, "agent-2.git");
-    await Promise.all([mkdir(workspace), mkdir(evidence), mkdir(gitOrigin), mkdir(peerGitOrigin)]);
+    const reference = join(root, "reference");
+    await Promise.all([
+      mkdir(workspace),
+      mkdir(evidence),
+      mkdir(gitOrigin),
+      mkdir(peerGitOrigin),
+      mkdir(reference),
+    ]);
     const args = await buildAgentDockerCreateArguments(
       {
         profile: "agent",
         timeoutMs: 1_000,
         workspacePath: workspace,
         evidencePath: evidence,
+        referenceCorpusPath: reference,
         gitOriginPath: gitOrigin,
       },
       TEST_IDENTITY,
@@ -98,6 +106,7 @@ describe("sandbox Docker image and arguments", () => {
     expect(joined).toContain(String(SANDBOX_POLICY.pids));
     expect(joined).toContain("target=/workspace");
     expect(joined).toContain("target=/evidence,readonly");
+    expect(joined).toContain("target=/reference,readonly");
     expect(joined).toContain(`source=${resolvedGitOrigin},target=/git/origin.git`);
     expect(joined.match(/target=\/git\/origin\.git/g)).toHaveLength(1);
     expect(joined).not.toContain(resolvedPeerGitOrigin);
@@ -159,6 +168,7 @@ describe("sandbox Docker image and arguments", () => {
     expect(joined).not.toContain("/workspace");
     expect(joined).not.toContain("/git");
     expect(joined).not.toContain("/evidence");
+    expect(joined).not.toContain("/reference");
     expect(args.at(-1)).toBe("while :; do sleep 3600; done");
 
     const execArgs = buildSolverDockerExecArguments(request, "palimpsest-solver-test", {
