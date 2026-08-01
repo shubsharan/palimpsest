@@ -10,7 +10,7 @@ Acceptance:
 
 1. The run map key is the identifier accepted by `--run` and stored with artifacts; no separate `id` is authored.
 2. Each run declares source, agent count, one model, shared or isolated communication, releases, cutoff, and one spend ceiling.
-3. `rekeyAtStage` and `tokenLimitPerAgent` are optional; omission means stationary and unlimited.
+3. `rekeyAtStage`, `tokenLimitPerAgent`, and `checker` are optional; omission means stationary, unlimited, and checker-enabled respectively.
 4. Legacy construction, assignment, capability, label, credential, output-token, and aggregate-spend fields are rejected.
 
 ## User Story 2 - Prepare Deterministic Material
@@ -32,7 +32,7 @@ As a researcher, I validate the exact built experiment and execute its runs with
 Acceptance:
 
 1. Strict `ms`, `s`, `m`, and `h` durations resolve to milliseconds frozen in run records.
-2. One model applies uniformly to inferred agents; provider credentials and communication capabilities are inferred.
+2. One model applies uniformly to inferred agents; provider credentials and communication capabilities are inferred, while checker access follows the run's explicit or defaulted setting.
 3. The experiment authorization is the sum of per-run ceilings.
 4. Runs execute sequentially in map order; agents within one run execute concurrently.
 5. Missing or drifted packages, invalid configuration, failed sandbox/smoke checks, or missing spend authorization stop before provider access.
@@ -43,7 +43,7 @@ As a researcher or reviewer, I inspect one coherent record and can re-evaluate e
 
 Acceptance:
 
-1. The record freezes resolved source, construction, fixture, build, and content identities, re-key boundary, agents, model, communication, milliseconds, limits, spend, usage, releases, topology, and evaluations.
+1. The record freezes resolved source, construction, fixture, build, and content identities, re-key boundary, agents, model, communication, checker availability, milliseconds, limits, spend, usage, releases, topology, and evaluations.
 2. Shared runs evaluate one canonical origin; isolated runs evaluate every agent origin without selecting a best result.
 3. Missing publication and missing integration remain explicit outcomes.
 4. Re-evaluation and overlap analysis append history atomically without altering prior evidence.
@@ -68,10 +68,11 @@ Acceptance:
 - **FR-016**: The runner MUST impose no roles, turns, checkpoints, consensus, reports, commit cadence, or coordination procedure.
 - **FR-017**: One append-only trace and one atomic run record MUST preserve resolved inputs, observations, topology, infrastructure status, and evaluations while excluding secrets, hidden reasoning, oracle data, keys, references, and unreleased evidence.
 - **FR-018**: Re-evaluation and analysis MUST be provider-free, validate frozen evidence before use, and atomically append history without changing earlier evidence.
+- **FR-019**: Each run MAY set `checker` to a boolean. Omission MUST enable the checker. When false, the agent tool and trusted checker hook MUST be absent while post-freeze evaluation remains unchanged.
 
 ## Edge Cases
 
-Reject malformed durations, unsafe or unreadable source paths, invalid team sizes, unknown models, invalid re-key boundaries, zero token limits, duplicate YAML run keys, removed legacy fields, missing packages, package drift, and spend sums outside safe-integer range. A trace without `run.json` is interrupted, not complete or resumable.
+Reject malformed durations, unsafe or unreadable source paths, invalid team sizes, unknown models, invalid re-key boundaries, non-boolean checker settings, zero token limits, duplicate YAML run keys, removed legacy fields, missing packages, package drift, and spend sums outside safe-integer range. A trace without `run.json` is interrupted, not complete or resumable.
 
 ## Scope
 

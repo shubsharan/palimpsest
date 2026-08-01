@@ -11,4 +11,5 @@ runs:
     releases: [0ms, 500ms, 1500ms]
     cutoff: 2500ms
     rekeyAtStage: 3
+    checker: false
     spendCeilingCents: 0

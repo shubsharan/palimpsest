@@ -7,6 +7,7 @@ import type {
 } from "../model/contracts.js";
 
 type FixtureScripts = Partial<Record<AgentId, readonly ModelTurn[]>>;
+type FixtureScriptSource = FixtureScripts | ((context: ModelSessionContext) => FixtureScripts);
 
 function copyTurn(turn: ModelTurn): ModelTurn {
   const common = {
@@ -19,10 +20,10 @@ function copyTurn(turn: ModelTurn): ModelTurn {
 }
 
 export class FixtureModelAdapter implements ModelAdapter {
-  readonly #scripts: FixtureScripts;
+  readonly #scripts: FixtureScriptSource;
   readonly #repeatWait: boolean;
 
-  constructor(scripts: FixtureScripts, repeatWait = false) {
+  constructor(scripts: FixtureScriptSource, repeatWait = false) {
     this.#scripts = scripts;
     this.#repeatWait = repeatWait;
   }
@@ -32,7 +33,8 @@ export class FixtureModelAdapter implements ModelAdapter {
   }
 
   openSession(context: ModelSessionContext): ModelSession {
-    const script = this.#scripts[context.agentId] ?? [];
+    const scripts = typeof this.#scripts === "function" ? this.#scripts(context) : this.#scripts;
+    const script = scripts[context.agentId] ?? [];
     let index = 0;
     return {
       respond: async () => {
@@ -72,7 +74,9 @@ export function decodeFixtureScenario(value?: string): FixtureScenario {
   );
 }
 
-function collaborativeRevisionScripts(): Record<AgentId, readonly ModelTurn[]> {
+function collaborativeRevisionScripts(
+  checkerEnabled: boolean,
+): Record<AgentId, readonly ModelTurn[]> {
   const solverCommand = [
     `printf '%s\\n' 'import os' 'from pathlib import Path' '' 'source = Path(os.environ["PALIMPSEST_CIPHERTEXT"])' 'destination = Path(os.environ["PALIMPSEST_OUTPUT"])' 'destination.write_text(source.read_text())' > solver.py`,
     "git add solver.py",
@@ -150,23 +154,45 @@ function collaborativeRevisionScripts(): Record<AgentId, readonly ModelTurn[]> {
         usage: { inputTokens: 1, outputTokens: 1 },
       },
     ],
-    "agent-3": [
-      {
-        toolCalls: [{ id: "check", name: "check_published_solver", arguments: {} }],
-        usage: { inputTokens: 3, outputTokens: 2 },
-      },
-      {
-        toolCalls: [],
-        finalResponse: "Checked the published team solver.",
-        usage: { inputTokens: 1, outputTokens: 1 },
-      },
-    ],
+    "agent-3": checkerEnabled
+      ? [
+          {
+            toolCalls: [{ id: "check", name: "check_published_solver", arguments: {} }],
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+          {
+            toolCalls: [],
+            finalResponse: "Checked the published team solver.",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]
+      : [
+          {
+            toolCalls: [
+              {
+                id: "inspect-without-checker",
+                name: "run_command",
+                arguments: { command: "git status --short" },
+              },
+            ],
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+          {
+            toolCalls: [],
+            finalResponse: "Inspected the workspace without checker feedback.",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ],
   };
 }
 
 export function createFixtureModelAdapter(scenario?: string): FixtureModelAdapter {
   switch (decodeFixtureScenario(scenario)) {
     case "collaborative-revision":
-      return new FixtureModelAdapter(collaborativeRevisionScripts());
+      return new FixtureModelAdapter((context) =>
+        collaborativeRevisionScripts(
+          context.tools.some(({ name }) => name === "check_published_solver"),
+        ),
+      );
   }
 }

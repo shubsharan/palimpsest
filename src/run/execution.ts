@@ -105,7 +105,7 @@ export interface RunReleaseObservation {
 export interface ExecuteRunOptions {
   config: RunExecutionConfig;
   agents: AgentRuntimeMap;
-  checker: CheckerHook;
+  checker?: CheckerHook;
   sandbox: CommandSandbox;
   clock: MonotonicClock;
   gitPollIntervalMs?: number;
@@ -208,6 +208,9 @@ export function validateRunExecutionConfig(value: unknown): RunExecutionConfig {
   if (gitVisibility === "isolated" && teamRoom === "enabled") {
     throw new Error("An isolated run cannot expose a shared team room.");
   }
+  if (typeof value.capabilities.checker !== "boolean") {
+    throw new Error("checker must be a boolean capability.");
+  }
   if (!isRecord(value.schedule)) throw new Error("schedule must be an object.");
   const releaseOffsetsMs = value.schedule.releaseOffsetsMs;
   if (!Array.isArray(releaseOffsetsMs)) {
@@ -246,7 +249,7 @@ export function validateRunExecutionConfig(value: unknown): RunExecutionConfig {
       tokenLimitPerAgent: tokenBudgetPerAgent,
       spendCeilingCents: requireNonNegativeInteger(value.limits, "spendCeilingCents"),
     },
-    capabilities: { git: gitVisibility, teamRoom },
+    capabilities: { git: gitVisibility, teamRoom, checker: value.capabilities.checker },
     labels: value.labels as JsonObject,
   };
 }
@@ -406,6 +409,13 @@ async function openAgentLeases(options: {
 
 export async function executeRun(options: ExecuteRunOptions): Promise<RunExecutionResult> {
   const config = validateRunExecutionConfig(options.config);
+  if (config.capabilities.checker !== (options.checker !== undefined)) {
+    throw new Error(
+      config.capabilities.checker
+        ? "A checker-enabled run requires a checker hook."
+        : "A checker-disabled run cannot receive a checker hook.",
+    );
+  }
   const agents = validateAgentRuntimes(options.agents, config.agentIds);
   const startedAtTimestamp = new Date().toISOString();
   const releases: RunReleaseObservation[] = [];
@@ -453,6 +463,7 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
     spendCeilingCents: config.limits.spendCeilingCents,
     gitVisibility: config.capabilities.git,
     teamRoom: config.capabilities.teamRoom,
+    checker: config.capabilities.checker,
     variantId: config.variantId,
     buildId: config.buildId,
     releaseOffsetsMs: config.schedule.releaseOffsetsMs,
@@ -585,7 +596,7 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
         solverSandbox: options.sandbox,
         repositoryPath: repository.path,
         attempt,
-        checker: options.checker,
+        ...(options.checker === undefined ? {} : { checker: options.checker }),
         getActivityCursor: () => cursors[agentId]!,
         setActivityCursor: (sequence) => {
           cursors[agentId] = sequence;
@@ -814,7 +825,9 @@ export async function runPreparedFixture(
   const result = await executeRun({
     config,
     agents: options.agents,
-    checker: createChecker(root, fixtureRoot, variant.variantId),
+    ...(options.capabilities.checker
+      ? { checker: createChecker(root, fixtureRoot, variant.variantId) }
+      : {}),
     sandbox,
     clock: options.clock ?? systemMonotonicClock,
     ...(options.signal === undefined ? {} : { signal: options.signal }),

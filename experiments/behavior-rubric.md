@@ -31,7 +31,7 @@ Record a material change to a reconstruction, mapping, or approach after a recor
 
 ### Checker Use
 
-Record aggregate-checker invocations and, separately, any direct evidence that a returned metric informed later work.
+When the frozen run configuration enables checker access, record aggregate-checker invocations and, separately, any direct evidence that a returned metric informed later work. When it disables checker access, classify this field as `not-applicable` and cite the frozen capability; do not infer an invocation from solver commands or final grading.
 
 ### Reviewer-Selection Rationale
 

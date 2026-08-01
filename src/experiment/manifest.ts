@@ -274,8 +274,8 @@ function resolveRun(
     assignment: Object.fromEntries(agentIds.map((agentId) => [agentId, run.model])),
     capabilities:
       run.communication === "shared"
-        ? { git: "shared", teamRoom: "enabled" }
-        : { git: "isolated", teamRoom: "disabled" },
+        ? { git: "shared", teamRoom: "enabled", checker: run.checker ?? true }
+        : { git: "isolated", teamRoom: "disabled", checker: run.checker ?? true },
     schedule: { releaseOffsetsMs, cutoffMs },
     limits: {
       tokenLimitPerAgent: run.tokenLimitPerAgent ?? null,
@@ -286,6 +286,7 @@ function resolveRun(
       communication: run.communication,
       keying: run.rekeyAtStage === undefined ? "stationary" : "rekey",
       tokenPolicy: run.tokenLimitPerAgent === undefined ? "unlimited" : "limited",
+      checker: run.checker === false ? "disabled" : "enabled",
     },
   };
 }

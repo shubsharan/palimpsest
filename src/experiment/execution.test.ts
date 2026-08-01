@@ -70,7 +70,7 @@ function experiment(packagePath: string): ResolvedExperiment {
       variant: "stationary",
     },
     assignment: { "agent-1": "research", "agent-2": "research" },
-    capabilities: { git: "shared" as const, teamRoom: "disabled" as const },
+    capabilities: { git: "shared" as const, teamRoom: "disabled" as const, checker: true },
     schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
     limits: { tokenLimitPerAgent: null, spendCeilingCents: 10 },
     labels: { treatment: id },
@@ -212,6 +212,7 @@ describe("experiment orchestration", () => {
     const sandbox = new FakeCommandSandbox();
     const calls: string[] = [];
     const fixtureLoads: string[] = [];
+    let evaluationCalls = 0;
     let sandboxCalls = 0;
     const records = await runExperiment({
       root,
@@ -224,7 +225,10 @@ describe("experiment orchestration", () => {
           return {
             ...value,
             runs: [
-              value.runs[0]!,
+              {
+                ...value.runs[0]!,
+                capabilities: { ...value.runs[0]!.capabilities, checker: false },
+              },
               {
                 ...value.runs[1]!,
                 fixture: {
@@ -251,14 +255,17 @@ describe("experiment orchestration", () => {
           calls.push(options.runId);
           return fakeResult(options, sandbox);
         },
-        evaluate: async () => [
-          {
-            originId: "shared",
-            agentIds,
-            status: "not-runnable" as const,
-            error: "solver unavailable",
-          },
-        ],
+        evaluate: async () => {
+          evaluationCalls += 1;
+          return [
+            {
+              originId: "shared",
+              agentIds,
+              status: "not-runnable" as const,
+              error: "solver unavailable",
+            },
+          ];
+        },
       },
     });
 
@@ -266,6 +273,11 @@ describe("experiment orchestration", () => {
     expect(sandboxCalls).toBe(1);
     expect(calls).toEqual(["run-a-validation", "run-a", "run-b"]);
     expect(records.map(({ runId }) => runId)).toEqual(["run-a", "run-b"]);
+    expect(records.map(({ configuration }) => configuration.run.capabilities.checker)).toEqual([
+      false,
+      true,
+    ]);
+    expect(evaluationCalls).toBe(2);
     expect(records.map(({ configuration }) => configuration.validation.smoke.sourceRunId)).toEqual([
       "run-a",
       "run-a",

@@ -13,11 +13,11 @@ describe("agent prompt", () => {
   it("supports variable team sizes and explicit communication capabilities", () => {
     const shared = buildAgentPrompt({
       ...common,
-      capabilities: { git: "shared", teamRoom: "enabled" },
+      capabilities: { git: "shared", teamRoom: "enabled", checker: true },
     });
     const isolated = buildAgentPrompt({
       ...common,
-      capabilities: { git: "isolated", teamRoom: "disabled" },
+      capabilities: { git: "isolated", teamRoom: "disabled", checker: true },
     });
 
     expect(shared).toContain("one of 4 agents");
@@ -30,7 +30,7 @@ describe("agent prompt", () => {
   it("discloses limits and the published solver boundary without prescribing workflow", () => {
     const prompt = buildAgentPrompt({
       ...common,
-      capabilities: { git: "shared", teamRoom: "disabled" },
+      capabilities: { git: "shared", teamRoom: "disabled", checker: true },
     });
 
     expect(prompt).toContain("Run cutoff: 90 seconds");
@@ -44,7 +44,7 @@ describe("agent prompt", () => {
     const prompt = buildAgentPrompt({
       ...common,
       schedule: { releaseOffsetsMs: [0, 5_000, 60_000], cutoffMs: 90_000 },
-      capabilities: { git: "shared", teamRoom: "disabled" },
+      capabilities: { git: "shared", teamRoom: "disabled", checker: true },
     });
 
     expect(prompt).toContain("hidden one-to-one substitutions");
@@ -59,17 +59,31 @@ describe("agent prompt", () => {
     const prompt = buildAgentPrompt({
       ...common,
       limits: { ...common.limits, tokenLimitPerAgent: null },
-      capabilities: { git: "shared", teamRoom: "disabled" },
+      capabilities: { git: "shared", teamRoom: "disabled", checker: true },
     });
     expect(prompt).toContain("no cumulative cutoff");
     expect(prompt).toContain("usage is still recorded");
+  });
+
+  it("removes checker guidance while preserving the final grading boundary", () => {
+    const prompt = buildAgentPrompt({
+      ...common,
+      capabilities: { git: "shared", teamRoom: "disabled", checker: false },
+    });
+
+    expect(prompt).not.toContain("check the published solver");
+    expect(prompt).not.toContain("aggregate metrics");
+    expect(prompt).not.toContain("checked or graded");
+    expect(prompt).toContain("No checker is available during the run");
+    expect(prompt).toContain("Only origin/main:solver.py is graded");
+    expect(prompt).toContain("Final grading");
   });
 
   it("rejects a shared room in an isolated run", () => {
     expect(() =>
       buildAgentPrompt({
         ...common,
-        capabilities: { git: "isolated", teamRoom: "enabled" },
+        capabilities: { git: "isolated", teamRoom: "enabled", checker: true },
       }),
     ).toThrow(/isolated run/i);
   });

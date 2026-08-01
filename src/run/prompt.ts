@@ -42,6 +42,12 @@ function communicationText(options: AgentPromptOptions): string {
   return "The team shares one Git origin, so you can inspect and build on peer commits.";
 }
 
+function checkerText(options: AgentPromptOptions): string {
+  return options.capabilities.checker
+    ? "You can run commands, use ordinary Git, check the published solver for aggregate metrics on released evidence, and wait for new evidence or activity. Git operations have no separate quota."
+    : "You can run commands, use ordinary Git, and wait for new evidence or activity. No checker is available during the run. Git operations have no separate quota.";
+}
+
 function formatDuration(milliseconds: number): string {
   if (milliseconds % 60_000 === 0) {
     const minutes = milliseconds / 60_000;
@@ -76,12 +82,16 @@ export function buildAgentPrompt(options: AgentPromptOptions): string {
     "",
     "DELIVERABLE",
     "Edit the committed solver.py scaffold to reconstruct any ciphertext supplied in $PALIMPSEST_CIPHERTEXT and write only its complete plaintext to $PALIMPSEST_OUTPUT.",
-    "Checking and grading run python3 solver.py without evidence or Git metadata. Checks use your released evidence; final grading uses the complete ciphertext.",
-    "Only origin/main:solver.py is checked or graded. Final prose, uncommitted files, other branches, and unpushed commits do not count.",
+    options.capabilities.checker
+      ? "Checking and grading run python3 solver.py without evidence or Git metadata. Checks use your released evidence; final grading uses the complete ciphertext."
+      : "Final grading runs python3 solver.py without evidence or Git metadata against the complete ciphertext.",
+    options.capabilities.checker
+      ? "Only origin/main:solver.py is checked or graded. Final prose, uncommitted files, other branches, and unpushed commits do not count."
+      : "Only origin/main:solver.py is graded. Final prose, uncommitted files, other branches, and unpushed commits do not count.",
     "",
     "ENVIRONMENT",
     communicationText(options),
-    "You can run commands, use ordinary Git, check the published solver for aggregate metrics on released evidence, and wait for new evidence or activity. Git operations have no separate quota.",
+    checkerText(options),
     "Choose your own solving and coordination process; no roles, turns, checkpoints, reports, or consensus are required.",
     "",
     "LIMITS",

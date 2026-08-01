@@ -20,14 +20,15 @@ runs:
     communication: shared
     releases: [0m, 5m, 10m, 20m, 30m, 40m]
     cutoff: 1h
+    checker: false
     spendCeilingCents: 1000
 ```
 
 The run map key is the required human-readable run identifier used by `--run` and artifact records. It is not a scientific input and is not repeated as an `id` field. Run order is YAML map order.
 
-Every run requires `source`, `agents`, `model`, `communication`, `releases`, `cutoff`, and `spendCeilingCents`. `rekeyAtStage` and `tokenLimitPerAgent` are optional; omission means stationary and unlimited respectively. Durations are strict non-negative integers followed by `ms`, `s`, `m`, or `h`. Releases begin at zero, increase strictly, and finish before the positive cutoff.
+Every run requires `source`, `agents`, `model`, `communication`, `releases`, `cutoff`, and `spendCeilingCents`. `rekeyAtStage`, `tokenLimitPerAgent`, and boolean `checker` are optional; omission means stationary, unlimited, and checker-enabled respectively. Durations are strict non-negative integers followed by `ms`, `s`, `m`, or `h`. Releases begin at zero, increase strictly, and finish before the positive cutoff.
 
-The engine infers ordered agent IDs, applies one model uniformly, maps communication to Git and room capabilities, infers conventional credential variables, and sums run ceilings for aggregate authorization. It rejects unknown models, unsafe source paths, invalid team sizes or re-key boundaries, malformed durations, and every removed legacy field.
+The engine infers ordered agent IDs, applies one model uniformly, maps communication to Git and room capabilities, defaults checker access to enabled, infers conventional credential variables, and sums run ceilings for aggregate authorization. It rejects unknown models, unsafe source paths, invalid team sizes or re-key boundaries, malformed durations, non-boolean checker settings, and every removed legacy field.
 
 ## FixturePackage
 
@@ -41,10 +42,10 @@ There is no authored fixture ID, package path, source window, word count, hash, 
 
 ## ResolvedRun
 
-Before execution the engine freezes the selected construction, fixture, build, and content identities, source and re-key boundary, inferred agents and uniform model assignments, inferred credential environment name, communication capabilities, resolved release and cutoff milliseconds, optional token limit, run spend ceiling, aggregate authorization, and sandbox identity. Credential values are never stored.
+Before execution the engine freezes the selected construction, fixture, build, and content identities, source and re-key boundary, inferred agents and uniform model assignments, inferred credential environment name, communication capabilities, checker availability, resolved release and cutoff milliseconds, optional token limit, run spend ceiling, aggregate authorization, and sandbox identity. Credential values are never stored.
 
 ## RunRecord and Trace
 
-`run.json` remains a strict, relocatable record. It freezes the resolved secret-free run configuration, exact fixture validation, representative smoke identity, releases, model identities and usage, session outcomes, canonical trace paths, sandbox identity, frozen topology, evaluations, and analyses. A shared run records one canonical origin; an isolated run records every agent origin without selecting a best result.
+`run.json` remains a strict, relocatable record. It freezes the resolved secret-free run configuration, including checker availability, exact fixture validation, representative smoke identity, releases, model identities and usage, session outcomes, canonical trace paths, sandbox identity, frozen topology, evaluations, and analyses. A shared run records one canonical origin; an isolated run records every agent origin without selecting a best result. Older schema-v1 records without checker state decode as checker-enabled while retaining their original configuration digest.
 
 `trace.jsonl` remains append-only. Re-evaluation and analysis validate the trace, package digest, contained topology, and frozen trees before atomically appending history. They cannot alter frozen configuration, status, earlier results, or trace bytes. Neither surface may contain credentials, hidden reasoning, provider payloads, keys, oracle content, references, or unreleased evidence.

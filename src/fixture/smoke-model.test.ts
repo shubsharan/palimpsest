@@ -84,4 +84,21 @@ describe("fixture scenario selection", () => {
     });
     expect(agent3.toolCalls.map((call) => call.name)).toEqual(["check_published_solver"]);
   });
+
+  it("uses only available tools when checker access is disabled", async () => {
+    const session = await createFixtureModelAdapter().openSession({
+      agentId: "agent-3",
+      tools: TOOL_DEFINITIONS.filter(({ name }) => name !== "check_published_solver"),
+    });
+
+    const first = await nextTurn(session, "solve");
+    const second = await session.respond({
+      toolResults: [{ callId: "inspect-without-checker", output: { exitCode: 0 } }],
+      signal: new AbortController().signal,
+    });
+
+    expect(first.toolCalls.map(({ name }) => name)).toEqual(["run_command"]);
+    expect(first.toolCalls.map(({ name }) => name)).not.toContain("check_published_solver");
+    expect(second.finalResponse).toContain("without checker feedback");
+  });
 });

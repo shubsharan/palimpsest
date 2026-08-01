@@ -219,16 +219,20 @@ export function createAgentTools(options: {
   solverSandbox: CommandSandbox;
   repositoryPath: string;
   attempt: AgentAttemptHandle;
-  checker: CheckerHook;
+  checker?: CheckerHook;
   getActivityCursor: () => number;
   setActivityCursor?: (sequence: number) => void;
   commandTimeoutMs?: number;
 }): AgentToolSet {
+  const availableDefinitions =
+    options.checker === undefined
+      ? TOOL_DEFINITIONS.filter(({ name }) => name !== "check_published_solver")
+      : TOOL_DEFINITIONS;
   const definitions =
     options.attempt.teamChannel === undefined
-      ? TOOL_DEFINITIONS
+      ? availableDefinitions
       : [
-          ...TOOL_DEFINITIONS.map((definition) =>
+          ...availableDefinitions.map((definition) =>
             definition.name === "wait_for_activity"
               ? {
                   ...definition,
@@ -257,6 +261,9 @@ export function createAgentTools(options: {
         return options.sandbox.execute(request) satisfies Promise<SandboxCommandResult>;
       }
       if (name === "check_published_solver") {
+        if (options.checker === undefined) {
+          throw new Error("check_published_solver is unavailable for this run.");
+        }
         if (Object.keys(input).length !== 0) {
           throw new Error("check_published_solver does not accept arguments.");
         }

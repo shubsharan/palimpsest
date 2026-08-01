@@ -56,7 +56,11 @@ export type ProducedRunState = Expect<
 
 export type RecordOwnership = [
   Expect<Equal<ResolvedRunRecord["assignment"], ResolvedRun["assignment"]>>,
-  Expect<Equal<ResolvedRunRecord["capabilities"], ResolvedRun["capabilities"]>>,
+  Expect<Equal<ResolvedRunRecord["capabilities"]["git"], ResolvedRun["capabilities"]["git"]>>,
+  Expect<
+    Equal<ResolvedRunRecord["capabilities"]["teamRoom"], ResolvedRun["capabilities"]["teamRoom"]>
+  >,
+  Expect<Equal<ResolvedRunRecord["capabilities"]["checker"], boolean | undefined>>,
   Expect<Equal<ResolvedRunRecord["schedule"], ResolvedRun["schedule"]>>,
   Expect<Equal<ResolvedRunRecord["limits"], ResolvedRun["limits"]>>,
   Expect<Equal<ResolvedRunRecord["labels"], ResolvedRun["labels"]>>,

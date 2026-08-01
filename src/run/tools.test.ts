@@ -23,7 +23,7 @@ async function toolFixture(
   execute?: ConstructorParameters<typeof FakeCommandSandbox>[0],
   withTeamChannel = false,
   duringSolver?: (runtime: AttemptRuntime) => void | Promise<void>,
-  checker?: CheckerHook,
+  checker?: CheckerHook | false,
 ) {
   const root = await mkdtemp(join(tmpdir(), "palimpsest-tools-"));
   const workspace = join(root, "workspace");
@@ -98,6 +98,19 @@ async function toolFixture(
   const checkerRequests: string[] = [];
   const attempt = runtime.forAgent("agent-1");
   let activityCursor = attempt.latestActivitySequence;
+  const effectiveChecker =
+    checker === false
+      ? undefined
+      : (checker ??
+        (async ({ candidatePath }) => {
+          checkerRequests.push(candidatePath);
+          return {
+            matchedWords: 1,
+            totalWords: 2,
+            coverage: 1,
+            accuracy: 0.5,
+          };
+        }));
   const tools = createAgentTools({
     agentId: "agent-1",
     sandbox: lease,
@@ -108,17 +121,7 @@ async function toolFixture(
     setActivityCursor: (sequence) => {
       activityCursor = sequence;
     },
-    checker:
-      checker ??
-      (async ({ candidatePath }) => {
-        checkerRequests.push(candidatePath);
-        return {
-          matchedWords: 1,
-          totalWords: 2,
-          coverage: 1,
-          accuracy: 0.5,
-        };
-      }),
+    ...(effectiveChecker === undefined ? {} : { checker: effectiveChecker }),
   });
   return {
     root,
@@ -200,6 +203,20 @@ describe("agent tools", () => {
     await expect(enabled.runtime.forAgent("agent-2").waitForActivity(0)).resolves.toMatchObject({
       kind: "team-message",
     });
+  });
+
+  it("omits and rejects checker access when no trusted hook is supplied", async () => {
+    const fixture = await toolFixture(undefined, false, undefined, false);
+
+    expect(fixture.tools.definitions.map(({ name }) => name)).toEqual([
+      "run_command",
+      "wait_for_activity",
+    ]);
+    await expect(fixture.tools.execute("check_published_solver", {})).rejects.toThrow(
+      /unavailable for this run/i,
+    );
+    expect(fixture.checkerRequests).toEqual([]);
+    expect(fixture.sandbox.requests).toEqual([]);
   });
 
   it("checks only the pushed main solver and exposes its commit with aggregate output", async () => {

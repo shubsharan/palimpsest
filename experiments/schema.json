@@ -79,7 +79,8 @@
           "minimum": 2,
           "maximum": 9007199254740991
         },
-        "tokenLimitPerAgent": { "$ref": "#/$defs/safeInteger" }
+        "tokenLimitPerAgent": { "$ref": "#/$defs/safeInteger" },
+        "checker": { "type": "boolean" }
       }
     }
   }

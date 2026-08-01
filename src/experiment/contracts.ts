@@ -26,6 +26,7 @@ export interface AuthoredRun {
   spendCeilingCents: number;
   rekeyAtStage?: number;
   tokenLimitPerAgent?: number;
+  checker?: boolean;
 }
 
 export interface ExperimentManifest {
@@ -44,6 +45,7 @@ export interface FixtureReference {
 export interface ExperimentCapabilities {
   git: GitVisibility;
   teamRoom: TeamRoomAvailability;
+  checker: boolean;
 }
 
 export interface ExperimentSchedule {

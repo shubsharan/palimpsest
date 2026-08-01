@@ -23,7 +23,10 @@ const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
 const CONSTRUCTION_ID = /^construction-[0-9a-f]{64}$/;
 const BUILD_ID = /^build-[0-9a-f]{64}$/;
 
-export type ResolvedRunRecord = Readonly<Omit<ResolvedRun, "fixture">> & {
+export type ResolvedRunRecord = Readonly<Omit<ResolvedRun, "fixture" | "capabilities">> & {
+  readonly capabilities: Readonly<
+    Omit<ResolvedRun["capabilities"], "checker"> & { readonly checker?: boolean }
+  >;
   readonly fixture: Readonly<
     Pick<ResolvedRun["fixture"], "packagePath" | "variant" | "source" | "rekeyAtStage"> & {
       id: string;
@@ -427,12 +430,20 @@ function resolvedRun(value: unknown): ResolvedRunRecord {
       text(value, `Run assignment ${key}`),
     ]),
   ) as Record<AgentId, string>;
-  const capabilities = exactObject(decoded.capabilities, ["git", "teamRoom"], "Run capabilities");
+  const capabilities = optionalFields(
+    decoded.capabilities,
+    ["git", "teamRoom"],
+    ["checker"],
+    "Run capabilities",
+  );
   if (capabilities.git !== "shared" && capabilities.git !== "isolated") {
     throw new Error("Run capabilities.git is invalid.");
   }
   if (capabilities.teamRoom !== "enabled" && capabilities.teamRoom !== "disabled") {
     throw new Error("Run capabilities.teamRoom is invalid.");
+  }
+  if (capabilities.checker !== undefined && typeof capabilities.checker !== "boolean") {
+    throw new Error("Run capabilities.checker is invalid.");
   }
   if (capabilities.git === "isolated" && capabilities.teamRoom === "enabled") {
     throw new Error("An isolated run cannot expose a shared team room.");
@@ -492,7 +503,11 @@ function resolvedRun(value: unknown): ResolvedRunRecord {
           }),
     },
     assignment,
-    capabilities: { git: capabilities.git, teamRoom: capabilities.teamRoom },
+    capabilities: {
+      git: capabilities.git,
+      teamRoom: capabilities.teamRoom,
+      ...(capabilities.checker === undefined ? {} : { checker: capabilities.checker }),
+    },
     schedule: { releaseOffsetsMs, cutoffMs },
     limits: {
       tokenLimitPerAgent,

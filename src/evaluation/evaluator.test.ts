@@ -192,7 +192,7 @@ function runRecord(
         variant: "stationary",
       },
       assignment: { "agent-1": "fixture", "agent-2": "fixture" },
-      capabilities: { git: "shared", teamRoom: "disabled" },
+      capabilities: { git: "shared", teamRoom: "disabled", checker: true },
       schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
       limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 },
       labels: {},

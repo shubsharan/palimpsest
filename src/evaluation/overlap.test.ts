@@ -154,7 +154,7 @@ async function analysisArtifact(mode: "shared" | "isolated") {
         variant: "stationary",
       },
       assignment: { "agent-1": "fixture", "agent-2": "fixture" },
-      capabilities: { git: mode, teamRoom: "disabled" },
+      capabilities: { git: mode, teamRoom: "disabled", checker: true },
       schedule: { releaseOffsetsMs: [0], cutoffMs: 1000 },
       limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 },
       labels: {},

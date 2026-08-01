@@ -12,7 +12,12 @@ import {
 } from "../model/contracts.js";
 import { FakeCommandSandbox } from "../../tests/support/fake-command-sandbox.js";
 import { removeTestRoot } from "../../tests/support/temp-root.js";
-import { executeRun, validateRunExecutionConfig, type RunExecutionConfig } from "./execution.js";
+import {
+  executeRun,
+  validateRunExecutionConfig,
+  type AgentRuntimeMap,
+  type RunExecutionConfig,
+} from "./execution.js";
 import type { MonotonicClock } from "./releases.js";
 
 function config(agentCount: number, stageCount: number): RunExecutionConfig {
@@ -36,7 +41,7 @@ function config(agentCount: number, stageCount: number): RunExecutionConfig {
     ) as Record<AgentId, readonly string[]>,
     schedule: { releaseOffsetsMs: offsets, cutoffMs: offsets.at(-1)! + 1_000 },
     limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 },
-    capabilities: { git: "shared", teamRoom: "enabled" },
+    capabilities: { git: "shared", teamRoom: "enabled", checker: true },
     labels: { cohort: "geometry" },
   };
 }
@@ -121,10 +126,10 @@ describe("run execution configuration", () => {
   it("keeps capabilities explicit instead of deriving named conditions", () => {
     const isolated = {
       ...config(2, 3),
-      capabilities: { git: "isolated", teamRoom: "disabled" },
+      capabilities: { git: "isolated", teamRoom: "disabled", checker: true },
     } as const;
     expect(validateRunExecutionConfig(isolated)).toMatchObject({
-      capabilities: { git: "isolated", teamRoom: "disabled" },
+      capabilities: { git: "isolated", teamRoom: "disabled", checker: true },
     });
     expect(() =>
       validateRunExecutionConfig({
@@ -132,6 +137,32 @@ describe("run execution configuration", () => {
         capabilities: { ...isolated.capabilities, teamRoom: "enabled" },
       }),
     ).toThrow(/isolated run cannot expose a shared team room/i);
+  });
+
+  it("requires checker wiring to match the declared capability", async () => {
+    const enabled = config(2, 3);
+    const disabled = {
+      ...enabled,
+      capabilities: { ...enabled.capabilities, checker: false },
+    };
+
+    await expect(
+      executeRun({
+        config: enabled,
+        agents: {} as AgentRuntimeMap,
+        sandbox: new FakeCommandSandbox(),
+        clock: new ManualClock(),
+      }),
+    ).rejects.toThrow(/requires a checker hook/i);
+    await expect(
+      executeRun({
+        config: disabled,
+        agents: {} as AgentRuntimeMap,
+        checker: async () => ({ matchedWords: 0, totalWords: 0, coverage: 0, accuracy: 0 }),
+        sandbox: new FakeCommandSandbox(),
+        clock: new ManualClock(),
+      }),
+    ).rejects.toThrow(/cannot receive a checker hook/i);
   });
 
   it("records an external interruption without freezing a run", async () => {

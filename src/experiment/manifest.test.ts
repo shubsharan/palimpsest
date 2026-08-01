@@ -38,7 +38,7 @@ describe("experiment manifest", () => {
     expect(experiment.runs.map(({ id }) => id)).toEqual(["shared", "isolated-rekey"]);
     expect(experiment.runs[0]).toMatchObject({
       assignment: { "agent-1": "gpt", "agent-2": "gpt", "agent-3": "gpt" },
-      capabilities: { git: "shared", teamRoom: "enabled" },
+      capabilities: { git: "shared", teamRoom: "enabled", checker: true },
       schedule: {
         releaseOffsetsMs: [0, 300_000, 600_000, 1_200_000, 1_800_000, 2_400_000],
         cutoffMs: 3_600_000,
@@ -69,7 +69,7 @@ describe("experiment manifest", () => {
     const run = (await loadResolvedExperiment(fixture("varied.yaml"), resolve("."))).runs[0]!;
     expect(run.assignment).toEqual({ "agent-1": "local", "agent-2": "local" });
     expect(run.schedule).toEqual({ releaseOffsetsMs: [0, 500, 1_500], cutoffMs: 2_500 });
-    expect(run.capabilities).toEqual({ git: "isolated", teamRoom: "disabled" });
+    expect(run.capabilities).toEqual({ git: "isolated", teamRoom: "disabled", checker: false });
     expect(parseDuration("1h", "duration")).toBe(3_600_000);
     expect(() => parseDuration("1.5h", "duration")).toThrow(/integer duration/i);
   });
@@ -80,6 +80,26 @@ describe("experiment manifest", () => {
     expect(stationary!.fixture.fixtureId).not.toBe(rekey!.fixture.fixtureId);
     expect(stationary!.fixture.packagePath).not.toBe(rekey!.fixture.packagePath);
     expect(derivedFixtureDefinition(stationary!).seed).toBe(derivedFixtureDefinition(rekey!).seed);
+  });
+
+  it("treats checker availability as a run input but not a fixture input", async () => {
+    const manifest = await validManifest();
+    const enabled = resolveExperiment(manifest, resolve("."));
+    const disabled = resolveExperiment(
+      {
+        ...manifest,
+        runs: {
+          ...manifest.runs,
+          shared: { ...manifest.runs.shared!, checker: false },
+        },
+      },
+      resolve("."),
+    );
+
+    expect(enabled.runs[0]!.capabilities.checker).toBe(true);
+    expect(disabled.runs[0]!.capabilities.checker).toBe(false);
+    expect(disabled.runs[0]!.fixture).toEqual(enabled.runs[0]!.fixture);
+    expect(disabled.manifestDigest).not.toBe(enabled.manifestDigest);
   });
 
   it("derives stable package identities from source bytes and geometry", async () => {
@@ -166,6 +186,12 @@ describe("experiment manifest", () => {
     );
     expect(() => validateExperimentManifest({ ...manifest, fixtures: [] })).toThrow(/fixtures/i);
     expect(() => validateExperimentManifest({ ...manifest, runs: [] })).toThrow(/runs/i);
+    expect(() =>
+      validateExperimentManifest({
+        ...manifest,
+        runs: { ...manifest.runs, shared: { ...manifest.runs.shared!, checker: "disabled" } },
+      }),
+    ).toThrow(/checker/i);
     expect(() =>
       validateExperimentManifest({
         ...manifest,

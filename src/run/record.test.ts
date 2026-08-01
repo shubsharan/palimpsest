@@ -44,7 +44,7 @@ function record(): RunRecord {
         variant: "stationary",
       },
       assignment: { "agent-1": "fixture" },
-      capabilities: { git: "isolated", teamRoom: "disabled" },
+      capabilities: { git: "isolated", teamRoom: "disabled", checker: true },
       schedule: { releaseOffsetsMs: [0], cutoffMs: 1000 },
       limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 },
       labels: {},
@@ -183,6 +183,32 @@ function analysis(): RunAnalysis {
 }
 
 describe("run records", () => {
+  it("freezes checker state while preserving legacy enabled records", () => {
+    const enabled = record();
+    const { digest: _digest, ...configuration } = enabled.configuration;
+    const disabledConfiguration = freezeRunConfiguration({
+      ...configuration,
+      run: {
+        ...configuration.run,
+        capabilities: { ...configuration.run.capabilities, checker: false },
+      },
+    });
+    const { checker: _checker, ...legacyCapabilities } = configuration.run.capabilities;
+    const legacyConfiguration = freezeRunConfiguration({
+      ...configuration,
+      run: { ...configuration.run, capabilities: legacyCapabilities },
+    });
+
+    expect(disabledConfiguration.digest).not.toBe(enabled.configuration.digest);
+    expect(
+      decodeRunRecord({ ...enabled, configuration: disabledConfiguration }).configuration.run
+        .capabilities.checker,
+    ).toBe(false);
+    const legacy = decodeRunRecord({ ...enabled, configuration: legacyConfiguration });
+    expect(legacy.configuration.run.capabilities.checker).toBeUndefined();
+    expect(legacy.configuration.run.capabilities.checker ?? true).toBe(true);
+  });
+
   it("publishes one strict final record and never replaces it", async () => {
     const root = await runRoot();
     const path = await publishRunRecord(root, record());
