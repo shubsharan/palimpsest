@@ -10,6 +10,7 @@ import type { FixturePackage } from "./fixture-package.js";
 import type { AgentId, ModelAdapter, ModelBinding } from "./model.js";
 import type { RunPreparedFixtureOptions, RunPreparedFixtureResult } from "./run.js";
 import { FakeCommandSandbox } from "./test-helpers.js";
+import { JsonlObservationLog } from "./trace.js";
 
 const agentIds = ["agent-1", "agent-2"] as const satisfies readonly AgentId[];
 const binding: ModelBinding = {
@@ -98,6 +99,9 @@ async function fakeResult(
   sandbox: FakeCommandSandbox,
 ): Promise<RunPreparedFixtureResult> {
   await mkdir(options.output, { recursive: true });
+  const trace = await JsonlObservationLog.create(join(options.output, "trace.jsonl"));
+  await trace.append("run.frozen", { runId: options.runId });
+  await trace.flush();
   const repository = {
     repositoryId: "shared" as const,
     path: join(options.output, "frozen", "shared.git"),
@@ -212,6 +216,39 @@ describe("experiment orchestration", () => {
     ).resolves.toContain('"id": "run-a"');
   });
 
+  it("smoke-tests the selected run before opening a provider adapter", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    const sandbox = new FakeCommandSandbox();
+    const calls: string[] = [];
+    let adapterCalls = 0;
+
+    await expect(
+      runExperiment({
+        root,
+        configPath: "manifest.yaml",
+        output: "experiment",
+        runId: "run-b",
+        allowSpend: true,
+        dependencies: {
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => fixture(),
+          createSandbox: async () => sandbox,
+          createAdapter: () => {
+            adapterCalls += 1;
+            return adapter();
+          },
+          run: async (options) => {
+            calls.push(options.runId);
+            throw new Error("selected smoke failed");
+          },
+        },
+      }),
+    ).rejects.toThrow("selected smoke failed");
+    expect(calls).toEqual(["run-b-validation"]);
+    expect(adapterCalls).toBe(0);
+  });
+
   it("stops at the first failed run without replacement or retry", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
     const packagePath = join(root, "fixture");
@@ -237,6 +274,89 @@ describe("experiment orchestration", () => {
       }),
     ).rejects.toThrow("run failed");
     expect(calls).toEqual(["run-a-validation", "run-a"]);
+  });
+
+  it("records a thrown evaluation failure without publishing or starting a later run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    const sandbox = new FakeCommandSandbox();
+    const calls: string[] = [];
+    await expect(
+      runExperiment({
+        root,
+        configPath: "manifest.yaml",
+        output: "experiment",
+        allowSpend: true,
+        dependencies: {
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => fixture(),
+          createSandbox: async () => sandbox,
+          createAdapter: () => adapter(),
+          run: async (options) => {
+            calls.push(options.runId);
+            return fakeResult(options, sandbox);
+          },
+          evaluate: async () => {
+            throw new Error("evaluation failed");
+          },
+        },
+      }),
+    ).rejects.toThrow("evaluation failed");
+    expect(calls).toEqual(["run-a-validation", "run-a"]);
+    await expect(readFile(join(root, "experiment", "run-a", "run.json"), "utf8")).rejects.toThrow();
+    await expect(
+      readFile(join(root, "experiment", "run-a", "trace.jsonl"), "utf8"),
+    ).resolves.toContain('"kind":"infrastructure.error"');
+  });
+
+  it("publishes independent peer outcomes after one session infrastructure failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    const sandbox = new FakeCommandSandbox();
+    const calls: string[] = [];
+    await expect(
+      runExperiment({
+        root,
+        configPath: "manifest.yaml",
+        output: "experiment",
+        allowSpend: true,
+        dependencies: {
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => fixture(),
+          createSandbox: async () => sandbox,
+          createAdapter: () => adapter(),
+          run: async (options) => {
+            calls.push(options.runId);
+            const result = await fakeResult(options, sandbox);
+            if (options.runId.endsWith("-validation")) return result;
+            return {
+              ...result,
+              sessions: result.sessions.map((session, index) =>
+                index === 0
+                  ? {
+                      ...session,
+                      state: "infrastructure-error" as const,
+                      terminationReason: "provider transport failed",
+                    }
+                  : session,
+              ),
+            };
+          },
+          evaluate: async () => [
+            { repositoryId: "shared", agentIds, status: "not-runnable" as const },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/run run-a ended with an infrastructure error/i);
+    expect(calls).toEqual(["run-a-validation", "run-a"]);
+    const published = JSON.parse(
+      await readFile(join(root, "experiment", "run-a", "run.json"), "utf8"),
+    ) as { status: string; sessions: { state: string }[] };
+    expect(published.status).toBe("infrastructure-error");
+    expect(published.sessions.map(({ state }) => state)).toEqual([
+      "infrastructure-error",
+      "finished",
+    ]);
   });
 
   it("requires an explicit boolean spend decision at the CLI", () => {

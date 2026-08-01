@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join, posix, win32 } from "node:path";
 
 import { contentDigest as hashContent } from "./canonical.js";
@@ -42,6 +42,11 @@ export interface FixturePackage {
   agentIds: readonly AgentId[];
   stageCount: number;
   variants: Readonly<Record<string, FixtureVariant>>;
+}
+
+interface PackageFileDigest {
+  path: string;
+  sha256: string;
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
@@ -226,11 +231,38 @@ async function verifyFile(
   }
 }
 
+async function packageFileDigests(
+  packageRoot: string,
+  directory = "",
+): Promise<PackageFileDigest[]> {
+  const entries = await readdir(join(packageRoot, directory), { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry): Promise<PackageFileDigest[]> => {
+      const path = directory === "" ? entry.name : posix.join(directory, entry.name);
+      if (entry.isDirectory()) return packageFileDigests(packageRoot, path);
+      if (!entry.isFile() || path === "fixture.json") return [];
+      const bytes = await readFile(join(packageRoot, path));
+      return [{ path, sha256: createHash("sha256").update(bytes).digest("hex") }];
+    }),
+  );
+  return files.flat();
+}
+
+export async function computeFixturePackageContentDigest(
+  packageRoot: string,
+  manifest: Record<string, unknown>,
+): Promise<string> {
+  const { contentDigest: _claimedDigest, ...content } = manifest;
+  const files = (await packageFileDigests(packageRoot)).sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  return hashContent({ manifest: content, files });
+}
+
 export async function loadFixturePackage(packageRoot: string): Promise<FixturePackage> {
   const raw = await readJsonObject(join(packageRoot, "fixture.json"));
   const fixture = decodeFixturePackage(raw);
-  const { contentDigest: _claimedDigest, ...content } = raw;
-  if (hashContent(content) !== fixture.contentDigest) {
+  if ((await computeFixturePackageContentDigest(packageRoot, raw)) !== fixture.contentDigest) {
     throw new Error("Fixture package contentDigest does not match its content.");
   }
   const allocation = record(raw.allocation, "Fixture package allocation");

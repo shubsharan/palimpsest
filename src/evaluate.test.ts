@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { contentDigest } from "./canonical.js";
+import { computeFixturePackageContentDigest } from "./fixture-package.js";
 import {
   evaluateCanonicalOrigins,
   reevaluateRun,
@@ -142,11 +142,6 @@ async function evaluationFixture(
   };
   await Promise.all([
     writeFile(
-      join(fixtureRoot, "fixture.json"),
-      `${JSON.stringify({ ...fixtureContent, contentDigest: contentDigest(fixtureContent) })}\n`,
-      "utf8",
-    ),
-    writeFile(
       join(fixtureRoot, "variants", "stationary", "complete", "ciphertext.txt"),
       ciphertext,
       "utf8",
@@ -166,6 +161,12 @@ async function evaluationFixture(
     writeFile(join(fixtureRoot, "oracle", "design.json"), oracleDocument, "utf8"),
     writeFile(join(fixtureRoot, "oracle", "manipulation-check.json"), oracleDocument, "utf8"),
   ]);
+  const fixtureDigest = await computeFixturePackageContentDigest(fixtureRoot, fixtureContent);
+  await writeFile(
+    join(fixtureRoot, "fixture.json"),
+    `${JSON.stringify({ ...fixtureContent, contentDigest: fixtureDigest })}\n`,
+    "utf8",
+  );
   const log = await JsonlObservationLog.create(tracePath);
   await log.flush();
   const frozen: FrozenGitEnvironment = {
@@ -180,7 +181,7 @@ async function evaluationFixture(
     })),
     treeSeal: await sealTree(frozenRoot),
   };
-  return { root, runRoot, fixtureRoot, tracePath, frozen, publishedCommits };
+  return { root, runRoot, fixtureRoot, fixtureDigest, tracePath, frozen, publishedCommits };
 }
 
 function scoringSandbox(inspect?: (request: SolverSandboxCommand) => Promise<void>) {
@@ -190,6 +191,59 @@ function scoringSandbox(inspect?: (request: SolverSandboxCommand) => Promise<voi
     await writeFile(join(request.outputRoot, request.outputPath), "clear answer\n", "utf8");
     return SUCCESS;
   });
+}
+
+function runRecord(
+  fixture: Awaited<ReturnType<typeof evaluationFixture>>,
+  digest = fixture.fixtureDigest,
+): RunRecord {
+  const binding = {
+    profile: "fixture",
+    provider: "fixture",
+    driver: "openai-compatible" as const,
+    requestedModel: "fixture",
+    settings: {},
+    providerOptions: {},
+  };
+  return {
+    schemaVersion: 1,
+    experimentId: "experiment",
+    run: {
+      id: "run",
+      fixture: {
+        id: "evaluation-fixture",
+        packagePath: fixture.fixtureRoot,
+        digest,
+        variant: "stationary",
+      },
+      assignment: { "agent-1": "fixture", "agent-2": "fixture" },
+      capabilities: { git: "shared", teamRoom: "disabled" },
+      schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
+      limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 },
+      labels: {},
+    },
+    models: fixture.frozen.workspaces.map(({ agentId }) => ({ agentId, binding })),
+    sessions: fixture.frozen.workspaces.map(({ agentId }) => ({
+      agentId,
+      model: binding,
+      state: "finished" as const,
+      inputTokens: 0,
+      outputTokens: 0,
+      activityCursor: 0,
+      terminationReason: "finished",
+    })),
+    trace: { path: "trace.jsonl", metadataPath: "trace.meta.json" },
+    frozen: fixture.frozen,
+    sandbox: new FakeCommandSandbox().identity,
+    evaluations: [
+      {
+        repositoryId: "shared",
+        agentIds: ["agent-1", "agent-2"],
+        status: "not-runnable",
+      },
+    ],
+    status: "completed",
+  };
 }
 
 beforeEach(() => {
@@ -308,54 +362,9 @@ describe("canonical origin evaluation", () => {
 
   it("appends re-evaluation history without changing the published trace", async () => {
     const fixture = await evaluationFixture("shared", "shared");
-    const binding = {
-      profile: "fixture",
-      provider: "fixture",
-      driver: "openai-compatible" as const,
-      requestedModel: "fixture",
-      settings: {},
-      providerOptions: {},
-    };
-    const record: RunRecord = {
-      schemaVersion: 1,
-      experimentId: "experiment",
-      run: {
-        id: "run",
-        fixture: {
-          id: "evaluation-fixture",
-          packagePath: fixture.fixtureRoot,
-          digest: "a".repeat(64),
-          variant: "stationary",
-        },
-        assignment: { "agent-1": "fixture", "agent-2": "fixture" },
-        capabilities: { git: "shared", teamRoom: "disabled" },
-        schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
-        limits: { tokenLimitPerAgent: null, spendCeilingCents: 0 },
-        labels: {},
-      },
-      models: fixture.frozen.workspaces.map(({ agentId }) => ({ agentId, binding })),
-      sessions: fixture.frozen.workspaces.map(({ agentId }) => ({
-        agentId,
-        model: binding,
-        state: "finished" as const,
-        inputTokens: 0,
-        outputTokens: 0,
-        activityCursor: 0,
-        terminationReason: "finished",
-      })),
-      trace: { path: fixture.tracePath, metadataPath: `${fixture.tracePath}.meta.json` },
-      frozen: fixture.frozen,
-      sandbox: new FakeCommandSandbox().identity,
-      evaluations: [
-        {
-          repositoryId: "shared",
-          agentIds: ["agent-1", "agent-2"],
-          status: "not-runnable",
-        },
-      ],
-      status: "completed",
-    };
-    await publishRunRecord(fixture.runRoot, record);
+    await publishRunRecord(fixture.runRoot, runRecord(fixture));
+    const log = await JsonlObservationLog.open(fixture.tracePath, { nowEpochMs: () => Date.now() });
+    await log.append("review.note", { accepted: true });
     const traceBefore = await readFile(fixture.tracePath, "utf8");
 
     await expect(
@@ -368,5 +377,84 @@ describe("canonical origin evaluation", () => {
 
     expect(await readFile(fixture.tracePath, "utf8")).toBe(traceBefore);
     await expect(readdir(join(fixture.runRoot, "evaluations", "history"))).resolves.toHaveLength(1);
+  });
+
+  it("rejects fixture drift before running a solver", async () => {
+    const fixture = await evaluationFixture("shared", "shared");
+    await publishRunRecord(fixture.runRoot, runRecord(fixture, "f".repeat(64)));
+    const sandbox = scoringSandbox();
+    const execute = vi.spyOn(sandbox, "execute");
+
+    await expect(
+      reevaluateRun({ root: fixture.root, runRoot: fixture.runRoot, sandbox }),
+    ).rejects.toThrow(/differs from recorded digest/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "missing trace",
+      async (fixture: Awaited<ReturnType<typeof evaluationFixture>>) => rm(fixture.tracePath),
+    ],
+    [
+      "missing trace metadata",
+      async (fixture: Awaited<ReturnType<typeof evaluationFixture>>) =>
+        rm(join(fixture.runRoot, "trace.meta.json")),
+    ],
+    [
+      "malformed trace",
+      async (fixture: Awaited<ReturnType<typeof evaluationFixture>>) =>
+        writeFile(fixture.tracePath, "not-json\n"),
+    ],
+    [
+      "nonsequential trace",
+      async (fixture: Awaited<ReturnType<typeof evaluationFixture>>) =>
+        writeFile(
+          fixture.tracePath,
+          `${JSON.stringify({ sequence: 2, atMs: 1, kind: "event", data: {} })}\n`,
+        ),
+    ],
+    [
+      "timestamp-regressing trace",
+      async (fixture: Awaited<ReturnType<typeof evaluationFixture>>) =>
+        writeFile(
+          fixture.tracePath,
+          [
+            JSON.stringify({ sequence: 1, atMs: 2, kind: "event", data: {} }),
+            JSON.stringify({ sequence: 2, atMs: 1, kind: "event", data: {} }),
+            "",
+          ].join("\n"),
+        ),
+    ],
+  ])("rejects a %s before re-evaluation", async (_name, corrupt) => {
+    const fixture = await evaluationFixture("shared", "shared");
+    await publishRunRecord(fixture.runRoot, runRecord(fixture));
+    await corrupt(fixture);
+
+    await expect(
+      reevaluateRun({
+        root: fixture.root,
+        runRoot: fixture.runRoot,
+        sandbox: scoringSandbox(),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects redirected trace paths before re-evaluation", async () => {
+    const fixture = await evaluationFixture("shared", "shared");
+    const record = runRecord(fixture);
+    await publishRunRecord(fixture.runRoot, record);
+    await writeFile(
+      join(fixture.runRoot, "run.json"),
+      `${JSON.stringify({ ...record, trace: { path: "other.jsonl", metadataPath: "trace.meta.json" } })}\n`,
+    );
+
+    await expect(
+      reevaluateRun({
+        root: fixture.root,
+        runRoot: fixture.runRoot,
+        sandbox: scoringSandbox(),
+      }),
+    ).rejects.toThrow(/trace paths must be trace\.jsonl and trace\.meta\.json/i);
   });
 });

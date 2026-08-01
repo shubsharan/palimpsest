@@ -71,9 +71,9 @@ docs/                        # proposal, architecture, and roadmap
 ## Implementation Approach
 
 1. Amend the verification governance and define strict decoders for `FixtureDefinition`, `FixturePackage`, `ExperimentManifest`, and `RunRecord`; serialized values use `schemaVersion: 1` while code names remain unversioned.
-2. Generalize Python construction around declared agent/stage geometry, variants, boundaries, and allocation constraints; publish prepared packages atomically with one digest over their trusted contents.
-3. Replace the study planner with manifest-order execution. Resolve one run, validate its exact fixture and resource relationships, then run concurrent agent sessions using the declared communication topology.
-4. Collapse durable attempt/study artifacts into an atomic run record plus append-only trace. Freeze first, evaluate every canonical origin, publish the record, and allow later evaluation/analysis results to be appended through atomic record replacement.
+2. Generalize Python construction around declared agent/stage geometry, variants, boundaries, and allocation constraints; publish prepared packages atomically with one digest over the canonical manifest and every regular package file.
+3. Replace the study planner with manifest-order execution. Resolve one run, validate its exact fixture and resource relationships, smoke-test the selected run when requested, then run independent concurrent agent sessions using the declared communication topology.
+4. Collapse durable attempt/study artifacts into an atomic run record plus append-only trace. Freeze first, structurally validate the canonical trace, evaluate every canonical origin, publish only complete records, and allow later evaluation/analysis results to be appended through atomic record replacement after fixture and trace drift checks.
 5. Express the historical five-block matrix as example declarations, remove compatibility and orchestration infrastructure, then rewrite active documentation around the scientific flow.
 
 ## Governance Change

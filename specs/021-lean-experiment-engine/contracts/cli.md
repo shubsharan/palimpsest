@@ -29,9 +29,9 @@ pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --run 
 ```
 
 - Without `--run`, executes every declared run sequentially in manifest order; with it, executes exactly the named run.
-- Repeats validation immediately before execution. `--allow-spend` is required before any provider session, but does not raise manifest ceilings.
-- Runs agents concurrently, writes `<experiment-dir>/<run-id>/trace.jsonl`, freezes available state, evaluates every canonical origin, and publishes `run.json` atomically.
-- Stops after the first failed run and performs no retry, replacement, or resume.
+- Repeats validation immediately before execution. With `--run`, the provider-free smoke path exercises that selected run; full-manifest execution exercises one smoke path. `--allow-spend` is required before any provider session, but does not raise manifest ceilings.
+- Runs agents concurrently and independently. A session infrastructure result allows peers to quiesce, then freezes and evaluates available state and publishes an infrastructure-error `run.json` before stopping.
+- A thrown setup, lifecycle, freeze, or evaluation failure appends an `infrastructure.error` event when `trace.jsonl` exists, publishes no `run.json`, and stops before later runs. No failure triggers retry, replacement, peer cancellation, or resume.
 
 ## Re-evaluate a Run
 
@@ -39,7 +39,7 @@ pnpm puzzle:experiment --config <manifest.yaml> --output <experiment-dir> --run 
 pnpm puzzle:evaluate --run-root <run-dir>
 ```
 
-- Uses only the frozen origins and fixture named by `run.json`; no provider or live workspace is consulted.
+- Requires canonical `trace.jsonl` and `trace.meta.json`, structurally validates the current appendable trace, and requires the loaded package digest to match the recorded fixture digest before using the frozen origins; no provider or live workspace is consulted.
 - Appends a timestamped evaluation batch beside `run.json`; prior results and frozen fields are unchanged.
 
 Optional post-publication overlap observation remains available through the provider-free Python analysis module and never affects run status or scores.

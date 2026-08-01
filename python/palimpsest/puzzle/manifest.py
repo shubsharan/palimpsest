@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -949,13 +950,21 @@ class FixturePackage:
             "variants": {key: value.to_dict() for key, value in self.variants.items()},
         }
 
-    def computed_content_digest(self) -> str:
+    def computed_content_digest(self, package_root: Path | None = None) -> str:
         record = self.to_dict()
         del record["contentDigest"]
-        return sha256_hex(canonical_json_bytes(record))
+        files = []
+        if package_root is not None:
+            for path in package_root.rglob("*"):
+                relative = path.relative_to(package_root).as_posix()
+                if relative == "fixture.json" or not stat.S_ISREG(path.lstat().st_mode):
+                    continue
+                files.append({"path": relative, "sha256": sha256_hex(path.read_bytes())})
+        files.sort(key=lambda item: item["path"])
+        return sha256_hex(canonical_json_bytes({"manifest": record, "files": files}))
 
     @classmethod
-    def from_dict(cls, value: object) -> FixturePackage:
+    def from_dict(cls, value: object, package_root: Path | None = None) -> FixturePackage:
         name = "Fixture package manifest"
         record = _record(
             value,
@@ -1004,6 +1013,8 @@ class FixturePackage:
             manipulation_check=ManipulationCheck.from_dict(record["manipulationCheck"]),
             variants={key: BuildVariant.from_dict(item, key) for key, item in variants.items()},
         )
-        if package.content_digest != package.computed_content_digest():
+        if package_root is not None and package.content_digest != package.computed_content_digest(
+            package_root
+        ):
             raise ValueError("Fixture package contentDigest does not match its content.")
         return package

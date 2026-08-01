@@ -42,7 +42,7 @@ Public interface names are `FixtureDefinition`, `FixturePackage`, `ExperimentMan
 }
 ```
 
-Preparation publishes `fixture.json` with `fixtureId`, `contentDigest`, resolved source/references/window, seed, agent/stage geometry, allocation, oracle design, base-key path, manipulation check, and a variant map. Each variant contains its re-key boundary, build ID, public ciphertext, reference corpus, private stage roots, ordered stages, and key transitions. All declared paths are relative, contained, digest-checked, and split into trusted versus agent-visible surfaces.
+Preparation publishes `fixture.json` with `fixtureId`, `contentDigest`, resolved source/references/window, seed, agent/stage geometry, allocation, oracle design, base-key path, manipulation check, and a variant map. Each variant contains its re-key boundary, build ID, public ciphertext, reference corpus, private stage roots, ordered stages, and key transitions. `contentDigest` covers the canonical manifest without that field plus the sorted relative path and SHA-256 of every regular package file except `fixture.json`. All declared paths are relative, contained, targeted-digest-checked for diagnostics, and split into trusted versus agent-visible surfaces.
 
 ## ExperimentManifest
 
@@ -67,6 +67,6 @@ Run IDs are unique within the manifest. Assignment keys exactly equal package ag
 
 ## RunRecord and Trace
 
-`run.json` freezes the manifest digest, resolved run, package content digest, requested/actual model bindings, session results and normalized usage, trace identity, sandbox identity, frozen Git/workspace topology, explicit infrastructure status, and ordered evaluation/analysis history. One shared origin or every isolated agent origin must have an evaluation entry; none is selected as best.
+`run.json` freezes the manifest digest, resolved run, package content digest, requested/actual model bindings, complete session results, canonical relative trace paths `trace.jsonl` and `trace.meta.json`, sandbox identity, frozen Git/workspace topology, explicit infrastructure status, and ordered evaluation/analysis history. One shared origin or every isolated agent origin must have an evaluation entry; none is selected as best. A directory without `run.json` is interrupted, not a partial record.
 
-`trace.jsonl` is append-only and records lifecycle, releases, responses, safe returned summaries, tools, checker calls, Git/room activity, termination, freezing, evaluation, and infrastructure errors. Neither surface may contain credentials, hidden reasoning, full provider payloads, keys, oracle content, or unreleased evidence.
+`trace.jsonl` is append-only and records lifecycle, releases, responses, safe returned summaries, tools, checker calls, Git/room activity, termination, freezing, evaluation, and infrastructure errors. Publication and re-evaluation reopen the canonical trace to validate JSONL structure, sequential event numbers, and non-regressing timestamps; they do not seal it with a hash, event count, or immutable prefix. Re-evaluation also requires the current package digest to match `run.fixture.digest` before solver execution. Neither surface may contain credentials, hidden reasoning, full provider payloads, keys, oracle content, or unreleased evidence.

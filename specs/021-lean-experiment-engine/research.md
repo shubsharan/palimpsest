@@ -40,23 +40,25 @@
 
 ## Decision: Stop on failure without automatic recovery
 
-**Rationale**: The trace and explicit status preserve what happened. Stopping makes spend and chronology obvious, while a newly declared run ID makes any repeat intentional.
+**Rationale**: A session infrastructure result is one concurrent outcome, so peers remain independent and may finish before available work is frozen, evaluated, and published with explicit infrastructure status. A thrown pre-publication failure instead leaves an inspectable interrupted directory, appends an infrastructure event when a trace exists, and stops subsequent runs. A newly declared run ID makes any repeat intentional.
 
 **Alternatives considered**:
 
 - Retry failed sessions or containers: rejected because retry policy changes model opportunity and can erase an infrastructure outcome.
 - Continue later runs after failure: rejected because the ordered experiment would have an undeclared gap and possibly changed operator context.
 - Reconstruct interrupted state: rejected because a trace without a final record is already an honest interrupted outcome.
+- Cancel peer sessions after one session fails: rejected because peer cancellation changes their opportunity and is unnecessary to preserve the infrastructure outcome.
 
 ## Decision: Use one normalized run record plus an append-only trace
 
-**Rationale**: The record provides the frozen resolved inputs and results needed for interpretation; JSONL retains observed chronology. Atomic replacement can append later evaluation and analysis entries without introducing phase summaries, reservations, or lineage schemas.
+**Rationale**: The record provides the frozen resolved inputs and results needed for interpretation; JSONL retains observed chronology. Records store only the canonical relative trace paths, and publication or re-evaluation reopens the current appendable trace to validate JSONL structure, sequence, and timestamps. Atomic replacement can append later evaluation and analysis entries without introducing phase summaries, reservations, or lineage schemas.
 
 **Alternatives considered**:
 
 - Preserve separate attempt, protocol, design, reservation, and phase records: rejected because their coordination semantics exceed the experiment's needs.
 - Store only a raw trace: rejected because reviewers need a validated snapshot of the exact run, frozen topology, and results.
 - Persist full provider payloads: rejected because safe summaries and normalized observations provide the needed evidence without hidden or sensitive content.
+- Seal the trace with hashes, event counts, or immutable prefixes: rejected because the trusted local operator boundary needs bounded structural validation, while later observations must remain appendable supporting evidence.
 
 ## Decision: Evaluate every canonical origin
 

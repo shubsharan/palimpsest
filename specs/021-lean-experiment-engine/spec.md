@@ -35,7 +35,7 @@ As a researcher, I can declare an ordered list of runs over prepared fixtures, a
 
 1. **Given** a valid manifest with several explicit runs, **When** the experiment executes, **Then** runs execute sequentially in declared order while sessions inside each run begin concurrently.
 2. **Given** paired shared and isolated runs with identical non-communication inputs, **When** they execute, **Then** shared agents see ordinary peer Git and the optional team room while isolated agents receive usable private Git and no peer evidence or activity.
-3. **Given** a run whose session or container fails, **When** the failure occurs, **Then** the partial trace and explicit infrastructure status are retained, the experiment stops, and the runner performs no automatic retry or replacement.
+3. **Given** one concurrent session reports an infrastructure failure, **When** the failure occurs, **Then** peer sessions quiesce independently, available work is frozen and evaluated, an infrastructure-error record is published, and the experiment stops before the next run without retry or replacement.
 4. **Given** an invalid, drifted, or insufficiently authorized configuration, **When** execution is requested, **Then** it stops before any provider session is opened.
 
 ---
@@ -54,6 +54,7 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 2. **Given** a completed isolated run, **When** final evaluation occurs, **Then** every agent's canonical origin is evaluated independently, including missing or non-integrated solver outcomes.
 3. **Given** a completed run record and frozen origins, **When** re-evaluation is requested, **Then** a new evaluation result is appended atomically without changing the frozen run configuration, trace, or prior results.
 4. **Given** optional overlap analysis, **When** it is run after publication, **Then** its observations are retained separately from run success and scoring.
+5. **Given** a completed run whose fixture package or trace has drifted, **When** re-evaluation is requested, **Then** it fails before solver execution without rewriting prior evidence.
 
 ### Edge Cases
 
@@ -63,7 +64,7 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 - A process exits after trace creation but before final record publication; the run directory remains inspectable as interrupted and is never interpreted as complete.
 - An agent finishes without pushing `main`, pushes an invalid solver, or leaves useful work only on another ref; these remain recorded outcomes for that origin.
 - Provider-reported identity or usage is missing, differs from the request, or cannot be normalized; the absence or discrepancy is recorded without a success-shaped fallback.
-- Re-evaluation encounters a missing frozen origin, changed frozen content, solver timeout, malformed output, or cleanup failure; the new result reports the exact failure without rewriting prior evidence.
+- Re-evaluation encounters a missing frozen origin, changed fixture package, redirected or structurally invalid trace, changed frozen content, solver timeout, malformed output, or cleanup failure; validation fails without rewriting prior evidence.
 
 ## Puzzle & Observation Boundaries _(mandatory)_
 
@@ -87,7 +88,7 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 
 - **FR-001**: Researchers MUST be able to describe fixture source selection, references, scientific seed, agent identifiers, stage count, variants, re-key boundaries, and scientifically meaningful allocation constraints in one fixture definition.
 - **FR-002**: Fixture preparation MUST support at least two agents with three stages and four agents with eight stages without source-code changes.
-- **FR-003**: Fixture preparation MUST be deterministic for identical definitions and referenced bytes and MUST identify the complete prepared content with a stable digest.
+- **FR-003**: Fixture preparation MUST be deterministic for identical definitions and referenced bytes and MUST identify the complete package tree with a stable digest over the canonical manifest without its digest plus the sorted relative path and SHA-256 of every regular package file except `fixture.json`.
 - **FR-004**: A prepared fixture MUST contain ordered agent-visible stages, variants, target-excluded references, trusted oracle data, construction provenance, manipulation checks, and the scoring contract needed to execute and interpret it.
 - **FR-005**: Trusted oracle data, keys, labels, expectations, and manipulation-check results MUST remain outside agent-visible workspaces and evidence.
 - **FR-006**: Invalid or unsatisfied fixture definitions MUST fail before a prepared package is published.
@@ -99,17 +100,17 @@ As a researcher or reviewer, I can inspect one coherent record of the declared r
 - **FR-012**: Shared and isolated communication configurations MUST preserve team identity and every non-communication input while exposing only the communication and peer-activity surfaces declared for the run.
 - **FR-013**: Every assigned origin MUST begin from the same neutral solver scaffold; Git operations MUST remain model-chosen and unmetered, and only pushed `main` may receive aggregate checking or final grading.
 - **FR-014**: The runner MUST NOT require roles, turns, checkpoints, consensus, intermediate files, reports, Git operations, or a prescribed coordination sequence.
-- **FR-015**: A run failure MUST retain its available trace and explicit status, stop the experiment command, and MUST NOT trigger automatic retry, replacement, merging, repair, or reinterpretation.
+- **FR-015**: A session infrastructure failure MUST NOT cancel peer sessions; after peers quiesce, the runner MUST freeze and evaluate available work, publish an infrastructure-error record, stop before the next run, and MUST NOT trigger automatic retry, replacement, merging, repair, or reinterpretation.
 - **FR-016**: Repeating a run after failure MUST require a newly declared run ID.
 - **FR-017**: Execution MUST rerun configuration-scoped validation against the exact manifest and fixture packages, probe the sandbox, complete a provider-free smoke path, and require explicit spend authorization before opening a provider session.
-- **FR-018**: The system MUST publish one normalized run record atomically after freezing a normally completed or explicitly failed run; a directory without that record MUST be treated only as interrupted.
+- **FR-018**: The system MUST publish one normalized run record atomically only after complete session results and frozen topology exist. A thrown setup, lifecycle, freeze, or evaluation failure MUST append and flush one `infrastructure.error` event when a trace exists, propagate the error, publish no partial record, and leave the directory inspectable as interrupted.
 - **FR-019**: The run record MUST freeze the resolved secret-free run configuration, fixture digest, requested and actual model identities, normalized usage, release and activity evidence, terminations, frozen topology, infrastructure failures, and every evaluation result.
-- **FR-020**: Traces MUST be append-only and retain model responses, safe provider-returned summaries when available, tool calls and results, checker use, Git activity, optional room activity, releases, and lifecycle events in observed order.
+- **FR-020**: Traces MUST be append-only and retain model responses, safe provider-returned summaries when available, tool calls and results, checker use, Git activity, optional room activity, releases, and lifecycle events in observed order. Publication and re-evaluation MUST require canonical relative paths `trace.jsonl` and `trace.meta.json` and structurally validate the current trace without sealing its appendable contents.
 - **FR-021**: Records and traces MUST exclude credential values, hidden reasoning, complete provider payloads, oracle data, keys, and unreleased evidence.
 - **FR-022**: Final evaluation MUST execute the same declared `python3 solver.py` interface used by checking against the exact captured `main` commit from every canonical origin.
 - **FR-023**: A shared run MUST retain the result for its one shared origin; an isolated run MUST retain one result for every agent origin without selecting a best result.
 - **FR-024**: Missing publication, invalid execution, incomplete integration, and incorrect reconstruction MUST remain explicit evaluation outcomes rather than invalidating the run.
-- **FR-025**: Researchers MUST be able to re-evaluate frozen origins without provider access, preserving earlier evaluation results and frozen evidence.
+- **FR-025**: Researchers MUST be able to re-evaluate frozen origins without provider access only when the loaded fixture package digest equals the recorded fixture digest and the current canonical trace is structurally valid, preserving earlier evaluation results and frozen evidence.
 - **FR-026**: Optional overlap analysis MUST run only over frozen records after publication and MUST NOT alter run status, scoring, Git behavior, or evaluation selection.
 - **FR-027**: The active system MUST use fixture, experiment, run, and evaluation concepts rather than fixed block IDs, fixed condition IDs, study phases, balanced orders, receipts, reservations, locks, replacement lineage, resume state, or automatic retries.
 - **FR-028**: The existing five checked-in fixtures and study matrix MUST remain reproducible as an example preset expressed entirely through the new fixture and experiment declarations.

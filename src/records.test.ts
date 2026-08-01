@@ -1,10 +1,11 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { publishRunRecord, type RunRecord } from "./records.js";
+import { JsonlObservationLog } from "./trace.js";
 
 function record(): RunRecord {
   return {
@@ -55,7 +56,7 @@ function record(): RunRecord {
         terminationReason: "final-response",
       },
     ],
-    trace: { path: "/run/trace.jsonl", metadataPath: "/run/trace.meta.json" },
+    trace: { path: "trace.jsonl", metadataPath: "trace.meta.json" },
     frozen: {
       frozen: true,
       root: "/run/frozen",
@@ -75,9 +76,15 @@ function record(): RunRecord {
   };
 }
 
+async function runRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "palimpsest-record-"));
+  await JsonlObservationLog.create(join(root, "trace.jsonl"));
+  return root;
+}
+
 describe("run records", () => {
   it("publishes one final record atomically", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-record-"));
+    const root = await runRoot();
     const path = await publishRunRecord(root, record());
     expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
       schemaVersion: 1,
@@ -87,13 +94,13 @@ describe("run records", () => {
   });
 
   it("requires an evaluation for every frozen origin", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-record-"));
+    const root = await runRoot();
     const invalid = { ...record(), evaluations: [] };
     await expect(publishRunRecord(root, invalid)).rejects.toThrow(/every canonical origin/i);
   });
 
   it("never replaces an already published scientific record", async () => {
-    const root = await mkdtemp(join(tmpdir(), "palimpsest-record-"));
+    const root = await runRoot();
     await publishRunRecord(root, record());
     await expect(
       publishRunRecord(root, { ...record(), experimentId: "replacement" }),
@@ -101,5 +108,53 @@ describe("run records", () => {
     expect(JSON.parse(await readFile(join(root, "run.json"), "utf8"))).toMatchObject({
       experimentId: "experiment",
     });
+  });
+
+  it("requires canonical relative trace paths", async () => {
+    const root = await runRoot();
+    await expect(
+      publishRunRecord(root, {
+        ...record(),
+        trace: { path: join(root, "trace.jsonl"), metadataPath: "trace.meta.json" },
+      }),
+    ).rejects.toThrow(/trace paths must be trace\.jsonl and trace\.meta\.json/i);
+  });
+
+  it("accepts valid events appended before publication", async () => {
+    const root = await runRoot();
+    const log = await JsonlObservationLog.open(join(root, "trace.jsonl"));
+    await log.append("review.note", { accepted: true });
+    await log.flush();
+
+    await expect(publishRunRecord(root, record())).resolves.toBe(join(root, "run.json"));
+  });
+
+  it.each([
+    ["missing metadata", async (root: string) => rm(join(root, "trace.meta.json"))],
+    ["malformed", async (root: string) => writeFile(join(root, "trace.jsonl"), "not-json\n")],
+    [
+      "nonsequential",
+      async (root: string) =>
+        writeFile(
+          join(root, "trace.jsonl"),
+          `${JSON.stringify({ sequence: 2, atMs: 1, kind: "event", data: {} })}\n`,
+        ),
+    ],
+    [
+      "timestamp-regressing",
+      async (root: string) =>
+        writeFile(
+          join(root, "trace.jsonl"),
+          [
+            JSON.stringify({ sequence: 1, atMs: 2, kind: "event", data: {} }),
+            JSON.stringify({ sequence: 2, atMs: 1, kind: "event", data: {} }),
+            "",
+          ].join("\n"),
+        ),
+    ],
+  ])("rejects a %s trace before publication", async (_name, corrupt) => {
+    const root = await runRoot();
+    await corrupt(root);
+    await expect(publishRunRecord(root, record())).rejects.toThrow();
   });
 });

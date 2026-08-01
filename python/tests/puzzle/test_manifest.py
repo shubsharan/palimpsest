@@ -177,13 +177,13 @@ def test_fixture_package_round_trips_variable_geometry(
     assert canonical_json_bytes(decoded.to_dict()) == canonical_json_bytes(package.to_dict())
 
 
-def test_content_digest_detects_package_metadata_drift() -> None:
+def test_content_digest_detects_package_metadata_drift(tmp_path: Path) -> None:
     package = _package(("alpha", "beta"), 3, 2)
     record = package.to_dict()
     record["seed"] = 18
 
     with pytest.raises(ValueError, match="contentDigest"):
-        FixturePackage.from_dict(record)
+        FixturePackage.from_dict(record, tmp_path)
 
 
 def test_variant_serializes_verifiable_public_artifacts() -> None:

@@ -609,8 +609,8 @@ def _build_into(
         manipulation_check=manipulation,
         variants=variants,
     )
-    package = replace(package, content_digest=package.computed_content_digest())
-    FixturePackage.from_dict(package.to_dict())
+    package = replace(package, content_digest=package.computed_content_digest(destination))
+    FixturePackage.from_dict(package.to_dict(), destination)
     _write(destination / "fixture.json", canonical_json_bytes(package.to_dict()))
     return package
 

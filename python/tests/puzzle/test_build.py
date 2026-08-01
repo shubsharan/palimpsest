@@ -51,11 +51,11 @@ def test_existing_fixtures_retain_stable_scientific_artifacts(
     for fixture_id, (package, root) in built_fixtures.items():
         assert _artifact_digest(root) == EXPECTED_ARTIFACT_DIGESTS[fixture_id]
         decoded = FixturePackage.from_dict(
-            json.loads((root / "fixture.json").read_text(encoding="utf-8"))
+            json.loads((root / "fixture.json").read_text(encoding="utf-8")), root
         )
         assert decoded == package
         assert decoded.fixture_id == fixture_id
-        assert decoded.content_digest == decoded.computed_content_digest()
+        assert decoded.content_digest == decoded.computed_content_digest(root)
         assert decoded.agent_ids == ("agent-1", "agent-2", "agent-3")
         assert decoded.stage_count == 6
         reference_sources = {

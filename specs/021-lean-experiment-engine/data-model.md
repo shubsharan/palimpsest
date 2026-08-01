@@ -38,7 +38,7 @@ Trusted, prepared, immutable input to one or more runs.
 
 ### Validation
 
-- The content digest covers the canonical package manifest and every declared file, excluding only the manifest's own digest field.
+- The content digest covers the canonical package manifest without `contentDigest` plus a sorted `{ path, sha256 }` projection of every regular package file except `fixture.json`.
 - Every agent has exactly one stage for every ordinal in every variant.
 - Paths are relative, unique, contained by the package, and match their bytes.
 - Variants share the declared allocation and pre-boundary evidence; changes satisfy only their declared boundaries and checks.
@@ -95,7 +95,7 @@ Durable normalized record for one run.
 - `schemaVersion`, `manifestDigest`, run `id`, and `status`: `completed` or `infrastructure-error`.
 - `startedAt`, `frozenAt`, and `publishedAt` timestamps.
 - `configuration`: the complete `ResolvedRun` secret-free projection and its digest.
-- `trace`: relative JSONL path, digest, event count, first/last sequence, and completeness status.
+- `trace`: canonical relative paths `trace.jsonl` and `trace.meta.json`.
 - `releases`: ordered release observations tied to agent, stage, variant, and visible file digest.
 - `sessions`: requested/actual model identity, normalized usage, final response when present, safe returned summaries when available, termination, and infrastructure error when applicable.
 - `topology`: frozen shared or isolated repositories and agent workspaces with exact captured origin IDs, `main` commits when present, and tree seals.
@@ -107,16 +107,19 @@ Durable normalized record for one run.
 
 ```text
 declared -> validated -> running -> frozen -> evaluated -> published
-                         |           |            |
-                         +-> failed -+------------+
+                         |                        |
+                         +-> session infrastructure error -- freeze/evaluate/publish
 
-running -- abrupt process exit --> interrupted directory (trace may exist; no RunRecord)
+setup/lifecycle/freeze/evaluation throw --> interrupted directory (trace may exist; no RunRecord)
 published -- re-evaluate/analyze --> atomically replaced RunRecord with appended history
 ```
 
 - Provider access is forbidden before `validated` and explicit spend authorization.
 - Final publication occurs only after sessions stop and available repositories/workspaces are frozen.
-- A caught infrastructure failure publishes `status: infrastructure-error` after freezing what is available; the experiment then stops.
+- A session infrastructure result does not cancel peers; after every session quiesces, complete session results and available topology are frozen, evaluated, and published with `status: infrastructure-error`, then the experiment stops.
+- A thrown setup, lifecycle, freeze, or evaluation failure appends and flushes one `infrastructure.error` event when the trace exists, propagates, and publishes no partial `RunRecord`.
+- Publication and re-evaluation require the canonical relative trace paths and validate the current appendable trace structurally through `JsonlObservationLog.open`; no trace hash, event-count seal, or immutable prefix is recorded.
+- Re-evaluation additionally requires the currently loaded package digest to equal the recorded fixture digest before solver execution.
 - Re-evaluation and analysis cannot alter configuration, trace, topology, earlier results, or status.
 
 ## EvaluationResult

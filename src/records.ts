@@ -5,6 +5,7 @@ import type { FrozenGitEnvironment, GitRepositoryId } from "./git.js";
 import type { AgentId, JsonObject, ModelBinding } from "./model.js";
 import type { SandboxIdentity } from "./sandbox/contracts.js";
 import type { AgentSessionResult } from "./session.js";
+import { JsonlObservationLog } from "./trace.js";
 
 export interface ResolvedRunRecord {
   id: string;
@@ -90,8 +91,22 @@ function validateRunRecord(record: RunRecord): void {
   }
 }
 
+export async function validateRunRecordTrace(runRoot: string, trace: unknown): Promise<void> {
+  if (
+    typeof trace !== "object" ||
+    trace === null ||
+    Array.isArray(trace) ||
+    (trace as Partial<RunRecord["trace"]>).path !== "trace.jsonl" ||
+    (trace as Partial<RunRecord["trace"]>).metadataPath !== "trace.meta.json"
+  ) {
+    throw new Error("Run record trace paths must be trace.jsonl and trace.meta.json.");
+  }
+  await JsonlObservationLog.open(join(runRoot, "trace.jsonl"));
+}
+
 export async function publishRunRecord(runRoot: string, record: RunRecord): Promise<string> {
   validateRunRecord(record);
+  await validateRunRecordTrace(runRoot, record.trace);
   const path = join(runRoot, "run.json");
   const temporaryPath = join(runRoot, ".run.json.tmp");
   await mkdir(dirname(path), { recursive: true });

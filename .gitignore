@@ -4,6 +4,7 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+.cursor/
 
 # Local configuration and scratch output
 .env

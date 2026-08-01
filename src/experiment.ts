@@ -20,6 +20,7 @@ import type { MonotonicClock } from "./reveal.js";
 import { createFixtureAgentRuntimes, runPreparedFixture, type AgentRuntimeMap } from "./run.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import type { CommandSandbox } from "./sandbox/contracts.js";
+import { JsonlObservationLog } from "./trace.js";
 
 function bindingFor(
   experiment: ResolvedExperiment,
@@ -188,9 +189,19 @@ function dependencies(overrides?: Partial<ExperimentDependencies>): ExperimentDe
   return { ...defaultDependencies, ...overrides };
 }
 
+async function appendInfrastructureFailure(tracePath: string, error: unknown): Promise<void> {
+  const log = await JsonlObservationLog.open(tracePath);
+  await log.append("infrastructure.error", {
+    component: "evaluation",
+    error: error instanceof Error ? error.message : String(error),
+  });
+  await log.flush();
+}
+
 export async function validateExperimentExecution(options: {
   root: string;
   configPath: string;
+  selectedRunId?: string;
   smoke?: boolean;
   dependencies?: Partial<ExperimentDependencies>;
 }): Promise<ExperimentValidation> {
@@ -208,7 +219,11 @@ export async function validateExperimentExecution(options: {
   }
   const sandbox = await service.createSandbox(root);
   if (options.smoke !== false) {
-    const run = experiment.runs[0]!;
+    const run =
+      options.selectedRunId === undefined
+        ? experiment.runs[0]!
+        : experiment.runs.find(({ id }) => id === options.selectedRunId);
+    if (run === undefined) throw new Error(`Unknown experiment run ${options.selectedRunId}.`);
     const fixture = fixtures.get(run.fixture.packagePath)!;
     const scratch = await mkdtemp(join(tmpdir(), "palimpsest-validation-"));
     try {
@@ -253,6 +268,7 @@ export async function runExperiment(options: {
   const validated = await validateExperimentExecution({
     root,
     configPath: options.configPath,
+    ...(options.runId === undefined ? {} : { selectedRunId: options.runId }),
     dependencies: service,
   });
   if (!options.allowSpend) {
@@ -289,15 +305,28 @@ export async function runExperiment(options: {
       labels: run.labels,
       sandbox: validated.sandbox,
     });
-    const evaluations = await service.evaluate({
-      root,
-      runRoot: result.runRoot,
-      fixtureRoot: run.fixture.packagePath,
-      variantId: run.fixture.variant,
-      frozen: result.frozen,
-      sandbox: validated.sandbox,
-      tracePath: result.tracePath,
-    });
+    let evaluations;
+    try {
+      evaluations = await service.evaluate({
+        root,
+        runRoot: result.runRoot,
+        fixtureRoot: run.fixture.packagePath,
+        variantId: run.fixture.variant,
+        frozen: result.frozen,
+        sandbox: validated.sandbox,
+        tracePath: result.tracePath,
+      });
+    } catch (error) {
+      try {
+        await appendInfrastructureFailure(result.tracePath, error);
+      } catch (traceError) {
+        throw new AggregateError(
+          [error, traceError],
+          `Run ${run.id} evaluation failed and the infrastructure event could not be flushed.`,
+        );
+      }
+      throw error;
+    }
     const record: RunRecord = {
       schemaVersion: 1,
       experimentId: validated.experiment.manifestDigest,
@@ -317,7 +346,7 @@ export async function runExperiment(options: {
       },
       models: result.agentIds.map((agentId) => ({ agentId, binding: agents[agentId]!.model })),
       sessions: result.sessions,
-      trace: { path: result.tracePath, metadataPath: result.traceMetadataPath },
+      trace: { path: "trace.jsonl", metadataPath: "trace.meta.json" },
       frozen: result.frozen,
       sandbox: result.sandbox,
       evaluations,

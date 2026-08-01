@@ -12,7 +12,7 @@ import {
   SOLVER_COMMAND,
   SOLVER_OUTPUT_PATH,
 } from "./published-solver.js";
-import type { RunEvaluation, RunRecord } from "./records.js";
+import { validateRunRecordTrace, type RunEvaluation, type RunRecord } from "./records.js";
 import { createDockerCommandSandbox } from "./sandbox/container.js";
 import type { CommandSandbox, SandboxCommandResult } from "./sandbox/contracts.js";
 import { verifyTree } from "./seal.js";
@@ -29,6 +29,7 @@ export interface EvaluateCanonicalOriginsOptions {
   frozen: FrozenGitEnvironment;
   sandbox: CommandSandbox;
   tracePath?: string;
+  expectedFixtureDigest?: string;
 }
 
 function decodeAggregateScore(value: Record<string, unknown>): AggregateScore {
@@ -172,6 +173,14 @@ export async function evaluateCanonicalOrigins(
   const runRoot = resolve(options.runRoot);
   const fixtureRoot = resolve(options.fixtureRoot);
   const fixture = await loadFixturePackage(fixtureRoot);
+  if (
+    options.expectedFixtureDigest !== undefined &&
+    fixture.contentDigest !== options.expectedFixtureDigest
+  ) {
+    throw new Error(
+      `Fixture package digest ${fixture.contentDigest} differs from recorded digest ${options.expectedFixtureDigest}.`,
+    );
+  }
   const variant = selectFixtureVariant(fixture, options.variantId);
   assertCanonicalTopology(options.frozen, fixture.agentIds);
   await verifyTree(options.frozen.root, options.frozen.treeSeal, "Frozen Git tree");
@@ -216,6 +225,13 @@ export async function reevaluateRun(options: {
     throw new Error("Run record is invalid or unsupported.");
   }
   const record = value as unknown as RunRecord;
+  await validateRunRecordTrace(runRoot, record.trace);
+  const fixture = await loadFixturePackage(record.run.fixture.packagePath);
+  if (fixture.contentDigest !== record.run.fixture.digest) {
+    throw new Error(
+      `Fixture package digest ${fixture.contentDigest} differs from recorded digest ${record.run.fixture.digest}.`,
+    );
+  }
   const sandbox =
     options.sandbox ??
     (await createDockerCommandSandbox({
@@ -229,6 +245,7 @@ export async function reevaluateRun(options: {
     variantId: record.run.fixture.variant,
     frozen: record.frozen,
     sandbox,
+    expectedFixtureDigest: record.run.fixture.digest,
   });
   const historyRoot = join(runRoot, "evaluations", "history");
   await mkdir(historyRoot, { recursive: true });

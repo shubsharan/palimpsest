@@ -38,6 +38,24 @@ import { JsonlObservationLog } from "./trace.js";
 const BUILD_ID = /^build-[a-f0-9]{64}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
+async function throwWithInfrastructureEvent(
+  observationLog: JsonlObservationLog,
+  component: string,
+  error: unknown,
+): Promise<never> {
+  const detail = error instanceof Error ? error.message : String(error);
+  try {
+    await observationLog.append("infrastructure.error", { component, error: detail });
+    await observationLog.flush();
+  } catch (traceError) {
+    throw new AggregateError(
+      [error, traceError],
+      `Run ${component} failed and the infrastructure event could not be flushed.`,
+    );
+  }
+  throw error;
+}
+
 export interface RunExecutionConfig {
   runId: string;
   experimentId: string;
@@ -611,65 +629,88 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
   );
   if (primaryFailure !== undefined) {
     if (distinctCleanupFailures.length > 0) {
-      throw new AggregateError(
-        [primaryFailure.error, ...distinctCleanupFailures],
-        "Attempt execution failed and lifecycle cleanup reported additional errors.",
+      return await throwWithInfrastructureEvent(
+        observationLog,
+        "lifecycle",
+        new AggregateError(
+          [primaryFailure.error, ...distinctCleanupFailures],
+          "Attempt execution failed and lifecycle cleanup reported additional errors.",
+        ),
       );
     }
-    throw primaryFailure.error;
+    return await throwWithInfrastructureEvent(observationLog, "lifecycle", primaryFailure.error);
   }
-  if (distinctCleanupFailures.length === 1) throw distinctCleanupFailures[0];
+  if (distinctCleanupFailures.length === 1) {
+    return await throwWithInfrastructureEvent(
+      observationLog,
+      "lifecycle",
+      distinctCleanupFailures[0],
+    );
+  }
   if (distinctCleanupFailures.length > 1) {
-    throw new AggregateError(
-      distinctCleanupFailures,
-      "Attempt lifecycle cleanup reported multiple errors.",
+    return await throwWithInfrastructureEvent(
+      observationLog,
+      "lifecycle",
+      new AggregateError(
+        distinctCleanupFailures,
+        "Attempt lifecycle cleanup reported multiple errors.",
+      ),
     );
   }
   if (sessions === undefined) {
-    throw new Error("Attempt sessions did not produce a result.");
+    return await throwWithInfrastructureEvent(
+      observationLog,
+      "lifecycle",
+      new Error("Attempt sessions did not produce a result."),
+    );
   }
+  const completedSessions = sessions;
 
-  await observationLog.append("run.sessions-ended", {
-    sessions: sessions.map((session) => ({
-      agentId: session.agentId,
-      model: session.model,
-      state: session.state,
-      inputTokens: session.inputTokens,
-      outputTokens: session.outputTokens,
-      terminationReason: session.terminationReason,
-    })),
-  });
-  await observationLog.flush();
+  try {
+    await observationLog.append("run.sessions-ended", {
+      sessions: completedSessions.map((session) => ({
+        agentId: session.agentId,
+        model: session.model,
+        state: session.state,
+        inputTokens: session.inputTokens,
+        outputTokens: session.outputTokens,
+        terminationReason: session.terminationReason,
+      })),
+    });
+    await observationLog.flush();
 
-  const frozen = await freezeGitEnvironment(git, join(config.artifactRoot, "frozen"));
-  await observationLog.append("run.frozen", {
-    communicationMode: frozen.communicationMode,
-    repositories: frozen.repositories,
-    workspaces: frozen.workspaces,
-  });
-  await observationLog.flush();
-  return {
-    runId: config.runId,
-    experimentId: config.experimentId,
-    fixtureId: config.fixtureId,
-    fixtureDigest: config.fixtureDigest,
-    spendCeilingCents: config.spendCeilingCents,
-    gitVisibility: config.gitVisibility,
-    teamRoom: config.teamRoom,
-    variantId: config.variantId,
-    buildId: config.buildId,
-    buildRoot: config.buildRoot,
-    agentIds: config.agentIds,
-    releaseOffsetsMs: config.releaseOffsetsMs,
-    cutoffMs: config.cutoffMs,
-    tokenBudgetPerAgent: config.tokenBudgetPerAgent,
-    labels: config.labels,
-    sessions,
-    frozen,
-    tracePath,
-    traceMetadataPath: observationLog.metadataPath,
-    sandbox: options.sandbox.identity,
-  };
+    const frozen = await freezeGitEnvironment(git, join(config.artifactRoot, "frozen"));
+    await observationLog.append("run.frozen", {
+      communicationMode: frozen.communicationMode,
+      repositories: frozen.repositories,
+      workspaces: frozen.workspaces,
+    });
+    await observationLog.flush();
+    return {
+      runId: config.runId,
+      experimentId: config.experimentId,
+      fixtureId: config.fixtureId,
+      fixtureDigest: config.fixtureDigest,
+      spendCeilingCents: config.spendCeilingCents,
+      gitVisibility: config.gitVisibility,
+      teamRoom: config.teamRoom,
+      variantId: config.variantId,
+      buildId: config.buildId,
+      buildRoot: config.buildRoot,
+      agentIds: config.agentIds,
+      releaseOffsetsMs: config.releaseOffsetsMs,
+      cutoffMs: config.cutoffMs,
+      tokenBudgetPerAgent: config.tokenBudgetPerAgent,
+      labels: config.labels,
+      sessions: completedSessions,
+      frozen,
+      tracePath,
+      traceMetadataPath: observationLog.metadataPath,
+      sandbox: options.sandbox.identity,
+    };
+  } catch (error) {
+    return await throwWithInfrastructureEvent(observationLog, "freeze", error);
+  }
 }
 
 export interface RunPreparedFixtureOptions {
