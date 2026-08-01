@@ -609,14 +609,14 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
     globalController.abort("attempt-failed");
   }
 
-  wallController.abort("sessions-ended");
-  scheduleController.abort("sessions-ended");
+  const scheduleResults =
+    stagePublishing === undefined ? [] : await Promise.allSettled([stagePublishing]);
+  wallController.abort("release-schedule-ended");
   globalController.signal.removeEventListener("abort", stopScheduleAtWallTime);
 
   const quiesceTasks: Promise<unknown>[] = [wallTime];
-  if (stagePublishing !== undefined) quiesceTasks.push(stagePublishing);
   if (sessionPromises !== undefined) quiesceTasks.push(...sessionPromises);
-  const quiesceResults = await Promise.allSettled(quiesceTasks);
+  const quiesceResults = [...scheduleResults, ...(await Promise.allSettled(quiesceTasks))];
   const releaseTasks: Promise<unknown>[] = [];
   releaseTasks.push(rm(releaseStagingRoot, { recursive: true, force: true }));
   releaseTasks.push(

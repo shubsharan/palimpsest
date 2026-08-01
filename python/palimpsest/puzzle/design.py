@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
+from functools import cache
 
 from ..serialization import canonical_json_bytes, sha256_hex
 from ._decode import _is_identifier
@@ -23,6 +24,7 @@ MAX_WINDOW_STARTS = 512
 MINIMUM_PARAGRAPH_WORDS = 20
 TARGET_WINDOW_WORDS = 18_000
 MINIMUM_REGION_PARAGRAPHS = 9
+LOGARITHM_PRECISION = 50
 
 
 @dataclass(frozen=True)
@@ -351,16 +353,39 @@ def _profiles(allocation: Allocation) -> dict[str, TypeProfile]:
     }
 
 
+@cache
+def _deterministic_log1p(value: int) -> Decimal:
+    with localcontext() as context:
+        context.prec = LOGARITHM_PRECISION
+        context.rounding = ROUND_HALF_EVEN
+        return (Decimal(value) + 1).ln()
+
+
+def _frequency_distance(
+    changed_post_count: int,
+    control_post_count: int,
+    maximum_post_count: int,
+) -> float:
+    if maximum_post_count == 0:
+        return 0.0
+    with localcontext() as context:
+        context.prec = LOGARITHM_PRECISION
+        context.rounding = ROUND_HALF_EVEN
+        numerator = abs(
+            _deterministic_log1p(changed_post_count) - _deterministic_log1p(control_post_count)
+        )
+        return float(numerator / _deterministic_log1p(maximum_post_count))
+
+
 def _distance(
     changed: TypeProfile,
     control: TypeProfile,
     maximum_post_count: int,
 ) -> tuple[float, float, float, float]:
-    denominator = math.log1p(maximum_post_count)
-    frequency = (
-        abs(math.log1p(changed.post_count) - math.log1p(control.post_count)) / denominator
-        if denominator
-        else 0.0
+    frequency = _frequency_distance(
+        changed.post_count,
+        control.post_count,
+        maximum_post_count,
     )
     changed_total = sum(changed.exposures)
     control_total = sum(control.exposures)
@@ -387,7 +412,6 @@ def _match_controls(
 ) -> tuple[ControlMatch, ...]:
     maximum_post_count = max((profile.post_count for profile in profiles.values()), default=0)
     maximum_sum = maximum_distance * 3
-    frequency_denominator = math.log1p(maximum_post_count)
     edges: dict[str, list[ControlMatch]] = {}
     for changed_type in changed_types:
         changed = profiles[changed_type]
@@ -397,11 +421,10 @@ def _match_controls(
             context = _context_distance(changed.neighbors, control.neighbors)
             if context > maximum_sum:
                 continue
-            frequency = (
-                abs(math.log1p(changed.post_count) - math.log1p(control.post_count))
-                / frequency_denominator
-                if frequency_denominator
-                else 0.0
+            frequency = _frequency_distance(
+                changed.post_count,
+                control.post_count,
+                maximum_post_count,
             )
             if context + frequency > maximum_sum:
                 continue

@@ -13,11 +13,57 @@ from palimpsest.puzzle.package import FixturePackage
 ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.material
 EXPECTED_ARTIFACT_DIGESTS = {
-    "calibration-theron-ware": "350c3c2f63eefb23206babd11578a318a9fe15ac241928734134c5893876258d",
-    "validation-custom-country": "9ad2e36c4087feb2aee03b6962c9aec468dbef1d3d002c2015474847f6066e97",
-    "validation-odd-women": "9c97c2f38c4a93929f9eba95a3915b734897c35021d61fff7754eb1980cb49dd",
-    "validation-pointed-firs": "6205b280c5e7e9b1e8d8299f658cb4061d26217ddf8afee8d18d2e039de711d9",
-    "validation-woodlanders": "d1e167ed82dd4fbcfeaab8a117244406e606139c3b638d4f265a7fa89bf2b64f",
+    "calibration-theron-ware": "0b95d4f127871262667a3c4c6c29071adce6d1d97077b0e246a9b23d78b61bf3",
+    "validation-custom-country": "5993530a93aba3c3b4216ad9f01e880ebcac6f0a80344d0a52c7f72104764fea",
+    "validation-odd-women": "ef937a8adf0b83e0a595c4615534761626a31587321519b0a4ac896a16b81ede",
+    "validation-pointed-firs": "14553ad40636529fdeafdcfeaae7f457318c8484af9e2636978e8dfc3b2ef6d3",
+    "validation-woodlanders": "644dc0c089c39f8be6fe41e64ca3de29f31cdd876879aa208917815b902548bb",
+}
+EXPECTED_CONTENT_DIGESTS = {
+    "calibration-theron-ware": "1b1708265369e91930736ea251258286bc597678750a4b18eab3d35228ca8a6d",
+    "validation-custom-country": "734eb158d70fa5999ee391d5edb28f51ba5f7bbfb562e3004ccace6418373698",
+    "validation-odd-women": "bf4a72ffe5cfae4f480924439968d308bda9cb26ce4d3cdc278c0dda08106509",
+    "validation-pointed-firs": "4d41b3955762d25ec2fafd2fb64fa06a025ee43a9d19f3666f79e84c1ac5861a",
+    "validation-woodlanders": "a961f1db5b231413fcaa03c0ac31ebf84b887763346448a3759427be7c7aa559",
+}
+EXPECTED_ALLOCATION_IDS = {
+    "calibration-theron-ware": (
+        "allocation-5026e0fb15d44880de9d75891f39f22a7036c2de0673fb7dcb051aa52c129676"
+    ),
+    "validation-custom-country": (
+        "allocation-b68f706f5c41d7eb959a82c4d803ebcefab649ea3b6b086313f1c1217c0cf4a4"
+    ),
+    "validation-odd-women": (
+        "allocation-f8b7f6257b1287599fb77a7d098ac2e5d5394923e5c3c55edcc429f6bb1a0ac2"
+    ),
+    "validation-pointed-firs": (
+        "allocation-1ed3597b61764b3b90ebe3b5b8e4e8cff4078af52731e8377a20ba06f7685d8d"
+    ),
+    "validation-woodlanders": (
+        "allocation-7286b68f9d60b9aa6a5e3209050455abd6b4e2f5c0773432c66bcd022a5fcd8f"
+    ),
+}
+EXPECTED_VARIANT_BUILD_IDS = {
+    "calibration-theron-ware": {
+        "stationary": "build-655d86ff2ea73553dafdca95f96f41aa5057c3343cf791d6bb37599e4d62a457",
+        "rekey": "build-ebcfd2582438abb25713581cf2cd083a0aab44ceddc4f8a60af19f9d6f25af5a",
+    },
+    "validation-custom-country": {
+        "stationary": "build-1229903224458cd06c06eeb8a2058f92f4d7d42be1b30b3ee9a54fac4f4cebb7",
+        "rekey": "build-657887be421e0f1e263485d0ee0d589d157aff6191e3bfc72088d9bdb20a33ee",
+    },
+    "validation-odd-women": {
+        "stationary": "build-c827dbd87d3c18637ecf663556a8cd6b9c2deff9f473dbc271d40dee989708de",
+        "rekey": "build-d054ed1a3838683bf793427655ca30b3550597aa359b9ef8847884f26d1a650b",
+    },
+    "validation-pointed-firs": {
+        "stationary": "build-3b5352e681b5c5008f695ee30f6673911b821596fabcbf6782f68e790d3fa4ac",
+        "rekey": "build-71fea3a9cb927d67467aef00a729e284f38fbeae8c39ada364a33f64d3279692",
+    },
+    "validation-woodlanders": {
+        "stationary": "build-bae07aa8347c4bd73e08778843de792b12aaabb19b272ac370e83167203e40b8",
+        "rekey": "build-dfbacfa3588b43bb0626803b58638b7a3e9253386a009eb62d0979021f85d203",
+    },
 }
 
 
@@ -56,7 +102,12 @@ def test_existing_fixtures_retain_stable_scientific_artifacts(
         )
         assert decoded == package
         assert decoded.fixture_id == fixture_id
+        assert decoded.content_digest == EXPECTED_CONTENT_DIGESTS[fixture_id]
         assert decoded.content_digest == decoded.computed_content_digest(root)
+        assert decoded.allocation.allocation_id == EXPECTED_ALLOCATION_IDS[fixture_id]
+        assert {name: variant.build_id for name, variant in decoded.variants.items()} == (
+            EXPECTED_VARIANT_BUILD_IDS[fixture_id]
+        )
         assert decoded.agent_ids == ("agent-1", "agent-2", "agent-3")
         assert decoded.stage_count == 6
         reference_sources = {
@@ -73,15 +124,6 @@ def test_existing_fixtures_retain_stable_scientific_artifacts(
                 content = (root / reference.path).read_bytes()
                 assert len(content) == reference.byte_length
                 assert hashlib.sha256(content).hexdigest() == reference.sha256
-
-    calibration, _ = built_fixtures["calibration-theron-ware"]
-    assert calibration.content_digest == (
-        "331e0a673980d8a14184528891df46c161bb4837d77b8f04f7701c4d691f4d93"
-    )
-    assert {name: variant.build_id for name, variant in calibration.variants.items()} == {
-        "stationary": "build-655d86ff2ea73553dafdca95f96f41aa5057c3343cf791d6bb37599e4d62a457",
-        "rekey": "build-ebcfd2582438abb25713581cf2cd083a0aab44ceddc4f8a60af19f9d6f25af5a",
-    }
 
 
 def test_declared_variants_share_plaintext_and_diverge_only_at_rekey(

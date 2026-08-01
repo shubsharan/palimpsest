@@ -7,6 +7,7 @@ import pytest
 from palimpsest.puzzle.definition import WindowPin, decode_fixture_catalog, load_fixture_catalog
 from palimpsest.puzzle.design import (
     ParagraphUnit,
+    _frequency_distance,
     candidate_windows,
     initial_allocation,
 )
@@ -23,6 +24,26 @@ def _paragraph(ordinal: int, words: int = 100) -> ParagraphUnit:
 
 def _window():
     return next(candidate_windows(tuple(_paragraph(index) for index in range(1, 181))))
+
+
+@pytest.mark.parametrize(
+    ("changed_post_count", "control_post_count", "maximum_post_count", "expected"),
+    [
+        (0, 0, 0, 0.0),
+        (2, 1, 553, 0.06418466641510638),
+        (4, 2, 479, 0.08274106280474154),
+        (4, 2, 546, 0.08102621494360407),
+    ],
+)
+def test_frequency_distance_uses_platform_independent_logarithms(
+    changed_post_count: int,
+    control_post_count: int,
+    maximum_post_count: int,
+    expected: float,
+) -> None:
+    assert (
+        _frequency_distance(changed_post_count, control_post_count, maximum_post_count) == expected
+    )
 
 
 def test_checked_in_fixture_definitions_are_declarative_and_strict() -> None:
