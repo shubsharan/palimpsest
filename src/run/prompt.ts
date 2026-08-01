@@ -34,38 +34,59 @@ function validateOptions(options: AgentPromptOptions): void {
 
 function communicationText(options: AgentPromptOptions): string {
   if (options.capabilities.git === "isolated") {
-    return "Peer communication is unavailable. Your assigned origin and activity are private. Publish your strongest solver to origin/main:solver.py so it remains in the complete team record.";
+    return "Peer communication is unavailable; your Git origin and activity are private.";
   }
   if (options.capabilities.teamRoom === "enabled") {
-    return "The team shares one Git origin and a public discussion room. You may use post_team_message and read_team_messages, inspect peer commits, and integrate work through ordinary Git. Only origin/main:solver.py is checked and graded.";
+    return "The team shares one Git origin and a public discussion room. You can inspect peer commits and use post_team_message and read_team_messages.";
   }
-  return "The team shares one Git origin. You may inspect peer commits and integrate work through ordinary Git. Only origin/main:solver.py is checked and graded.";
+  return "The team shares one Git origin, so you can inspect and build on peer commits.";
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds % 60_000 === 0) {
+    const minutes = milliseconds / 60_000;
+    return `${String(minutes)} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+  if (milliseconds % 1_000 === 0) {
+    const seconds = milliseconds / 1_000;
+    return `${String(seconds)} ${seconds === 1 ? "second" : "seconds"}`;
+  }
+  return `${String(milliseconds)} milliseconds`;
 }
 
 export function buildAgentPrompt(options: AgentPromptOptions): string {
   validateOptions(options);
   const tokenPolicy =
     options.limits.tokenLimitPerAgent === null
-      ? "There is no cumulative model-token cutoff; provider-reported usage is still recorded."
-      : `Your cumulative model-token limit is ${String(options.limits.tokenLimitPerAgent)}.`;
+      ? "Model tokens: no cumulative cutoff; provider-reported usage is still recorded."
+      : `Model-token limit: ${String(options.limits.tokenLimitPerAgent)} cumulative tokens.`;
+  const releaseSchedule = options.schedule.releaseOffsetsMs
+    .map((offset) => (offset === 0 ? "at start" : formatDuration(offset)))
+    .join(", ");
   return [
-    `You are ${options.agentId}, one of ${String(options.agentIds.length)} agents working concurrently on one puzzle. Each agent receives different private evidence.`,
+    `You are ${options.agentId}, one of ${String(options.agentIds.length)} agents working concurrently on the same puzzle. Team: ${options.agentIds.join(", ")}. Each agent receives different private evidence.`,
     "",
+    "OBJECTIVE",
+    "Recover as much of the complete plaintext as accurately as possible.",
+    "",
+    "PUZZLE AND INPUTS",
+    "Plaintext word types are replaced with ciphertext word types through hidden one-to-one substitutions. Punctuation, capitalization patterns, digits, and paragraph structure remain visible.",
+    `Released ciphertext evidence appears in ${SANDBOX_PATHS.evidence}. ${SANDBOX_PATHS.reference} contains plaintext reference material but not the target text.`,
+    `Evidence releases after the run starts: ${releaseSchedule}.`,
+    "",
+    "DELIVERABLE",
+    "Edit the committed solver.py scaffold to reconstruct any ciphertext supplied in $PALIMPSEST_CIPHERTEXT and write only its complete plaintext to $PALIMPSEST_OUTPUT.",
+    "Checking and grading run python3 solver.py without evidence, references, or Git metadata. Checks use your released evidence; final grading uses the complete ciphertext.",
+    "Only origin/main:solver.py is checked or graded. Final prose, uncommitted files, other branches, and unpushed commits do not count.",
+    "",
+    "ENVIRONMENT",
     communicationText(options),
-    "Git commands do not count against your model-token limit.",
+    "You can run commands, use ordinary Git, check the published solver for aggregate metrics on released evidence, and wait for new evidence or activity. Git operations have no separate quota.",
+    "Choose your own solving and coordination process; no roles, turns, checkpoints, reports, or consensus are required.",
     "",
-    "Recover the plaintext of the complete word-substitution cipher as accurately as you can.",
-    "A runnable solver.py scaffold is already committed. Only a solver pushed to origin/main can be checked or graded; final prose, uncommitted files, other branches, and unpushed commits do not count.",
-    "The checker and grader run python3 solver.py from a Git-free snapshot. It must read $PALIMPSEST_CIPHERTEXT, write the complete plaintext to $PALIMPSEST_OUTPUT, and work without evidence, references, or Git metadata.",
-    "",
-    `Additional private evidence may appear during the run. The run ends after ${String(options.schedule.cutoffMs)} milliseconds.`,
+    "LIMITS",
+    `Run cutoff: ${formatDuration(options.schedule.cutoffMs)} after the run starts.`,
     tokenPolicy,
-    "",
-    "You may inspect private evidence, use the target-excluded reference corpus, run commands, check the published solver against currently visible evidence, use Git, and wait for visible activity. The checker returns only aggregate metrics for visible evidence.",
-    "The runner does not assign roles, turns, checkpoints, files, branches, or a coordination process.",
-    "",
     `Workspace: ${SANDBOX_PATHS.workspace}`,
-    `Private evidence: ${SANDBOX_PATHS.evidence}`,
-    `Reference corpus: ${SANDBOX_PATHS.reference}`,
   ].join("\n");
 }

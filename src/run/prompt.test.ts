@@ -21,6 +21,7 @@ describe("agent prompt", () => {
     });
 
     expect(shared).toContain("one of 4 agents");
+    expect(shared).toContain("Team: agent-1, agent-2, agent-3, agent-4");
     expect(shared).toContain("post_team_message");
     expect(isolated).toContain("Peer communication is unavailable");
     expect(isolated).not.toContain("post_team_message");
@@ -32,11 +33,26 @@ describe("agent prompt", () => {
       capabilities: { git: "shared", teamRoom: "disabled" },
     });
 
-    expect(prompt).toContain("ends after 90000 milliseconds");
-    expect(prompt).toContain("model-token limit is 20000");
-    expect(prompt).toContain("origin/main");
-    expect(prompt).toContain("does not assign roles, turns, checkpoints");
+    expect(prompt).toContain("Run cutoff: 90 seconds");
+    expect(prompt).toContain("Model-token limit: 20000");
+    expect(prompt).toContain("Only origin/main:solver.py is checked or graded");
+    expect(prompt).toContain("no roles, turns, checkpoints");
     expect(prompt).not.toMatch(/re-?key|stationary|anchor|sentinel|specialist/i);
+  });
+
+  it("explains the puzzle, staged inputs, and complete-cipher grading boundary", () => {
+    const prompt = buildAgentPrompt({
+      ...common,
+      schedule: { releaseOffsetsMs: [0, 5_000, 60_000], cutoffMs: 90_000 },
+      capabilities: { git: "shared", teamRoom: "disabled" },
+    });
+
+    expect(prompt).toContain("hidden one-to-one substitutions");
+    expect(prompt).toContain("Punctuation, capitalization patterns, digits");
+    expect(prompt).toContain("plaintext reference material but not the target text");
+    expect(prompt).toContain("at start, 5 seconds, 1 minute");
+    expect(prompt).toContain("final grading uses the complete ciphertext");
+    expect(prompt).toContain("write only its complete plaintext");
   });
 
   it("represents an observation-only token policy", () => {
@@ -45,7 +61,7 @@ describe("agent prompt", () => {
       limits: { ...common.limits, tokenLimitPerAgent: null },
       capabilities: { git: "shared", teamRoom: "disabled" },
     });
-    expect(prompt).toContain("no cumulative model-token cutoff");
+    expect(prompt).toContain("no cumulative cutoff");
     expect(prompt).toContain("usage is still recorded");
   });
 
