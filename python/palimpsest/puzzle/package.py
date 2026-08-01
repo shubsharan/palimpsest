@@ -751,6 +751,7 @@ class ManipulationCheck:
 @dataclass(frozen=True)
 class FixturePackage:
     fixture_id: str
+    construction_id: str
     content_digest: str
     source: TargetSource
     references: tuple[ReferenceSource, ...]
@@ -766,6 +767,7 @@ class FixturePackage:
 
     def __post_init__(self) -> None:
         _identifier(self.fixture_id, "Fixture package fixtureId")
+        _prefixed_digest(self.construction_id, "construction-", "Fixture constructionId")
         _digest(self.content_digest, "Fixture package contentDigest")
         _safe_integer(self.seed, "Fixture seed")
         if len(self.agent_ids) < 2 or len(set(self.agent_ids)) != len(self.agent_ids):
@@ -846,6 +848,7 @@ class FixturePackage:
         return {
             "schemaVersion": 1,
             "fixtureId": self.fixture_id,
+            "constructionId": self.construction_id,
             "contentDigest": self.content_digest,
             "source": self.source.to_dict(),
             "references": [reference.to_dict() for reference in self.references],
@@ -883,6 +886,7 @@ class FixturePackage:
                 {
                     "schemaVersion",
                     "fixtureId",
+                    "constructionId",
                     "contentDigest",
                     "source",
                     "references",
@@ -907,6 +911,9 @@ class FixturePackage:
             raise ValueError(f"{name} variants must be non-empty.")
         package = cls(
             fixture_id=_identifier(record["fixtureId"], f"{name} fixtureId"),
+            construction_id=_prefixed_digest(
+                record["constructionId"], "construction-", f"{name} constructionId"
+            ),
             content_digest=_digest(record["contentDigest"], f"{name} contentDigest"),
             source=TargetSource.from_dict(record["source"]),
             references=tuple(

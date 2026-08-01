@@ -8,6 +8,7 @@ from ._decode import (
     _digest,
     _identifier,
     _integer,
+    _prefixed_digest,
     _ratio,
     _record,
     _safe_integer,
@@ -64,6 +65,7 @@ class AllocationConstraints:
 @dataclass(frozen=True)
 class FixtureDefinition:
     fixture_id: str
+    construction_id: str
     source: TextFileDefinition
     references: tuple[TextFileDefinition, ...]
     seed: int
@@ -223,6 +225,7 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         frozenset(
             {
                 "fixtureId",
+                "constructionId",
                 "source",
                 "references",
                 "seed",
@@ -234,6 +237,9 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         ),
     )
     fixture_id = _identifier(record["fixtureId"], f"{name} fixtureId")
+    construction_id = _prefixed_digest(
+        record["constructionId"], "construction-", f"{name} constructionId"
+    )
     source_record = _record(
         record["source"], f"{name} source", frozenset({"path", "format", "window"})
     )
@@ -285,6 +291,7 @@ def decode_fixture_definition(value: object) -> FixtureDefinition:
         raise ValueError(f"{name} re-key variants must share one boundary.")
     return FixtureDefinition(
         fixture_id=fixture_id,
+        construction_id=construction_id,
         source=source,
         references=references,
         seed=_safe_integer(record["seed"], f"{name} seed"),

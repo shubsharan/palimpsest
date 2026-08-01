@@ -15,6 +15,7 @@ import {
   validateRunAgainstFixture,
 } from "./manifest.js";
 import type { ExperimentManifest } from "./contracts.js";
+import { derivedFixtureDefinition } from "../fixture/build.js";
 
 const fixture = (name: string): string => resolve("tests", "fixtures", "config", name);
 
@@ -73,23 +74,45 @@ describe("experiment manifest", () => {
     expect(() => parseDuration("1.5h", "duration")).toThrow(/integer duration/i);
   });
 
+  it("shares construction identity across stationary and re-keyed realizations", async () => {
+    const [stationary, rekey] = resolveExperiment(await validManifest(), resolve(".")).runs;
+    expect(stationary!.fixture.constructionId).toBe(rekey!.fixture.constructionId);
+    expect(stationary!.fixture.fixtureId).not.toBe(rekey!.fixture.fixtureId);
+    expect(stationary!.fixture.packagePath).not.toBe(rekey!.fixture.packagePath);
+    expect(derivedFixtureDefinition(stationary!).seed).toBe(derivedFixtureDefinition(rekey!).seed);
+  });
+
   it("derives stable package identities from source bytes and geometry", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "palimpsest-manifest-"));
     try {
       const manifest = await validManifest();
-      const withSource = (agents = 3): ExperimentManifest => ({
+      const withSource = (
+        agents = 3,
+        releases = manifest.runs.shared!.releases,
+      ): ExperimentManifest => ({
         ...manifest,
         runs: {
-          shared: { ...manifest.runs.shared!, source: "fixtures/source.txt", agents },
+          shared: { ...manifest.runs.shared!, source: "fixtures/source.txt", agents, releases },
         },
       });
       await mkdir(resolve(root, "fixtures"));
       await writeFile(resolve(root, "fixtures/source.txt"), "first source\n", "utf8");
-      const first = resolveExperiment(withSource(), root).runs[0]!.fixture.fixtureId;
-      expect(resolveExperiment(withSource(), root).runs[0]!.fixture.fixtureId).toBe(first);
+      const first = resolveExperiment(withSource(), root).runs[0]!.fixture;
+      expect(resolveExperiment(withSource(), root).runs[0]!.fixture.constructionId).toBe(
+        first.constructionId,
+      );
       await writeFile(resolve(root, "fixtures/source.txt"), "changed source\n", "utf8");
-      expect(resolveExperiment(withSource(), root).runs[0]!.fixture.fixtureId).not.toBe(first);
-      expect(resolveExperiment(withSource(4), root).runs[0]!.fixture.fixtureId).not.toBe(first);
+      expect(resolveExperiment(withSource(), root).runs[0]!.fixture.constructionId).not.toBe(
+        first.constructionId,
+      );
+      await writeFile(resolve(root, "fixtures/source.txt"), "first source\n", "utf8");
+      expect(resolveExperiment(withSource(4), root).runs[0]!.fixture.constructionId).not.toBe(
+        first.constructionId,
+      );
+      expect(
+        resolveExperiment(withSource(3, manifest.runs.shared!.releases.slice(0, -1)), root).runs[0]!
+          .fixture.constructionId,
+      ).not.toBe(first.constructionId);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

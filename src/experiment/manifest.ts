@@ -207,7 +207,7 @@ function containedPath(repositoryRoot: string, configuredPath: string, path: str
 function fixtureIdentity(
   run: AuthoredRun,
   repositoryRoot: string,
-): { fixtureId: string; variant: string } {
+): { constructionId: string; fixtureId: string; variant: string } {
   const sourcePath = containedPath(repositoryRoot, run.source, "run.source");
   let sourceDigest: string;
   try {
@@ -215,16 +215,27 @@ function fixtureIdentity(
   } catch (error) {
     throw new Error(`run.source must name a readable source file: ${run.source}`, { cause: error });
   }
-  const scientificInputs = {
+  const constructionInputs = {
     source: run.source,
     sourceDigest,
     agents: run.agents,
     stages: run.releases.length,
-    rekeyAtStage: run.rekeyAtStage ?? null,
   };
-  const digest = createHash("sha256").update(canonicalJson(scientificInputs)).digest("hex");
+  const constructionDigest = createHash("sha256")
+    .update(canonicalJson(constructionInputs))
+    .digest("hex");
+  const constructionId = `construction-${constructionDigest}`;
+  const realizationDigest = createHash("sha256")
+    .update(
+      canonicalJson({
+        constructionId,
+        rekeyAtStage: run.rekeyAtStage ?? null,
+      }),
+    )
+    .digest("hex");
   return {
-    fixtureId: `fixture-${digest.slice(0, 16)}`,
+    constructionId,
+    fixtureId: `fixture-${realizationDigest.slice(0, 16)}`,
     variant:
       run.rekeyAtStage === undefined ? "stationary" : `rekey-stage-${String(run.rekeyAtStage)}`,
   };

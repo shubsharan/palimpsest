@@ -591,6 +591,7 @@ def _build_into(root: Path, destination: Path, fixture: FixtureDefinition) -> Fi
     )
     package = FixturePackage(
         fixture_id=fixture.fixture_id,
+        construction_id=fixture.construction_id,
         content_digest="0" * 64,
         source=TargetSource(source.source_id, source.sha256),
         references=tuple(
@@ -659,20 +660,11 @@ def _realized_manifest(
                 (destination / key_path).unlink()
 
     source_record = package.source.to_dict()
-    construction_id = "construction-" + sha256_hex(
-        canonical_json_bytes(
-            {
-                "sourceSha256": source_record["sha256"],
-                "agentIds": list(package.agent_ids),
-                "stageCount": package.stage_count,
-            }
-        )
-    )
     record: dict[str, Any] = {
         "schemaVersion": 2,
         "fixtureId": package.fixture_id,
         "contentDigest": "0" * 64,
-        "constructionId": construction_id,
+        "constructionId": package.construction_id,
         "source": source_record,
         "window": package.window.to_dict(),
         "agentIds": list(package.agent_ids),

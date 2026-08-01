@@ -9,9 +9,13 @@ ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.material
 
 
-def _definition() -> dict[str, object]:
+def _definition(
+    fixture_id: str = "fixture-streamlined-test",
+    rekey_from_stage: int = 4,
+) -> dict[str, object]:
     return {
-        "fixtureId": "fixture-streamlined-test",
+        "fixtureId": fixture_id,
+        "constructionId": "construction-" + "c" * 64,
         "source": {
             "path": "fixtures/corpus/fortunes-fool.txt",
             "format": "plain-text",
@@ -28,7 +32,10 @@ def _definition() -> dict[str, object]:
         "stageCount": 6,
         "variants": [
             {"variantId": "stationary", "rekeyFromStage": None},
-            {"variantId": "rekey-stage-4", "rekeyFromStage": 4},
+            {
+                "variantId": f"rekey-stage-{rekey_from_stage}",
+                "rekeyFromStage": rekey_from_stage,
+            },
         ],
         "allocationConstraints": {
             "minimumAnchors": 12,
@@ -71,9 +78,21 @@ def _definition() -> dict[str, object]:
     }
 
 
-def _build(tmp_path: Path, name: str, selected: str) -> tuple[dict[str, object], Path]:
+def _build(
+    tmp_path: Path,
+    name: str,
+    selected: str,
+    *,
+    fixture_id: str = "fixture-streamlined-test",
+    rekey_from_stage: int = 4,
+) -> tuple[dict[str, object], Path]:
     root = tmp_path / name
-    record = build_module.build_realized_fixture(ROOT, root, _definition(), selected)
+    record = build_module.build_realized_fixture(
+        ROOT,
+        root,
+        _definition(fixture_id, rekey_from_stage),
+        selected,
+    )
     return record, root
 
 
@@ -94,21 +113,39 @@ def test_realized_fixture_build_is_deterministic_and_flat(tmp_path: Path) -> Non
 
 
 def test_stationary_and_rekey_realizations_share_preboundary_evidence(tmp_path: Path) -> None:
-    stationary, stationary_root = _build(tmp_path, "stationary", "stationary")
-    rekey, rekey_root = _build(tmp_path, "rekey", "rekey-stage-4")
+    stationary, stationary_root = _build(
+        tmp_path,
+        "stationary",
+        "stationary",
+        fixture_id="fixture-stationary",
+    )
+    rekey, rekey_root = _build(
+        tmp_path,
+        "rekey",
+        "rekey-stage-3",
+        fixture_id="fixture-rekey",
+        rekey_from_stage=3,
+    )
     assert sorted(path.name for path in (rekey_root / "oracle/keys").iterdir()) == [
         "base.json",
-        "rekey-stage-04.json",
+        "rekey-stage-03.json",
     ]
 
     assert stationary["constructionId"] == rekey["constructionId"]
-    assert rekey["rekeyAtStage"] == 4
+    assert stationary["fixtureId"] != rekey["fixtureId"]
+    assert rekey["rekeyAtStage"] == 3
+    assert (stationary_root / "oracle/allocation.json").read_bytes() == (
+        rekey_root / "oracle/allocation.json"
+    ).read_bytes()
+    assert (stationary_root / "oracle/keys/base.json").read_bytes() == (
+        rekey_root / "oracle/keys/base.json"
+    ).read_bytes()
     stationary_stages = stationary["stages"]
     rekey_stages = rekey["stages"]
     assert isinstance(stationary_stages, list) and isinstance(rekey_stages, list)
     for baseline, changed in zip(stationary_stages, rekey_stages, strict=True):
         assert isinstance(baseline, dict) and isinstance(changed, dict)
-        if baseline["ordinal"] < 4:
+        if baseline["ordinal"] < 3:
             assert baseline["sha256"] == changed["sha256"]
             assert (stationary_root / str(baseline["sourcePath"])).read_bytes() == (
                 rekey_root / str(changed["sourcePath"])

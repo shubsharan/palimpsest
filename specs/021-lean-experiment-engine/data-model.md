@@ -16,7 +16,7 @@ No other fields are accepted. In particular, authors do not provide providers, c
 - Public complete ciphertext and ordered per-agent private stage paths and digests.
 - Trusted oracle, allocation, manipulation-check, and scoring data.
 
-The package has no reference material or variant map. The realization is stationary when `rekeyAtStage` is null. Its digest covers the canonical manifest without `contentDigest` and every other regular package file.
+The package has no reference material or variant map. `constructionId` groups realizations derived from the same source bytes and agent/stage geometry; `fixtureId` and `buildId` identify the flat stationary or re-keyed realization. Re-keying does not alter construction randomness, allocation, or the base key. The realization is stationary when `rekeyAtStage` is null. Its digest covers the canonical manifest without `contentDigest` and every other regular package file.
 
 ## ResolvedExperiment and ResolvedRun
 
@@ -24,7 +24,7 @@ Resolution derives conventional provider credential environment names, agent IDs
 
 A resolved run freezes:
 
-- map-key `id`, source, fixture/build/content identities, and re-key boundary;
+- map-key `id`, source, construction/fixture/build/content identities, and re-key boundary;
 - exact agent-to-model map and provider-neutral model binding;
 - shared Git plus room, or isolated Git without room;
 - release offsets and cutoff in milliseconds;

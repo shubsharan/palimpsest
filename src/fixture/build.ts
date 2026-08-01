@@ -82,6 +82,7 @@ export async function buildFixture(options: BuildFixtureOptions): Promise<BuildF
   if (
     (await realpath(result.packagePath)) !== (await realpath(output)) ||
     fixture.fixtureId !== options.fixture?.fixtureId ||
+    fixture.constructionId !== options.fixture.constructionId ||
     fixture.fixtureId !== result.fixtureId ||
     fixture.contentDigest !== result.contentDigest ||
     fixture.stageCount !== result.stageCount ||
@@ -108,6 +109,7 @@ async function reuseBuiltFixture(run: ResolvedRun): Promise<BuildFixtureResult |
   validateRunAgainstFixture(run, fixture);
   if (
     fixture.fixtureId !== run.fixture.fixtureId ||
+    fixture.constructionId !== run.fixture.constructionId ||
     fixture.variantId !== run.fixture.variant ||
     fixture.rekeyAtStage !== (run.fixture.rekeyAtStage ?? null)
   ) {
@@ -126,6 +128,7 @@ async function reuseBuiltFixture(run: ResolvedRun): Promise<BuildFixtureResult |
 
 export function derivedFixtureDefinition(run: ResolvedRun): Record<string, unknown> {
   const fixtureId = run.fixture.fixtureId;
+  const constructionId = run.fixture.constructionId;
   const source = run.fixture.source;
   if (fixtureId === undefined || source === undefined) {
     throw new Error(`Run ${run.id} is missing its derived fixture inputs.`);
@@ -134,13 +137,14 @@ export function derivedFixtureDefinition(run: ResolvedRun): Record<string, unkno
   const rekeyAtStage = run.fixture.rekeyAtStage ?? Math.floor(stageCount / 2) + 1;
   return {
     fixtureId,
+    constructionId,
     source: {
       path: source,
       format: "plain-text",
       window: { paragraphStart: 0, paragraphEnd: 0, wordCount: 0, sha256: "" },
     },
     references: [],
-    seed: Number.parseInt(fixtureId.slice(-12), 16),
+    seed: Number.parseInt(constructionId.slice(-12), 16),
     agentIds: Object.keys(run.assignment),
     stageCount,
     variants: [

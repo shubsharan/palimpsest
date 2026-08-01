@@ -31,7 +31,7 @@ The engine infers ordered agent IDs, applies one model uniformly, maps communica
 
 ## FixturePackage
 
-`puzzle:build` derives one flat package for each selected run. Its identity changes with source bytes or geometry. `fixture.json` uses `schemaVersion: 2` and records:
+`puzzle:build` derives one flat package for each selected run. Construction identity and randomness depend on source bytes and agent/stage geometry, not re-keying. The realized fixture and build identities additionally distinguish the stationary or re-keyed package. `fixture.json` uses `schemaVersion: 2` and records:
 
 - package and construction identities, content digest, source provenance, resolved source window, agent IDs, and stage count;
 - one realized stationary or re-keyed regime with `rekeyAtStage`, public ciphertext, and ordered private stage paths and digests;
@@ -41,7 +41,7 @@ There is no authored fixture ID, package path, source window, word count, hash, 
 
 ## ResolvedRun
 
-Before execution the engine freezes the selected package identity and digest, source and re-key boundary, inferred agents and uniform model assignments, inferred credential environment name, communication capabilities, resolved release and cutoff milliseconds, optional token limit, run spend ceiling, aggregate authorization, and sandbox identity. Credential values are never stored.
+Before execution the engine freezes the selected construction, fixture, build, and content identities, source and re-key boundary, inferred agents and uniform model assignments, inferred credential environment name, communication capabilities, resolved release and cutoff milliseconds, optional token limit, run spend ceiling, aggregate authorization, and sandbox identity. Credential values are never stored.
 
 ## RunRecord and Trace
 

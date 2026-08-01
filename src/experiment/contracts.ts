@@ -69,6 +69,7 @@ export interface RunDeclaration {
 }
 
 export interface ResolvedFixtureReference extends FixtureReference {
+  constructionId: string;
   fixtureId?: string;
   packageRoot: string;
   source?: string;

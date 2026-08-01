@@ -185,6 +185,8 @@ function runRecord(
       id: "run",
       fixture: {
         id: "evaluation-fixture",
+        constructionId: `construction-${"c".repeat(64)}`,
+        buildId: `build-${"b".repeat(64)}`,
         packagePath: relative(fixture.root, fixture.fixtureRoot),
         digest,
         variant: "stationary",

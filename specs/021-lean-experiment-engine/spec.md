@@ -23,7 +23,7 @@ Acceptance:
 2. Agent IDs, source window, construction randomness, allocation, identity, and paths are deterministic engine-owned values.
 3. Source byte or geometry changes alter derived provenance and identity; identical inputs are reproducible.
 4. A package contains one flat stationary or re-keyed realization and no references or variant map.
-5. Stationary and re-keyed paired construction shares allocation and pre-boundary evidence.
+5. Stationary and re-keyed realizations with the same source and geometry share construction identity, allocation, base-key construction, and pre-boundary evidence while retaining distinct realized package identities.
 
 ## User Story 3 - Validate and Execute
 
@@ -43,7 +43,7 @@ As a researcher or reviewer, I inspect one coherent record and can re-evaluate e
 
 Acceptance:
 
-1. The record freezes resolved source, package identity, re-key boundary, agents, model, communication, milliseconds, limits, spend, usage, releases, topology, and evaluations.
+1. The record freezes resolved source, construction, fixture, build, and content identities, re-key boundary, agents, model, communication, milliseconds, limits, spend, usage, releases, topology, and evaluations.
 2. Shared runs evaluate one canonical origin; isolated runs evaluate every agent origin without selecting a best result.
 3. Missing publication and missing integration remain explicit outcomes.
 4. Re-evaluation and overlap analysis append history atomically without altering prior evidence.

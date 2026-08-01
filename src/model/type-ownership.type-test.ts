@@ -63,7 +63,14 @@ export type RecordOwnership = [
   Expect<
     Equal<
       keyof ResolvedRunRecord["fixture"],
-      "digest" | "id" | "packagePath" | "rekeyAtStage" | "source" | "variant"
+      | "buildId"
+      | "constructionId"
+      | "digest"
+      | "id"
+      | "packagePath"
+      | "rekeyAtStage"
+      | "source"
+      | "variant"
     >
   >,
 ];

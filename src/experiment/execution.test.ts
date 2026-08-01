@@ -63,7 +63,12 @@ function fixture(): FixturePackage {
 function experiment(packagePath: string): ResolvedExperiment {
   const run = (id: string) => ({
     id,
-    fixture: { packagePath: "fixtures/package", packageRoot: packagePath, variant: "stationary" },
+    fixture: {
+      constructionId: `construction-${"c".repeat(64)}`,
+      packagePath: "fixtures/package",
+      packageRoot: packagePath,
+      variant: "stationary",
+    },
     assignment: { "agent-1": "research", "agent-2": "research" },
     capabilities: { git: "shared" as const, teamRoom: "disabled" as const },
     schedule: { releaseOffsetsMs: [0], cutoffMs: 1_000 },
@@ -285,8 +290,10 @@ describe("experiment orchestration", () => {
   it("smoke-tests the selected run before opening a provider adapter", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
     const packagePath = join(root, "fixture");
+    const selectedPackagePath = join(root, "fixture-b");
     const sandbox = new FakeCommandSandbox();
     const calls: string[] = [];
+    const fixtureLoads: string[] = [];
     let adapterCalls = 0;
 
     await expect(
@@ -297,8 +304,23 @@ describe("experiment orchestration", () => {
         runId: "run-b",
         allowSpend: true,
         dependencies: {
-          loadExperiment: async () => experiment(packagePath),
-          loadFixture: async () => fixture(),
+          loadExperiment: async () => {
+            const value = experiment(packagePath);
+            return {
+              ...value,
+              runs: [
+                value.runs[0]!,
+                {
+                  ...value.runs[1]!,
+                  fixture: { ...value.runs[1]!.fixture, packageRoot: selectedPackagePath },
+                },
+              ],
+            };
+          },
+          loadFixture: async (path) => {
+            fixtureLoads.push(path);
+            return fixture();
+          },
           createSandbox: async () => sandbox,
           createAdapter: () => {
             adapterCalls += 1;
@@ -312,6 +334,39 @@ describe("experiment orchestration", () => {
       }),
     ).rejects.toThrow("selected smoke failed");
     expect(calls).toEqual(["run-b-validation"]);
+    expect(fixtureLoads).toEqual([selectedPackagePath]);
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("rejects package construction drift before sandbox or provider access", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-experiment-"));
+    const packagePath = join(root, "fixture");
+    let sandboxCalls = 0;
+    let adapterCalls = 0;
+    await expect(
+      runExperiment({
+        root,
+        configPath: "manifest.yaml",
+        output: "experiment",
+        allowSpend: true,
+        dependencies: {
+          loadExperiment: async () => experiment(packagePath),
+          loadFixture: async () => ({
+            ...fixture(),
+            constructionId: `construction-${"d".repeat(64)}`,
+          }),
+          createSandbox: async () => {
+            sandboxCalls += 1;
+            return new FakeCommandSandbox();
+          },
+          createAdapter: () => {
+            adapterCalls += 1;
+            return adapter();
+          },
+        },
+      }),
+    ).rejects.toThrow(/constructionId.*does not match/i);
+    expect(sandboxCalls).toBe(0);
     expect(adapterCalls).toBe(0);
   });
 

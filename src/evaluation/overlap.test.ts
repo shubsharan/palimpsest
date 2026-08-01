@@ -145,7 +145,14 @@ async function analysisArtifact(mode: "shared" | "isolated") {
     manifestDigest: "a".repeat(64),
     run: {
       id: "run",
-      fixture: { id: "analysis-fixture", packagePath: "fixture", digest, variant: "stationary" },
+      fixture: {
+        id: "analysis-fixture",
+        constructionId: `construction-${"c".repeat(64)}`,
+        buildId: `build-${"b".repeat(64)}`,
+        packagePath: "fixture",
+        digest,
+        variant: "stationary",
+      },
       assignment: { "agent-1": "fixture", "agent-2": "fixture" },
       capabilities: { git: mode, teamRoom: "disabled" },
       schedule: { releaseOffsetsMs: [0], cutoffMs: 1000 },

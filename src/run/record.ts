@@ -20,11 +20,15 @@ import { JsonlObservationLog } from "../trace.js";
 
 const DIGEST = /^[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
+const CONSTRUCTION_ID = /^construction-[0-9a-f]{64}$/;
+const BUILD_ID = /^build-[0-9a-f]{64}$/;
 
 export type ResolvedRunRecord = Readonly<Omit<ResolvedRun, "fixture">> & {
   readonly fixture: Readonly<
     Pick<ResolvedRun["fixture"], "packagePath" | "variant" | "source" | "rekeyAtStage"> & {
       id: string;
+      constructionId: string;
+      buildId: string;
       digest: string;
     }
   >;
@@ -402,6 +406,8 @@ function resolvedRun(value: unknown): ResolvedRunRecord {
   const fixture = object(decoded.fixture, "Run fixture");
   const allowedFixtureFields = new Set([
     "id",
+    "constructionId",
+    "buildId",
     "packagePath",
     "digest",
     "variant",
@@ -460,6 +466,16 @@ function resolvedRun(value: unknown): ResolvedRunRecord {
     id: text(decoded.id, "Run id"),
     fixture: {
       id: text(fixture.id, "Run fixture id"),
+      constructionId: (() => {
+        const value = text(fixture.constructionId, "Run fixture constructionId");
+        if (!CONSTRUCTION_ID.test(value)) throw new Error("Run fixture constructionId is invalid.");
+        return value;
+      })(),
+      buildId: (() => {
+        const value = text(fixture.buildId, "Run fixture buildId");
+        if (!BUILD_ID.test(value)) throw new Error("Run fixture buildId is invalid.");
+        return value;
+      })(),
       packagePath: relativePath(fixture.packagePath, "Run fixture packagePath"),
       digest: digest(fixture.digest, "Run fixture digest"),
       variant: text(fixture.variant, "Run fixture variant"),
