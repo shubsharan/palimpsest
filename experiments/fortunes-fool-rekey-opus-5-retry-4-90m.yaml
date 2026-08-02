@@ -1,0 +1,20 @@
+schemaVersion: 2
+name: fortunes-fool-rekey-stage-4-opus-5-high-90m
+
+models:
+  opus-5:
+    provider: anthropic
+    model: claude-opus-5
+    reasoningEffort: high
+
+runs:
+  shared-rekey:
+    source: fixtures/corpus/fortunes-fool.txt
+    agents: 3
+    model: opus-5
+    communication: shared
+    releases: [0m, 5m, 10m, 20m, 30m, 40m]
+    cutoff: 90m
+    rekeyAtStage: 4
+    spendCeilingCents: 10000
+    checker: false

@@ -1,6 +1,6 @@
 <!-- SPECKIT START -->
 
-Current feature plan: `specs/021-lean-experiment-engine/plan.md`.
+Current feature plan: `specs/022-epistemic-process-grader/plan.md`.
 
 For technologies, project structure, commands, and active design context, read the current feature plan selected by `.specify/feature.json`.
 

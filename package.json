@@ -33,11 +33,11 @@
     "verify:versions": "tsx tools/verify-versions.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.22",
+    "@ai-sdk/anthropic": "4.0.27",
     "@ai-sdk/google": "4.0.25",
     "@ai-sdk/openai": "4.0.21",
     "@ai-sdk/openai-compatible": "3.0.15",
-    "ai": "7.0.38",
+    "ai": "7.0.47",
     "ajv": "8.20.0",
     "yaml": "2.9.0",
     "zod": "4.4.3"
