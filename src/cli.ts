@@ -3,7 +3,17 @@ import { analyzeRunFromFlags } from "./evaluation/overlap.js";
 import { evaluateRunFromFlags } from "./evaluation/evaluator.js";
 import { runExperimentFromFlags, validateExperimentFromFlags } from "./experiment/execution.js";
 import { isExperimentWorker, superviseExperiment } from "./experiment/supervisor.js";
-import { parseFlags } from "./flags.js";
+import { parseFlags, requiredFlag } from "./flags.js";
+import { gradeRunFromFlags } from "./grading/grade.js";
+import { reportRuns } from "./grading/report.js";
+import { reviewRun } from "./grading/review.js";
+
+function allowOnly(flags: ReadonlyMap<string, string>, names: readonly string[], command: string) {
+  const allowed = new Set(names);
+  for (const name of flags.keys()) {
+    if (!allowed.has(name)) throw new Error(`${command} does not accept option ${name}.`);
+  }
+}
 
 const [command, ...args] = process.argv.slice(2);
 const flags = parseFlags(args);
@@ -44,6 +54,57 @@ switch (command) {
       }
     }
     break;
+  case "grade": {
+    const analysis = await gradeRunFromFlags(flags);
+    result = {
+      runRoot: requiredFlag(flags, "--run-root"),
+      analysisId: analysis.analysisId,
+      kind: analysis.kind,
+      detailsPath: analysis.detailsPath,
+      originCount: analysis.origins.length,
+    };
+    break;
+  }
+  case "review": {
+    allowOnly(
+      flags,
+      ["--run-root", "--config", "--performance-analysis", "--allow-spend"],
+      "review",
+    );
+    const reviewed = await reviewRun({
+      projectRoot: process.cwd(),
+      runRoot: requiredFlag(flags, "--run-root"),
+      configPath: requiredFlag(flags, "--config"),
+      performanceAnalysisId: requiredFlag(flags, "--performance-analysis"),
+      allowSpend: requiredFlag(flags, "--allow-spend"),
+    });
+    result = {
+      runRoot: requiredFlag(flags, "--run-root"),
+      analysisId: reviewed.analysis.analysisId,
+      kind: reviewed.analysis.kind,
+      status: reviewed.analysis.status,
+      reviewCount: reviewed.analysis.reviews.length,
+      detailsPath: reviewed.analysis.detailsPath,
+    };
+    break;
+  }
+  case "report": {
+    allowOnly(flags, ["--artifacts-root", "--config", "--output"], "report");
+    const reported = await reportRuns({
+      root: process.cwd(),
+      artifactsRoot: requiredFlag(flags, "--artifacts-root"),
+      configPath: requiredFlag(flags, "--config"),
+      output: requiredFlag(flags, "--output"),
+    });
+    result = {
+      reportId: reported.reportId,
+      claimType: reported.claimType,
+      includedRunCount: reported.includedRunCount,
+      excludedRunCount: reported.excludedRunCount,
+      path: reported.path,
+    };
+    break;
+  }
   case "validate":
     result = await validateExperimentFromFlags(flags);
     break;

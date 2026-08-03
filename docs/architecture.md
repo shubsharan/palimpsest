@@ -71,6 +71,10 @@ A shared run has one canonical origin. An isolated run has one canonical origin 
 
 `puzzle:analyze` validates the record, trace, fixture, contained topology, and frozen-tree seals before scanning every blob reachable from every frozen canonical origin for raw overlap. It defaults to a 32-word threshold and rejects values below 8. It does not warn agents, block Git, invalidate runs, or change scores. Re-evaluation and analysis strictly load the existing record, append one typed history entry, and atomically replace `run.json`; failures preserve the prior bytes and clean staging files. A trace without `run.json` is an interrupted directory, not a recoverable phase or an implicitly valid run.
 
+`puzzle:grade` uses a read-only trace load to create a deterministic blinded evidence index and mechanical measures, then appends a `performance` analysis with immutable digested details. `puzzle:review` validates that exact basis, removes identity and outcome information, and—only after literal spend authorization—retains two distinct-provider reviews and appends a completed or incomplete `process-review`. Each completed scorecard has one entry per canonical origin and keeps outcome, epistemic, social, and instrumental ledgers separate. `puzzle:report` aggregates compatible scorecards under an explicit descriptive or matched design without mutating source runs. Python owns deterministic measures and aggregation; TypeScript owns evidence normalization, provider orchestration, citations, containment, and atomic publication.
+
+Future `git.changed` observations may include the resolved object target for each changed ref. This is a neutral observation of an existing Git event and does not alter command output, activity feedback, metering, or publication rules. Historical traces remain valid and trajectory measures that need an event-time target remain unavailable.
+
 ## Operator Surface
 
 ```bash

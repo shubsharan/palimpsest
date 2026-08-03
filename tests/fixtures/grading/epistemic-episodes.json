@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "supported-revision",
+      "status": "supported-revision",
+      "stages": ["commitment", "test", "revision", "integration"],
+      "counterevidence": true
+    },
+    {
+      "id": "asserted-only",
+      "status": "asserted-only",
+      "stages": ["commitment", "revision"],
+      "behaviorChanged": false
+    },
+    {
+      "id": "missed-revision",
+      "status": "missed-revision",
+      "stages": ["commitment", "test"],
+      "counterevidence": true
+    },
+    {
+      "id": "unchanged",
+      "status": "unchanged",
+      "stages": ["commitment", "test"],
+      "behaviorChanged": false
+    },
+    {
+      "id": "ambiguous",
+      "status": "ambiguous",
+      "stages": ["commitment", "test", "integration"],
+      "competingInterpretations": 2
+    },
+    {
+      "id": "post-hoc-narration",
+      "status": "asserted-only",
+      "stages": ["revision"],
+      "laterClaimOnly": true
+    }
+  ]
+}

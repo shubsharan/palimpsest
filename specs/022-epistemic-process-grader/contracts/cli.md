@@ -98,10 +98,17 @@ One strict YAML file declares only useful review choices; construction details a
 ```yaml
 schemaVersion: 1
 rubric: epistemic-process-v1
+models:
+  reviewer-openai:
+    provider: openai
+    model: gpt-5.6-sol
+  reviewer-anthropic:
+    provider: anthropic
+    model: claude-opus-5
 reviewers:
-  - profile: reviewer-a
+  - profile: reviewer-openai
     spendCeilingCents: 300
-  - profile: reviewer-b
+  - profile: reviewer-anthropic
     spendCeilingCents: 300
 ```
 

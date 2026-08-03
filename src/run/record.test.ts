@@ -10,6 +10,9 @@ import {
   freezeRunConfiguration,
   loadRunRecord,
   publishRunRecord,
+  type OverlapRunAnalysis,
+  type PerformanceRunAnalysis,
+  type ProcessReviewRunAnalysis,
   type RunAnalysis,
   type RunRecord,
 } from "./record.js";
@@ -159,7 +162,7 @@ async function runRoot(): Promise<string> {
   return root;
 }
 
-function analysis(): RunAnalysis {
+function analysis(): OverlapRunAnalysis {
   return {
     analysisId: "overlap-1",
     kind: "overlap",
@@ -177,6 +180,45 @@ function analysis(): RunAnalysis {
           skippedNonTextBlobCount: 0,
         },
         findings: [],
+      },
+    ],
+  };
+}
+
+function performanceAnalysis(): PerformanceRunAnalysis {
+  return {
+    analysisId: "performance-1",
+    kind: "performance",
+    analyzedAt: LATER,
+    graderVersion: "epistemic-process-v1",
+    configurationDigest: "1".repeat(64),
+    sourceDigest: "2".repeat(64),
+    detailsPath: "grading/performance-1/manifest.json",
+    detailsDigest: "3".repeat(64),
+    origins: [{ originId: "agent-1", status: "eligible" }],
+  };
+}
+
+function processReviewAnalysis(
+  status: "completed" | "incomplete" = "completed",
+): ProcessReviewRunAnalysis {
+  return {
+    analysisId: `process-review-${status}`,
+    kind: "process-review",
+    reviewedAt: LATER,
+    status,
+    performanceAnalysisId: "performance-1",
+    rubricVersion: "epistemic-process-v1",
+    configurationDigest: "4".repeat(64),
+    bundleDigest: "5".repeat(64),
+    detailsPath: `grading/process-review-${status}/manifest.json`,
+    detailsDigest: "6".repeat(64),
+    reviews: [
+      { reviewId: "review-1", providerFamily: "provider-a", status: "completed" },
+      {
+        reviewId: "review-2",
+        providerFamily: "provider-b",
+        status: status === "completed" ? "completed" : "provider-error",
       },
     ],
   };
@@ -226,6 +268,17 @@ describe("run records", () => {
     });
     await expect(publishRunRecord(root, record())).rejects.toMatchObject({ code: "EEXIST" });
     expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("validates trace evidence without rewriting the human-readable trace", async () => {
+    const root = await runRoot();
+    const textPath = join(root, "trace.log");
+    const sentinel = "operator-owned trace rendering\n";
+    await writeFile(textPath, sentinel, "utf8");
+
+    await publishRunRecord(root, record());
+
+    expect(await readFile(textPath, "utf8")).toBe(sentinel);
   });
 
   it.each([
@@ -458,6 +511,98 @@ describe("run records", () => {
     expect(updated.analyses.map(({ analysisId }) => analysisId)).toEqual(["overlap-1"]);
     expect(updated.configuration.digest).toBe(frozenBefore);
     expect(await readFile(join(root, "trace.jsonl"), "utf8")).toBe(traceBefore);
+    expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("decodes legacy overlap, performance, and process-review analyses", () => {
+    const legacy = decodeRunRecord({ ...record(), analyses: [analysis()] });
+    expect(legacy.schemaVersion).toBe(1);
+    expect(legacy.analyses.map(({ kind }) => kind)).toEqual(["overlap"]);
+
+    const graded = decodeRunRecord({
+      ...record(),
+      analyses: [analysis(), performanceAnalysis(), processReviewAnalysis()],
+    });
+    expect(graded.analyses.map(({ kind }) => kind)).toEqual([
+      "overlap",
+      "performance",
+      "process-review",
+    ]);
+  });
+
+  it("atomically appends performance and review analyses", async () => {
+    const root = await runRoot();
+    const initial = record();
+    await publishRunRecord(root, initial);
+    const traceBefore = await readFile(join(root, "trace.jsonl"), "utf8");
+    const runWithPerformance = await appendRunAnalysis(root, initial, performanceAnalysis());
+    const runWithReview = await appendRunAnalysis(
+      root,
+      runWithPerformance,
+      processReviewAnalysis(),
+    );
+
+    expect(runWithReview.analyses.map(({ kind }) => kind)).toEqual([
+      "performance",
+      "process-review",
+    ]);
+    expect(await readFile(join(root, "trace.jsonl"), "utf8")).toBe(traceBefore);
+    expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("permits explicit incomplete review retries but only one completed review identity", () => {
+    const incomplete = processReviewAnalysis("incomplete");
+    const retry = {
+      ...processReviewAnalysis("incomplete"),
+      analysisId: "process-review-retry",
+      detailsPath: "grading/process-review-retry/manifest.json",
+    } as ProcessReviewRunAnalysis;
+    expect(() =>
+      decodeRunRecord({
+        ...record(),
+        analyses: [performanceAnalysis(), incomplete, retry, processReviewAnalysis()],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      decodeRunRecord({
+        ...record(),
+        analyses: [
+          performanceAnalysis(),
+          processReviewAnalysis(),
+          {
+            ...processReviewAnalysis(),
+            analysisId: "process-review-second-completed",
+            detailsPath: "grading/process-review-second-completed/manifest.json",
+          },
+        ],
+      }),
+    ).toThrow(/completed process review/i);
+  });
+
+  it.each([
+    [
+      "unsafe detail path",
+      { ...performanceAnalysis(), detailsPath: "../manifest.json" },
+      /safe relative path/i,
+    ],
+    [
+      "uncontained detail path",
+      { ...performanceAnalysis(), detailsPath: "grading/other/manifest.json" },
+      /detailsPath/i,
+    ],
+    ["broken detail digest", { ...performanceAnalysis(), detailsDigest: "invalid" }, /SHA-256/i],
+    ["duplicate analysis identity", performanceAnalysis(), /analysisId/i],
+  ])("rejects %s without changing the published record", async (_name, item, message) => {
+    const root = await runRoot();
+    const initial =
+      _name === "duplicate analysis identity"
+        ? { ...record(), analyses: [performanceAnalysis()] }
+        : record();
+    await publishRunRecord(root, initial);
+    const before = await readFile(join(root, "run.json"), "utf8");
+
+    await expect(appendRunAnalysis(root, initial, item as RunAnalysis)).rejects.toThrow(message);
+    expect(await readFile(join(root, "run.json"), "utf8")).toBe(before);
     expect((await readdir(root)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 

@@ -38,6 +38,8 @@ describe("agent prompt", () => {
     expect(prompt).toContain("Only origin/main:solver.py is checked or graded");
     expect(prompt).toContain("no roles, turns, checkpoints");
     expect(prompt).not.toMatch(/re-?key|stationary|anchor|sentinel|specialist/i);
+    expect(prompt).not.toMatch(/process review|scorecard|rubric|judge|grading report/i);
+    expect(prompt).not.toMatch(/must (?:commit|merge|message|coordinate|report)/i);
   });
 
   it("explains the puzzle, staged inputs, and complete-cipher grading boundary", () => {

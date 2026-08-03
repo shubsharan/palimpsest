@@ -42,6 +42,11 @@ export interface AgentGitWorkspace {
 export type GitCommunicationMode = "shared" | "isolated";
 export type GitRepositoryId = "shared" | AgentId;
 
+export interface GitRefTarget {
+  readonly ref: string;
+  readonly objectId: string | null;
+}
+
 export interface GitRepository {
   repositoryId: GitRepositoryId;
   path: string;
@@ -223,6 +228,13 @@ function changedRefs(before: Record<string, string>, after: Record<string, strin
   return [...names].filter((name) => before[name] !== after[name]).sort();
 }
 
+function changedRefTargets(
+  refs: readonly string[],
+  after: Readonly<Record<string, string>>,
+): readonly GitRefTarget[] {
+  return refs.map((ref) => Object.freeze({ ref, objectId: after[ref] ?? null }));
+}
+
 function waitInterval(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {
@@ -246,6 +258,7 @@ export class GitActivityMonitor {
         repositoryId: GitRepositoryId,
         agentIds: readonly AgentId[],
         refs: readonly string[],
+        targets: readonly GitRefTarget[],
       ) => void | Promise<void>)
     | undefined;
   readonly #onError: ((error: unknown) => void | Promise<void>) | undefined;
@@ -261,6 +274,7 @@ export class GitActivityMonitor {
       repositoryId: GitRepositoryId,
       agentIds: readonly AgentId[],
       refs: readonly string[],
+      targets: readonly GitRefTarget[],
     ) => void | Promise<void>;
     onError?: (error: unknown) => void | Promise<void>;
   }) {
@@ -289,7 +303,12 @@ export class GitActivityMonitor {
     const next = await listRemoteRefs(this.#repository.path);
     const refs = changedRefs(this.#snapshot, next);
     if (refs.length > 0) {
-      await this.#onChange?.(this.#repository.repositoryId, this.#repository.agentIds, refs);
+      await this.#onChange?.(
+        this.#repository.repositoryId,
+        this.#repository.agentIds,
+        refs,
+        changedRefTargets(refs, next),
+      );
     }
     this.#snapshot = next;
     return refs;

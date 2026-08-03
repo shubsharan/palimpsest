@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { JsonlObservationLog } from "./trace.js";
+import { JsonlObservationLog, loadObservationTrace } from "./trace.js";
 
 describe("trace log", () => {
   it("serializes concurrent appends monotonically and redacts host secrets", async () => {
@@ -75,6 +75,63 @@ describe("trace log", () => {
     await log.flush();
 
     await expect(JsonlObservationLog.open(path)).resolves.toBeDefined();
+  });
+
+  it("loads historical and future Git observations without rewriting rendered logs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-observations-read-only-"));
+    const path = join(root, "trace.jsonl");
+    const log = await JsonlObservationLog.create(path, { startedAtMs: 1_000, nowMs: () => 25 });
+    await log.append("git.changed", {
+      repositoryId: "shared",
+      refs: ["refs/heads/main"],
+    });
+    await log.append("git.changed", {
+      repositoryId: "shared",
+      refs: ["refs/heads/main", "refs/heads/removed"],
+      targets: [
+        { ref: "refs/heads/main", objectId: "a".repeat(40) },
+        { ref: "refs/heads/removed", objectId: null },
+      ],
+    });
+    await log.flush();
+    const textPath = join(root, "trace.log");
+    await writeFile(textPath, "do not rewrite this rendered view\n", "utf8");
+
+    const loaded = await loadObservationTrace(path);
+
+    expect(loaded.metadata).toEqual({ schemaVersion: 1, startedAt: new Date(1_000).toISOString() });
+    expect(loaded.events).toHaveLength(2);
+    expect(loaded.events[1]?.data).toEqual({
+      repositoryId: "shared",
+      refs: ["refs/heads/main", "refs/heads/removed"],
+      targets: [
+        { ref: "refs/heads/main", objectId: "a".repeat(40) },
+        { ref: "refs/heads/removed", objectId: null },
+      ],
+    });
+    expect(await readFile(textPath, "utf8")).toBe("do not rewrite this rendered view\n");
+  });
+
+  it("rejects malformed optional Git ref targets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-observations-git-target-"));
+    const path = join(root, "trace.jsonl");
+    await JsonlObservationLog.create(path, { startedAtMs: 1_000 });
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        sequence: 1,
+        atMs: 0,
+        kind: "git.changed",
+        data: {
+          repositoryId: "shared",
+          refs: ["refs/heads/main"],
+          targets: [{ ref: "refs/heads/main", objectId: "not-an-object-id" }],
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(loadObservationTrace(path)).rejects.toThrow(/objectId/i);
   });
 
   it("refuses to append to malformed, nonsequential, or regressing traces", async () => {

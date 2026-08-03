@@ -507,8 +507,8 @@ export async function executeRun(options: ExecuteRunOptions): Promise<RunExecuti
       new GitActivityMonitor({
         repository,
         pollIntervalMs: options.gitPollIntervalMs ?? 20,
-        onChange: (repositoryId, agentIds, refs) =>
-          attemptRuntime.recordGitChange(repositoryId, agentIds, refs),
+        onChange: (repositoryId, agentIds, refs, targets) =>
+          attemptRuntime.recordGitChange(repositoryId, agentIds, refs, targets),
         onError: () => {
           globalController.abort("git-monitor-failed");
         },

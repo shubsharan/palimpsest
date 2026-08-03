@@ -17,10 +17,10 @@
 
 **Purpose**: Establish the feature's local module, configuration, and fixture layout without adding new runtime dependencies.
 
-- [ ] T001 Document grading configuration ownership and synthetic fixture conventions in `grading/README.md` and `tests/fixtures/grading/README.md`
-- [ ] T002 Add `puzzle:grade`, `puzzle:review`, and `puzzle:report` script entries that route through the existing CLI in `package.json`
-- [ ] T003 [P] Add the minimal strict two-reviewer configuration described by the CLI contract in `grading/epistemic-process-v1.yaml`
-- [ ] T004 [P] Add reusable completed, interrupted, shared, and isolated run-artifact builders without provider or Docker dependencies in `tests/support/grading-fixture.ts`
+- [x] T001 Document grading configuration ownership and synthetic fixture conventions in `grading/README.md` and `tests/fixtures/grading/README.md`
+- [x] T002 Add `puzzle:grade`, `puzzle:review`, and `puzzle:report` script entries that route through the existing CLI in `package.json`
+- [x] T003 [P] Add the minimal strict two-reviewer configuration described by the CLI contract in `grading/epistemic-process-v1.yaml`
+- [x] T004 [P] Add reusable completed, interrupted, shared, and isolated run-artifact builders without provider or Docker dependencies in `tests/support/grading-fixture.ts`
 
 ---
 
@@ -32,17 +32,17 @@
 
 ### Verification
 
-- [ ] T005 [P] Add strict decoder tests for evidence references, observability states, measures, dimension reviews, judge reviews, and unknown-field rejection in `src/grading/contracts.test.ts`
-- [ ] T006 [P] Add backward-compatibility and atomic-append tests for `overlap`, `performance`, and `process-review` analysis variants in `src/run/record.test.ts`
-- [ ] T007 [P] Add Python request/response contract tests for finite measures, denominators, missingness, and canonical JSON output in `python/tests/evaluation/test_process.py`
-- [ ] T008 [P] Add trace compatibility tests for optional Git ref targets and unchanged schema-v1 historical events in `src/trace.test.ts`
+- [x] T005 [P] Add strict decoder tests for evidence references, observability states, measures, dimension reviews, judge reviews, and unknown-field rejection in `src/grading/contracts.test.ts`
+- [x] T006 [P] Add backward-compatibility and atomic-append tests for `overlap`, `performance`, and `process-review` analysis variants in `src/run/record.test.ts`
+- [x] T007 [P] Add Python request/response contract tests for finite measures, denominators, missingness, and canonical JSON output in `python/tests/evaluation/test_process.py`
+- [x] T008 [P] Add trace compatibility tests for optional Git ref targets and unchanged schema-v1 historical events in `src/trace.test.ts`
 
 ### Implementation
 
-- [ ] T009 Implement exact decoders and TypeScript types for `EvidenceReference`, `EvidenceItem`, `EvidenceBundle`, `QuantitativeMeasure`, `EpistemicEpisode`, `DimensionReview`, `JudgeReview`, `RunScorecard`, and `BehaviorReport` in `src/grading/contracts.ts`
-- [ ] T010 Extend the strict `RunAnalysis` union, contained detail paths, digests, reviewer statuses, and legacy decoding in `src/run/record.ts`
-- [ ] T011 Implement the versioned epistemic, social, and instrumental dimensions with dimension-specific 0-4 anchors and explicit unobservable/not-applicable states in `src/grading/rubric.ts`
-- [ ] T012 Implement strict Python decoding and canonical serialization for deterministic process-measure requests and responses in `python/palimpsest/evaluation/process.py`
+- [x] T009 Implement exact decoders and TypeScript types for `EvidenceReference`, `EvidenceItem`, `EvidenceBundle`, `QuantitativeMeasure`, `EpistemicEpisode`, `DimensionReview`, `JudgeReview`, `RunScorecard`, and `BehaviorReport` in `src/grading/contracts.ts`
+- [x] T010 Extend the strict `RunAnalysis` union, contained detail paths, digests, reviewer statuses, and legacy decoding in `src/run/record.ts`
+- [x] T011 Implement the versioned epistemic, social, and instrumental dimensions with dimension-specific 0-4 anchors and explicit unobservable/not-applicable states in `src/grading/rubric.ts`
+- [x] T012 Implement strict Python decoding and canonical serialization for deterministic process-measure requests and responses in `python/palimpsest/evaluation/process.py`
 
 **Checkpoint**: Strict grading contracts decode, legacy run records remain valid, and no grading code can mutate frozen evidence.
 
@@ -56,23 +56,23 @@
 
 ### Verification for User Story 1
 
-- [ ] T013 [P] [US1] Add lucky-success, strong-process-failure, missing-observation, and interrupted-attempt contrast artifacts in `tests/fixtures/grading/outcome-process-contrasts.json`
-- [ ] T014 [P] [US1] Add evidence-index tests for chronological ordering, stable references, explicit omissions, provider/model redaction, oracle exclusion, and final-outcome exclusion in `src/grading/evidence.test.ts`
-- [ ] T015 [P] [US1] Add deterministic metric tests for outcome, activity, usage, tool mix, publication, denominators, and unavailable-versus-zero behavior in `python/tests/evaluation/test_process.py`
-- [ ] T016 [P] [US1] Add review tests with two fake provider families covering independent ratings, invalid citations, malformed output, incomplete review status, no averaging, and outcome-blind invariance in `src/grading/review.test.ts`
-- [ ] T017 [P] [US1] Add grading detail-publication tests for safe paths, content digests, immutable files, duplicate analysis identity, cleanup after failed record append, and unchanged trace/evaluations in `src/grading/grade.test.ts`
-- [ ] T018 [P] [US1] Extend CLI contract tests for provider-free `grade`, explicitly authorized `review`, stderr-only failures, and rejection before provider construction in `tests/puzzle/cli.test.ts`
+- [x] T013 [P] [US1] Add lucky-success, strong-process-failure, missing-observation, and interrupted-attempt contrast artifacts in `tests/fixtures/grading/outcome-process-contrasts.json`
+- [x] T014 [P] [US1] Add evidence-index tests for chronological ordering, stable references, explicit omissions, provider/model redaction, oracle exclusion, and final-outcome exclusion in `src/grading/evidence.test.ts`
+- [x] T015 [P] [US1] Add deterministic metric tests for outcome, activity, usage, tool mix, publication, denominators, and unavailable-versus-zero behavior in `python/tests/evaluation/test_process.py`
+- [x] T016 [P] [US1] Add review tests with two fake provider families covering independent ratings, invalid citations, malformed output, incomplete review status, no averaging, and outcome-blind invariance in `src/grading/review.test.ts`
+- [x] T017 [P] [US1] Add grading detail-publication tests for safe paths, content digests, immutable files, duplicate analysis identity, cleanup after failed record append, and unchanged trace/evaluations in `src/grading/grade.test.ts`
+- [x] T018 [P] [US1] Extend CLI contract tests for provider-free `grade`, explicitly authorized `review`, stderr-only failures, and rejection before provider construction in `tests/puzzle/cli.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T019 [US1] Implement strict run/trace/topology validation, complete evidence indexing, reviewer-safe redaction, chronological windows, and omission manifests in `src/grading/evidence.ts`
-- [ ] T020 [US1] Implement mechanical outcome, elapsed-time, stage-latency, tool, checker, message/read, Git-activity, token, termination, and publication measures in `python/palimpsest/evaluation/process.py`
-- [ ] T021 [US1] Implement provider-free grading orchestration, Python invocation, atomic detail-directory publication, duplicate detection, and `performance` analysis append in `src/grading/grade.ts`
-- [ ] T022 [US1] Implement strict grading-config loading, distinct-provider validation, per-reviewer ceilings, leakage preflight, and literal spend authorization before provider creation in `src/grading/review.ts`
-- [ ] T023 [US1] Implement two independent judge calls, immutable raw response retention, output/citation validation, explicit incomplete states, and no automatic retry or consensus in `src/grading/review.ts`
-- [ ] T024 [US1] Freeze process judgments before joining canonical-origin evaluations and publish separate outcome, epistemic, social, and instrumental scorecard sections in `src/grading/review.ts`
-- [ ] T025 [US1] Route `grade` and `review` flags, success JSON, and non-zero diagnostics through `src/cli.ts`
-- [ ] T026 [US1] Export the completed grading and review surfaces through `src/grading/index.ts`
+- [x] T019 [US1] Implement strict run/trace/topology validation, complete evidence indexing, reviewer-safe redaction, chronological windows, and omission manifests in `src/grading/evidence.ts`
+- [x] T020 [US1] Implement mechanical outcome, elapsed-time, stage-latency, tool, checker, message/read, Git-activity, token, termination, and publication measures in `python/palimpsest/evaluation/process.py`
+- [x] T021 [US1] Implement provider-free grading orchestration, Python invocation, atomic detail-directory publication, duplicate detection, and `performance` analysis append in `src/grading/grade.ts`
+- [x] T022 [US1] Implement strict grading-config loading, distinct-provider validation, per-reviewer ceilings, leakage preflight, and literal spend authorization before provider creation in `src/grading/review.ts`
+- [x] T023 [US1] Implement two independent judge calls, immutable raw response retention, output/citation validation, explicit incomplete states, and no automatic retry or consensus in `src/grading/review.ts`
+- [x] T024 [US1] Freeze process judgments before joining canonical-origin evaluations and publish separate outcome, epistemic, social, and instrumental scorecard sections in `src/grading/review.ts`
+- [x] T025 [US1] Route `grade` and `review` flags, success JSON, and non-zero diagnostics through `src/cli.ts`
+- [x] T026 [US1] Export the completed grading and review surfaces through `src/grading/index.ts`
 
 **Checkpoint**: User Story 1 independently distinguishes result quality from observable process quality and can be demonstrated entirely with fake reviewers.
 
@@ -86,19 +86,19 @@
 
 ### Verification for User Story 2
 
-- [ ] T027 [P] [US2] Add supported-revision, asserted-only, missed-revision, unchanged, ambiguous, and post-hoc narration traces in `tests/fixtures/grading/epistemic-episodes.json`
-- [ ] T028 [P] [US2] Add episode schema and citation tests for optional stages, counterevidence, observability, confidence, and hidden-state language rejection in `src/grading/contracts.test.ts`
-- [ ] T029 [P] [US2] Add two-pass reviewer tests for per-window candidate extraction, cross-window integration, contradictory interpretations, and preserved disagreement in `src/grading/review.test.ts`
-- [ ] T030 [P] [US2] Add frozen review-coded metric tests for revision opportunities, supported revisions, and denominator provenance in `python/tests/evaluation/test_process.py`
+- [x] T027 [P] [US2] Add supported-revision, asserted-only, missed-revision, unchanged, ambiguous, and post-hoc narration traces in `tests/fixtures/grading/epistemic-episodes.json`
+- [x] T028 [P] [US2] Add episode schema and citation tests for optional stages, counterevidence, observability, confidence, and hidden-state language rejection in `src/grading/contracts.test.ts`
+- [x] T029 [P] [US2] Add two-pass reviewer tests for per-window candidate extraction, cross-window integration, contradictory interpretations, and preserved disagreement in `src/grading/review.test.ts`
+- [x] T030 [P] [US2] Add frozen review-coded metric tests for revision opportunities, supported revisions, and denominator provenance in `python/tests/evaluation/test_process.py`
 
 ### Implementation for User Story 2
 
-- [ ] T031 [US2] Extend deterministic evidence windows with complete coverage metadata and cross-window source references in `src/grading/evidence.ts`
-- [ ] T032 [US2] Add observable-language instructions and anchored episode status definitions to the versioned review rubric in `src/grading/rubric.ts`
-- [ ] T033 [US2] Implement per-window candidate episode extraction followed by citation-preserving cross-window integration in `src/grading/review.ts`
-- [ ] T034 [US2] Validate episode stage references, counterevidence, asserted-versus-behavioral revision, and prohibited hidden-state claims in `src/grading/contracts.ts`
-- [ ] T035 [US2] Compute deterministic summaries from frozen reviewer-coded revision opportunities while preserving each judge as a separate basis in `python/palimpsest/evaluation/process.py`
-- [ ] T036 [US2] Add completed episode and disagreement sections to immutable scorecard details in `src/grading/review.ts`
+- [x] T031 [US2] Extend deterministic evidence windows with complete coverage metadata and cross-window source references in `src/grading/evidence.ts`
+- [x] T032 [US2] Add observable-language instructions and anchored episode status definitions to the versioned review rubric in `src/grading/rubric.ts`
+- [x] T033 [US2] Implement per-window candidate episode extraction followed by citation-preserving cross-window integration in `src/grading/review.ts`
+- [x] T034 [US2] Validate episode stage references, counterevidence, asserted-versus-behavioral revision, and prohibited hidden-state claims in `src/grading/contracts.ts`
+- [x] T035 [US2] Compute deterministic summaries from frozen reviewer-coded revision opportunities while preserving each judge as a separate basis in `python/palimpsest/evaluation/process.py`
+- [x] T036 [US2] Add completed episode and disagreement sections to immutable scorecard details in `src/grading/review.ts`
 
 **Checkpoint**: User Story 2 independently exposes epistemic transitions and missed revisions as auditable episode evidence rather than global impressions.
 
@@ -112,20 +112,20 @@
 
 ### Verification for User Story 3
 
-- [ ] T037 [P] [US3] Add adopted, ignored, independently rediscovered, duplicated, repaired-conflict, ambiguous-authorship, and isolated-condition fixtures in `tests/fixtures/grading/collaboration-contrasts.json`
-- [ ] T038 [P] [US3] Add runtime and Git callback tests proving future `git.changed` events retain changed ref object IDs without adding feedback or requiring model Git behavior in `src/run/runtime.test.ts` and `src/git.test.ts`
-- [ ] T039 [P] [US3] Add collaboration-review tests for cross-agent contribution-to-uptake links, activity-without-uptake, canonical integration, and isolated not-applicable ratings in `src/grading/review.test.ts`
-- [ ] T040 [P] [US3] Add mechanical and review-coded collaboration metric tests with explicit opportunity denominators and historical ref-target missingness in `python/tests/evaluation/test_process.py`
-- [ ] T041 [P] [US3] Add prompt and tool-surface regression assertions that grading introduces no roles, turns, checkpoints, reports, merges, or coordination sequence in `src/run/prompt.test.ts` and `src/run/tools.test.ts`
+- [x] T037 [P] [US3] Add adopted, ignored, independently rediscovered, duplicated, repaired-conflict, ambiguous-authorship, and isolated-condition fixtures in `tests/fixtures/grading/collaboration-contrasts.json`
+- [x] T038 [P] [US3] Add runtime and Git callback tests proving future `git.changed` events retain changed ref object IDs without adding feedback or requiring model Git behavior in `src/run/runtime.test.ts` and `src/git.test.ts`
+- [x] T039 [P] [US3] Add collaboration-review tests for cross-agent contribution-to-uptake links, activity-without-uptake, canonical integration, and isolated not-applicable ratings in `src/grading/review.test.ts`
+- [x] T040 [P] [US3] Add mechanical and review-coded collaboration metric tests with explicit opportunity denominators and historical ref-target missingness in `python/tests/evaluation/test_process.py`
+- [x] T041 [P] [US3] Add prompt and tool-surface regression assertions that grading introduces no roles, turns, checkpoints, reports, merges, or coordination sequence in `src/run/prompt.test.ts` and `src/run/tools.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T042 [US3] Resolve changed published refs to object IDs in the existing Git callback without changing command results or metering in `src/git.ts`
-- [ ] T043 [US3] Persist optional ref targets in future Git activity and trace observations while retaining historical event compatibility in `src/run/runtime.ts`
-- [ ] T044 [US3] Add communication reads/messages, Git states, authorship evidence, and canonical artifact consequences to reviewer-safe evidence normalization in `src/grading/evidence.ts`
-- [ ] T045 [US3] Add anchored social review instructions for novelty, transmission, uptake, integration, independent verification, duplication, and repair in `src/grading/rubric.ts`
-- [ ] T046 [US3] Implement cross-agent contribution and uptake episode links, competing rediscovery interpretations, and isolated-condition applicability in `src/grading/review.ts`
-- [ ] T047 [US3] Compute collaboration opportunity, uptake, integration-latency, participation-balance, and missing-trajectory measures without treating activity counts as quality in `python/palimpsest/evaluation/process.py`
+- [x] T042 [US3] Resolve changed published refs to object IDs in the existing Git callback without changing command results or metering in `src/git.ts`
+- [x] T043 [US3] Persist optional ref targets in future Git activity and trace observations while retaining historical event compatibility in `src/run/runtime.ts`
+- [x] T044 [US3] Add communication reads/messages, Git states, authorship evidence, and canonical artifact consequences to reviewer-safe evidence normalization in `src/grading/evidence.ts`
+- [x] T045 [US3] Add anchored social review instructions for novelty, transmission, uptake, integration, independent verification, duplication, and repair in `src/grading/rubric.ts`
+- [x] T046 [US3] Implement cross-agent contribution and uptake episode links, competing rediscovery interpretations, and isolated-condition applicability in `src/grading/review.ts`
+- [x] T047 [US3] Compute collaboration opportunity, uptake, integration-latency, participation-balance, and missing-trajectory measures without treating activity counts as quality in `python/palimpsest/evaluation/process.py`
 
 **Checkpoint**: User Story 3 independently distinguishes useful collaboration from communication volume and does not penalize conditions where collaboration is unavailable.
 
@@ -139,19 +139,19 @@
 
 ### Verification for User Story 4
 
-- [ ] T048 [P] [US4] Add descriptive, valid matched-contrast, mismatched-input, mixed-version, clustered-origin, incomplete-review, and single-run report fixtures in `tests/fixtures/grading/report-cases.json`
-- [ ] T049 [P] [US4] Add strict report-config and behavior-report decoder tests for inclusion, matching fields, treatment, experimental unit, exclusions, claim type, and no composite field in `src/grading/contracts.test.ts`
-- [ ] T050 [P] [US4] Add deterministic aggregation tests for per-dimension distributions, missingness, uncertainty, reviewer agreement, run clustering, and process-outcome associations in `python/tests/evaluation/test_process.py`
-- [ ] T051 [P] [US4] Add report service tests for contained discovery, analysis-version compatibility, explicit exclusion reasons, unmatched contrast rejection, and byte-stable source runs in `src/grading/report.test.ts`
-- [ ] T052 [P] [US4] Extend CLI contract tests for provider-free `report`, strict output containment, and non-zero unsupported-claim failures in `tests/puzzle/cli.test.ts`
+- [x] T048 [P] [US4] Add descriptive, valid matched-contrast, mismatched-input, mixed-version, clustered-origin, incomplete-review, and single-run report fixtures in `tests/fixtures/grading/report-cases.json`
+- [x] T049 [P] [US4] Add strict report-config and behavior-report decoder tests for inclusion, matching fields, treatment, experimental unit, exclusions, claim type, and no composite field in `src/grading/contracts.test.ts`
+- [x] T050 [P] [US4] Add deterministic aggregation tests for per-dimension distributions, missingness, uncertainty, reviewer agreement, run clustering, and process-outcome associations in `python/tests/evaluation/test_process.py`
+- [x] T051 [P] [US4] Add report service tests for contained discovery, analysis-version compatibility, explicit exclusion reasons, unmatched contrast rejection, and byte-stable source runs in `src/grading/report.test.ts`
+- [x] T052 [P] [US4] Extend CLI contract tests for provider-free `report`, strict output containment, and non-zero unsupported-claim failures in `tests/puzzle/cli.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T053 [US4] Extend grading contracts with strict report configuration, matching declarations, experimental-unit rules, and non-composite behavior-report output in `src/grading/contracts.ts`
-- [ ] T054 [US4] Implement deterministic per-dimension aggregation, missingness, uncertainty, reviewer-agreement, clustered-origin, and process-outcome calculations in `python/palimpsest/evaluation/process.py`
-- [ ] T055 [US4] Implement contained run discovery, eligibility/version checks, declared matching, treatment isolation, descriptive fallbacks, and atomic report publication in `src/grading/report.ts`
-- [ ] T056 [US4] Route `report` flags, JSON success output, and unsupported-claim diagnostics through `src/cli.ts`
-- [ ] T057 [US4] Export reporting surfaces through `src/grading/index.ts`
+- [x] T053 [US4] Extend grading contracts with strict report configuration, matching declarations, experimental-unit rules, and non-composite behavior-report output in `src/grading/contracts.ts`
+- [x] T054 [US4] Implement deterministic per-dimension aggregation, missingness, uncertainty, reviewer-agreement, clustered-origin, and process-outcome calculations in `python/palimpsest/evaluation/process.py`
+- [x] T055 [US4] Implement contained run discovery, eligibility/version checks, declared matching, treatment isolation, descriptive fallbacks, and atomic report publication in `src/grading/report.ts`
+- [x] T056 [US4] Route `report` flags, JSON success output, and unsupported-claim diagnostics through `src/cli.ts`
+- [x] T057 [US4] Export reporting surfaces through `src/grading/index.ts`
 
 **Checkpoint**: User Story 4 independently compares eligible runs without pseudo-replication, hidden exclusions, composite rankings, or unsupported causal language.
 
@@ -161,14 +161,14 @@
 
 **Purpose**: Validate the full research boundary, documentation, performance, and provider-free operability.
 
-- [ ] T058 [P] Document the grading object, rubric interpretation, calibration protocol, censored attempts, and claim limits in `docs/grading.md`
-- [ ] T059 [P] Reconcile the new post-run analysis and neutral Git observation with the authoritative design in `docs/proposal.md`, `docs/architecture.md`, and `docs/roadmap.md`
-- [ ] T060 [P] Add a frozen synthetic calibration manifest and human citation-audit worksheet without model or outcome identity in `grading/calibration/manifest.json` and `grading/calibration/audit.md`
-- [ ] T061 Add a multi-thousand-event provider-free grading fixture and assert linear bounded processing plus explicit window omissions in `src/grading/grade.test.ts`
-- [ ] T062 Run the provider-free quickstart against synthetic artifacts and correct command or contract drift in `specs/022-epistemic-process-grader/quickstart.md`
-- [ ] T063 Run `pnpm verify` and the focused grading CLI/pytest suites, resolving failures only in feature-touched files listed by `specs/022-epistemic-process-grader/plan.md`
-- [ ] T064 Inspect prompt, tools, trace, run-record, and report outputs against all specification success criteria and record completed evidence in `specs/022-epistemic-process-grader/checklists/requirements.md`
-- [ ] T065 Validate the exact grading configuration, completed run artifacts, leakage scan, provider-free grade path, and reviewer ceilings before any separately authorized findings-bearing review described in `grading/epistemic-process-v1.yaml`
+- [x] T058 [P] Document the grading object, rubric interpretation, calibration protocol, censored attempts, and claim limits in `docs/grading.md`
+- [x] T059 [P] Reconcile the new post-run analysis and neutral Git observation with the authoritative design in `docs/proposal.md`, `docs/architecture.md`, and `docs/roadmap.md`
+- [x] T060 [P] Add a frozen synthetic calibration manifest and human citation-audit worksheet without model or outcome identity in `grading/calibration/manifest.json` and `grading/calibration/audit.md`
+- [x] T061 Add a multi-thousand-event provider-free grading fixture and assert linear bounded processing plus explicit window omissions in `src/grading/grade.test.ts`
+- [x] T062 Run the provider-free quickstart against synthetic artifacts and correct command or contract drift in `specs/022-epistemic-process-grader/quickstart.md`
+- [x] T063 Run `pnpm verify` and the focused grading CLI/pytest suites, resolving failures only in feature-touched files listed by `specs/022-epistemic-process-grader/plan.md`
+- [x] T064 Inspect prompt, tools, trace, run-record, and report outputs against all specification success criteria and record completed evidence in `specs/022-epistemic-process-grader/checklists/requirements.md`
+- [x] T065 Validate the exact grading configuration, completed run artifacts, leakage scan, provider-free grade path, and reviewer ceilings before any separately authorized findings-bearing review described in `grading/epistemic-process-v1.yaml`
 
 ---
 

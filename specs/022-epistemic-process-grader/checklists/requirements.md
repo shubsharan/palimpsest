@@ -35,4 +35,9 @@
 
 - Validated against the Palimpsest constitution before planning.
 - The specification contains no unresolved clarification markers.
-- Optional post-specification commit hook was not executed because the worktree contains unrelated user-owned changes.
+- Implementation evidence: `pnpm verify` passes formatting, lint, typecheck, 118 TypeScript unit tests, 142 TypeScript contract tests, 68 Python unit tests, and 5 Python contract tests.
+- Focused grading evidence covers strict contracts, outcome-blind evidence, atomic publication, independent fake reviewers, episode/collaboration interpretation, matched reporting, and an actual provider-free `puzzle:grade` CLI run on synthetic artifacts.
+- Prompt, tool, Git activity, trace, run-record, and report regressions confirm no prescribed agent workflow, no best-origin selection, read-only frozen evidence, explicit missingness, separate reviewer judgments, and no composite score.
+- Exact grading config, distinct provider families, reviewer ceilings, bundle leakage, citation resolution, and literal spend authorization are validated before adapter construction; no provider call or spend was performed.
+- A final independent audit found no remaining actionable P1/P2 issues after bundle-tamper, origin-scoping, raw-retention, append-CAS, fixture/source-integrity, matched-treatment, report-containment, and CLI-contract regressions were added.
+- Optional Git commit hooks were not executed because commits were explicitly outside the authorized scope.

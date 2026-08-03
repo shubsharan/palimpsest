@@ -1,5 +1,5 @@
 import { ActivityBus, type ActivityWaitResult } from "./activity.js";
-import type { GitRepositoryId } from "../git.js";
+import type { GitRefTarget, GitRepositoryId } from "../git.js";
 import type { AgentId } from "../model/contracts.js";
 import type { ReleasedStage } from "./released-stage.js";
 import { InfrastructureError } from "../sandbox/contracts.js";
@@ -161,6 +161,7 @@ export class AttemptRuntime {
     repositoryId: GitRepositoryId,
     visibleAgentIds: readonly AgentId[],
     refs: readonly string[],
+    targets?: readonly GitRefTarget[],
   ): Promise<void> {
     this.#assertOpen();
     if (
@@ -170,7 +171,22 @@ export class AttemptRuntime {
     ) {
       throw new Error("Git activity visibility must name unique attempt agents.");
     }
+    if (
+      targets !== undefined &&
+      (targets.length !== refs.length ||
+        targets.some(
+          (target, index) =>
+            target.ref !== refs[index] ||
+            (target.objectId !== null && !/^[0-9a-f]{40}$/.test(target.objectId)),
+        ))
+    ) {
+      throw new Error("Git ref targets must correspond to changed refs and contain object IDs.");
+    }
     const frozenRefs = Object.freeze([...refs]);
+    const frozenTargets =
+      targets === undefined
+        ? undefined
+        : Object.freeze(targets.map(({ ref, objectId }) => Object.freeze({ ref, objectId })));
     for (const agentId of visibleAgentIds) {
       this.#activityFor(agentId).publish({
         kind: "git-changed",
@@ -179,7 +195,11 @@ export class AttemptRuntime {
     }
     await this.#persistObservation({
       kind: "git.changed",
-      data: { repositoryId, refs: frozenRefs },
+      data: {
+        repositoryId,
+        refs: frozenRefs,
+        ...(frozenTargets === undefined ? {} : { targets: frozenTargets }),
+      },
     });
   }
 

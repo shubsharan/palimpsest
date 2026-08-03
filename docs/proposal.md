@@ -54,11 +54,13 @@ After sessions stop, the runner freezes available repositories and workspaces. I
 
 Checking and evaluation capture the literal pushed `main` commit, materialize a Git-free tree, and run `python3 solver.py` in the isolated evaluator against the appropriate ciphertext. The agent receives only aggregate coverage and accuracy from checking. Final scoring is deterministic for fixed package and solver bytes.
 
-One atomic `RunRecord` freezes the resolved secret-free configuration, fixture and sandbox identities, sessions, trace identity, topology, infrastructure status, and every evaluation. Optional overlap analysis happens after publication and never changes run success or score. A directory with a trace but no final record is simply an interrupted run.
+One atomic `RunRecord` freezes the resolved secret-free configuration, fixture and sandbox identities, sessions, trace identity, topology, infrastructure status, and every evaluation. Optional overlap and process analyses happen after publication and never change run success, score, or frozen evidence. Process grading keeps deterministic outcome facts separate from evidence-cited epistemic, social, and instrumental reviewer judgments, preserves disagreement, and evaluates every canonical origin without selecting a best result. A directory with a trace but no final record is simply an interrupted run.
 
 ## Claim Boundary
 
 Palimpsest supports controlled local comparisons and qualitative inspection of model behavior. Fixture preparation, manipulation checks, staged inputs, published-commit capture, solver execution, and scoring are reproducible for fixed inputs. Live model choices, provider serving behavior, scheduling interleavings, Git choices, collaboration, and interpretation are not.
+
+Cross-run reports are descriptive unless the operator declares a treatment, matching fields, experimental unit, and clustering rule and the retained inputs satisfy that design. The grader does not collapse dimensions into a leaderboard, infer hidden mental state, or treat activity volume as collaboration quality.
 
 A communication comparison can describe observed differences under its declared runs; it does not prove a general value of collaboration. A hidden re-key creates an opportunity to observe rule revision; it does not demonstrate belief revision or semantic reasoning. Reconstruction accuracy is a puzzle result, not a complete measure of team quality.
 
