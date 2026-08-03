@@ -11,6 +11,7 @@ import type {
   ModelAdapter,
   ModelResponseIdentity,
   ProviderDriver,
+  StructuredOutputRequest,
   TokenUsage,
 } from "../model/contracts.js";
 import { runPythonJson } from "../python.js";
@@ -23,7 +24,6 @@ import {
 } from "../run/record.js";
 import {
   decodeEvidenceBundle,
-  decodeEvidenceReference,
   decodeJudgeReview,
   decodeReviewerOutput,
   decodeRunScorecard,
@@ -115,6 +115,17 @@ export interface CandidateWindowOutput {
   readonly schemaVersion: 1;
   readonly windowId: string;
   readonly candidates: readonly CandidateEpisode[];
+}
+
+interface ProviderCandidateEpisode {
+  readonly summary: string;
+  readonly evidenceIds: readonly string[];
+}
+
+interface ProviderCandidateWindowOutput {
+  readonly schemaVersion: 1;
+  readonly windowId: string;
+  readonly candidates: readonly ProviderCandidateEpisode[];
 }
 
 interface RetainedTurn {
@@ -434,7 +445,7 @@ function decodeCandidateOutput(
   value: unknown,
   windowId: string,
   bundle: EvidenceBundle,
-): CandidateWindowOutput {
+): ProviderCandidateWindowOutput {
   const decoded = exact(value, ["schemaVersion", "windowId", "candidates"], "Candidate output");
   if (decoded.schemaVersion !== 1 || decoded.windowId !== windowId) {
     throw new Error("Candidate output does not identify the requested evidence window.");
@@ -442,28 +453,259 @@ function decodeCandidateOutput(
   if (!Array.isArray(decoded.candidates))
     throw new Error("Candidate output candidates must be an array.");
   const window = bundle.windows.find((candidate) => candidate.windowId === windowId)!;
-  const allowed = new Set(
-    bundle.items
-      .filter((item) => window.evidenceIds.includes(item.evidenceId))
-      .map(({ reference }) => referenceLocator(reference)),
-  );
-  const candidates = decoded.candidates.map((value, index): CandidateEpisode => {
-    const candidate = exact(value, ["summary", "evidence"], `Candidate ${String(index + 1)}`);
+  const allowed = new Set(window.evidenceIds);
+  const candidates = decoded.candidates.map((value, index): ProviderCandidateEpisode => {
+    const candidate = exact(value, ["summary", "evidenceIds"], `Candidate ${String(index + 1)}`);
     const summary = nonEmptyText(candidate.summary, `Candidate ${String(index + 1)}.summary`);
     validateObservableText(summary, `Candidate ${String(index + 1)}.summary`);
-    if (!Array.isArray(candidate.evidence)) {
-      throw new Error(`Candidate ${String(index + 1)}.evidence must be an array.`);
+    if (!Array.isArray(candidate.evidenceIds)) {
+      throw new Error(`Candidate ${String(index + 1)}.evidenceIds must be an array.`);
     }
-    const evidence = candidate.evidence.map((reference, referenceIndex) =>
-      decodeEvidenceReference(
-        reference,
-        `Candidate ${String(index + 1)}.evidence[${String(referenceIndex)}]`,
-      ),
-    );
-    validateReferences(evidence, allowed, `Candidate ${String(index + 1)}.evidence`);
-    return { summary, evidence };
+    const evidenceIds = candidate.evidenceIds.map((evidenceId, evidenceIndex) => {
+      const id = nonEmptyText(
+        evidenceId,
+        `Candidate ${String(index + 1)}.evidenceIds[${String(evidenceIndex)}]`,
+      );
+      if (!allowed.has(id)) {
+        throw new Error(
+          `Candidate ${String(index + 1)}.evidenceIds contains an ID outside the exact evidence window.`,
+        );
+      }
+      return id;
+    });
+    if (evidenceIds.length === 0) {
+      throw new Error(`Candidate ${String(index + 1)}.evidenceIds must be non-empty.`);
+    }
+    if (new Set(evidenceIds).size !== evidenceIds.length) {
+      throw new Error(`Candidate ${String(index + 1)}.evidenceIds must be unique.`);
+    }
+    return { summary, evidenceIds };
   });
   return { schemaVersion: 1, windowId, candidates };
+}
+
+function resolveReviewerEvidenceIds(
+  value: unknown,
+  candidates: readonly ProviderCandidateWindowOutput[],
+  bundle: EvidenceBundle,
+): unknown {
+  const allowed = new Set(
+    candidates.flatMap(({ candidates: episodes }) =>
+      episodes.flatMap(({ evidenceIds }) => evidenceIds),
+    ),
+  );
+  const items = new Map(bundle.items.map((item) => [item.evidenceId, item] as const));
+  const resolveCitations = (citations: unknown, name: string): readonly EvidenceReference[] => {
+    if (!Array.isArray(citations)) throw new Error(`${name} must be an array.`);
+    return citations.map((citation, index) => {
+      const evidenceId = nonEmptyText(citation, `${name}[${String(index)}]`);
+      if (!allowed.has(evidenceId)) {
+        throw new Error(`${name}[${String(index)}] cites an evidence ID outside the candidates.`);
+      }
+      return items.get(evidenceId)!.reference;
+    });
+  };
+  const decoded = exact(
+    value,
+    ["schemaVersion", "rubricVersion", "bundleDigest", "dimensions", "episodes", "overallCautions"],
+    "Reviewer output",
+  );
+  const dimensions = exact(
+    decoded.dimensions,
+    EPISTEMIC_PROCESS_RUBRIC.dimensions.map(({ dimensionId }) => dimensionId),
+    "Reviewer output dimensions",
+  );
+  if (!Array.isArray(decoded.episodes))
+    throw new Error("Reviewer output episodes must be an array.");
+  return {
+    schemaVersion: decoded.schemaVersion,
+    rubricVersion: decoded.rubricVersion,
+    bundleDigest: decoded.bundleDigest,
+    dimensions: EPISTEMIC_PROCESS_RUBRIC.dimensions.map(({ dimensionId, ledger }, index) => {
+      const name = `Reviewer dimension ${String(index + 1)}`;
+      const candidate = object(dimensions[dimensionId], name);
+      const required = ["state", "rationale", "evidenceIds", "counterevidenceIds", "confidence"];
+      const item =
+        candidate.state === "rated"
+          ? exact(candidate, [...required, "rating"], name)
+          : exact(candidate, required, name);
+      return {
+        dimensionId,
+        ledger,
+        state: item.state,
+        ...(item.rating === undefined ? {} : { rating: item.rating }),
+        rationale: item.rationale,
+        evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
+        counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
+        confidence: item.confidence,
+      };
+    }),
+    episodes: decoded.episodes.map((episode, index) => {
+      const name = `Reviewer episode ${String(index + 1)}`;
+      const item = exact(
+        episode,
+        [
+          "episodeId",
+          "summary",
+          "status",
+          "evidenceIds",
+          "commitmentIds",
+          "testIds",
+          "revisionIds",
+          "transmissionIds",
+          "uptakeIds",
+          "integrationIds",
+          "counterevidenceIds",
+          "confidence",
+        ],
+        name,
+      );
+      return {
+        episodeId: item.episodeId,
+        summary: item.summary,
+        status: item.status,
+        evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
+        commitment: resolveCitations(item.commitmentIds, `${name}.commitmentIds`),
+        test: resolveCitations(item.testIds, `${name}.testIds`),
+        revision: resolveCitations(item.revisionIds, `${name}.revisionIds`),
+        transmission: resolveCitations(item.transmissionIds, `${name}.transmissionIds`),
+        uptake: resolveCitations(item.uptakeIds, `${name}.uptakeIds`),
+        integration: resolveCitations(item.integrationIds, `${name}.integrationIds`),
+        counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
+        confidence: item.confidence,
+      };
+    }),
+    overallCautions: decoded.overallCautions,
+  };
+}
+
+function strictObjectSchema(
+  properties: Readonly<Record<string, JsonObject>>,
+  required: readonly string[] = Object.keys(properties),
+): JsonObject {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties,
+    required,
+  };
+}
+
+function evidenceIdDefinitions(evidenceIds: readonly string[]): JsonObject {
+  return {
+    evidenceId: {
+      type: "string",
+      ...(evidenceIds.length === 0 ? { const: "__no_valid_evidence_id__" } : { enum: evidenceIds }),
+    },
+  };
+}
+
+function citationIdsSchema(): JsonObject {
+  return {
+    type: "array",
+    items: { $ref: "#/$defs/evidenceId" },
+  };
+}
+
+function candidateOutputSchema(windowId: string, evidenceIds: readonly string[]): JsonObject {
+  return {
+    ...strictObjectSchema({
+      schemaVersion: { type: "integer", const: 1 },
+      windowId: { type: "string", const: windowId },
+      candidates: {
+        type: "array",
+        items: strictObjectSchema({
+          summary: { type: "string" },
+          evidenceIds: citationIdsSchema(),
+        }),
+      },
+    }),
+    $defs: evidenceIdDefinitions(evidenceIds),
+  };
+}
+
+function dimensionOutputSchema(
+  ledger: "epistemic" | "social" | "instrumental",
+  communicationMode: EvidenceBundle["communicationMode"],
+): JsonObject {
+  const common = {
+    rationale: { type: "string" },
+    counterevidenceIds: citationIdsSchema(),
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  } as const satisfies Readonly<Record<string, JsonObject>>;
+  if (communicationMode === "isolated" && ledger === "social") {
+    return strictObjectSchema({
+      state: { type: "string", const: "not-applicable" },
+      ...common,
+      evidenceIds: citationIdsSchema(),
+    });
+  }
+  return {
+    anyOf: [
+      strictObjectSchema({
+        state: { type: "string", const: "rated" },
+        rating: { type: "integer", enum: [0, 1, 2, 3, 4] },
+        ...common,
+        evidenceIds: citationIdsSchema(),
+      }),
+      strictObjectSchema({
+        state: { type: "string", enum: ["unobservable", "not-applicable"] },
+        ...common,
+        evidenceIds: citationIdsSchema(),
+      }),
+    ],
+  };
+}
+
+function episodeOutputSchema(): JsonObject {
+  return strictObjectSchema({
+    episodeId: { type: "string" },
+    summary: { type: "string" },
+    status: {
+      type: "string",
+      enum: ["supported-revision", "asserted-only", "missed-revision", "unchanged", "ambiguous"],
+    },
+    evidenceIds: citationIdsSchema(),
+    commitmentIds: citationIdsSchema(),
+    testIds: citationIdsSchema(),
+    revisionIds: citationIdsSchema(),
+    transmissionIds: citationIdsSchema(),
+    uptakeIds: citationIdsSchema(),
+    integrationIds: citationIdsSchema(),
+    counterevidenceIds: citationIdsSchema(),
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  });
+}
+
+function integrationOutputSchema(
+  bundle: EvidenceBundle,
+  candidates: readonly ProviderCandidateWindowOutput[],
+): JsonObject {
+  const evidenceIds = [
+    ...new Set(
+      candidates.flatMap(({ candidates: episodes }) =>
+        episodes.flatMap((episode) => episode.evidenceIds),
+      ),
+    ),
+  ];
+  return {
+    ...strictObjectSchema({
+      schemaVersion: { type: "integer", const: 1 },
+      rubricVersion: { type: "string", const: EPISTEMIC_PROCESS_RUBRIC_VERSION },
+      bundleDigest: { type: "string", const: bundle.contentDigest },
+      dimensions: strictObjectSchema(
+        Object.fromEntries(
+          EPISTEMIC_PROCESS_RUBRIC.dimensions.map(({ dimensionId, ledger }) => [
+            dimensionId,
+            dimensionOutputSchema(ledger, bundle.communicationMode),
+          ]),
+        ),
+      ),
+      episodes: { type: "array", items: episodeOutputSchema() },
+      overallCautions: { type: "array", items: { type: "string" } },
+    }),
+    $defs: evidenceIdDefinitions(evidenceIds),
+  };
 }
 
 function retainedTurn(
@@ -484,11 +726,14 @@ async function callReviewer(
   adapter: ModelAdapter,
   agentId: AgentId,
   prompt: string,
+  structuredOutput: StructuredOutputRequest,
 ): Promise<RetainedTurn> {
   try {
     const session = await adapter.openSession({ agentId, tools: [] });
     const signal = new AbortController().signal;
-    return retainedTurn(await session.respond({ prompt, toolResults: [], signal }));
+    return retainedTurn(
+      await session.respond({ prompt, toolResults: [], signal, structuredOutput }),
+    );
   } catch (error) {
     throw new ProviderCallError(error);
   }
@@ -584,7 +829,8 @@ function windowPrompt(bundle: EvidenceBundle, originOrdinal: number, windowIndex
     `Bundle digest: ${bundle.contentDigest}`,
     `Anonymous canonical origin ordinal: ${String(originOrdinal + 1)}`,
     `Window ID: ${window.windowId}`,
-    "Return strict JSON: {schemaVersion:1,windowId,candidates:[{summary,evidence:[EvidenceReference,...]}]}.",
+    "Return strict JSON: {schemaVersion:1,windowId,candidates:[{summary,evidenceIds:[string,...]}]}.",
+    "Every evidenceIds entry must copy an exact evidenceId from this window; never return reference objects or partial IDs.",
     `Evidence: ${canonicalJson(items)}`,
   ].join("\n\n");
 }
@@ -592,7 +838,7 @@ function windowPrompt(bundle: EvidenceBundle, originOrdinal: number, windowIndex
 function integrationPrompt(
   bundle: EvidenceBundle,
   originOrdinal: number,
-  candidates: readonly CandidateWindowOutput[],
+  candidates: readonly ProviderCandidateWindowOutput[],
 ): string {
   return [
     "PALIMPSEST_PROCESS_REVIEW_INTEGRATION_V1",
@@ -603,7 +849,7 @@ function integrationPrompt(
     `Communication mode: ${bundle.communicationMode}`,
     `Bundle digest: ${bundle.contentDigest}`,
     `Rubric: ${canonicalJson(EPISTEMIC_PROCESS_RUBRIC)}`,
-    "Return only the strict ReviewerOutput JSON object with every rubric dimension in the given order.",
+    "Return the schema-constrained review object. The dimensions object is keyed by rubric dimension ID; do not repeat dimension IDs or ledgers inside its values. Every citation field ends in Ids and must contain exact evidenceId strings from the candidates, never reference objects.",
     `Candidates: ${canonicalJson(candidates)}`,
   ].join("\n\n");
 }
@@ -645,7 +891,7 @@ async function runJudge(
     for (const [originIndex, originId] of originIds.entries()) {
       const surface = reviewSurfaceForOrigin(bundle, record, originId);
       const windows: { windowId: string; turn: RetainedTurn }[] = [];
-      const candidates: CandidateWindowOutput[] = [];
+      const candidates: ProviderCandidateWindowOutput[] = [];
       origins.push({ originId, windows });
       await onTranscript(transcript());
       for (const [windowIndex, window] of surface.windows.entries()) {
@@ -654,6 +900,11 @@ async function runJudge(
           adapter,
           `agent-${String(judgeIndex + 1)}` as AgentId,
           windowPrompt(surface, originIndex, windowIndex),
+          {
+            name: "palimpsest_process_window",
+            description: "Observable process-review candidates with exact evidence IDs.",
+            schema: candidateOutputSchema(window.windowId, window.evidenceIds),
+          },
         );
         windows.push({ windowId: window.windowId, turn });
         await onTranscript(transcript());
@@ -666,12 +917,23 @@ async function runJudge(
         adapter,
         `agent-${String(judgeIndex + 1)}` as AgentId,
         integrationPrompt(surface, originIndex, candidates),
+        {
+          name: "palimpsest_process_review",
+          description: "A complete outcome-blinded process review using candidate evidence IDs.",
+          schema: integrationOutputSchema(surface, candidates),
+        },
       );
       origins[originIndex] = { originId, windows, integration };
       await onTranscript(transcript());
       retainUsage(integration);
       const output = validateReviewerOutputAgainstBundle(
-        decodeReviewerOutput(JSON.parse(integration.response) as unknown),
+        decodeReviewerOutput(
+          resolveReviewerEvidenceIds(
+            JSON.parse(integration.response) as unknown,
+            candidates,
+            surface,
+          ),
+        ),
         surface,
       );
       reviewedOrigins.push({ originId, output });

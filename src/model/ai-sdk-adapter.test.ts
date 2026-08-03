@@ -35,6 +35,76 @@ function adapterWith(
 }
 
 describe("AI SDK provider", () => {
+  it("uses provider-native structured output while retaining response text and usage", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content: [{ type: "text", text: '{"schemaVersion":1,"value":"ok"}' }],
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(7, 3),
+        warnings: [],
+      },
+    });
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: { schemaVersion: { const: 1 }, value: { type: "string" } },
+      required: ["schemaVersion", "value"],
+    } as const;
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        description: "Synthetic structured response.",
+        schema,
+      },
+    });
+
+    expect(turn.finalResponse).toBe('{"schemaVersion":1,"value":"ok"}');
+    expect(turn.usage).toMatchObject({ inputTokens: 7, outputTokens: 3 });
+    expect(model.doGenerateCalls[0]!.responseFormat).toEqual({
+      type: "json",
+      name: "structured_test",
+      description: "Synthetic structured response.",
+      schema,
+    });
+  });
+
+  it.each([
+    ["malformed JSON", [{ type: "text" as const, text: "not-json" }]],
+    ["empty output", []],
+  ])("rejects %s when structured output cannot be parsed", async (_name, content) => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content,
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(1, 1),
+        warnings: [],
+      },
+    });
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    await expect(
+      session.respond({
+        prompt: "return the object",
+        toolResults: [],
+        signal: new AbortController().signal,
+        structuredOutput: {
+          name: "structured_test",
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: { value: { type: "string" } },
+            required: ["value"],
+          },
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
   it("retains exact OpenAI Responses reasoning summary items separately from normalized text", async () => {
     const model = new MockLanguageModelV4({
       provider: "openai.responses",
@@ -356,6 +426,7 @@ describe("AI SDK provider", () => {
       seed: 9,
       providerOptions: { mock: { mode: "research" } },
     });
+    expect(model.doGenerateCalls[0]!.responseFormat).toBeUndefined();
   });
 
   it.each([

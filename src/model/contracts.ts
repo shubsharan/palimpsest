@@ -145,10 +145,17 @@ export interface ModelTurn {
   responseIdentity?: ModelResponseIdentity;
 }
 
+export interface StructuredOutputRequest {
+  readonly name: string;
+  readonly description?: string;
+  readonly schema: JsonObject;
+}
+
 export interface ModelRequest {
   prompt?: string;
   toolResults: readonly ModelToolResult[];
   signal: AbortSignal;
+  structuredOutput?: StructuredOutputRequest;
 }
 
 export interface ModelSessionContext {

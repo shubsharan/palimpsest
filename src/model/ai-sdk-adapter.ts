@@ -5,6 +5,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   generateText,
   jsonSchema,
+  Output,
   tool,
   wrapLanguageModel,
   type JSONValue as AiJsonValue,
@@ -325,7 +326,19 @@ export class AiSdkModelAdapter implements ModelAdapter {
             ...(this.#providerOptions === undefined
               ? {}
               : { providerOptions: this.#providerOptions }),
+            ...(request.structuredOutput === undefined
+              ? {}
+              : {
+                  output: Output.object({
+                    schema: jsonSchema({ ...request.structuredOutput.schema }),
+                    name: request.structuredOutput.name,
+                    ...(request.structuredOutput.description === undefined
+                      ? {}
+                      : { description: request.structuredOutput.description }),
+                  }),
+                }),
           });
+          if (request.structuredOutput !== undefined) void result.output;
           const nextPending = new Map<string, string>();
           const toolCalls: ModelToolCall[] = result.toolCalls.map((call) => {
             if (nextPending.has(call.toolCallId)) {
