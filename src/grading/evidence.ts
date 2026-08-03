@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import { canonicalJson, contentDigest } from "../canonical.js";
 import { loadFixturePackage } from "../fixture/package.js";
+import { GitCommandError, runGitCommand, type GitRepository } from "../git.js";
 import type { JsonValue } from "../model/contracts.js";
 import { loadRunRecord, type RunRecord } from "../run/record.js";
 import { verifyTree } from "../seal.js";
@@ -151,6 +152,37 @@ function sanitize(value: unknown, sourcePath: string, context: EvidenceBuildCont
   return result;
 }
 
+function evidenceActor(event: ObservationEvent, actorAliases: ReadonlyMap<string, string>): string {
+  if (event.kind === "team.message") {
+    const data =
+      typeof event.data === "object" && event.data !== null && !Array.isArray(event.data)
+        ? (event.data as Record<string, unknown>)
+        : undefined;
+    const author = typeof data?.author === "string" ? data.author : undefined;
+    if (author !== undefined && event.agentId !== undefined && author !== event.agentId) {
+      throw new Error(
+        `Trace event ${String(event.sequence)} has conflicting team-message authors.`,
+      );
+    }
+    const actor = author ?? event.agentId;
+    if (actor === undefined) {
+      throw new Error(`Trace event ${String(event.sequence)} team.message has no author.`);
+    }
+    const alias = actorAliases.get(actor);
+    if (alias === undefined) {
+      throw new Error(
+        `Trace event ${String(event.sequence)} names an unknown team-message author.`,
+      );
+    }
+    return alias;
+  }
+  if (event.agentId === undefined) return "runner";
+  const alias = actorAliases.get(event.agentId);
+  if (alias === undefined)
+    throw new Error(`Trace event ${String(event.sequence)} names an unknown actor.`);
+  return alias;
+}
+
 function eventData(event: ObservationEvent, context: EvidenceBuildContext): JsonValue {
   const sourcePath = `trace.jsonl#/${String(event.sequence)}/data`;
   if (event.kind === "run.configured") {
@@ -277,6 +309,35 @@ function windows(items: readonly EvidenceItem[]) {
   }
   flush();
   return result;
+}
+
+async function canonicalSolverSource(
+  repository: GitRepository,
+  commit: string,
+): Promise<{ readonly source: string; readonly byteCount: number } | undefined> {
+  let size: number;
+  try {
+    const result = await runGitCommand(["cat-file", "-s", `${commit}:solver.py`], {
+      cwd: repository.path,
+    });
+    size = Number(result.stdout.trim());
+  } catch (error) {
+    if (error instanceof GitCommandError) return undefined;
+    throw error;
+  }
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new Error(
+      `Frozen Git returned an invalid solver.py size for ${repository.repositoryId}.`,
+    );
+  }
+  if (size > EVIDENCE_EXCERPT_BYTES) return { source: "", byteCount: size };
+  const result = await runGitCommand(["show", `${commit}:solver.py`], { cwd: repository.path });
+  if (Buffer.byteLength(result.stdout, "utf8") !== size) {
+    throw new Error(
+      `Frozen Git returned inconsistent solver.py bytes for ${repository.repositoryId}.`,
+    );
+  }
+  return { source: result.stdout, byteCount: size };
 }
 
 function identityValues(record: RunRecord): readonly string[] {
@@ -411,9 +472,7 @@ export async function compileEvidence(options: CompileEvidenceOptions): Promise<
       );
       continue;
     }
-    const actorId = event.agentId === undefined ? "runner" : actorAliases.get(event.agentId);
-    if (actorId === undefined)
-      throw new Error(`Trace event ${String(event.sequence)} names an unknown actor.`);
+    const actorId = evidenceActor(event, actorAliases);
     items.push(
       item({
         atMs: event.atMs,
@@ -486,6 +545,74 @@ export async function compileEvidence(options: CompileEvidenceOptions): Promise<
         referenceKey: `git:${origin.originId}:${origin.mainCommit ?? "missing"}`,
         sourcePath: `run.json#/topology/origins/${String(index)}`,
         context,
+      }),
+    );
+    const solverPath = `git:${originAliases.get(origin.originId)!}:${origin.mainCommit ?? "missing"}:solver.py`;
+    if (origin.mainCommit === null) {
+      omission(
+        context,
+        solverPath,
+        { originId: originAliases.get(origin.originId), path: "solver.py" },
+        "canonical main commit is unavailable",
+      );
+      continue;
+    }
+    const repository = loaded.topology.repositories.find(
+      ({ repositoryId }) => repositoryId === origin.originId,
+    );
+    if (repository === undefined) {
+      throw new Error(`Frozen repository is missing for canonical origin ${origin.originId}.`);
+    }
+    const solver = await canonicalSolverSource(repository, origin.mainCommit);
+    if (solver === undefined) {
+      omission(
+        context,
+        solverPath,
+        {
+          originId: originAliases.get(origin.originId),
+          commit: origin.mainCommit,
+          path: "solver.py",
+        },
+        "canonical solver.py is unavailable at the frozen main commit",
+      );
+      continue;
+    }
+    if (solver.byteCount > EVIDENCE_EXCERPT_BYTES) {
+      omission(
+        context,
+        solverPath,
+        {
+          originId: originAliases.get(origin.originId),
+          commit: origin.mainCommit,
+          path: "solver.py",
+          byteCount: solver.byteCount,
+        },
+        `canonical solver.py exceeded ${String(EVIDENCE_EXCERPT_BYTES)} bytes`,
+      );
+      continue;
+    }
+    finalAtMs += 1;
+    const sanitizedSource = sanitizeText(solver.source, solverPath, context);
+    const outcomeRedacted = sanitizedSource === "[redacted-outcome-content]";
+    items.push(
+      item({
+        atMs: finalAtMs,
+        actorId: "runner",
+        kind: "git.solver-snapshot",
+        content: sanitizedSource,
+        reference: {
+          source: "git",
+          originId: originAliases.get(origin.originId)!,
+          commit: origin.mainCommit,
+          path: "solver.py",
+          role: "context",
+        },
+        referenceKey: `git:${origin.originId}:${origin.mainCommit}:solver.py`,
+        sourcePath: solverPath,
+        context,
+        ...(outcomeRedacted
+          ? { metadataOnlyReason: "canonical solver contained outcome-bearing content" }
+          : {}),
       }),
     );
   }

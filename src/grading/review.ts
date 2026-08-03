@@ -1,8 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
-
-import { parse } from "yaml";
 
 import { canonicalJson, contentDigest } from "../canonical.js";
 import type { GitRepositoryId } from "../git.js";
@@ -38,6 +36,11 @@ import {
   type ReviewerOutput,
   type RunScorecard,
 } from "./contracts.js";
+import {
+  loadGradingConfigurationSource,
+  type GradingConfiguration,
+  type OfficialProviderFamily,
+} from "./config.js";
 import { assertOutcomeBlindEvidenceBundle, compileEvidence } from "./evidence.js";
 import {
   createMeasureRequest,
@@ -47,31 +50,20 @@ import {
 } from "./grade.js";
 import { EPISTEMIC_PROCESS_RUBRIC, EPISTEMIC_PROCESS_RUBRIC_VERSION } from "./rubric.js";
 
+export {
+  decodeGradingConfiguration,
+  gradingConfigurationDigest,
+  loadGradingConfig,
+  type GradingConfiguration,
+  type GradingModelProfile,
+  type GradingReviewerProfile,
+} from "./config.js";
+
 const OFFICIAL_CREDENTIAL_ENV = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
 } as const satisfies Readonly<Record<Exclude<ProviderDriver, "openai-compatible">, string>>;
-
-type OfficialProviderFamily = keyof typeof OFFICIAL_CREDENTIAL_ENV;
-
-export interface GradingModelProfile {
-  readonly provider: OfficialProviderFamily;
-  readonly model: string;
-}
-
-export interface GradingReviewerProfile {
-  readonly profile: string;
-  readonly tokenLimit: number;
-  readonly maxOutputTokens: number;
-}
-
-export interface GradingConfiguration {
-  readonly schemaVersion: 1;
-  readonly rubric: typeof EPISTEMIC_PROCESS_RUBRIC_VERSION;
-  readonly models: Readonly<Record<string, GradingModelProfile>>;
-  readonly reviewers: readonly [GradingReviewerProfile, GradingReviewerProfile];
-}
 
 export interface ReviewAdapterOptions {
   readonly profileId: string;
@@ -203,122 +195,6 @@ function nonEmptyText(value: unknown, name: string): string {
     throw new Error(`${name} must be a non-empty string.`);
   }
   return value;
-}
-
-function controlledId(value: unknown, name: string): string {
-  const result = nonEmptyText(value, name);
-  if (!/^[a-z0-9][a-z0-9._-]*$/.test(result)) {
-    throw new Error(`${name} must be a controlled identifier.`);
-  }
-  return result;
-}
-
-function positiveInteger(value: unknown, name: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
-    throw new Error(`${name} must be a positive safe integer.`);
-  }
-  return value as number;
-}
-
-function officialProvider(value: unknown, name: string): OfficialProviderFamily {
-  if (value !== "openai" && value !== "anthropic" && value !== "google") {
-    throw new Error(`${name} must name an official provider family.`);
-  }
-  return value;
-}
-
-export function decodeGradingConfiguration(value: unknown): GradingConfiguration {
-  const decoded = exact(
-    value,
-    ["schemaVersion", "rubric", "models", "reviewers"],
-    "Grading config",
-  );
-  if (decoded.schemaVersion !== 1) throw new Error("Grading config schemaVersion is unsupported.");
-  if (decoded.rubric !== EPISTEMIC_PROCESS_RUBRIC_VERSION) {
-    throw new Error(`Unsupported grading rubric ${String(decoded.rubric)}.`);
-  }
-
-  const modelsInput = object(decoded.models, "Grading config models");
-  if (Object.keys(modelsInput).length !== 2) {
-    throw new Error("Grading config models must contain exactly the two reviewer profiles.");
-  }
-  const models = Object.fromEntries(
-    Object.entries(modelsInput).map(([profileId, value]) => {
-      controlledId(profileId, "Grading model profile ID");
-      const model = exact(value, ["provider", "model"], `Grading model ${profileId}`);
-      return [
-        profileId,
-        {
-          provider: officialProvider(model.provider, `Grading model ${profileId}.provider`),
-          model: nonEmptyText(model.model, `Grading model ${profileId}.model`),
-        },
-      ];
-    }),
-  );
-
-  if (!Array.isArray(decoded.reviewers) || decoded.reviewers.length !== 2) {
-    throw new Error("Grading config reviewers must contain exactly two entries.");
-  }
-  const reviewers = decoded.reviewers.map((value, index): GradingReviewerProfile => {
-    const reviewer = exact(
-      value,
-      ["profile", "tokenLimit", "maxOutputTokens"],
-      `Grading reviewer ${String(index + 1)}`,
-    );
-    const profile = controlledId(reviewer.profile, `Grading reviewer ${String(index + 1)}.profile`);
-    if (models[profile] === undefined) {
-      throw new Error(
-        `Grading reviewer ${String(index + 1)} references unknown profile ${profile}.`,
-      );
-    }
-    return {
-      profile,
-      tokenLimit: positiveInteger(
-        reviewer.tokenLimit,
-        `Grading reviewer ${String(index + 1)}.tokenLimit`,
-      ),
-      maxOutputTokens: positiveInteger(
-        reviewer.maxOutputTokens,
-        `Grading reviewer ${String(index + 1)}.maxOutputTokens`,
-      ),
-    };
-  }) as [GradingReviewerProfile, GradingReviewerProfile];
-  if (reviewers[0].profile === reviewers[1].profile) {
-    throw new Error("Grading reviewers must reference distinct profiles.");
-  }
-  if (models[reviewers[0].profile]!.provider === models[reviewers[1].profile]!.provider) {
-    throw new Error("Grading reviewers must use distinct provider families.");
-  }
-  if (
-    Object.keys(models).some(
-      (profile) => !reviewers.some((reviewer) => reviewer.profile === profile),
-    )
-  ) {
-    throw new Error("Grading config models must contain only referenced reviewer profiles.");
-  }
-
-  return { schemaVersion: 1, rubric: EPISTEMIC_PROCESS_RUBRIC_VERSION, models, reviewers };
-}
-
-export async function loadGradingConfig(path: string): Promise<GradingConfiguration> {
-  const source = await readFile(resolve(path), "utf8");
-  let value: unknown;
-  try {
-    value = parse(source, { maxAliasCount: 0, uniqueKeys: true });
-  } catch (error) {
-    throw new Error(
-      `Grading config is not valid YAML: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  return decodeGradingConfiguration(value);
-}
-
-export function gradingConfigurationDigest(source: string | Buffer): string {
-  const configurationFileDigest = createHash("sha256").update(source).digest("hex");
-  return contentDigest({
-    graderVersion: EPISTEMIC_PROCESS_RUBRIC_VERSION,
-    configurationFileDigest,
-  });
 }
 
 function credentialPreflight(
@@ -1205,10 +1081,9 @@ export async function reviewRun(
   if (options.allowSpend !== true && options.allowSpend !== "true") {
     throw new Error("Qualitative review requires literal --allow-spend true.");
   }
-  const config = await loadGradingConfig(options.configPath);
-  const configurationDigest = gradingConfigurationDigest(
-    await readFile(resolve(options.configPath)),
-  );
+  const loadedConfiguration = await loadGradingConfigurationSource(options.configPath);
+  const config = loadedConfiguration.config;
+  const configurationDigest = loadedConfiguration.digest;
   const loaded = await loadRunRecord(options.projectRoot, options.runRoot);
   if (loaded.record.status !== "completed")
     throw new Error("Qualitative review requires a completed run.");

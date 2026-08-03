@@ -8,7 +8,10 @@ import {
   createGitEnvironment,
   freezeGitEnvironment,
   listRemoteRefs,
+  runGit,
   type GitCommunicationMode,
+  type GitEnvironment,
+  type GitRepositoryId,
 } from "../../src/git.js";
 import type { AgentId, JsonValue, ModelBinding } from "../../src/model/contracts.js";
 import {
@@ -40,6 +43,10 @@ export interface CompletedGradingFixtureOptions {
   readonly agentIds?: readonly AgentId[];
   readonly observations?: readonly GradingFixtureObservation[];
   readonly evaluationStatus?: RunEvaluation["status"];
+  readonly publishedFiles?: Readonly<
+    Partial<Record<GitRepositoryId, Readonly<Record<string, string | null>>>>
+  >;
+  readonly originsWithoutMain?: readonly GitRepositoryId[];
 }
 
 export interface GradingRunFixture {
@@ -144,6 +151,36 @@ function defaultObservations(agentIds: readonly AgentId[]): GradingFixtureObserv
   ];
 }
 
+async function publishFixtureFiles(
+  environment: GitEnvironment,
+  filesByOrigin: NonNullable<CompletedGradingFixtureOptions["publishedFiles"]>,
+): Promise<void> {
+  await Promise.all(
+    environment.repositories.map(async (repository) => {
+      const files = filesByOrigin[repository.repositoryId];
+      if (files === undefined) return;
+      const workspace = environment.workspaces.find(
+        ({ repositoryId }) => repositoryId === repository.repositoryId,
+      );
+      if (workspace === undefined) {
+        throw new Error(`Fixture workspace is missing for ${repository.repositoryId}.`);
+      }
+      for (const [path, source] of Object.entries(files)) {
+        if (source === null) {
+          await runGit(["rm", "--ignore-unmatch", path], workspace.path);
+        } else {
+          const target = join(workspace.path, path);
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(target, source, "utf8");
+        }
+      }
+      await runGit(["add", "-A"], workspace.path);
+      await runGit(["commit", "-m", "Publish grading fixture files"], workspace.path);
+      await runGit(["push", repository.path, "HEAD:main"], workspace.path);
+    }),
+  );
+}
+
 export async function createCompletedRunFixture(
   options: CompletedGradingFixtureOptions = {},
 ): Promise<GradingRunFixture & { readonly record: RunRecord }> {
@@ -165,6 +202,22 @@ export async function createCompletedRunFixture(
     communicationMode,
     agentIds,
   );
+  if (options.publishedFiles !== undefined) {
+    await publishFixtureFiles(activeGit, options.publishedFiles);
+  }
+  if (options.originsWithoutMain !== undefined) {
+    await Promise.all(
+      options.originsWithoutMain.map(async (originId) => {
+        const repository = activeGit.repositories.find(
+          ({ repositoryId }) => repositoryId === originId,
+        );
+        if (repository === undefined) {
+          throw new Error(`Fixture repository is missing for ${originId}.`);
+        }
+        await runGit(["update-ref", "-d", "refs/heads/main"], repository.path);
+      }),
+    );
+  }
   const frozen = await freezeGitEnvironment(activeGit, join(runRoot, "frozen"));
   const assignments = Object.fromEntries(
     agentIds.map((agentId) => [agentId, "synthetic-fixture"]),

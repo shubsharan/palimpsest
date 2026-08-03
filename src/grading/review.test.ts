@@ -219,8 +219,12 @@ async function preparedRun(communicationMode: "shared" | "isolated" = "shared") 
             },
             {
               kind: "team.message",
-              agentId: "agent-1",
-              data: { text: "Try the competing mapping against the next repeated token." },
+              data: {
+                sequence: 1,
+                author: "agent-1",
+                message: "Try the competing mapping against the next repeated token.",
+                occurredAtMs: 2,
+              },
             },
             {
               kind: "model.response",

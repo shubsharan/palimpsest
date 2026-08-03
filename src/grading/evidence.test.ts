@@ -103,6 +103,145 @@ describe("reviewer-safe evidence compilation", () => {
       ]),
     );
     expect(JSON.stringify(bundle)).not.toMatch(/agent-[12]/);
+    expect(bundle.items.filter(({ kind }) => kind === "git.solver-snapshot")).toHaveLength(2);
+  });
+
+  it("attributes production and legacy team messages to their observable authors", async () => {
+    const fixture = await createCompletedRunFixture({
+      observations: [
+        {
+          kind: "team.message",
+          atMs: 1,
+          data: {
+            sequence: 1,
+            author: "agent-1",
+            message: "Try the competing mapping.",
+            occurredAtMs: 1,
+          },
+        },
+        {
+          kind: "team.message",
+          agentId: "agent-2",
+          atMs: 2,
+          data: { message: "Legacy attributed message." },
+        },
+      ],
+    });
+
+    const { bundle } = await compileEvidence({ root: fixture.root, runRoot: fixture.runRoot });
+    const messages = bundle.items.filter(({ kind }) => kind === "team.message");
+
+    expect(messages.map(({ actorId }) => actorId)).toEqual(["actor-1", "actor-2"]);
+    expect(messages[0]!.content).toMatchObject({ author: "actor-1" });
+  });
+
+  it.each([
+    [
+      "conflicting",
+      { kind: "team.message", agentId: "agent-2", data: { author: "agent-1", message: "x" } },
+      /conflicting team-message authors/i,
+    ],
+    [
+      "unknown",
+      { kind: "team.message", data: { author: "agent-9", message: "x" } },
+      /unknown team-message author/i,
+    ],
+  ] as const)("rejects %s team-message authors", async (_name, observation, expected) => {
+    const fixture = await createCompletedRunFixture({ observations: [observation] });
+
+    await expect(compileEvidence({ root: fixture.root, runRoot: fixture.runRoot })).rejects.toThrow(
+      expected,
+    );
+  });
+
+  it("includes only the bounded, blinded canonical solver with a stable Git citation", async () => {
+    const fixture = await createCompletedRunFixture({
+      publishedFiles: {
+        shared: {
+          "solver.py":
+            'MODEL = "synthetic-review-neutral-model"\nprint("canonical solver evidence")\n',
+          "unrelated-notes.txt": "must never enter reviewer evidence\n",
+        },
+      },
+    });
+
+    const first = await compileEvidence({ root: fixture.root, runRoot: fixture.runRoot });
+    const second = await compileEvidence({ root: fixture.root, runRoot: fixture.runRoot });
+    const solver = first.bundle.items.find(({ kind }) => kind === "git.solver-snapshot")!;
+    const encoded = JSON.stringify(first.bundle);
+
+    expect(solver).toEqual(
+      second.bundle.items.find(({ evidenceId }) => evidenceId === solver.evidenceId),
+    );
+    expect(solver.actorId).toBe("runner");
+    expect(solver.content).toContain("canonical solver evidence");
+    expect(solver.content).toContain("[redacted-identity]");
+    expect(solver.reference).toEqual({
+      source: "git",
+      originId: "origin-1",
+      commit: fixture.record.topology.origins[0]!.mainCommit,
+      path: "solver.py",
+      excerptDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      role: "context",
+    });
+    expect(encoded).not.toContain("synthetic-review-neutral-model");
+    expect(encoded).not.toContain("must never enter reviewer evidence");
+  });
+
+  it("records explicit canonical solver omissions for absent main, missing, oversized, and outcome-bearing content", async () => {
+    const [absentMain, missing, oversized, outcome] = await Promise.all([
+      createCompletedRunFixture({ originsWithoutMain: ["shared"] }),
+      createCompletedRunFixture({ publishedFiles: { shared: { "solver.py": null } } }),
+      createCompletedRunFixture({
+        publishedFiles: { shared: { "solver.py": "x".repeat(EVIDENCE_EXCERPT_BYTES + 1) } },
+      }),
+      createCompletedRunFixture({
+        publishedFiles: { shared: { "solver.py": 'print("synthetic grading fixture")\n' } },
+      }),
+    ]);
+
+    const [absentMainBundle, missingBundle, oversizedBundle, outcomeBundle] = await Promise.all([
+      compileEvidence({ root: absentMain.root, runRoot: absentMain.runRoot }),
+      compileEvidence({ root: missing.root, runRoot: missing.runRoot }),
+      compileEvidence({ root: oversized.root, runRoot: oversized.runRoot }),
+      compileEvidence({ root: outcome.root, runRoot: outcome.runRoot }),
+    ]);
+
+    expect(absentMainBundle.bundle.items.some(({ kind }) => kind === "git.solver-snapshot")).toBe(
+      false,
+    );
+    expect(absentMainBundle.bundle.omissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: expect.stringMatching(/main commit is unavailable/) }),
+      ]),
+    );
+    expect(missingBundle.bundle.items.some(({ kind }) => kind === "git.solver-snapshot")).toBe(
+      false,
+    );
+    expect(missingBundle.bundle.omissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: expect.stringMatching(/unavailable/) }),
+      ]),
+    );
+    expect(oversizedBundle.bundle.items.some(({ kind }) => kind === "git.solver-snapshot")).toBe(
+      false,
+    );
+    expect(oversizedBundle.bundle.omissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: expect.stringMatching(/exceeded/) }),
+      ]),
+    );
+    const redacted = outcomeBundle.bundle.items.find(({ kind }) => kind === "git.solver-snapshot")!;
+    expect(redacted).toMatchObject({
+      content: "[redacted-outcome-content]",
+      availability: "metadata-only",
+      omissionReason: expect.stringMatching(/outcome-bearing/),
+    });
+    expect(outcomeBundle.bundle.omissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: expect.stringMatching(/outcome content/) }),
+      ]),
+    );
   });
 
   it("rejects a fixture package whose frozen bytes no longer match the RunRecord digest", async () => {

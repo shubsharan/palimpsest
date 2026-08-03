@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { canonicalJson, contentDigest } from "../canonical.js";
@@ -20,6 +20,7 @@ import {
   type EvidenceReference,
   type QuantitativeMeasure,
 } from "./contracts.js";
+import { loadGradingConfigurationSource } from "./config.js";
 import { compileEvidence } from "./evidence.js";
 
 export const GRADER_VERSION = "epistemic-process-v1";
@@ -355,11 +356,7 @@ export async function gradeRun(
   const runRoot = resolve(options.runRoot);
   const projectRoot = resolve(options.projectRoot ?? ".");
   const configurationPath = resolve(projectRoot, options.configPath ?? DEFAULT_CONFIGURATION_PATH);
-  const configurationBytes = await readFile(configurationPath);
-  const configurationDigest = contentDigest({
-    graderVersion: GRADER_VERSION,
-    configurationFileDigest: sha256(configurationBytes),
-  });
+  const { digest: configurationDigest } = await loadGradingConfigurationSource(configurationPath);
   const { bundle, record } = await compileEvidence({ root, runRoot });
   const duplicate = duplicatePerformance(record.analyses, bundle.sourceDigest, configurationDigest);
   if (duplicate !== undefined) {

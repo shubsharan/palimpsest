@@ -1,4 +1,4 @@
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,62 @@ import { EVIDENCE_WINDOW_BYTES } from "./evidence.js";
 import { gradeRun } from "./grade.js";
 
 describe("provider-free performance grading", () => {
+  it.each([
+    ["malformed YAML", "models: [\n", /valid YAML/i],
+    [
+      "unknown fields",
+      "schemaVersion: 1\nrubric: epistemic-process-v1\nmodels: {}\nreviewers: []\nextra: true\n",
+      /unknown or missing fields/i,
+    ],
+    [
+      "duplicate profiles",
+      "schemaVersion: 1\nrubric: epistemic-process-v1\nmodels:\n  first:\n    provider: openai\n    model: model-a\n  second:\n    provider: anthropic\n    model: model-b\nreviewers:\n  - profile: first\n    tokenLimit: 100\n    maxOutputTokens: 10\n  - profile: first\n    tokenLimit: 100\n    maxOutputTokens: 10\n",
+      /distinct profiles/i,
+    ],
+    [
+      "same-family reviewers",
+      "schemaVersion: 1\nrubric: epistemic-process-v1\nmodels:\n  first:\n    provider: openai\n    model: model-a\n  second:\n    provider: openai\n    model: model-b\nreviewers:\n  - profile: first\n    tokenLimit: 100\n    maxOutputTokens: 10\n  - profile: second\n    tokenLimit: 100\n    maxOutputTokens: 10\n",
+      /distinct provider families/i,
+    ],
+    [
+      "invalid limits",
+      "schemaVersion: 1\nrubric: epistemic-process-v1\nmodels:\n  first:\n    provider: openai\n    model: model-a\n  second:\n    provider: anthropic\n    model: model-b\nreviewers:\n  - profile: first\n    tokenLimit: 0\n    maxOutputTokens: 10\n  - profile: second\n    tokenLimit: 100\n    maxOutputTokens: 10\n",
+      /tokenLimit.*positive safe integer/i,
+    ],
+  ] as const)("rejects %s before grading work begins", async (_name, source, expected) => {
+    const fixture = await createCompletedRunFixture();
+    const configPath = join(fixture.root, "invalid-grading.yaml");
+    await writeFile(configPath, source, "utf8");
+    await writeFile(fixture.tracePath, "not-json\n", "utf8");
+    let invoked = false;
+
+    await expect(
+      gradeRun(
+        {
+          root: fixture.root,
+          projectRoot: process.cwd(),
+          runRoot: fixture.runRoot,
+          configPath,
+        },
+        {
+          invokePython: async () => {
+            invoked = true;
+            return {};
+          },
+        },
+      ),
+    ).rejects.toThrow(expected);
+
+    expect(invoked).toBe(false);
+    await expect(access(join(fixture.runRoot, "grading"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    const record = decodeRunRecord(
+      JSON.parse(await readFile(join(fixture.runRoot, "run.json"), "utf8")),
+    );
+    expect(record.analyses).toEqual([]);
+  });
+
   it("publishes immutable digested details and appends one performance analysis", async () => {
     const fixture = await createSharedRunFixture();
     const traceBefore = await readFile(fixture.tracePath);
