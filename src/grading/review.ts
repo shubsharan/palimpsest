@@ -119,9 +119,9 @@ export interface ReviewRunFlags {
   readonly resume?: string;
 }
 
-export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v1" as const;
-export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v1" as const;
-export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v1" as const;
+export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v2" as const;
+export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v2" as const;
+export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v2" as const;
 
 interface RetainedTurn {
   readonly response: string;
@@ -247,7 +247,7 @@ interface PacketReview {
 
 export interface PacketDimensionOutput {
   readonly state: "rated" | "unobservable" | "not-applicable";
-  readonly rating?: 0 | 1 | 2 | 3 | 4;
+  readonly rating: 0 | 1 | 2 | 3 | 4 | null;
   readonly rationale: string;
   readonly evidenceIds: readonly string[];
   readonly counterevidenceIds: readonly string[];
@@ -601,17 +601,23 @@ function decodePacketReviewerOutput(
   const resolvedDimensions = rubricDimensions.map(({ dimensionId, ledger }, index) => {
     const name = `Packet reviewer dimension ${String(index + 1)}`;
     const candidate = object(dimensions[dimensionId], name);
-    const common = ["state", "rationale", "evidenceIds", "counterevidenceIds", "confidence"];
-    const item =
-      candidate.state === "rated"
-        ? exact(candidate, [...common, "rating"], name)
-        : exact(candidate, common, name);
+    const item = exact(
+      candidate,
+      ["state", "rating", "rationale", "evidenceIds", "counterevidenceIds", "confidence"],
+      name,
+    );
+    if (item.state === "rated" && !Number.isInteger(item.rating)) {
+      throw new Error(`${name}.rating must be an integer when rated.`);
+    }
+    if (item.state !== "rated" && item.rating !== null) {
+      throw new Error(`${name}.rating must be null when not rated.`);
+    }
     const resolved = decodeDimensionReview(
       {
         dimensionId,
         ledger,
         state: item.state,
-        ...(item.rating === undefined ? {} : { rating: item.rating }),
+        ...(Number.isInteger(item.rating) ? { rating: item.rating } : {}),
         rationale: item.rationale,
         evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
         counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
@@ -682,6 +688,55 @@ function decodePacketReviewerOutput(
   };
 }
 
+function normalizeEpisodeStages(review: PacketReview, bundle: EvidenceBundle): PacketReview {
+  const itemsByReference = new Map(
+    bundle.items.map((item) => [referenceLocator(item.reference), item] as const),
+  );
+  const cautions = [...review.cautions];
+  const episodes = review.episodes.map((episode) => {
+    const transmissions = episode.transmission.map((reference) =>
+      itemsByReference.get(referenceLocator(reference)),
+    );
+    const validUptake = episode.uptake.filter((uptake) => {
+      const uptakeItem = itemsByReference.get(referenceLocator(uptake));
+      return (
+        uptakeItem !== undefined &&
+        transmissions.some(
+          (transmission) =>
+            transmission !== undefined &&
+            transmission.actorId !== uptakeItem.actorId &&
+            transmission.atMs <= uptakeItem.atMs,
+        )
+      );
+    });
+    const latestUptake = validUptake.reduce<number | undefined>((latest, uptake) => {
+      const atMs = itemsByReference.get(referenceLocator(uptake))!.atMs;
+      return latest === undefined ? atMs : Math.max(latest, atMs);
+    }, undefined);
+    const validIntegration = episode.integration.filter((integration) => {
+      const integrationItem = itemsByReference.get(referenceLocator(integration));
+      return (
+        latestUptake !== undefined &&
+        integrationItem !== undefined &&
+        integrationItem.atMs >= latestUptake
+      );
+    });
+    const removedUptake = episode.uptake.length - validUptake.length;
+    const removedIntegration = episode.integration.length - validIntegration.length;
+    if (removedUptake > 0 || removedIntegration > 0) {
+      cautions.push(
+        `Deterministic assembly omitted ${String(removedUptake)} unsupported uptake and ${String(removedIntegration)} unsupported integration citation(s) from episode ${episode.episodeId}.`,
+      );
+    }
+    return {
+      ...episode,
+      uptake: validUptake,
+      integration: validIntegration,
+    };
+  });
+  return { ...review, episodes, cautions };
+}
+
 function strictObjectSchema(
   properties: Readonly<Record<string, JsonObject>>,
   required: readonly string[] = Object.keys(properties),
@@ -694,53 +749,23 @@ function strictObjectSchema(
   };
 }
 
-function evidenceIdDefinitions(evidenceIds: readonly string[]): JsonObject {
-  return {
-    citationId: {
-      type: "string",
-      ...(evidenceIds.length === 0 ? { const: "__no_valid_evidence_id__" } : { enum: evidenceIds }),
-    },
-  };
-}
-
 function citationIdsSchema(): JsonObject {
   return {
     type: "array",
-    items: { $ref: "#/$defs/citationId" },
+    items: { type: "string", pattern: "^c[0-9]{3}$" },
   };
 }
 
-function dimensionOutputSchema(
-  ledger: "epistemic" | "social" | "instrumental",
-  communicationMode: EvidenceBundle["communicationMode"],
-): JsonObject {
-  const common = {
+function dimensionOutputSchema(ledger: "epistemic" | "social" | "instrumental"): JsonObject {
+  void ledger;
+  return strictObjectSchema({
+    state: { type: "string", enum: ["rated", "unobservable", "not-applicable"] },
+    rating: { type: ["integer", "null"], enum: [0, 1, 2, 3, 4, null] },
     rationale: { type: "string" },
     counterevidenceIds: citationIdsSchema(),
     confidence: { type: "string", enum: ["low", "medium", "high"] },
-  } as const satisfies Readonly<Record<string, JsonObject>>;
-  if (communicationMode === "isolated" && ledger === "social") {
-    return strictObjectSchema({
-      state: { type: "string", const: "not-applicable" },
-      ...common,
-      evidenceIds: citationIdsSchema(),
-    });
-  }
-  return {
-    anyOf: [
-      strictObjectSchema({
-        state: { type: "string", const: "rated" },
-        rating: { type: "integer", enum: [0, 1, 2, 3, 4] },
-        ...common,
-        evidenceIds: citationIdsSchema(),
-      }),
-      strictObjectSchema({
-        state: { type: "string", enum: ["unobservable", "not-applicable"] },
-        ...common,
-        evidenceIds: citationIdsSchema(),
-      }),
-    ],
-  };
+    evidenceIds: citationIdsSchema(),
+  });
 }
 
 function episodeOutputSchema(): JsonObject {
@@ -767,29 +792,23 @@ function packetOutputSchema(packet: ReviewPacket): JsonObject {
   const dimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
     ({ ledger }) => ledger === packet.ledger,
   );
-  return {
-    ...strictObjectSchema({
-      schemaVersion: { type: "integer", const: 1 },
-      rubricVersion: { type: "string", const: EPISTEMIC_PROCESS_RUBRIC_VERSION },
-      bundleDigest: { type: "string", const: packet.bundleDigest },
-      packetId: { type: "string", const: packet.packetId },
-      packetDigest: { type: "string", const: packet.contentDigest },
-      ledger: { type: "string", const: packet.ledger },
-      dimensions: strictObjectSchema(
-        Object.fromEntries(
-          dimensions.map(({ dimensionId, ledger }) => [
-            dimensionId,
-            dimensionOutputSchema(ledger, "shared"),
-          ]),
-        ),
+  return strictObjectSchema({
+    schemaVersion: { type: "integer", const: 1 },
+    rubricVersion: { type: "string", const: EPISTEMIC_PROCESS_RUBRIC_VERSION },
+    bundleDigest: { type: "string", const: packet.bundleDigest },
+    packetId: { type: "string", const: packet.packetId },
+    packetDigest: { type: "string", const: packet.contentDigest },
+    ledger: { type: "string", const: packet.ledger },
+    dimensions: strictObjectSchema(
+      Object.fromEntries(
+        dimensions.map(({ dimensionId, ledger }) => [dimensionId, dimensionOutputSchema(ledger)]),
       ),
-      ...(packet.ledger === "epistemic"
-        ? { episodes: { type: "array", items: episodeOutputSchema() } }
-        : {}),
-      cautions: { type: "array", items: { type: "string" } },
-    }),
-    $defs: evidenceIdDefinitions(packet.citations.map(({ citationId }) => citationId)),
-  };
+    ),
+    ...(packet.ledger === "epistemic"
+      ? { episodes: { type: "array", items: episodeOutputSchema() } }
+      : {}),
+    cautions: { type: "array", items: { type: "string" } },
+  });
 }
 
 async function callReviewer(
@@ -930,13 +949,13 @@ function packetPrompt(packet: ReviewPacket): string {
     ),
   };
   return [
-    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V1",
+    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V2",
     `Ledger: ${packet.ledger}`,
     `Anonymous canonical origin ordinal: ${String(packet.origin.ordinal)}`,
     "Judge only observable retained behavior. Never infer private beliefs, intentions, hidden reasoning, outcome, success, score, model identity, or provider identity.",
     "Return one concise evidence-bounded assessment for every rubric dimension in this packet. Preserve missingness, ambiguity, and counterevidence.",
     packet.ledger === "epistemic"
-      ? "Also reconstruct at most eight highest-value observable episodes. Transmission, uptake, and integration require exact cited behavior; leave unsupported stages empty."
+      ? "Also reconstruct at most eight highest-value observable episodes. Uptake requires an earlier cited contribution by a different actor; integration requires cited behavior at or after a cited uptake. Leave unsupported transmission, uptake, and integration stages empty."
       : "Do not return epistemic episodes; this packet owns only its ledger dimensions and cautions.",
     "Every citation field must contain exact short citationId values from this packet. Never return reference objects, evidenceId values, or partial IDs.",
     "Use one concise sentence per rationale, at most six citation IDs per field, and at most four concise cautions. Begin final JSON early and reserve enough output budget to complete it.",
@@ -1185,7 +1204,7 @@ async function runJudge(
       (surface.communicationMode === "isolated" || reviews.has("social")) &&
       !errors.some((message) => message.includes("inconsistent actual"))
     ) {
-      const epistemic = reviews.get("epistemic")!;
+      const epistemic = normalizeEpisodeStages(reviews.get("epistemic")!, surface);
       const socialDimensions =
         surface.communicationMode === "isolated"
           ? deterministicSocialDimensions()

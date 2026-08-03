@@ -74,7 +74,7 @@ A bounded, outcome-blind projection for exactly one origin and process ledger.
 | `rubricDigest` | SHA-256 | Digest of rubric content, not only its label |
 | `routingVersion` | version string | Exact evidence-to-ledger rules |
 | `projectionVersion` | version string | Exact normalization and excerpt rules |
-| `citations` | ordered local citation index | At most 999 short packet-local IDs resolving to source references and excerpt digests |
+| `citations` | ordered local citation index | At most 999 ordered `c001`-`c999` IDs resolving to source references and excerpt digests |
 | `items` | ordered projected evidence | Bounded reviewer-visible content using only local citation IDs |
 | `omissions` | ordered omission records | Every unrouted source item and every shortened payload has a reason and digest |
 | `contentDigest` | SHA-256 | Canonical digest of every preceding field |
@@ -114,8 +114,8 @@ An evidence-bounded candidate transition, not a hidden-state assertion.
 | `test` | references | Zero or more |
 | `revision` | references | Zero or more |
 | `transmission` | references | Zero or more; not applicable when isolated |
-| `uptake` | references | Zero or more; not applicable when isolated |
-| `integration` | references | Zero or more |
+| `uptake` | references | Zero or more; assembled output retains only cross-actor references with an earlier transmission |
+| `integration` | references | Zero or more; assembled output retains only references at/after the latest retained uptake |
 | `counterevidence` | references | Required when status is disputed or missed |
 | `confidence` | `low`, `medium`, or `high` | Required |
 
@@ -152,7 +152,9 @@ One strict provider response for exactly one packet.
 | `episodes` | packet-local episode array | Required only for epistemic |
 | `cautions` | bounded strings | Packet-local cautions; no total score |
 
-The provider schema is portable strict JSON: the root and every nested object set `additionalProperties: false`, all properties are required, and citation fields use only the packet's bounded local-ID enum. The system resolves local IDs to full `EvidenceReference` values and validates citations before accepting the artifact.
+Every packet dimension has one fixed provider shape: `state`, required nullable `rating`, rationale, evidence-token array, counterevidence-token array, and confidence. `rating` is an integer 0-4 only for `state: rated`; it is `null` for `unobservable` or `not-applicable`.
+
+The provider schema is portable strict JSON: the root and every nested object set `additionalProperties: false`, all properties are required, and every citation field is an array of short strings matching `^c[0-9]{3}$`. Packet membership is intentionally not encoded as a schema enum. After parsing, the system rejects duplicates or tokens absent from the exact packet index, then resolves valid tokens to full `EvidenceReference` values.
 
 ## PacketCallArtifact
 
@@ -183,7 +185,7 @@ One deterministically assembled, immutable qualitative interpretation.
 | `episodes`        | `EpistemicEpisode[]`   | Required when completed    |
 | `overallCautions` | bounded strings        | No total score             |
 
-Assembly is deterministic: dimensions follow global rubric order, episodes come only from the epistemic packet, and cautions concatenate in epistemic/social/instrumental order. Isolated origins receive deterministic `not-applicable` social dimensions. The enclosing `JudgeReview` records review identity, status, requested and actual identity, raw transcript path, and digest. Two outputs for the same analysis must use distinct provider families. Any failed packet, missing actual identity, or identity drift leaves that reviewer and analysis incomplete.
+Assembly is deterministic: dimensions follow global rubric order, episodes come only from the epistemic packet, and cautions concatenate in epistemic/social/instrumental order. For each episode, uptake keeps only references supported by an earlier transmission from a different actor. Integration then keeps only references at or after the latest retained uptake, or becomes empty when no valid uptake remains. Assembly never invents or unions citations; it leaves the raw packet response byte-stable and adds a deterministic caution listing each normalized stage and suppressed-reference count. Isolated origins receive deterministic `not-applicable` social dimensions. The enclosing `JudgeReview` records review identity, status, requested and actual identity, raw transcript path, and digest. Two outputs for the same analysis must use distinct provider families. Any failed packet, missing actual identity, or identity drift leaves that reviewer and analysis incomplete.
 
 ## RunScorecard
 
@@ -231,13 +233,13 @@ The `RunAnalysis` variant appended by qualitative review.
 | `rubricVersion` | string | Exact anchors and prompts |
 | `configurationDigest` | SHA-256 | Includes reviewer profiles and token limits |
 | `bundleDigest` | SHA-256 | Identical for both judges |
-| `protocolVersion` | string | Present for packet-protocol analyses; absent legacy analyses remain readable |
+| `protocolVersion` | `ledger-packets-v2` | Required for current packet-protocol analyses; older analyses remain readable |
 | `detailsPath` | safe relative path | Under `grading/<analysisId>/` |
 | `detailsDigest` | SHA-256 | Covers reviews and scorecard |
 | `reviews` | ordered status/provenance summaries | Exactly two configured reviewer attempts |
 | `resumedFromAnalysisId` | string | Required only for an explicit resume; must name an incomplete packet-protocol predecessor |
 
-Every invocation receives a new analysis ID and immutable detail directory. Resume validates the predecessor reference and digest, every artifact-key input, and every reused completed packet artifact. Failed or missing packets are called at most once in the new invocation. Prior usage counts toward the configured reviewer token limit. Legacy window-protocol analyses remain readable but cannot be resumed into this protocol.
+Every invocation receives a new analysis ID and immutable detail directory. Resume validates the predecessor reference and digest, every artifact-key input, and every reused completed packet artifact. Failed or missing packets are called at most once in the new invocation. Prior usage counts toward the configured reviewer token limit. Resume requires the exact current protocol, prompt, and output-schema versions. Window-protocol analyses and `ledger-packets-v1` artifacts remain readable but cannot be resumed into v2.
 
 ## BehaviorReport
 

@@ -68,7 +68,9 @@ pnpm puzzle:review \
 
 The literal authorization permits paid calls for only the two declared reviewers; it is not a monetary billing cap. For each shared origin, the system makes one epistemic, social, and instrumental call per reviewer: six calls total. For each isolated origin it skips social review, deterministically marks those dimensions `not-applicable`, and makes four calls. Each reviewer proceeds in epistemic/social/instrumental order, while the reviewers remain independent and may run concurrently.
 
-Every valid response or failure is checkpointed immediately. Provider-reported input and output usage accumulates independently per reviewer. A response that crosses `tokenLimit` is retained, the attempt becomes incomplete, and no further call or automatic retry occurs for that reviewer. Every individual response is capped by `maxOutputTokens`. The system assembles each review deterministically from its packet outputs, makes no final model integration call, and freezes both completed process judgments before linking the existing outcome.
+Every valid response or failure is checkpointed immediately. Protocol v2 uses fixed dimension objects whose required `rating` is an integer 0-4 for `rated` and `null` otherwise. Citation fields remain compact `cNNN` string arrays; token syntax is schema-checked and exact packet membership is checked after parsing. Provider-reported input and output usage accumulates independently per reviewer. A response that crosses `tokenLimit` is retained, the attempt becomes incomplete, and no further call or automatic retry occurs for that reviewer. Every individual response is capped by `maxOutputTokens`.
+
+The system assembles each review deterministically and makes no final model integration call. It suppresses uptake without an earlier transmission from a different actor, then suppresses integration before the latest retained uptake or all integration when no valid uptake remains. It never invents citations: the raw response remains unchanged and the assembled review receives a caution naming each normalized stage and suppressed-reference count. Both completed process judgments freeze before the existing outcome is linked.
 
 Inspect:
 
@@ -89,7 +91,7 @@ pnpm puzzle:review \
   --allow-spend true
 ```
 
-Resume validates the predecessor and every source, configuration, rubric, reviewer, packet, prompt, schema, and actual-identity key. It reuses only validated completed packets, counts their usage against the reviewer limit, calls only missing or failed packets once, and appends a new analysis with `resumedFromAnalysisId`. It does not rewrite the predecessor, auto-discover an attempt, or reuse legacy window responses.
+Resume validates the predecessor and every source, configuration, rubric, reviewer, packet, prompt, schema, and actual-identity key. It reuses only validated completed packets, counts their usage against the reviewer limit, calls only missing or failed packets once, and appends a new analysis with `resumedFromAnalysisId`. It does not rewrite the predecessor or auto-discover an attempt. Only `ledger-packets-v2` artifacts with matching `ledger-packet-prompt-v2` and `ledger-packet-output-v2` identities are eligible; window-protocol and `ledger-packets-v1` analyses remain readable but cannot resume.
 
 ## 5. Produce a Cross-Run Report
 

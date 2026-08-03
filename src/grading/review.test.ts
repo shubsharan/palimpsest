@@ -49,6 +49,8 @@ const CONFIG: GradingConfiguration = {
   ],
 };
 
+const REVIEW_OUTPUT_SCHEMA_MAX_BYTES = 64 * 1024;
+
 function yamlConfig(config: GradingConfiguration = CONFIG): string {
   return [
     `schemaVersion: ${String(config.schemaVersion)}`,
@@ -227,6 +229,7 @@ function expectPortableStructuredOutputSchema(schema: JsonObject): void {
   let propertyCount = 0;
   let enumCount = 0;
   let stringBudget = 0;
+  let citationPatternCount = 0;
 
   const visit = (value: unknown, path: string, depth: number): void => {
     if (Array.isArray(value)) {
@@ -272,6 +275,11 @@ function expectPortableStructuredOutputSchema(schema: JsonObject): void {
       if (item.enum.length > 250) expect(enumStringSize, path).toBeLessThanOrEqual(15_000);
       stringBudget += enumStringSize;
     }
+    if (item.pattern === "^c[0-9]{3}$") {
+      citationPatternCount += 1;
+      expect(item, path).not.toHaveProperty("enum");
+      expect(item, path).not.toHaveProperty("const");
+    }
     if (typeof item.const === "string") stringBudget += item.const.length;
     expect(depth, path).toBeLessThanOrEqual(10);
   };
@@ -282,6 +290,10 @@ function expectPortableStructuredOutputSchema(schema: JsonObject): void {
   expect(propertyCount).toBeLessThanOrEqual(5_000);
   expect(enumCount).toBeLessThanOrEqual(1_000);
   expect(stringBudget).toBeLessThanOrEqual(120_000);
+  expect(citationPatternCount).toBeGreaterThan(0);
+  expect(Buffer.byteLength(JSON.stringify(schema), "utf8")).toBeLessThanOrEqual(
+    REVIEW_OUTPUT_SCHEMA_MAX_BYTES,
+  );
 }
 
 class FakeAdapter implements ModelAdapter {
@@ -712,7 +724,7 @@ describe("independent qualitative review", () => {
     ]);
     expect(first.prompts).toHaveLength(3);
     expect(second.prompts).toHaveLength(3);
-    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V1"))).toBe(true);
+    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V2"))).toBe(true);
     expect(first.prompts.join("\n")).not.toContain("INTEGRATION_V1");
     expect(first.structuredOutputs.map(({ name }) => name)).toEqual([
       "palimpsest_epistemic_packet",
@@ -721,10 +733,11 @@ describe("independent qualitative review", () => {
     ]);
     first.structuredOutputs.forEach(({ schema }) => expectPortableStructuredOutputSchema(schema));
     const schemas = first.structuredOutputs.map(({ schema }) => JSON.stringify(schema));
-    expect(schemas[0]).toContain('"$ref":"#/$defs/citationId"');
-    expect(schemas[0]).toContain('"c001"');
+    expect(schemas[0]).toContain('"pattern":"^c[0-9]{3}$"');
+    expect(schemas.join("\n")).not.toContain('"$ref"');
+    expect(schemas.join("\n")).not.toContain('"c001"');
     expect(schemas[0]).not.toContain(fixture.bundle.items[0]!.evidenceId);
-    expect(schemas.join("\n")).toContain('"anyOf"');
+    expect(schemas.join("\n")).not.toContain('"anyOf"');
     expect(schemas.join("\n")).not.toContain('"oneOf"');
     for (const { dimensionId } of EPISTEMIC_PROCESS_RUBRIC.dimensions) {
       expect(schemas.join("\n")).toContain(`"${dimensionId}"`);
@@ -1135,7 +1148,7 @@ describe("independent qualitative review", () => {
     ).rejects.toBeInstanceOf(PublishedIncompleteReviewError);
   });
 
-  it("publishes an incomplete analysis when assembled episodes violate cross-stage invariants", async () => {
+  it("conservatively removes unsupported episode stages while retaining the raw packet artifact", async () => {
     const fixture = await preparedRun();
     const invalidEpisode = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
       const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
@@ -1153,28 +1166,25 @@ describe("independent qualitative review", () => {
     });
     const deps = dependencies([invalidEpisode, new FakeAdapter(fixture.bundle, 3)]);
 
-    let incomplete: PublishedIncompleteReviewError | undefined;
-    try {
-      await reviewRun(
-        {
-          projectRoot: fixture.root,
-          runRoot: fixture.runRoot,
-          configPath: fixture.configPath,
-          performanceAnalysisId: fixture.performance.analysisId,
-          allowSpend: true,
-        },
-        deps.value,
-      );
-    } catch (error) {
-      if (error instanceof PublishedIncompleteReviewError) incomplete = error;
-      else throw error;
-    }
+    const result = await reviewRun(
+      {
+        projectRoot: fixture.root,
+        runRoot: fixture.runRoot,
+        configPath: fixture.configPath,
+        performanceAnalysisId: fixture.performance.analysisId,
+        allowSpend: true,
+      },
+      deps.value,
+    );
 
-    expect(incomplete!.result.analysis.status).toBe("incomplete");
-    expect(incomplete!.result.analysis.reviews[0].status).toBe("invalid");
-    await expect(
-      readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8"),
-    ).resolves.toContain("integration requires cited uptake");
+    expect(result.analysis.status).toBe("completed");
+    expect(result.analysis.reviews[0].status).toBe("completed");
+    await expect(readFile(join(result.path, "judge-1.review.json"), "utf8")).resolves.toContain(
+      "Deterministic assembly omitted",
+    );
+    await expect(readFile(join(result.path, "judge-1.raw.json"), "utf8")).resolves.toContain(
+      '"integrationIds"',
+    );
   });
 
   it("links cross-agent contribution, uptake, and canonical integration while preserving a competing interpretation", async () => {
@@ -1253,7 +1263,7 @@ describe("independent qualitative review", () => {
     expect(deps.created.map(({ maxOutputTokens }) => maxOutputTokens)).toEqual([8_000, 8_000]);
     expect(first.prompts).toHaveLength(4);
     expect(first.prompts.every((prompt) => !prompt.includes("Ledger: social"))).toBe(true);
-    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V1"));
+    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V2"));
     expect(packetPrompts.every((prompt) => prompt.includes("Never return reference objects"))).toBe(
       true,
     );

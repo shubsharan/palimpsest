@@ -63,9 +63,9 @@ The important limits are equally informative. `git.changed` currently identifies
 
 ### 7. Require Evidence-Resolvable Citations
 
-**Decision**: Every substantive review claim cites stable trace sequences, run-record fields, or frozen Git objects. The system validates existence, allowed visibility, and excerpt digest. Unsupported claims are rejected or explicitly marked unobservable.
+**Decision**: Every substantive review claim cites stable trace sequences, run-record fields, or frozen Git objects. Protocol v2 asks the provider for arrays of compact packet-local tokens matching `^c[0-9]{3}$`. The portable provider schema validates only that compact syntax; after parsing, the system deterministically validates every token against the exact packet citation index, then resolves it to the full source reference and excerpt digest. Unsupported claims are rejected or explicitly marked unobservable.
 
-**Rationale**: Citations turn fluent evaluation into an auditable scientific artifact and allow human calibration without rereading an entire run.
+**Rationale**: Citations turn fluent evaluation into an auditable scientific artifact and allow human calibration without rereading an entire run. Keeping packet membership out of the provider schema avoids a large repeated enum while preserving exact post-response enforcement.
 
 **Alternatives considered**: Free-form rationales were rejected because they cannot reliably distinguish inspection from invention. Line-number-only citations into rendered logs were rejected because rendering can change.
 
@@ -73,7 +73,9 @@ The important limits are equally informative. `git.changed` currently identifies
 
 **Decision**: Retain a complete local evidence index and compile one outcome-blind packet for each epistemic, social, and instrumental ledger per canonical origin. Projection is deterministic and non-evaluative: it pairs related tool events, removes duplicated call material, uses bounded head/tail excerpts, retains source digests, and allows evidence to appear in more than one packet when two ledgers need it. Every source item appears in at least one packet or has an explicit omission record. Each serialized packet is at most 256 KiB, and provider-free preflight fails if even the packet reference index cannot fit.
 
-Each reviewer makes one structured call per applicable packet, serially in epistemic, social, then instrumental order. Reviewers run independently and may execute concurrently. A shared origin therefore requires six successful calls; an isolated origin requires four because social dimensions are deterministically `not-applicable`. The epistemic packet alone produces the episode structure. The system orders and combines packet-local dimensions and cautions into the public review without a final model integration call.
+Each reviewer makes one structured call per applicable packet, serially in epistemic, social, then instrumental order. Reviewers run independently and may execute concurrently. A shared origin therefore requires six successful calls; an isolated origin requires four because social dimensions are deterministically `not-applicable`. Each dimension has one fixed schema shape: `rating` is always required and is either an integer 0-4 for `rated` or `null` otherwise. The epistemic packet alone produces the episode structure.
+
+During deterministic assembly, uptake references are retained only when an earlier transmission from a different actor exists. Integration references are then retained only at or after the latest retained uptake; when no valid uptake remains, integration becomes empty. The system does not invent, union, or otherwise expand citations. It retains the raw packet output unchanged and appends an assembly caution listing each affected stage and its suppressed-reference count before ordering dimensions and cautions into the public review.
 
 **Rationale**: The provider judges bounded evidence instead of performing pagination, cross-window citation collection, or final JSON assembly. Three focused calls reduce independent failure points and output-budget pressure while preserving ledger separation and complete, auditable routing.
 
@@ -91,7 +93,7 @@ Each reviewer makes one structured call per applicable packet, serially in epist
 
 **Decision**: Add `performance` and `process-review` variants to `RunAnalysis`. Persist every validated packet response immediately and atomically under a content-addressed key covering its bundle, configuration, rubric, reviewer binding, packet, prompt, schema, and actual model identity. Retain failed calls separately with sanitized classification and message, normalized and raw finish reasons, usage availability, response identity, actual provider/model identity, whether text was returned, and returned outcome-blind text when available.
 
-Every invocation appends a new immutable completed or incomplete analysis. `--resume <incomplete-analysis-id>` validates the named predecessor and every key field, counts predecessor usage against reviewer limits, reuses only validated completed packets, and calls each missing packet at most once. It requires new literal spend authorization and records `resumedFromAnalysisId`; it never discovers a predecessor, rewrites one, retries automatically, or imports legacy window responses.
+Every invocation appends a new immutable completed or incomplete analysis. `--resume <incomplete-analysis-id>` validates the named predecessor and every key field, counts predecessor usage against reviewer limits, reuses only validated completed packets, and calls each missing packet at most once. It requires new literal spend authorization and records `resumedFromAnalysisId`; it never discovers a predecessor, rewrites one, retries automatically, or imports legacy window responses. Protocol, prompt, and output-schema versions are all bumped to v2, so v1 packet artifacts remain readable evidence but are deliberately ineligible for v2 resume.
 
 **Rationale**: Packet-level checkpoints preserve valid paid work without weakening the no-hidden-retry rule. Append-only predecessors preserve the history of failure, authorization, usage, and recovery.
 

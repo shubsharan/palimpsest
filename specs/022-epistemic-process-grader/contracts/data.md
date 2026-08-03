@@ -34,7 +34,7 @@ Origin status is `eligible`, `unavailable`, or `not-applicable` with a required 
   "rubricVersion": "epistemic-process-v1",
   "configurationDigest": "<sha256>",
   "bundleDigest": "<sha256>",
-  "protocolVersion": "ledger-packets-v1",
+  "protocolVersion": "ledger-packets-v2",
   "detailsPath": "grading/process-review-<uuid>/manifest.json",
   "detailsDigest": "<sha256>",
   "reviews": [
@@ -67,7 +67,7 @@ grading/<analysis-id>/
 - Detail files are immutable after the analysis reference enters `run.json`.
 - Unreferenced detail directories are non-evidentiary. A final append race leaves already-paid content-addressed call evidence intact for diagnosis rather than discarding it.
 
-Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity.
+Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity. Current request identities use `ledger-packets-v2`, `ledger-packet-prompt-v2`, and `ledger-packet-output-v2`; all three must match for reuse.
 
 ## Packet Output Contract
 
@@ -99,16 +99,24 @@ Each provider call returns one strict object for exactly one ledger packet:
 Validation rules:
 
 - The root and every nested object set `additionalProperties: false`; all declared fields are required.
-- Packet identity and ledger exactly match the request, and citation values come from the packet-local enum.
+- Packet identity and ledger exactly match the request.
 - The dimension object contains exactly the packet ledger's rubric dimension keys.
-- Ratings are integers 0-4 and appear only with `state: rated`.
+- Every dimension has the same required fields. `rating` is an integer 0-4 only with `state: rated`; otherwise it is `null`.
 - Every rated dimension has at least one valid supporting reference.
-- `unobservable` and `not-applicable` have no rating and explain why.
+- `unobservable` and `not-applicable` use `rating: null` and explain why.
 - The epistemic output contains the required evidence-linked episode structure. Social and instrumental packet schemas omit that field.
-- All local citations resolve within the exact packet and reproduce their source reference and excerpt digest.
+- Citation fields are arrays of compact strings matching `^c[0-9]{3}$`; the provider schema does not enumerate packet membership.
+- After parse, citation tokens must be unique, resolve within the exact packet, and reproduce their source reference and excerpt digest.
 - No field contains a total score, model guess, unsupported hidden-state claim, or outcome claim.
 
 For isolated origins the system makes no social call and inserts the ordered social dimensions as `not-applicable`. Deterministic review assembly orders all dimensions by the global rubric, takes episodes only from epistemic output, and concatenates cautions in epistemic/social/instrumental order.
+
+Episode assembly is conservative and deterministic:
+
+1. Retain an uptake reference only when an earlier transmission from a different actor exists.
+2. Retain an integration reference only when it is at or after the latest retained uptake; if no uptake remains, clear integration.
+3. Never invent, union, or move citations between stages.
+4. Keep the raw packet response unchanged and append an assembly caution listing each affected stage and its suppressed-reference count.
 
 ## Packet Failure Contract
 
@@ -169,7 +177,7 @@ Allowed process context includes anonymous actor IDs, communication availability
 ## Compatibility
 
 - A legacy record without grading analyses decodes unchanged.
-- A legacy window/candidate/integration review remains readable but cannot supply packet checkpoints to `--resume`.
+- Legacy window/candidate/integration reviews and `ledger-packets-v1` analyses remain readable but cannot supply packet checkpoints to protocol-v2 `--resume`.
 - Historical `git.changed` events without ref targets remain valid. Measures that need an event-time object ID return `unavailable`.
 - A trace without `run.json` remains an interrupted attempt and cannot receive completed-run analyses.
 - Unknown future rubric, grader, or detail schema versions fail explicitly.

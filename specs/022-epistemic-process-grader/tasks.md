@@ -176,12 +176,12 @@
 
 **Purpose**: Replace the failure-prone window extraction and integration protocol without changing the scientific scorecard contract.
 
-- [x] T066 Add strict `ReviewPacket`, `PacketReviewerOutput`, packet-call artifact, artifact-key, resume-lineage, and rich provider-result contracts with legacy analysis decoding in `src/grading/packets.ts`, `src/grading/review.ts`, `src/run/record.ts`, and `src/model/contracts.ts`
-- [x] T067 [P] Add deterministic routing/projection tests for byte stability, outcome/identity blinding, origin isolation, cross-ledger duplication, complete omission accounting, local citation enums, and the 256 KiB packet limit in `src/grading/packets.test.ts`
+- [x] T066 Add strict protocol-v2 `ReviewPacket`, fixed nullable-rating `PacketReviewerOutput`, packet-call artifact, artifact-key, resume-lineage, and rich provider-result contracts with legacy analysis decoding in `src/grading/packets.ts`, `src/grading/review.ts`, `src/run/record.ts`, and `src/model/contracts.ts`
+- [x] T067 [P] Add deterministic routing/projection tests for byte stability, outcome/identity blinding, origin isolation, cross-ledger duplication, complete omission accounting, compact citation-token syntax and post-parse membership, and the 256 KiB packet limit in `src/grading/packets.test.ts` and `src/grading/review.test.ts`
 - [x] T068 [P] Add provider adapter tests for finish reason, raw finish reason, response ID, actual identity, usage availability, returned text, structured-parse status, and typed transport failures in `src/model/*.test.ts`
-- [x] T069 Add review orchestration tests proving six shared-origin calls, four isolated-origin calls, per-reviewer ledger order, reviewer concurrency, immediate checkpoints, deterministic assembly, identity consistency, and no integration/adjudication call in `src/grading/review.test.ts`
-- [x] T070 Add explicit-resume tests proving immutable predecessors, exact key validation, reuse of completed packets only, predecessor usage accounting, missing-only calls, new spend authorization, no auto-discovery/retry, and legacy non-resumability in `src/grading/review.test.ts` and `tests/puzzle/cli.test.ts`
-- [x] T071 Reconcile Feature 022 plan, research, data model, CLI/data contracts, quickstart, and task evidence with the ledger-packet protocol while making no live-provider validation claim in `specs/022-epistemic-process-grader/`
+- [x] T069 Add review orchestration tests proving six shared-origin calls, four isolated-origin calls, per-reviewer ledger order, reviewer concurrency, immediate checkpoints, deterministic episode-stage normalization with raw-response preservation and cautions, identity consistency, and no integration/adjudication call in `src/grading/review.test.ts`
+- [x] T070 Add explicit-resume tests proving immutable predecessors, exact v2 protocol/prompt/output-schema validation, reuse of completed packets only, predecessor usage accounting, missing-only calls, new spend authorization, no auto-discovery/retry, and v1 non-resumability in `src/grading/review.test.ts` and `tests/puzzle/cli.test.ts`
+- [x] T071 Reconcile Feature 022 plan, research, data model, CLI/data contracts, quickstart, and task evidence with protocol-v2 compact citations, nullable ratings, deterministic episode normalization, and no live-provider validation claim in `specs/022-epistemic-process-grader/`
 
 ---
 

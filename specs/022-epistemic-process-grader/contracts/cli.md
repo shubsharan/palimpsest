@@ -47,12 +47,13 @@ pnpm puzzle:review \
 - Validates two reviewer profiles from distinct provider families, each with a cumulative `tokenLimit` and per-call `maxOutputTokens`.
 - Compiles the same bounded epistemic, social, and instrumental packets for both reviewers, never exposing run/model identity or final outcome. Every source item is routed at least once or receives an explicit omission record.
 - Calls each reviewer's packets serially in epistemic, social, then instrumental order while allowing the two reviewers to run independently. A shared origin makes six calls; an isolated origin makes four and receives deterministic `not-applicable` social dimensions.
-- Checkpoints every success or failure immediately, accounts provider-reported input plus output usage, validates strict packet structure and packet-local citations, and assembles each public review deterministically. There is no model integration or adjudication call.
+- Uses protocol v2 fixed dimension objects with required nullable ratings and compact `cNNN` citation arrays. It validates token syntax in the provider schema and exact packet membership after parsing.
+- Checkpoints every success or failure immediately, accounts provider-reported input plus output usage, conservatively normalizes unsupported episode uptake/integration links, and assembles each public review deterministically. Raw packet output remains unchanged and normalization adds an explicit stage/count caution. There is no model integration or adjudication call.
 - Appends `status: completed` only when both reviews validate. Provider errors or invalid reviews remain an explicit `status: incomplete` analysis and are not findings-bearing.
 - Retains a response that crosses its reviewer's cumulative token limit, publishes the attempt incomplete, and makes no further call for that reviewer.
 - Without `--resume`, every invocation starts a new attempt and never discovers or reuses earlier work.
-- With `--resume`, requires the named predecessor to be an immutable incomplete packet-protocol analysis with matching source, bundle, configuration, rubric, reviewer bindings, packets, prompts, schemas, and actual identities. It reuses only validated completed packet artifacts, counts predecessor usage toward reviewer limits, and calls each missing or failed packet at most once.
-- Resume requires literal `--allow-spend true` again and appends a new analysis with predecessor lineage; it never rewrites the predecessor. Legacy window-based analyses are not resumable.
+- With `--resume`, requires the named predecessor to be an immutable incomplete protocol-v2 analysis with matching source, bundle, configuration, rubric, reviewer bindings, packets, prompts, schemas, and actual identities. It reuses only validated completed packet artifacts, counts predecessor usage toward reviewer limits, and calls each missing or failed packet at most once.
+- Resume requires literal `--allow-spend true` again and appends a new analysis with predecessor lineage; it never rewrites the predecessor. Legacy window-based and `ledger-packets-v1` analyses are readable but not resumable into v2.
 - Does not average ratings, force consensus, automatically retry, or automatically adjudicate. Literal spend authorization is not a monetary billing cap.
 
 Success shape:
