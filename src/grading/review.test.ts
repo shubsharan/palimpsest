@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { contentDigest } from "../canonical.js";
 import type {
+  JsonObject,
   ModelAdapter,
   ModelRequest,
   ModelSessionContext,
@@ -211,6 +212,75 @@ function providerReviewerOutput(bundle: EvidenceBundle, output: ReviewerOutput):
     ),
     overallCautions: output.overallCautions,
   };
+}
+
+function expectPortableStructuredOutputSchema(schema: JsonObject): void {
+  const unsupported = new Set([
+    "allOf",
+    "oneOf",
+    "not",
+    "dependentRequired",
+    "dependentSchemas",
+    "if",
+    "then",
+    "else",
+  ]);
+  let propertyCount = 0;
+  let enumCount = 0;
+  let stringBudget = 0;
+
+  const visit = (value: unknown, path: string, depth: number): void => {
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${path}[${String(index)}]`, depth));
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    const item = value as Record<string, unknown>;
+    for (const keyword of unsupported) expect(item).not.toHaveProperty(keyword);
+    if (Object.hasOwn(item, "const")) expect(item, path).toHaveProperty("type");
+
+    if (item.type === "object") {
+      expect(item.additionalProperties, path).toBe(false);
+      expect(item.properties, path).toBeTypeOf("object");
+      const properties = item.properties as Record<string, unknown>;
+      const names = Object.keys(properties);
+      expect(item.required, path).toEqual(names);
+      propertyCount += names.length;
+      stringBudget += names.reduce((total, name) => total + name.length, 0);
+      for (const [name, property] of Object.entries(properties)) {
+        visit(property, `${path}.properties.${name}`, depth + 1);
+      }
+    }
+    if (item.type === "array") visit(item.items, `${path}.items`, depth);
+    if (Array.isArray(item.anyOf)) {
+      item.anyOf.forEach((branch, index) => visit(branch, `${path}.anyOf[${String(index)}]`, depth));
+    }
+    if (item.$defs !== undefined) {
+      const definitions = item.$defs as Record<string, unknown>;
+      stringBudget += Object.keys(definitions).reduce((total, name) => total + name.length, 0);
+      for (const [name, definition] of Object.entries(definitions)) {
+        visit(definition, `${path}.$defs.${name}`, depth);
+      }
+    }
+    if (Array.isArray(item.enum)) {
+      enumCount += item.enum.length;
+      const enumStringSize = item.enum.reduce(
+        (total: number, entry: unknown) => total + (typeof entry === "string" ? entry.length : 0),
+        0,
+      );
+      if (item.enum.length > 250) expect(enumStringSize, path).toBeLessThanOrEqual(15_000);
+      stringBudget += enumStringSize;
+    }
+    if (typeof item.const === "string") stringBudget += item.const.length;
+    expect(depth, path).toBeLessThanOrEqual(10);
+  };
+
+  expect(schema.type).toBe("object");
+  expect(schema).not.toHaveProperty("anyOf");
+  visit(schema, "$", 1);
+  expect(propertyCount).toBeLessThanOrEqual(5_000);
+  expect(enumCount).toBeLessThanOrEqual(1_000);
+  expect(stringBudget).toBeLessThanOrEqual(120_000);
 }
 
 class FakeAdapter implements ModelAdapter {
@@ -650,6 +720,7 @@ describe("independent qualitative review", () => {
       "palimpsest_process_window",
       "palimpsest_process_review",
     ]);
+    first.structuredOutputs.forEach(({ schema }) => expectPortableStructuredOutputSchema(schema));
     const windowSchema = JSON.stringify(first.structuredOutputs[0]!.schema);
     const integrationSchema = JSON.stringify(first.structuredOutputs[1]!.schema);
     expect(windowSchema).toContain(fixture.bundle.items[0]!.evidenceId);
