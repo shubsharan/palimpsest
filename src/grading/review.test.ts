@@ -253,7 +253,9 @@ function expectPortableStructuredOutputSchema(schema: JsonObject): void {
     }
     if (item.type === "array") visit(item.items, `${path}.items`, depth);
     if (Array.isArray(item.anyOf)) {
-      item.anyOf.forEach((branch, index) => visit(branch, `${path}.anyOf[${String(index)}]`, depth));
+      item.anyOf.forEach((branch, index) =>
+        visit(branch, `${path}.anyOf[${String(index)}]`, depth),
+      );
     }
     if (item.$defs !== undefined) {
       const definitions = item.$defs as Record<string, unknown>;
@@ -1058,6 +1060,8 @@ describe("independent qualitative review", () => {
     expect(windowPrompts.every((prompt) => prompt.includes("never return reference objects"))).toBe(
       true,
     );
+    expect(windowPrompts.every((prompt) => prompt.includes("at most six"))).toBe(true);
+    expect(first.prompts.at(-1)).toContain("reserve enough budget to complete it");
     const firstOriginPrompts = windowPrompts.filter((prompt) =>
       prompt.includes("Anonymous canonical origin ordinal: 1"),
     );

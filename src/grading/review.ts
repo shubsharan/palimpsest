@@ -831,6 +831,8 @@ function windowPrompt(bundle: EvidenceBundle, originOrdinal: number, windowIndex
     `Window ID: ${window.windowId}`,
     "Return strict JSON: {schemaVersion:1,windowId,candidates:[{summary,evidenceIds:[string,...]}]}.",
     "Every evidenceIds entry must copy an exact evidenceId from this window; never return reference objects or partial IDs.",
+    "Select at most six highest-value candidate episodes. Use one concise sentence per summary and at most six evidence IDs per candidate.",
+    "The total output budget includes reasoning. Begin the final JSON early and do not spend the budget on extended analysis.",
     `Evidence: ${canonicalJson(items)}`,
   ].join("\n\n");
 }
@@ -850,6 +852,8 @@ function integrationPrompt(
     `Bundle digest: ${bundle.contentDigest}`,
     `Rubric: ${canonicalJson(EPISTEMIC_PROCESS_RUBRIC)}`,
     "Return the schema-constrained review object. The dimensions object is keyed by rubric dimension ID; do not repeat dimension IDs or ledgers inside its values. Every citation field ends in Ids and must contain exact evidenceId strings from the candidates, never reference objects.",
+    "Use one concise sentence per rationale, at most eight highest-value episodes, at most six IDs in each citation field, and at most four concise cautions.",
+    "The total output budget includes reasoning. Begin the final JSON early and reserve enough budget to complete it.",
     `Candidates: ${canonicalJson(candidates)}`,
   ].join("\n\n");
 }

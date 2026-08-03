@@ -338,7 +338,20 @@ export class AiSdkModelAdapter implements ModelAdapter {
                   }),
                 }),
           });
-          if (request.structuredOutput !== undefined) void result.output;
+          const usage = {
+            inputTokens: requireTokenCount(result.usage.inputTokens, "input"),
+            outputTokens: requireTokenCount(result.usage.outputTokens, "output"),
+            inputTokenDetails: inputTokenDetails(result.usage.inputTokenDetails),
+            outputTokenDetails: outputTokenDetails(result.usage.outputTokenDetails),
+          };
+          if (request.structuredOutput !== undefined) {
+            if (result.finishReason !== "stop") {
+              throw new Error(
+                `Structured output did not complete (finish reason ${result.finishReason}; ${String(usage.outputTokens)} output tokens).`,
+              );
+            }
+            void result.output;
+          }
           const nextPending = new Map<string, string>();
           const toolCalls: ModelToolCall[] = result.toolCalls.map((call) => {
             if (nextPending.has(call.toolCallId)) {
@@ -351,12 +364,6 @@ export class AiSdkModelAdapter implements ModelAdapter {
               arguments: requireToolArguments(call.input, call.toolName),
             };
           });
-          const usage = {
-            inputTokens: requireTokenCount(result.usage.inputTokens, "input"),
-            outputTokens: requireTokenCount(result.usage.outputTokens, "output"),
-            inputTokenDetails: inputTokenDetails(result.usage.inputTokenDetails),
-            outputTokenDetails: outputTokenDetails(result.usage.outputTokenDetails),
-          };
           messages = [...requestMessages, ...result.responseMessages];
           pending = nextPending;
           started = true;

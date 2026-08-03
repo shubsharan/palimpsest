@@ -105,6 +105,35 @@ describe("AI SDK provider", () => {
     ).rejects.toThrow();
   });
 
+  it("reports a structured-output length finish with retained usage", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content: [],
+        finishReason: { unified: "length", raw: "max_output_tokens" },
+        usage: usage(9, 8_000),
+        warnings: [],
+      },
+    });
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    await expect(
+      session.respond({
+        prompt: "return the object",
+        toolResults: [],
+        signal: new AbortController().signal,
+        structuredOutput: {
+          name: "structured_test",
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: { value: { type: "string" } },
+            required: ["value"],
+          },
+        },
+      }),
+    ).rejects.toThrow("finish reason length; 8000 output tokens");
+  });
+
   it("retains exact OpenAI Responses reasoning summary items separately from normalized text", async () => {
     const model = new MockLanguageModelV4({
       provider: "openai.responses",
