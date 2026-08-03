@@ -16,7 +16,7 @@ import {
 } from "../model/contracts.js";
 import type { SandboxIdentity } from "../sandbox/contracts.js";
 import type { TreeSeal } from "../seal.js";
-import { JsonlObservationLog } from "../trace.js";
+import { readObservationTrace } from "../trace.js";
 
 const DIGEST = /^[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
@@ -1172,7 +1172,7 @@ export async function validateRunRecordTrace(runRoot: string, trace: unknown): P
   const decoded = exactObject(trace, ["path", "metadataPath"], "Run record trace");
   if (decoded.path !== "trace.jsonl" || decoded.metadataPath !== "trace.meta.json")
     throw new Error("Run record trace paths must be trace.jsonl and trace.meta.json.");
-  await JsonlObservationLog.open(join(resolve(runRoot), "trace.jsonl"));
+  await readObservationTrace(join(resolve(runRoot), "trace.jsonl"));
 }
 
 async function serialized(record: RunRecord): Promise<string> {

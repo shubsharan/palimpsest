@@ -161,7 +161,11 @@ describe("agent tools", () => {
 
   it("reports Git activity without implying that a peer channel exists", async () => {
     const { runtime, tools } = await toolFixture();
-    await runtime.recordGitChange("agent-1", ["agent-1"], ["refs/heads/main"]);
+    await runtime.recordGitChange(
+      "agent-1",
+      ["agent-1"],
+      [{ ref: "refs/heads/main", before: null, after: "a".repeat(40) }],
+    );
 
     await expect(tools.execute("wait_for_activity", { afterSequence: 0 })).resolves.toEqual({
       sequence: 3,

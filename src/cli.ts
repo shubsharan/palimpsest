@@ -4,6 +4,7 @@ import { evaluateRunFromFlags } from "./evaluation/evaluator.js";
 import { runExperimentFromFlags, validateExperimentFromFlags } from "./experiment/execution.js";
 import { isExperimentWorker, superviseExperiment } from "./experiment/supervisor.js";
 import { parseFlags } from "./flags.js";
+import { runViewerFromFlags } from "./viewer/server.js";
 
 const [command, ...args] = process.argv.slice(2);
 const flags = parseFlags(args);
@@ -52,6 +53,9 @@ switch (command) {
     break;
   case "analyze":
     result = await analyzeRunFromFlags(flags);
+    break;
+  case "view":
+    await runViewerFromFlags(flags);
     break;
   default:
     throw new Error(

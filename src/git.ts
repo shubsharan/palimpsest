@@ -48,6 +48,12 @@ export interface GitRepository {
   agentIds: readonly AgentId[];
 }
 
+export interface GitRefUpdate {
+  ref: string;
+  before: string | null;
+  after: string | null;
+}
+
 export interface GitEnvironment {
   root: string;
   communicationMode: GitCommunicationMode;
@@ -218,9 +224,19 @@ export async function listRemoteRefs(barePath: string): Promise<Record<string, s
   return result;
 }
 
-function changedRefs(before: Record<string, string>, after: Record<string, string>): string[] {
+function changedRefUpdates(
+  before: Record<string, string>,
+  after: Record<string, string>,
+): GitRefUpdate[] {
   const names = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...names].filter((name) => before[name] !== after[name]).sort();
+  return [...names]
+    .filter((name) => before[name] !== after[name])
+    .sort()
+    .map((ref) => ({
+      ref,
+      before: before[ref] ?? null,
+      after: after[ref] ?? null,
+    }));
 }
 
 function waitInterval(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -245,7 +261,7 @@ export class GitActivityMonitor {
     | ((
         repositoryId: GitRepositoryId,
         agentIds: readonly AgentId[],
-        refs: readonly string[],
+        updates: readonly GitRefUpdate[],
       ) => void | Promise<void>)
     | undefined;
   readonly #onError: ((error: unknown) => void | Promise<void>) | undefined;
@@ -260,7 +276,7 @@ export class GitActivityMonitor {
     onChange?: (
       repositoryId: GitRepositoryId,
       agentIds: readonly AgentId[],
-      refs: readonly string[],
+      updates: readonly GitRefUpdate[],
     ) => void | Promise<void>;
     onError?: (error: unknown) => void | Promise<void>;
   }) {
@@ -287,12 +303,12 @@ export class GitActivityMonitor {
 
   async checkNow(): Promise<readonly string[]> {
     const next = await listRemoteRefs(this.#repository.path);
-    const refs = changedRefs(this.#snapshot, next);
-    if (refs.length > 0) {
-      await this.#onChange?.(this.#repository.repositoryId, this.#repository.agentIds, refs);
+    const updates = changedRefUpdates(this.#snapshot, next);
+    if (updates.length > 0) {
+      await this.#onChange?.(this.#repository.repositoryId, this.#repository.agentIds, updates);
     }
     this.#snapshot = next;
-    return refs;
+    return updates.map(({ ref }) => ref);
   }
 
   async #poll(signal: AbortSignal): Promise<void> {

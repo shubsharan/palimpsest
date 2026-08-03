@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "ci:local": "pnpm verify",
-    "check": "pnpm verify:versions && pnpm format:check && pnpm lint && pnpm typecheck",
+    "check": "pnpm verify:versions && pnpm format:check && pnpm lint && pnpm typecheck && pnpm viewer:build",
     "format": "oxfmt --config oxfmt.json --write README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs experiments fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml python",
     "format:check": "oxfmt --config oxfmt.json --check README.md package.json tsconfig.json tsconfig.base.json oxfmt.json oxlint.json vitest.config.ts src tools tests specs docs experiments fixtures/corpus/provenance.json AGENTS.md CLAUDE.md python/pyproject.toml && uv run --offline --frozen --project python ruff format --config python/pyproject.toml --check python",
     "lint": "oxlint --deny-warnings src tools tests vitest.config.ts && uv run --offline --frozen --project python ruff check --config python/pyproject.toml python",
@@ -16,6 +16,7 @@
     "puzzle:experiment": "tsx src/cli.ts experiment",
     "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",
     "puzzle:validate": "tsx src/cli.ts validate",
+    "puzzle:view": "tsx src/cli.ts view",
     "hooks:install": "git config --local core.hooksPath .githooks",
     "test": "pnpm run --parallel '/^test:(unit|contract):(ts|py)$/'",
     "test:acceptance": "vitest run --project acceptance",
@@ -30,25 +31,34 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify": "pnpm check && pnpm test",
     "verify:full": "pnpm verify && pnpm test:material && pnpm test:acceptance && pnpm puzzle:sandbox:build && pnpm test:docker",
-    "verify:versions": "tsx tools/verify-versions.ts"
+    "verify:versions": "tsx tools/verify-versions.ts",
+    "viewer:build": "vite build src/viewer/ui --outDir ../../../dist/viewer --emptyOutDir"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.22",
     "@ai-sdk/google": "4.0.25",
     "@ai-sdk/openai": "4.0.21",
     "@ai-sdk/openai-compatible": "3.0.15",
+    "@fontsource-variable/newsreader": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
     "ai": "7.0.38",
     "ajv": "8.20.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "yaml": "2.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "26.1.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
     "oxfmt": "0.60.0",
     "oxlint": "1.75.0",
     "testcontainers": "12.0.4",
     "tsx": "4.23.1",
     "typescript": "7.0.2",
+    "vite": "8.2.0",
     "vitest": "4.1.10"
   },
   "engines": {

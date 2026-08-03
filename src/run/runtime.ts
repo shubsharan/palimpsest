@@ -1,5 +1,5 @@
 import { ActivityBus, type ActivityWaitResult } from "./activity.js";
-import type { GitRepositoryId } from "../git.js";
+import type { GitRefUpdate, GitRepositoryId } from "../git.js";
 import type { AgentId } from "../model/contracts.js";
 import type { ReleasedStage } from "./released-stage.js";
 import { InfrastructureError } from "../sandbox/contracts.js";
@@ -160,7 +160,7 @@ export class AttemptRuntime {
   async recordGitChange(
     repositoryId: GitRepositoryId,
     visibleAgentIds: readonly AgentId[],
-    refs: readonly string[],
+    updates: readonly GitRefUpdate[],
   ): Promise<void> {
     this.#assertOpen();
     if (
@@ -170,7 +170,8 @@ export class AttemptRuntime {
     ) {
       throw new Error("Git activity visibility must name unique attempt agents.");
     }
-    const frozenRefs = Object.freeze([...refs]);
+    const frozenUpdates = Object.freeze(updates.map((update) => Object.freeze({ ...update })));
+    const frozenRefs = Object.freeze(frozenUpdates.map(({ ref }) => ref));
     for (const agentId of visibleAgentIds) {
       this.#activityFor(agentId).publish({
         kind: "git-changed",
@@ -179,7 +180,7 @@ export class AttemptRuntime {
     }
     await this.#persistObservation({
       kind: "git.changed",
-      data: { repositoryId, refs: frozenRefs },
+      data: { repositoryId, refs: frozenRefs, updates: frozenUpdates },
     });
   }
 
