@@ -49,7 +49,7 @@ const CONFIG: GradingConfiguration = {
   ],
 };
 
-const REVIEW_OUTPUT_SCHEMA_MAX_BYTES = 64 * 1024;
+const REVIEW_OUTPUT_SCHEMA_MAX_BYTES = 4 * 1024;
 
 function yamlConfig(config: GradingConfiguration = CONFIG): string {
   return [
@@ -169,24 +169,20 @@ function providerPacketOutput(
   const dimensions = output.dimensions.filter(({ ledger }) => ledger === packet.ledger);
   return {
     schemaVersion: 1,
-    rubricVersion: output.rubricVersion,
-    bundleDigest: output.bundleDigest,
-    packetId: packet.packetId,
-    packetDigest: packet.contentDigest,
-    ledger: packet.ledger,
-    dimensions: Object.fromEntries(
-      dimensions.map(({ dimensionId, ledger: _ledger, evidence, counterevidence, ...item }) => [
-        dimensionId,
-        {
-          ...item,
-          evidenceIds: citationIds(evidence),
-          counterevidenceIds: citationIds(counterevidence),
-        },
-      ]),
-    ),
-    ...(packet.ledger === "epistemic"
-      ? {
-          episodes: output.episodes.map(
+    dimensions: dimensions.map((dimension) => {
+      return {
+        dimensionId: dimension.dimensionId,
+        assessment:
+          dimension.state === "rated" ? `rated-${String(dimension.rating)}` : dimension.state,
+        rationale: dimension.rationale,
+        evidenceIds: citationIds(dimension.evidence),
+        counterevidenceIds: citationIds(dimension.counterevidence),
+        confidence: dimension.confidence,
+      };
+    }),
+    episodes:
+      packet.ledger === "epistemic"
+        ? output.episodes.map(
             ({
               evidence,
               commitment,
@@ -208,9 +204,8 @@ function providerPacketOutput(
               integrationIds: citationIds(integration),
               counterevidenceIds: citationIds(counterevidence),
             }),
-          ),
-        }
-      : {}),
+          )
+        : [],
     cautions: output.overallCautions,
   };
 }
@@ -218,6 +213,7 @@ function providerPacketOutput(
 function expectPortableStructuredOutputSchema(schema: JsonObject): void {
   const unsupported = new Set([
     "allOf",
+    "anyOf",
     "oneOf",
     "not",
     "dependentRequired",
@@ -239,6 +235,7 @@ function expectPortableStructuredOutputSchema(schema: JsonObject): void {
     if (value === null || typeof value !== "object") return;
     const item = value as Record<string, unknown>;
     for (const keyword of unsupported) expect(item).not.toHaveProperty(keyword);
+    expect(Array.isArray(item.type), path).toBe(false);
     if (Object.hasOwn(item, "const")) expect(item, path).toHaveProperty("type");
 
     if (item.type === "object") {
@@ -724,7 +721,8 @@ describe("independent qualitative review", () => {
     ]);
     expect(first.prompts).toHaveLength(3);
     expect(second.prompts).toHaveLength(3);
-    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V2"))).toBe(true);
+    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V4"))).toBe(true);
+    expect(first.prompts[0]).toContain("supported-revision and asserted-only require");
     expect(first.prompts.join("\n")).not.toContain("INTEGRATION_V1");
     expect(first.structuredOutputs.map(({ name }) => name)).toEqual([
       "palimpsest_epistemic_packet",
@@ -733,14 +731,28 @@ describe("independent qualitative review", () => {
     ]);
     first.structuredOutputs.forEach(({ schema }) => expectPortableStructuredOutputSchema(schema));
     const schemas = first.structuredOutputs.map(({ schema }) => JSON.stringify(schema));
+    first.structuredOutputs.forEach(({ schema }) => {
+      expect(Object.keys(schema.properties as Record<string, unknown>)).toEqual([
+        "schemaVersion",
+        "dimensions",
+        "episodes",
+        "cautions",
+      ]);
+    });
     expect(schemas[0]).toContain('"pattern":"^c[0-9]{3}$"');
+    expect(schemas[0]).toContain('"rated-0"');
     expect(schemas.join("\n")).not.toContain('"$ref"');
     expect(schemas.join("\n")).not.toContain('"c001"');
+    expect(schemas.join("\n")).not.toContain('"bundleDigest"');
+    expect(schemas.join("\n")).not.toContain('"packetDigest"');
+    expect(schemas.join("\n")).not.toContain('"rubricVersion"');
     expect(schemas[0]).not.toContain(fixture.bundle.items[0]!.evidenceId);
     expect(schemas.join("\n")).not.toContain('"anyOf"');
     expect(schemas.join("\n")).not.toContain('"oneOf"');
+    expect(new Set(schemas)).toHaveLength(1);
     for (const { dimensionId } of EPISTEMIC_PROCESS_RUBRIC.dimensions) {
-      expect(schemas.join("\n")).toContain(`"${dimensionId}"`);
+      expect(schemas.join("\n")).not.toContain(`"${dimensionId}"`);
+      expect(first.prompts.join("\n")).toContain(`"dimensionId":"${dimensionId}"`);
     }
     expect(first.prompts.join("\n")).not.toMatch(/synthetic-run|matchedWords|review-model-a/);
     expect(result.scorecards).toHaveLength(1);
@@ -765,14 +777,141 @@ describe("independent qualitative review", () => {
     );
   });
 
+  it("allows outcome-unavailability language but rejects asserted outcome values", async () => {
+    const fixture = await preparedRun();
+    const adapter = (rationale: string) =>
+      new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+        const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+        const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating)) as {
+          dimensions: { rationale: string }[];
+        };
+        output.dimensions[0]!.rationale = rationale;
+        return JSON.stringify(output);
+      });
+    const completed = await reviewRun(
+      {
+        projectRoot: fixture.root,
+        runRoot: fixture.runRoot,
+        configPath: fixture.configPath,
+        performanceAnalysisId: fixture.performance.analysisId,
+        allowSpend: true,
+      },
+      dependencies([
+        adapter(
+          "Solver coverage is obscured, the checker was disabled, and outcome evidence is unavailable.",
+        ),
+        adapter("Outcome evidence is redacted and unavailable."),
+      ]).value,
+    );
+    expect(completed.analysis.status).toBe("completed");
+
+    const secondFixture = await preparedRun();
+    const asserted = new FakeAdapter(secondFixture.bundle, 2, (bundle, rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating)) as {
+        dimensions: { rationale: string }[];
+      };
+      output.dimensions[0]!.rationale = "The final accuracy was 0.75.";
+      return JSON.stringify(output);
+    });
+    await expect(
+      reviewRun(
+        {
+          projectRoot: secondFixture.root,
+          runRoot: secondFixture.runRoot,
+          configPath: secondFixture.configPath,
+          performanceAnalysisId: secondFixture.performance.analysisId,
+          allowSpend: true,
+        },
+        dependencies([asserted, new FakeAdapter(secondFixture.bundle, 3)]).value,
+      ),
+    ).rejects.toBeInstanceOf(PublishedIncompleteReviewError);
+  });
+
+  it("maps every zero-union assessment token to the unchanged public rating contract", async () => {
+    const fixture = await preparedRun();
+    const assessments = [
+      "rated-0",
+      "rated-1",
+      "rated-2",
+      "rated-3",
+      "rated-4",
+      "unobservable",
+    ] as const;
+    const adapter = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating)) as {
+        dimensions: { assessment: string }[];
+      };
+      output.dimensions.forEach((dimension, index) => {
+        dimension.assessment = assessments[index]!;
+      });
+      return JSON.stringify(output);
+    });
+    const result = await reviewRun(
+      {
+        projectRoot: fixture.root,
+        runRoot: fixture.runRoot,
+        configPath: fixture.configPath,
+        performanceAnalysisId: fixture.performance.analysisId,
+        allowSpend: true,
+      },
+      dependencies([adapter, new FakeAdapter(fixture.bundle, 3)]).value,
+    );
+    const published = decodeJudgeReview(
+      JSON.parse(await readFile(join(result.path, "judge-1.review.json"), "utf8")) as unknown,
+    );
+    expect(
+      published.dimensions
+        .slice(0, 6)
+        .map((dimension) =>
+          dimension.state === "rated"
+            ? `${dimension.state}-${String(dimension.rating)}`
+            : dimension.state,
+        ),
+    ).toEqual(assessments);
+  });
+
+  it.each(["unknown-assessment", "wrong-dimension-order"] as const)(
+    "rejects %s after provider parsing",
+    async (violation) => {
+      const fixture = await preparedRun();
+      const invalid = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+        const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+        const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating)) as {
+          dimensions: { assessment: string; dimensionId: string }[];
+        };
+        if (violation === "unknown-assessment") output.dimensions[0]!.assessment = "rated-9";
+        else output.dimensions.reverse();
+        return JSON.stringify(output);
+      });
+      let incomplete: PublishedIncompleteReviewError | undefined;
+      try {
+        await reviewRun(
+          {
+            projectRoot: fixture.root,
+            runRoot: fixture.runRoot,
+            configPath: fixture.configPath,
+            performanceAnalysisId: fixture.performance.analysisId,
+            allowSpend: true,
+          },
+          dependencies([invalid, new FakeAdapter(fixture.bundle, 3)]).value,
+        );
+      } catch (error) {
+        if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+        else throw error;
+      }
+      expect(incomplete!.result.analysis.reviews[0].status).toBe("invalid");
+    },
+  );
+
   it("rejects a citation ID outside the exact ledger packet", async () => {
     const fixture = await preparedRun();
     const invalid = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
       const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
       const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating));
-      const dimensions = (output as { dimensions: Record<string, { evidenceIds: string[] }> })
-        .dimensions;
-      dimensions[Object.keys(dimensions)[0]!]!.evidenceIds = ["c9999"];
+      const dimensions = (output as { dimensions: { evidenceIds: string[] }[] }).dimensions;
+      dimensions[0]!.evidenceIds = ["c9999"];
       return JSON.stringify(output);
     });
     const deps = dependencies([invalid, new FakeAdapter(fixture.bundle, 3)]);
@@ -805,9 +944,8 @@ describe("independent qualitative review", () => {
     const invalid = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
       const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
       const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating));
-      const dimensions = (output as { dimensions: Record<string, { evidenceIds: string[] }> })
-        .dimensions;
-      dimensions[Object.keys(dimensions)[0]!]!.evidenceIds = ["c9999"];
+      const dimensions = (output as { dimensions: { evidenceIds: string[] }[] }).dimensions;
+      dimensions[0]!.evidenceIds = ["c9999"];
       return JSON.stringify(output);
     });
     const malformed = new FakeAdapter(fixture.bundle, 2, () => "not-json");
@@ -915,6 +1053,53 @@ describe("independent qualitative review", () => {
       ),
     ).rejects.toThrow(/already exists/i);
     expect(duplicateConstructions).toBe(0);
+  });
+
+  it("keeps v3 analyses readable but rejects them at the v4 resume boundary", async () => {
+    const fixture = await preparedRun();
+    const deps = dependencies([
+      new FakeAdapter(fixture.bundle, 2, undefined, undefined, undefined, 1),
+      new FakeAdapter(fixture.bundle, 3),
+    ]);
+    let incomplete: PublishedIncompleteReviewError | undefined;
+    try {
+      await reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+        },
+        deps.value,
+      );
+    } catch (error) {
+      if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+      else throw error;
+    }
+    const legacyAnalysisId = "process-review-legacy-v3";
+    await appendRunAnalysis(fixture.runRoot, incomplete!.result.record, {
+      ...incomplete!.result.analysis,
+      analysisId: legacyAnalysisId,
+      protocolVersion: "ledger-packets-v3",
+      detailsPath: `grading/${legacyAnalysisId}/manifest.json`,
+    });
+    const constructions = deps.created.length;
+
+    await expect(
+      reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+          resumeAnalysisId: legacyAnalysisId,
+        },
+        deps.value,
+      ),
+    ).rejects.toThrow(/legacy or incompatible/i);
+    expect(deps.created).toHaveLength(constructions);
   });
 
   it("retains response diagnostics and stops a reviewer when usage is unavailable", async () => {
@@ -1187,6 +1372,52 @@ describe("independent qualitative review", () => {
     );
   });
 
+  it.each(["asserted-only", "supported-revision"] as const)(
+    "conservatively omits a %s episode without revision evidence while retaining its raw packet",
+    async (status) => {
+      const fixture = await preparedRun();
+      const inconsistentEpisode = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+        const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+        const output = providerPacketOutput(
+          packet,
+          bundle,
+          reviewerOutput(bundle, rating, { episode: "asserted" }),
+        ) as {
+          episodes?: { status: string; revisionIds: string[] }[];
+        };
+        if (packet.ledger === "epistemic") {
+          output.episodes![0]!.status = status;
+          output.episodes![0]!.revisionIds = [];
+        }
+        return JSON.stringify(output);
+      });
+
+      const result = await reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+        },
+        dependencies([inconsistentEpisode, new FakeAdapter(fixture.bundle, 3)]).value,
+      );
+
+      expect(result.analysis.status).toBe("completed");
+      const reviewText = await readFile(join(result.path, "judge-1.review.json"), "utf8");
+      const review = decodeJudgeReview(JSON.parse(reviewText) as unknown);
+      expect(review.episodes).toEqual([]);
+      expect(review.overallCautions).toContain(
+        `Deterministic assembly omitted episode episode-assertion because status ${status} requires ${
+          status === "asserted-only" ? "a cited revision assertion" : "observable revision evidence"
+        }.`,
+      );
+      const raw = await readFile(join(result.path, "judge-1.raw.json"), "utf8");
+      expect(raw).toContain(`\\"status\\":\\"${status}\\"`);
+      expect(raw).toContain('\\"revisionIds\\":[]');
+    },
+  );
+
   it("links cross-agent contribution, uptake, and canonical integration while preserving a competing interpretation", async () => {
     const fixture = await preparedRun();
     const transmission = fixture.bundle.items.find(
@@ -1263,7 +1494,7 @@ describe("independent qualitative review", () => {
     expect(deps.created.map(({ maxOutputTokens }) => maxOutputTokens)).toEqual([8_000, 8_000]);
     expect(first.prompts).toHaveLength(4);
     expect(first.prompts.every((prompt) => !prompt.includes("Ledger: social"))).toBe(true);
-    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V2"));
+    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V4"));
     expect(packetPrompts.every((prompt) => prompt.includes("Never return reference objects"))).toBe(
       true,
     );

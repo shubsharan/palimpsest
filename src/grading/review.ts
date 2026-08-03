@@ -60,6 +60,7 @@ import {
   type ReviewPacket,
   type ReviewPacketLedger,
 } from "./packets.js";
+import { packetReviewerOutputSchema } from "./packet-output.js";
 
 export {
   decodeGradingConfiguration,
@@ -119,9 +120,9 @@ export interface ReviewRunFlags {
   readonly resume?: string;
 }
 
-export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v2" as const;
-export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v2" as const;
-export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v2" as const;
+export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v4" as const;
+export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v4" as const;
+export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v4" as const;
 
 interface RetainedTurn {
   readonly response: string;
@@ -246,8 +247,15 @@ interface PacketReview {
 }
 
 export interface PacketDimensionOutput {
-  readonly state: "rated" | "unobservable" | "not-applicable";
-  readonly rating: 0 | 1 | 2 | 3 | 4 | null;
+  readonly dimensionId: string;
+  readonly assessment:
+    | "rated-0"
+    | "rated-1"
+    | "rated-2"
+    | "rated-3"
+    | "rated-4"
+    | "unobservable"
+    | "not-applicable";
   readonly rationale: string;
   readonly evidenceIds: readonly string[];
   readonly counterevidenceIds: readonly string[];
@@ -276,13 +284,8 @@ export interface PacketEpisodeOutput {
 
 export interface PacketReviewerOutput {
   readonly schemaVersion: 1;
-  readonly rubricVersion: string;
-  readonly bundleDigest: string;
-  readonly packetId: string;
-  readonly packetDigest: string;
-  readonly ledger: ReviewPacketLedger;
-  readonly dimensions: Readonly<Record<string, PacketDimensionOutput>>;
-  readonly episodes?: readonly PacketEpisodeOutput[];
+  readonly dimensions: readonly PacketDimensionOutput[];
+  readonly episodes: readonly PacketEpisodeOutput[];
   readonly cautions: readonly string[];
 }
 
@@ -428,7 +431,7 @@ function validateReferences(
 const HIDDEN_STATE_CLAIM =
   /\b(?:believed|thought|knew|understood|realized|intended|wanted|felt|private reasoning|hidden state)\b/i;
 const OUTCOME_CLAIM =
-  /\b(?:final outcome|final score|matched words|coverage|accuracy|successful run|unsuccessful run|won|lost)\b/i;
+  /\b(?:final outcome|final score|matched words|successful run|unsuccessful run|run (?:succeeded|failed)|won|lost)\b|\b(?:coverage|accuracy|score)\s*(?:=|:|was\s+(?:\d|high|low|perfect|zero)|is\s+(?:\d|high|low|perfect|zero))\b/i;
 
 function validateObservableText(value: string, name: string): void {
   if (HIDDEN_STATE_CLAIM.test(value))
@@ -548,32 +551,22 @@ function validateReviewerOutputAgainstBundle(
   return output;
 }
 
+function missingRevisionStatusEvidence(
+  episode: ReviewerOutput["episodes"][number],
+): string | undefined {
+  if (episode.revision.length > 0) return undefined;
+  if (episode.status === "supported-revision") return "observable revision evidence";
+  if (episode.status === "asserted-only") return "a cited revision assertion";
+  return undefined;
+}
+
 function decodePacketReviewerOutput(
   value: unknown,
   packet: ReviewPacket,
 ): DecodedPacketReviewerOutput {
-  const required = [
-    "schemaVersion",
-    "rubricVersion",
-    "bundleDigest",
-    "packetId",
-    "packetDigest",
-    "ledger",
-    "dimensions",
-    ...(packet.ledger === "epistemic" ? ["episodes"] : []),
-    "cautions",
-  ];
+  const required = ["schemaVersion", "dimensions", "episodes", "cautions"];
   const decoded = exact(value, required, "Packet reviewer output");
-  if (
-    decoded.schemaVersion !== 1 ||
-    decoded.rubricVersion !== EPISTEMIC_PROCESS_RUBRIC_VERSION ||
-    decoded.bundleDigest !== packet.bundleDigest ||
-    decoded.packetId !== packet.packetId ||
-    decoded.packetDigest !== packet.contentDigest ||
-    decoded.ledger !== packet.ledger
-  ) {
-    throw new Error("Packet reviewer output identity differs from the exact packet request.");
-  }
+  if (decoded.schemaVersion !== 1) throw new Error("Packet reviewer schemaVersion must be 1.");
   const references = new Map(
     packet.citations.map(({ citationId, reference }) => [citationId, reference] as const),
   );
@@ -593,31 +586,38 @@ function decodePacketReviewerOutput(
   const rubricDimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
     ({ ledger }) => ledger === packet.ledger,
   );
-  const dimensions = exact(
-    decoded.dimensions,
-    rubricDimensions.map(({ dimensionId }) => dimensionId),
-    "Packet reviewer dimensions",
-  );
+  if (!Array.isArray(decoded.dimensions)) {
+    throw new Error("Packet reviewer dimensions must be an array.");
+  }
+  const dimensionValues = decoded.dimensions;
+  if (
+    dimensionValues.length !== rubricDimensions.length ||
+    dimensionValues.some(
+      (dimension, index) =>
+        object(dimension, `Packet reviewer dimension ${String(index + 1)}`).dimensionId !==
+        rubricDimensions[index]!.dimensionId,
+    )
+  ) {
+    throw new Error("Packet reviewer dimensions must exactly match the ordered packet rubric.");
+  }
   const resolvedDimensions = rubricDimensions.map(({ dimensionId, ledger }, index) => {
     const name = `Packet reviewer dimension ${String(index + 1)}`;
-    const candidate = object(dimensions[dimensionId], name);
+    const candidate = object(dimensionValues[index], name);
     const item = exact(
       candidate,
-      ["state", "rating", "rationale", "evidenceIds", "counterevidenceIds", "confidence"],
+      ["dimensionId", "assessment", "rationale", "evidenceIds", "counterevidenceIds", "confidence"],
       name,
     );
-    if (item.state === "rated" && !Number.isInteger(item.rating)) {
-      throw new Error(`${name}.rating must be an integer when rated.`);
-    }
-    if (item.state !== "rated" && item.rating !== null) {
-      throw new Error(`${name}.rating must be null when not rated.`);
-    }
+    const assessment = nonEmptyText(item.assessment, `${name}.assessment`);
+    const ratingMatch = /^rated-([0-4])$/.exec(assessment);
+    const state = ratingMatch === null ? assessment : "rated";
+    const rating = ratingMatch === null ? undefined : Number(ratingMatch[1]);
     const resolved = decodeDimensionReview(
       {
         dimensionId,
         ledger,
-        state: item.state,
-        ...(Number.isInteger(item.rating) ? { rating: item.rating } : {}),
+        state,
+        ...(rating === undefined ? {} : { rating }),
         rationale: item.rationale,
         evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
         counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
@@ -628,8 +628,11 @@ function decodePacketReviewerOutput(
     validateObservableText(resolved.rationale, `${name}.rationale`);
     return resolved;
   });
-  const episodesValue = packet.ledger === "epistemic" ? decoded.episodes : [];
+  const episodesValue = decoded.episodes;
   if (!Array.isArray(episodesValue)) throw new Error("Packet reviewer episodes must be an array.");
+  if (packet.ledger !== "epistemic" && episodesValue.length > 0) {
+    throw new Error("Only the epistemic packet may return episodes.");
+  }
   const episodes = episodesValue.map((episode, index) => {
     const name = `Packet reviewer episode ${String(index + 1)}`;
     const item = exact(
@@ -693,7 +696,14 @@ function normalizeEpisodeStages(review: PacketReview, bundle: EvidenceBundle): P
     bundle.items.map((item) => [referenceLocator(item.reference), item] as const),
   );
   const cautions = [...review.cautions];
-  const episodes = review.episodes.map((episode) => {
+  const episodes = review.episodes.flatMap((episode) => {
+    const missingStatusEvidence = missingRevisionStatusEvidence(episode);
+    if (missingStatusEvidence !== undefined) {
+      cautions.push(
+        `Deterministic assembly omitted episode ${episode.episodeId} because status ${episode.status} requires ${missingStatusEvidence}.`,
+      );
+      return [];
+    }
     const transmissions = episode.transmission.map((reference) =>
       itemsByReference.get(referenceLocator(reference)),
     );
@@ -728,87 +738,15 @@ function normalizeEpisodeStages(review: PacketReview, bundle: EvidenceBundle): P
         `Deterministic assembly omitted ${String(removedUptake)} unsupported uptake and ${String(removedIntegration)} unsupported integration citation(s) from episode ${episode.episodeId}.`,
       );
     }
-    return {
-      ...episode,
-      uptake: validUptake,
-      integration: validIntegration,
-    };
+    return [
+      {
+        ...episode,
+        uptake: validUptake,
+        integration: validIntegration,
+      },
+    ];
   });
   return { ...review, episodes, cautions };
-}
-
-function strictObjectSchema(
-  properties: Readonly<Record<string, JsonObject>>,
-  required: readonly string[] = Object.keys(properties),
-): JsonObject {
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties,
-    required,
-  };
-}
-
-function citationIdsSchema(): JsonObject {
-  return {
-    type: "array",
-    items: { type: "string", pattern: "^c[0-9]{3}$" },
-  };
-}
-
-function dimensionOutputSchema(ledger: "epistemic" | "social" | "instrumental"): JsonObject {
-  void ledger;
-  return strictObjectSchema({
-    state: { type: "string", enum: ["rated", "unobservable", "not-applicable"] },
-    rating: { type: ["integer", "null"], enum: [0, 1, 2, 3, 4, null] },
-    rationale: { type: "string" },
-    counterevidenceIds: citationIdsSchema(),
-    confidence: { type: "string", enum: ["low", "medium", "high"] },
-    evidenceIds: citationIdsSchema(),
-  });
-}
-
-function episodeOutputSchema(): JsonObject {
-  return strictObjectSchema({
-    episodeId: { type: "string" },
-    summary: { type: "string" },
-    status: {
-      type: "string",
-      enum: ["supported-revision", "asserted-only", "missed-revision", "unchanged", "ambiguous"],
-    },
-    evidenceIds: citationIdsSchema(),
-    commitmentIds: citationIdsSchema(),
-    testIds: citationIdsSchema(),
-    revisionIds: citationIdsSchema(),
-    transmissionIds: citationIdsSchema(),
-    uptakeIds: citationIdsSchema(),
-    integrationIds: citationIdsSchema(),
-    counterevidenceIds: citationIdsSchema(),
-    confidence: { type: "string", enum: ["low", "medium", "high"] },
-  });
-}
-
-function packetOutputSchema(packet: ReviewPacket): JsonObject {
-  const dimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
-    ({ ledger }) => ledger === packet.ledger,
-  );
-  return strictObjectSchema({
-    schemaVersion: { type: "integer", const: 1 },
-    rubricVersion: { type: "string", const: EPISTEMIC_PROCESS_RUBRIC_VERSION },
-    bundleDigest: { type: "string", const: packet.bundleDigest },
-    packetId: { type: "string", const: packet.packetId },
-    packetDigest: { type: "string", const: packet.contentDigest },
-    ledger: { type: "string", const: packet.ledger },
-    dimensions: strictObjectSchema(
-      Object.fromEntries(
-        dimensions.map(({ dimensionId, ledger }) => [dimensionId, dimensionOutputSchema(ledger)]),
-      ),
-    ),
-    ...(packet.ledger === "epistemic"
-      ? { episodes: { type: "array", items: episodeOutputSchema() } }
-      : {}),
-    cautions: { type: "array", items: { type: "string" } },
-  });
 }
 
 async function callReviewer(
@@ -949,14 +887,16 @@ function packetPrompt(packet: ReviewPacket): string {
     ),
   };
   return [
-    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V2",
+    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V4",
     `Ledger: ${packet.ledger}`,
     `Anonymous canonical origin ordinal: ${String(packet.origin.ordinal)}`,
     "Judge only observable retained behavior. Never infer private beliefs, intentions, hidden reasoning, outcome, success, score, model identity, or provider identity.",
-    "Return one concise evidence-bounded assessment for every rubric dimension in this packet. Preserve missingness, ambiguity, and counterevidence.",
+    "Do not assess artifact quality with score, accuracy, coverage, correctness, success, or failure language. You may state only that outcome evidence is redacted or unavailable.",
+    "Return one concise evidence-bounded assessment for every rubric dimension in the exact order shown. Use assessment rated-0 through rated-4, unobservable, or not-applicable. Preserve missingness, ambiguity, and counterevidence.",
     packet.ledger === "epistemic"
-      ? "Also reconstruct at most eight highest-value observable episodes. Uptake requires an earlier cited contribution by a different actor; integration requires cited behavior at or after a cited uptake. Leave unsupported transmission, uptake, and integration stages empty."
-      : "Do not return epistemic episodes; this packet owns only its ledger dimensions and cautions.",
+      ? "Also reconstruct at most eight highest-value observable episodes. supported-revision and asserted-only require at least one revisionId; omit an episode when that status lacks a revision citation. Uptake requires an earlier cited contribution by a different actor; integration requires cited behavior at or after a cited uptake. Leave unsupported transmission, uptake, and integration stages empty."
+      : "Return an empty episodes array; this packet owns only its ledger dimensions and cautions.",
+    "The immutable request already binds packet, bundle, rubric, and ledger identity. Do not echo those infrastructure fields.",
     "Every citation field must contain exact short citationId values from this packet. Never return reference objects, evidenceId values, or partial IDs.",
     "Use one concise sentence per rationale, at most six citation IDs per field, and at most four concise cautions. Begin final JSON early and reserve enough output budget to complete it.",
     `Rubric: ${canonicalJson(rubric)}`,
@@ -1150,7 +1090,7 @@ async function runJudge(
             {
               name: `palimpsest_${packet.ledger}_packet`,
               description: `Outcome-blind ${packet.ledger} ledger review with exact packet citations.`,
-              schema: packetOutputSchema(packet),
+              schema: packetReviewerOutputSchema(),
             },
           );
           if (turn.usage !== undefined) {

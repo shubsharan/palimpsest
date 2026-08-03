@@ -1,3 +1,4 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,6 +7,7 @@ import {
   createAiSdkModelAdapter,
   type AiSdkModelAdapterOptions,
 } from "./ai-sdk-adapter.js";
+import { packetReviewerOutputSchema } from "../grading/packet-output.js";
 import { TOOL_DEFINITIONS } from "../run/tools.js";
 
 function usage(inputTokens: number | undefined, outputTokens: number | undefined) {
@@ -80,6 +82,123 @@ describe("AI SDK provider", () => {
       name: "structured_test",
       description: "Synthetic structured response.",
       schema,
+    });
+  });
+
+  it("sends a strict zero-union output schema through the real Anthropic provider", async () => {
+    const schema = packetReviewerOutputSchema();
+    const responseValue = {
+      schemaVersion: 1,
+      dimensions: [
+        {
+          dimensionId: "epistemic.framing",
+          assessment: "rated-3",
+          rationale: "The retained evidence supports a strong observable frame.",
+          evidenceIds: ["c001"],
+          counterevidenceIds: [],
+          confidence: "high",
+        },
+        {
+          dimensionId: "epistemic.revision",
+          assessment: "unobservable",
+          rationale: "No retained revision opportunity was observable.",
+          evidenceIds: [],
+          counterevidenceIds: [],
+          confidence: "medium",
+        },
+      ],
+      episodes: [],
+      cautions: [],
+    };
+    let requestBody: unknown;
+    const model = createAnthropic({
+      apiKey: "test-anthropic-key",
+      fetch: async (input, init) => {
+        const body =
+          init?.body ?? (input instanceof Request ? await input.clone().text() : undefined);
+        requestBody = JSON.parse(String(body));
+        return new Response(
+          JSON.stringify({
+            type: "message",
+            id: "msg_test_structured",
+            model: "claude-opus-5",
+            content: [{ type: "text", text: JSON.stringify(responseValue) }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: {
+              input_tokens: 11,
+              output_tokens: 7,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "request-id": "req_test_structured",
+            },
+          },
+        );
+      },
+    })("claude-opus-5");
+    const session = new AiSdkModelAdapter({ model }).openSession({
+      agentId: "agent-1",
+      tools: [],
+    });
+
+    const turn = await session.respond({
+      prompt: "Review the retained evidence.",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: { name: "palimpsest_epistemic_packet_v4", schema },
+    });
+
+    const body = requestBody as Record<string, unknown>;
+    expect(body).not.toHaveProperty("tools");
+    expect(body).not.toHaveProperty("tool_choice");
+    const outputConfig = body.output_config as Record<string, unknown>;
+    const format = outputConfig.format as Record<string, unknown>;
+    expect(format.type).toBe("json_schema");
+    const sentSchema = format.schema as Record<string, unknown>;
+    expect(Object.keys(sentSchema.properties as Record<string, unknown>)).toEqual([
+      "schemaVersion",
+      "dimensions",
+      "episodes",
+      "cautions",
+    ]);
+    expect(JSON.stringify(sentSchema)).not.toContain('"ledger"');
+    expect(Buffer.byteLength(JSON.stringify(sentSchema), "utf8")).toBeLessThan(6 * 1024);
+    let unionCount = 0;
+    const inspectSchema = (value: unknown, path: string): void => {
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => inspectSchema(item, `${path}[${String(index)}]`));
+        return;
+      }
+      if (value === null || typeof value !== "object") return;
+      const item = value as Record<string, unknown>;
+      if (Array.isArray(item.anyOf)) unionCount += 1;
+      if (Array.isArray(item.type)) unionCount += 1;
+      if (item.type === "object") {
+        const properties = item.properties as Record<string, unknown>;
+        expect(item.additionalProperties, path).toBe(false);
+        expect(item.required, path).toEqual(Object.keys(properties));
+      }
+      Object.entries(item).forEach(([key, child]) => inspectSchema(child, `${path}.${key}`));
+    };
+    inspectSchema(sentSchema, "$output_config.format.schema");
+    expect(unionCount).toBe(0);
+    expect(turn).toMatchObject({
+      responseText: JSON.stringify(responseValue),
+      finishReason: "stop",
+      rawFinishReason: "end_turn",
+      responseId: "msg_test_structured",
+      responseIdentity: {
+        actualProvider: "anthropic.messages",
+        actualModel: "claude-opus-5",
+      },
+      structuredOutputValidation: { status: "validated" },
+      usage: { inputTokens: 11, outputTokens: 7 },
     });
   });
 
