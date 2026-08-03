@@ -407,8 +407,12 @@ const DecodePane = memo(function DecodePane({
           <strong>{formatPercent(active?.accuracy)}</strong>
         </div>
         <div>
-          <span>Coverage</span>
-          <strong>{formatPercent(active?.coverage)}</strong>
+          <span>Correct words</span>
+          <strong className="word-total">
+            {active === undefined
+              ? "-- / --"
+              : `${active.matchedWords?.toLocaleString() ?? "--"} / ${active.totalWords?.toLocaleString() ?? "--"}`}
+          </strong>
         </div>
         <div>
           <span>Checkpoint</span>

@@ -412,6 +412,10 @@ select {
   font-size: 22px;
   font-weight: 600;
 }
+.decode-metrics strong.word-total {
+  font-size: 18px;
+  white-space: nowrap;
+}
 .checkpoint-note {
   min-height: 75px;
   padding: 10px 13px;
