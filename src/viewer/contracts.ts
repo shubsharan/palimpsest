@@ -12,13 +12,26 @@ export type ViewerEventCategory =
   | "infrastructure"
   | "other";
 
+export interface ViewerModelResponse {
+  type: "model-response";
+  finalResponse?: string;
+  reasoningSummary?: string;
+  providerSummary?: string;
+  outputTokens?: number;
+}
+
+export interface ViewerMilestone {
+  type: "milestone";
+  label: string;
+}
+
 export interface ViewerEvent {
   sequence: number;
   atMs: number;
   kind: string;
   category: ViewerEventCategory;
   agentId?: AgentId;
-  data: JsonValue;
+  display?: ViewerModelResponse | ViewerMilestone;
 }
 
 export interface ViewerToolCall {
@@ -30,6 +43,9 @@ export interface ViewerToolCall {
   completedSequence?: number;
   completedAtMs?: number;
   status: "running" | "completed" | "error";
+}
+
+export interface ViewerToolDetail {
   arguments: JsonValue;
   output?: JsonValue;
   error?: string;

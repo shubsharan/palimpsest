@@ -9,9 +9,11 @@ import { readObservationTrace, type ObservationEvent } from "../trace.js";
 import type {
   ViewerEvent,
   ViewerEventCategory,
+  ViewerModelResponse,
   ViewerRun,
   ViewerTeamMessage,
   ViewerToolCall,
+  ViewerToolDetail,
 } from "./contracts.js";
 
 function categoryFor(kind: string): ViewerEventCategory {
@@ -47,19 +49,70 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function returnedSummary(value: unknown): string | undefined {
+  const root = object(value);
+  if (root?.status !== "captured" || !Array.isArray(root.items)) return undefined;
+  const text = root.items.flatMap((rawItem) => {
+    const item = object(rawItem);
+    if (!Array.isArray(item?.summary)) return [];
+    return item.summary.flatMap((rawEntry) => {
+      const entry = object(rawEntry);
+      return typeof entry?.text === "string" ? [entry.text] : [];
+    });
+  });
+  return text.length === 0 ? undefined : text.join("\n\n");
+}
+
+function modelResponse(data: Record<string, unknown> | undefined): ViewerModelResponse {
+  const usage = object(data?.usage);
+  const providerSummary = returnedSummary(data?.returnedReasoningSummary);
+  return {
+    type: "model-response",
+    ...(typeof data?.finalResponse === "string" ? { finalResponse: data.finalResponse } : {}),
+    ...(typeof data?.reasoningSummary === "string"
+      ? { reasoningSummary: data.reasoningSummary }
+      : {}),
+    ...(providerSummary === undefined ? {} : { providerSummary }),
+    ...(typeof usage?.outputTokens === "number" ? { outputTokens: usage.outputTokens } : {}),
+  };
+}
+
+function milestoneLabel(
+  event: ObservationEvent,
+  data: Record<string, unknown> | undefined,
+): string {
+  if (event.kind === "stage.released") {
+    return `Evidence stage ${String(data?.ordinal ?? "?")} released`;
+  }
+  if (event.kind === "session.started") return "Session opened";
+  if (event.kind === "session.state") return `Session ${String(data?.state ?? "changed")}`;
+  return event.kind;
+}
+
 function viewerEvent(event: ObservationEvent): ViewerEvent {
+  const data = object(event.data);
+  const display =
+    event.kind === "model.response"
+      ? modelResponse(data)
+      : event.kind === "stage.released" || event.kind.startsWith("session.")
+        ? { type: "milestone" as const, label: milestoneLabel(event, data) }
+        : undefined;
   return {
     sequence: event.sequence,
     atMs: event.atMs,
     kind: event.kind,
     category: categoryFor(event.kind),
     ...(event.agentId === undefined ? {} : { agentId: event.agentId }),
-    data: jsonValue(event.data),
+    ...(display === undefined ? {} : { display }),
   };
 }
 
-function pairToolCalls(events: readonly ObservationEvent[]): ViewerToolCall[] {
+function pairToolCalls(events: readonly ObservationEvent[]): {
+  toolCalls: ViewerToolCall[];
+  toolDetails: Map<number, ViewerToolDetail>;
+} {
   const calls = new Map<string, ViewerToolCall>();
+  const details = new Map<string, ViewerToolDetail>();
   for (const event of events) {
     if (event.agentId === undefined || !event.kind.startsWith("tool.")) continue;
     const data = object(event.data);
@@ -76,8 +129,8 @@ function pairToolCalls(events: readonly ObservationEvent[]): ViewerToolCall[] {
         startedSequence: event.sequence,
         startedAtMs: event.atMs,
         status: "running",
-        arguments: jsonValue(data.arguments ?? null),
       });
+      details.set(key, { arguments: jsonValue(data.arguments ?? null) });
       continue;
     }
     const started = calls.get(key);
@@ -88,22 +141,35 @@ function pairToolCalls(events: readonly ObservationEvent[]): ViewerToolCall[] {
         completedSequence: event.sequence,
         completedAtMs: event.atMs,
         status: "completed",
+      });
+      details.set(key, {
+        arguments: details.get(key)?.arguments ?? null,
         output: jsonValue(data.output ?? null),
       });
     } else if (event.kind === "tool.error") {
+      const error = typeof data.error === "string" ? data.error : "Tool failed without detail.";
       calls.set(key, {
         ...started,
         completedSequence: event.sequence,
         completedAtMs: event.atMs,
         status: "error",
-        error: typeof data.error === "string" ? data.error : "Tool failed without detail.",
       });
+      details.set(key, { arguments: details.get(key)?.arguments ?? null, error });
     }
   }
-  return [...calls.values()].sort(
+  const toolCalls = [...calls.values()].sort(
     (left, right) =>
       left.startedAtMs - right.startedAtMs || left.startedSequence - right.startedSequence,
   );
+  return {
+    toolCalls,
+    toolDetails: new Map(
+      toolCalls.flatMap((call) => {
+        const detail = details.get(`${call.agentId}\0${call.id}`);
+        return detail === undefined ? [] : [[call.startedSequence, detail] as const];
+      }),
+    ),
+  };
 }
 
 function teamMessages(events: readonly ObservationEvent[]): ViewerTeamMessage[] {
@@ -132,16 +198,22 @@ function teamMessages(events: readonly ObservationEvent[]): ViewerTeamMessage[] 
 export function normalizeViewerTrace(events: readonly ObservationEvent[]): {
   events: readonly ViewerEvent[];
   toolCalls: readonly ViewerToolCall[];
+  toolDetails: ReadonlyMap<number, ViewerToolDetail>;
   teamMessages: readonly ViewerTeamMessage[];
 } {
+  const paired = pairToolCalls(events);
   return {
     events: events.map(viewerEvent),
-    toolCalls: pairToolCalls(events),
+    toolCalls: paired.toolCalls,
+    toolDetails: paired.toolDetails,
     teamMessages: teamMessages(events),
   };
 }
 
-export async function loadViewerRun(root: string, runRoot: string): Promise<ViewerRun> {
+export async function loadViewerRun(
+  root: string,
+  runRoot: string,
+): Promise<{ run: ViewerRun; toolDetails: ReadonlyMap<number, ViewerToolDetail> }> {
   const resolvedRunRoot = resolve(runRoot);
   const loaded = await loadRunRecord(root, resolvedRunRoot);
   await Promise.all([
@@ -165,28 +237,33 @@ export async function loadViewerRun(root: string, runRoot: string): Promise<View
     ) ?? [];
   const normalizedTrace = normalizeViewerTrace(trace.events);
   return {
-    runId: loaded.record.runId,
-    status: loaded.record.status,
-    startedAt: loaded.record.startedAt,
-    frozenAt: loaded.record.frozenAt,
-    durationMs,
-    communicationMode: loaded.record.topology.communicationMode,
-    fixtureId: loaded.record.configuration.run.fixture.id,
-    variantId: loaded.record.configuration.run.fixture.variant,
-    rekeyAtStage: loaded.record.configuration.run.fixture.rekeyAtStage ?? null,
-    agents: loaded.record.configuration.models.map(({ agentId, binding }) => ({
-      agentId,
-      profile: binding.profile,
-      requestedModel: binding.requestedModel,
-      ...(binding.actualModel === undefined ? {} : { actualModel: binding.actualModel }),
-    })),
-    origins: loaded.record.topology.origins.map((origin) => ({
-      originId: origin.originId,
-      agentIds: origin.agentIds,
-      finalCommit: origin.mainCommit,
-    })),
-    finalScores,
-    ciphertext: await readFile(resolve(loaded.fixtureRoot, fixture.publicCiphertextPath), "utf8"),
-    ...normalizedTrace,
+    run: {
+      runId: loaded.record.runId,
+      status: loaded.record.status,
+      startedAt: loaded.record.startedAt,
+      frozenAt: loaded.record.frozenAt,
+      durationMs,
+      communicationMode: loaded.record.topology.communicationMode,
+      fixtureId: loaded.record.configuration.run.fixture.id,
+      variantId: loaded.record.configuration.run.fixture.variant,
+      rekeyAtStage: loaded.record.configuration.run.fixture.rekeyAtStage ?? null,
+      agents: loaded.record.configuration.models.map(({ agentId, binding }) => ({
+        agentId,
+        profile: binding.profile,
+        requestedModel: binding.requestedModel,
+        ...(binding.actualModel === undefined ? {} : { actualModel: binding.actualModel }),
+      })),
+      origins: loaded.record.topology.origins.map((origin) => ({
+        originId: origin.originId,
+        agentIds: origin.agentIds,
+        finalCommit: origin.mainCommit,
+      })),
+      finalScores,
+      ciphertext: await readFile(resolve(loaded.fixtureRoot, fixture.publicCiphertextPath), "utf8"),
+      events: normalizedTrace.events,
+      toolCalls: normalizedTrace.toolCalls,
+      teamMessages: normalizedTrace.teamMessages,
+    },
+    toolDetails: normalizedTrace.toolDetails,
   };
 }

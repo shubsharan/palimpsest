@@ -57,19 +57,31 @@ describe("viewer trace normalization", () => {
         completedAtMs: 40,
       }),
     ]);
+    expect(normalized.toolDetails.get(2)).toEqual({
+      arguments: { command: "pwd" },
+      output: { stdout: "/workspace" },
+    });
+    expect(normalized.events[0]).toMatchObject({
+      display: { type: "model-response", finalResponse: "I found a pattern." },
+    });
     expect(normalized.teamMessages).toEqual([
       expect.objectContaining({ author: "agent-2", message: "Check the repeated token." }),
     ]);
   });
 
-  it("preserves unknown events and ignores malformed event-specific projections", () => {
+  it("keeps unknown timeline markers lightweight and ignores malformed projections", () => {
     const normalized = normalizeViewerTrace([
       { sequence: 1, atMs: 0, kind: "future.event", data: { retained: true } },
       { sequence: 2, atMs: 1, kind: "team.message", data: { author: "invalid" } },
       { sequence: 3, atMs: 2, kind: "tool.completed", agentId: "agent-1", data: {} },
     ]);
 
-    expect(normalized.events[0]).toMatchObject({ category: "other", data: { retained: true } });
+    expect(normalized.events[0]).toEqual({
+      sequence: 1,
+      atMs: 0,
+      kind: "future.event",
+      category: "other",
+    });
     expect(normalized.teamMessages).toEqual([]);
     expect(normalized.toolCalls).toEqual([]);
   });

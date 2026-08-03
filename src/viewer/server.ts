@@ -9,7 +9,7 @@ import react from "@vitejs/plugin-react";
 import { build } from "vite";
 
 import { integerFlag, requiredFlag } from "../flags.js";
-import type { DecodeStreamEvent, ViewerRun } from "./contracts.js";
+import type { DecodeStreamEvent, ViewerRun, ViewerToolDetail } from "./contracts.js";
 import { loadViewerRun } from "./load.js";
 import { reconstructDecodeReplay } from "./replay.js";
 
@@ -150,6 +150,7 @@ export async function startViewerServer(options: {
   port?: number;
   assetRoot?: string;
   viewerRun?: ViewerRun;
+  viewerToolDetails?: ReadonlyMap<number, ViewerToolDetail>;
   replayEvents?: () => AsyncIterable<DecodeStreamEvent>;
 }): Promise<{ url: string; close: () => Promise<void> }> {
   const root = resolve(options.root);
@@ -161,8 +162,16 @@ export async function startViewerServer(options: {
   const generatedAssets = options.assetRoot === undefined ? await buildViewerAssets() : undefined;
   const assetRoot = resolve(options.assetRoot ?? generatedAssets!.path);
   let run: ViewerRun;
+  let toolDetails: ReadonlyMap<number, ViewerToolDetail>;
   try {
-    run = options.viewerRun ?? (await loadViewerRun(root, runRoot));
+    if (options.viewerRun === undefined) {
+      const loaded = await loadViewerRun(root, runRoot);
+      run = loaded.run;
+      toolDetails = loaded.toolDetails;
+    } else {
+      run = options.viewerRun;
+      toolDetails = options.viewerToolDetails ?? new Map();
+    }
   } catch (error) {
     await generatedAssets?.cleanup();
     throw error;
@@ -182,6 +191,19 @@ export async function startViewerServer(options: {
           json(response, 200, run);
           return;
         }
+        const toolDetailMatch = /^\/api\/tool\/(\d+)$/.exec(url.pathname);
+        if (toolDetailMatch !== null) {
+          const startedSequence = Number(toolDetailMatch[1]);
+          const detail = Number.isSafeInteger(startedSequence)
+            ? toolDetails.get(startedSequence)
+            : undefined;
+          if (detail === undefined) {
+            json(response, 404, { error: "Tool detail not found." });
+          } else {
+            json(response, 200, detail);
+          }
+          return;
+        }
         if (url.pathname === "/api/decode/events") {
           response.writeHead(200, {
             ...commonHeaders(),
@@ -194,6 +216,10 @@ export async function startViewerServer(options: {
             if (event.type === "complete" || event.type === "failed") response.end();
           });
           request.once("close", unsubscribe);
+          return;
+        }
+        if (url.pathname.startsWith("/api/")) {
+          json(response, 404, { error: "Not found." });
           return;
         }
         await serveAsset(assetRoot, url.pathname, response);

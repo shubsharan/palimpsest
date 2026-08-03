@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { DecodeStreamEvent, ViewerRun } from "./contracts.js";
+import type { DecodeStreamEvent, ViewerRun, ViewerToolDetail } from "./contracts.js";
 import { startViewerServer } from "./server.js";
 
 function run(): ViewerRun {
@@ -29,9 +29,24 @@ function run(): ViewerRun {
     finalScores: [],
     ciphertext: "cipher text",
     events: [],
-    toolCalls: [],
+    toolCalls: [
+      {
+        id: "call-1",
+        agentId: "agent-1",
+        name: "run_command",
+        startedSequence: 2,
+        startedAtMs: 20,
+        completedSequence: 3,
+        completedAtMs: 30,
+        status: "completed",
+      },
+    ],
     teamMessages: [],
   };
+}
+
+function toolDetails(): ReadonlyMap<number, ViewerToolDetail> {
+  return new Map([[2, { arguments: { command: "pwd" }, output: { stdout: "/workspace" } }]]);
 }
 
 async function* replay(): AsyncGenerator<DecodeStreamEvent> {
@@ -49,6 +64,7 @@ describe("viewer server", () => {
       port: 0,
       assetRoot: assets,
       viewerRun: run(),
+      viewerToolDetails: toolDetails(),
       replayEvents: replay,
     });
     try {
@@ -56,7 +72,19 @@ describe("viewer server", () => {
       const runResponse = await fetch(`${viewer.url}/api/run`);
       expect(runResponse.status).toBe(200);
       expect(runResponse.headers.get("content-security-policy")).toContain("default-src 'self'");
-      expect(await runResponse.json()).toMatchObject({ runId: "viewer-test" });
+      const runBody = (await runResponse.json()) as ViewerRun;
+      expect(runBody).toMatchObject({ runId: "viewer-test" });
+      expect(runBody.toolCalls[0]).not.toHaveProperty("arguments");
+      expect(runBody.toolCalls[0]).not.toHaveProperty("output");
+
+      const detailResponse = await fetch(`${viewer.url}/api/tool/2`);
+      expect(detailResponse.status).toBe(200);
+      expect(await detailResponse.json()).toEqual({
+        arguments: { command: "pwd" },
+        output: { stdout: "/workspace" },
+      });
+      expect((await fetch(`${viewer.url}/api/tool/999`)).status).toBe(404);
+      expect((await fetch(`${viewer.url}/api/tool/not-a-sequence`)).status).toBe(404);
 
       const streamResponse = await fetch(`${viewer.url}/api/decode/events`);
       const stream = await streamResponse.text();

@@ -194,6 +194,8 @@ h1 {
   background: rgba(255, 253, 246, 0.72);
   box-shadow: 2px 2px 0 rgba(45, 58, 54, 0.08);
   animation: card-in 180ms ease-out both;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 .stream-card > header {
   display: flex;
@@ -268,6 +270,11 @@ h1 {
 .tool-detail {
   border-top: 1px solid var(--rule);
   padding: 8px;
+}
+.tool-detail-loading {
+  color: var(--ink-soft);
+  font-family: "Newsreader Variable", serif;
+  font-style: italic;
 }
 .tool-detail h4 {
   margin: 4px 0;
@@ -484,6 +491,11 @@ select {
   font-size: 17px;
   line-height: 1.58;
   text-wrap: pretty;
+}
+.decode-paragraph {
+  min-height: 1lh;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 6lh;
 }
 .decode-word {
   border-radius: 2px;

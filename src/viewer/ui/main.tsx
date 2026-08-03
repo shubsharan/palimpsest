@@ -2,18 +2,38 @@ import "@fontsource-variable/newsreader/wght.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 
 import type {
   DecodeCheckpoint,
   DecodeStreamEvent,
-  DecodeWordState,
   ViewerEvent,
   ViewerEventCategory,
   ViewerRun,
+  ViewerTeamMessage,
   ViewerToolCall,
+  ViewerToolDetail,
 } from "../contracts.js";
+import {
+  appendDecodeCheckpoint,
+  buildViewerReplayIndex,
+  countCiphertextWords,
+  decodeStateName,
+  filterViewerLane,
+  replayTimeAt,
+  upperBound,
+  type DecodeSnapshot,
+  type ViewerLaneIndex,
+} from "./replay-index.js";
 import "./styles.css";
 
 const CATEGORIES: readonly ViewerEventCategory[] = [
@@ -28,12 +48,8 @@ const CATEGORIES: readonly ViewerEventCategory[] = [
   "infrastructure",
 ];
 const SPEEDS = [1, 10, 60, 300] as const;
-
-function object(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
+const CLOCK_PUBLISH_INTERVAL_MS = 50;
+const toolDetailCache = new Map<number, Promise<ViewerToolDetail>>();
 
 function formatTime(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1_000));
@@ -51,180 +67,176 @@ function jsonText(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
-function returnedSummary(value: unknown): string | undefined {
-  const root = object(value);
-  if (root?.status !== "captured" || !Array.isArray(root.items)) return undefined;
-  const text = root.items.flatMap((rawItem) => {
-    const item = object(rawItem);
-    if (!Array.isArray(item?.summary)) return [];
-    return item.summary.flatMap((rawEntry) => {
-      const entry = object(rawEntry);
-      return typeof entry?.text === "string" ? [entry.text] : [];
-    });
+function loadToolDetail(startedSequence: number): Promise<ViewerToolDetail> {
+  const cached = toolDetailCache.get(startedSequence);
+  if (cached !== undefined) return cached;
+  const pending = fetch(`/api/tool/${String(startedSequence)}`).then(async (response) => {
+    if (!response.ok) throw new Error(`Tool detail API returned ${String(response.status)}.`);
+    return (await response.json()) as ViewerToolDetail;
   });
-  return text.length === 0 ? undefined : text.join("\n\n");
+  toolDetailCache.set(startedSequence, pending);
+  void pending.catch(() => toolDetailCache.delete(startedSequence));
+  return pending;
 }
 
-function ResponseCard({ event }: { event: ViewerEvent }) {
-  const data = object(event.data);
-  const finalResponse = typeof data?.finalResponse === "string" ? data.finalResponse : undefined;
-  const reasoningSummary =
-    typeof data?.reasoningSummary === "string" ? data.reasoningSummary : undefined;
-  const providerSummary = returnedSummary(data?.returnedReasoningSummary);
-  const usage = object(data?.usage);
+const ResponseCard = memo(function ResponseCard({ event }: { event: ViewerEvent }) {
+  const display = event.display;
+  if (display?.type !== "model-response") return null;
   return (
     <article className="stream-card response-card">
       <header>
         <span>Model response</span>
         <time>{formatTime(event.atMs)}</time>
       </header>
-      {providerSummary === undefined ? null : (
+      {display.providerSummary === undefined ? null : (
         <details className="reasoning-note">
           <summary>Provider-returned reasoning summary</summary>
-          <p>{providerSummary}</p>
+          <p>{display.providerSummary}</p>
         </details>
       )}
-      {reasoningSummary === undefined ? null : (
+      {display.reasoningSummary === undefined ? null : (
         <details className="reasoning-note">
           <summary>Observable reasoning text</summary>
-          <p>{reasoningSummary}</p>
+          <p>{display.reasoningSummary}</p>
         </details>
       )}
-      <p className={finalResponse === undefined ? "empty-response" : "model-copy"}>
-        {finalResponse ?? "Tool-directed turn; no model text was returned."}
+      <p className={display.finalResponse === undefined ? "empty-response" : "model-copy"}>
+        {display.finalResponse ?? "Tool-directed turn; no model text was returned."}
       </p>
-      {typeof usage?.outputTokens === "number" ? (
-        <footer>{usage.outputTokens.toLocaleString()} output tokens</footer>
-      ) : null}
+      {display.outputTokens === undefined ? null : (
+        <footer>{display.outputTokens.toLocaleString()} output tokens</footer>
+      )}
     </article>
   );
-}
+});
 
-function ToolCard({ call, playhead }: { call: ViewerToolCall; playhead: number }) {
-  const completed = call.completedAtMs !== undefined && call.completedAtMs <= playhead;
+const ToolCard = memo(function ToolCard({
+  call,
+  completed,
+}: {
+  call: ViewerToolCall;
+  completed: boolean;
+}) {
+  const [opened, setOpened] = useState(false);
+  const [detail, setDetail] = useState<ViewerToolDetail>();
+  const [detailError, setDetailError] = useState<string>();
   const status = completed ? call.status : "running";
-  const elapsed = completed ? Math.max(0, call.completedAtMs! - call.startedAtMs) : undefined;
+  const elapsed = completed
+    ? Math.max(0, (call.completedAtMs ?? call.startedAtMs) - call.startedAtMs)
+    : undefined;
+  const open = () => {
+    if (opened) return;
+    setOpened(true);
+    void loadToolDetail(call.startedSequence).then(
+      (loaded) => setDetail(loaded),
+      (error: unknown) => setDetailError(error instanceof Error ? error.message : String(error)),
+    );
+  };
   return (
-    <details className={`stream-card tool-card status-${status}`}>
+    <details
+      className={`stream-card tool-card status-${status}`}
+      onToggle={(event) => {
+        if (event.currentTarget.open) open();
+      }}
+    >
       <summary>
         <span className="tool-status" aria-hidden="true" />
         <span>{call.name}</span>
         <time>{elapsed === undefined ? "running" : `${(elapsed / 1_000).toFixed(1)}s`}</time>
       </summary>
-      <div className="tool-detail">
-        <h4>Arguments</h4>
-        <pre>{jsonText(call.arguments)}</pre>
-        {!completed ? null : call.error === undefined ? (
-          <>
-            <h4>Output</h4>
-            <pre>{jsonText(call.output ?? null)}</pre>
-          </>
-        ) : (
-          <>
-            <h4>Error</h4>
-            <pre>{call.error}</pre>
-          </>
-        )}
-      </div>
+      {!opened ? null : detailError !== undefined ? (
+        <div className="tool-detail">
+          <h4>Detail unavailable</h4>
+          <pre>{detailError}</pre>
+        </div>
+      ) : detail === undefined ? (
+        <div className="tool-detail tool-detail-loading">Loading tool detail.</div>
+      ) : (
+        <div className="tool-detail">
+          <h4>Arguments</h4>
+          <pre>{jsonText(detail.arguments)}</pre>
+          {!completed ? null : detail.error === undefined ? (
+            <>
+              <h4>Output</h4>
+              <pre>{jsonText(detail.output ?? null)}</pre>
+            </>
+          ) : (
+            <>
+              <h4>Error</h4>
+              <pre>{detail.error}</pre>
+            </>
+          )}
+        </div>
+      )}
     </details>
   );
-}
+});
 
-function MilestoneCard({ event }: { event: ViewerEvent }) {
-  const data = object(event.data);
-  const label =
-    event.kind === "stage.released"
-      ? `Evidence stage ${String(data?.ordinal ?? "?")} released`
-      : event.kind === "session.started"
-        ? "Session opened"
-        : event.kind === "session.state"
-          ? `Session ${String(data?.state ?? "changed")}`
-          : event.kind;
+const MilestoneCard = memo(function MilestoneCard({ event }: { event: ViewerEvent }) {
+  const display = event.display;
+  if (display?.type !== "milestone") return null;
   return (
     <article className={`milestone-card category-${event.category}`}>
-      <span>{label}</span>
+      <span>{display.label}</span>
       <time>{formatTime(event.atMs)}</time>
     </article>
   );
-}
+});
 
-type LaneItem =
-  | { kind: "event"; atMs: number; sequence: number; event: ViewerEvent }
-  | { kind: "tool"; atMs: number; sequence: number; call: ViewerToolCall };
-
-function AgentLane({
-  run,
-  agentId,
-  playhead,
-  filters,
+const AgentLane = memo(function AgentLane({
+  lane,
+  boundaryTime,
   playing,
 }: {
-  run: ViewerRun;
-  agentId: string;
-  playhead: number;
-  filters: ReadonlySet<ViewerEventCategory>;
+  lane: ViewerLaneIndex;
+  boundaryTime: number;
   playing: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const agent = run.agents.find((candidate) => candidate.agentId === agentId)!;
-  const items = useMemo(() => {
-    const eventItems: LaneItem[] = run.events.flatMap((event) => {
-      if (
-        event.agentId !== agentId ||
-        event.atMs > playhead ||
-        !filters.has(event.category) ||
-        (event.kind !== "model.response" &&
-          event.kind !== "stage.released" &&
-          !event.kind.startsWith("session."))
-      ) {
-        return [];
-      }
-      return [{ kind: "event", atMs: event.atMs, sequence: event.sequence, event }];
-    });
-    const toolItems: LaneItem[] = filters.has("tool")
-      ? run.toolCalls
-          .filter((call) => call.agentId === agentId && call.startedAtMs <= playhead)
-          .map((call) => ({
-            kind: "tool",
-            atMs: call.startedAtMs,
-            sequence: call.startedSequence,
-            call,
-          }))
-      : [];
-    return [...eventItems, ...toolItems].sort(
-      (left, right) => left.atMs - right.atMs || left.sequence - right.sequence,
-    );
-  }, [agentId, filters, playhead, run.events, run.toolCalls]);
+  const visibleCount = upperBound(lane.itemTimes, boundaryTime);
   useEffect(() => {
     if (playing) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [items.length, playing]);
+  }, [visibleCount, playing]);
   return (
-    <section className="agent-lane" data-agent={agentId}>
+    <section className="agent-lane" data-agent={lane.agentId}>
       <header className="lane-header">
         <span className="agent-mark" aria-hidden="true" />
         <div>
-          <h2>{agentId}</h2>
-          <p>{agent.actualModel ?? agent.requestedModel}</p>
+          <h2>{lane.agentId}</h2>
+          <p>{lane.model}</p>
         </div>
       </header>
       <div className="lane-stream" ref={scrollRef}>
-        {items.length === 0 ? <p className="waiting-copy">Waiting for the playhead.</p> : null}
-        {items.map((item) =>
-          item.kind === "tool" ? (
-            <ToolCard key={`tool-${item.sequence}`} call={item.call} playhead={playhead} />
-          ) : item.event.kind === "model.response" ? (
-            <ResponseCard key={`event-${item.sequence}`} event={item.event} />
-          ) : (
-            <MilestoneCard key={`event-${item.sequence}`} event={item.event} />
-          ),
-        )}
+        {visibleCount === 0 ? <p className="waiting-copy">Waiting for the playhead.</p> : null}
+        {lane.items
+          .slice(0, visibleCount)
+          .map((item) =>
+            item.kind === "tool" ? (
+              <ToolCard
+                key={`tool-${String(item.sequence)}`}
+                call={item.call}
+                completed={
+                  item.call.completedAtMs !== undefined && item.call.completedAtMs <= boundaryTime
+                }
+              />
+            ) : item.event.display?.type === "model-response" ? (
+              <ResponseCard key={`event-${String(item.sequence)}`} event={item.event} />
+            ) : (
+              <MilestoneCard key={`event-${String(item.sequence)}`} event={item.event} />
+            ),
+          )}
       </div>
     </section>
   );
-}
+});
 
-function TeamRoom({ run, playhead }: { run: ViewerRun; playhead: number }) {
-  const messages = run.teamMessages.filter((message) => message.atMs <= playhead);
+const TeamRoom = memo(function TeamRoom({
+  messages,
+  visibleCount,
+}: {
+  messages: readonly ViewerTeamMessage[];
+  visibleCount: number;
+}) {
   return (
     <section className="team-room">
       <header>
@@ -233,14 +245,14 @@ function TeamRoom({ run, playhead }: { run: ViewerRun; playhead: number }) {
           <h2>Team room</h2>
         </div>
         <span className="message-count">
-          {messages.length} / {run.teamMessages.length}
+          {visibleCount} / {messages.length}
         </span>
       </header>
       <div className="team-scroll">
-        {messages.length === 0 ? (
+        {visibleCount === 0 ? (
           <p className="waiting-copy">No messages at this point in the run.</p>
         ) : (
-          messages.map((message) => (
+          messages.slice(0, visibleCount).map((message) => (
             <article key={message.sequence} data-agent={message.author}>
               <header>
                 <strong>{message.author}</strong>
@@ -253,70 +265,118 @@ function TeamRoom({ run, playhead }: { run: ViewerRun; playhead: number }) {
       </div>
     </section>
   );
-}
+});
 
 interface TextSpan {
   surface: string;
   wordIndex?: number;
 }
 
-function tokenize(value: string): TextSpan[] {
-  const expression = /\p{L}+(?:['\u2019]\p{L}+)*/gu;
-  const spans: TextSpan[] = [];
-  let cursor = 0;
-  let wordIndex = 0;
-  for (const match of value.matchAll(expression)) {
-    const index = match.index;
-    if (index > cursor) spans.push({ surface: value.slice(cursor, index) });
-    spans.push({ surface: match[0], wordIndex });
-    wordIndex += 1;
-    cursor = index + match[0].length;
-  }
-  if (cursor < value.length) spans.push({ surface: value.slice(cursor) });
-  return spans;
+interface TextLine {
+  key: number;
+  spans: readonly TextSpan[];
 }
 
-function DecodePane({
+function tokenizeLines(value: string): TextLine[] {
+  const expression = /\p{L}+(?:['\u2019]\p{L}+)*/gu;
+  let wordIndex = 0;
+  return value.split("\n").map((line, key) => {
+    const spans: TextSpan[] = [];
+    let cursor = 0;
+    for (const match of line.matchAll(expression)) {
+      const index = match.index;
+      if (index > cursor) spans.push({ surface: line.slice(cursor, index) });
+      spans.push({ surface: match[0], wordIndex });
+      wordIndex += 1;
+      cursor = index + match[0].length;
+    }
+    if (cursor < line.length) spans.push({ surface: line.slice(cursor) });
+    return { key, spans };
+  });
+}
+
+const DecodedLine = memo(function DecodedLine({
+  line,
+  snapshot,
+}: {
+  line: TextLine;
+  snapshot: DecodeSnapshot;
+}) {
+  const content: React.ReactNode[] = [];
+  let plain = "";
+  const flush = () => {
+    if (plain.length === 0) return;
+    content.push(plain);
+    plain = "";
+  };
+  for (let spanIndex = 0; spanIndex < line.spans.length; spanIndex += 1) {
+    const span = line.spans[spanIndex]!;
+    if (span.wordIndex === undefined) {
+      plain += span.surface;
+      continue;
+    }
+    const candidate = snapshot.candidates[span.wordIndex];
+    const state = decodeStateName(snapshot.states[span.wordIndex] ?? 0);
+    if (candidate === undefined && state === "unchanged") {
+      plain += span.surface;
+      continue;
+    }
+    flush();
+    const following = line.spans[spanIndex + 1];
+    const suffix = following?.wordIndex === undefined ? following.surface : "";
+    if (suffix.length > 0) spanIndex += 1;
+    content.push(
+      <span
+        id={`decode-word-${String(span.wordIndex)}`}
+        key={span.wordIndex}
+        className={`decode-word state-${state}`}
+        title={`Cipher: ${span.surface} | Candidate: ${candidate ?? "missing"}`}
+      >
+        {candidate ?? "[missing]"}
+        {suffix}
+      </span>,
+    );
+  }
+  flush();
+  return <div className="decode-paragraph">{content.length === 0 ? "\u00a0" : content}</div>;
+});
+
+const DecodedPaper = memo(function DecodedPaper({
+  ciphertext,
+  snapshot,
+}: {
+  ciphertext: string;
+  snapshot: DecodeSnapshot | undefined;
+}) {
+  const lines = useMemo(() => tokenizeLines(ciphertext), [ciphertext]);
+  if (snapshot === undefined) return <div className="decoded-paper">{ciphertext}</div>;
+  return (
+    <div className="decoded-paper">
+      {lines.map((line) => (
+        <DecodedLine key={line.key} line={line} snapshot={snapshot} />
+      ))}
+    </div>
+  );
+});
+
+const DecodePane = memo(function DecodePane({
   run,
-  playhead,
-  checkpoints,
+  snapshot,
   replayStatus,
+  originId,
+  visibleCheckpointCount,
+  checkpointCount,
+  onOriginChange,
 }: {
   run: ViewerRun;
-  playhead: number;
-  checkpoints: readonly DecodeCheckpoint[];
+  snapshot: DecodeSnapshot | undefined;
   replayStatus: string;
+  originId: string;
+  visibleCheckpointCount: number;
+  checkpointCount: number;
+  onOriginChange: (originId: string) => void;
 }) {
-  const [originId, setOriginId] = useState(run.origins[0]?.originId ?? "shared");
-  const spans = useMemo(() => tokenize(run.ciphertext), [run.ciphertext]);
-  const originCheckpoints = useMemo(
-    () =>
-      checkpoints
-        .filter((checkpoint) => checkpoint.originId === originId)
-        .sort((left, right) => left.atMs - right.atMs),
-    [checkpoints, originId],
-  );
-  const visibleCheckpoints = originCheckpoints.filter((checkpoint) => checkpoint.atMs <= playhead);
-  const active = visibleCheckpoints.at(-1);
-  const wordState = useMemo(() => {
-    const state = new Map<number, { candidate: string | null; state: DecodeWordState }>();
-    for (const checkpoint of visibleCheckpoints) {
-      if (checkpoint.status !== "ready") continue;
-      for (const [index, word] of state) {
-        const nextState =
-          word.state === "newly-correct"
-            ? "previously-correct"
-            : word.state === "previously-correct"
-              ? "previously-correct"
-              : "unchanged";
-        state.set(index, { ...word, state: nextState });
-      }
-      for (const delta of checkpoint.deltas ?? []) {
-        state.set(delta.index, { candidate: delta.candidate, state: delta.state });
-      }
-    }
-    return state;
-  }, [visibleCheckpoints]);
+  const active = snapshot?.checkpoint;
   const jumpTo = (index: number) => {
     document.getElementById(`decode-word-${String(index)}`)?.scrollIntoView({
       behavior: "smooth",
@@ -333,7 +393,7 @@ function DecodePane({
         {run.origins.length > 1 ? (
           <label>
             Origin
-            <select value={originId} onChange={(event) => setOriginId(event.target.value)}>
+            <select value={originId} onChange={(event) => onOriginChange(event.target.value)}>
               {run.origins.map((origin) => (
                 <option key={origin.originId}>{origin.originId}</option>
               ))}
@@ -353,7 +413,7 @@ function DecodePane({
         <div>
           <span>Checkpoint</span>
           <strong>
-            {visibleCheckpoints.length}/{originCheckpoints.length}
+            {visibleCheckpointCount}/{checkpointCount}
           </strong>
         </div>
       </div>
@@ -396,31 +456,52 @@ function DecodePane({
         <span className="key-regressed">regressed</span>
         <span className="key-changed">changed, incorrect</span>
       </div>
-      <div className="decoded-paper">
-        {spans.map((span, index) => {
-          if (span.wordIndex === undefined)
-            return <React.Fragment key={index}>{span.surface}</React.Fragment>;
-          const decoded = wordState.get(span.wordIndex);
-          return (
-            <span
-              id={`decode-word-${String(span.wordIndex)}`}
-              key={index}
-              className={`decode-word state-${decoded?.state ?? "unchanged"}`}
-              title={`Cipher: ${span.surface}${decoded === undefined ? "" : ` | Candidate: ${decoded.candidate ?? "missing"}`}`}
-            >
-              {decoded?.candidate ?? (decoded?.candidate === null ? "[missing]" : span.surface)}
-            </span>
-          );
-        })}
-      </div>
+      <DecodedPaper ciphertext={run.ciphertext} snapshot={snapshot} />
     </section>
   );
-}
+});
+
+const TimelineMarkers = memo(function TimelineMarkers({
+  run,
+  filters,
+  checkpoints,
+  onSeek,
+}: {
+  run: ViewerRun;
+  filters: ReadonlySet<ViewerEventCategory>;
+  checkpoints: readonly DecodeCheckpoint[];
+  onSeek: (value: number) => void;
+}) {
+  return (
+    <>
+      {run.events.map((event) =>
+        filters.has(event.category) ? (
+          <button
+            aria-label={`${event.kind} at ${formatTime(event.atMs)}`}
+            className={`event-tick category-${event.category}`}
+            key={event.sequence}
+            onClick={() => onSeek(event.atMs)}
+            style={{ left: `${(event.atMs / Math.max(1, run.durationMs)) * 100}%` }}
+            title={`${formatTime(event.atMs)} ${event.kind}`}
+          />
+        ) : null,
+      )}
+      {checkpoints.map((checkpoint) => (
+        <button
+          aria-label={`Decode checkpoint at ${formatTime(checkpoint.atMs)}`}
+          className="event-tick decode-tick"
+          key={checkpoint.checkpointId}
+          onClick={() => onSeek(checkpoint.atMs)}
+          style={{ left: `${(checkpoint.atMs / Math.max(1, run.durationMs)) * 100}%` }}
+        />
+      ))}
+    </>
+  );
+});
 
 function Timeline({
   run,
   playhead,
-  setPlayhead,
   playing,
   setPlaying,
   speed,
@@ -428,10 +509,10 @@ function Timeline({
   filters,
   toggleFilter,
   checkpoints,
+  onSeek,
 }: {
   run: ViewerRun;
   playhead: number;
-  setPlayhead: (value: number) => void;
   playing: boolean;
   setPlaying: (value: boolean) => void;
   speed: number;
@@ -439,24 +520,20 @@ function Timeline({
   filters: ReadonlySet<ViewerEventCategory>;
   toggleFilter: (category: ViewerEventCategory) => void;
   checkpoints: readonly DecodeCheckpoint[];
+  onSeek: (value: number) => void;
 }) {
   const times = useMemo(
     () =>
       [
-        ...new Set([...run.events.map(({ atMs }) => atMs), ...checkpoints.map(({ atMs }) => atMs)]),
+        ...new Set([
+          ...run.events.filter(({ category }) => filters.has(category)).map(({ atMs }) => atMs),
+          ...checkpoints.map(({ atMs }) => atMs),
+        ]),
       ].sort((left, right) => left - right),
-    [checkpoints, run.events],
+    [checkpoints, filters, run.events],
   );
-  const previous = () => {
-    const target = [...times].reverse().find((time) => time < playhead - 1) ?? 0;
-    setPlaying(false);
-    setPlayhead(target);
-  };
-  const next = () => {
-    const target = times.find((time) => time > playhead + 1) ?? run.durationMs;
-    setPlaying(false);
-    setPlayhead(target);
-  };
+  const previous = () => onSeek(times[upperBound(times, playhead - 1) - 1] ?? 0);
+  const next = () => onSeek(times[upperBound(times, playhead + 1)] ?? run.durationMs);
   return (
     <footer className="timeline-shell">
       <div className="filter-row">
@@ -471,43 +548,14 @@ function Timeline({
         ))}
       </div>
       <div className="timeline-track">
-        {run.events.map((event) =>
-          filters.has(event.category) ? (
-            <button
-              aria-label={`${event.kind} at ${formatTime(event.atMs)}`}
-              className={`event-tick category-${event.category}`}
-              key={event.sequence}
-              onClick={() => {
-                setPlaying(false);
-                setPlayhead(event.atMs);
-              }}
-              style={{ left: `${(event.atMs / Math.max(1, run.durationMs)) * 100}%` }}
-              title={`${formatTime(event.atMs)} ${event.kind}`}
-            />
-          ) : null,
-        )}
-        {checkpoints.map((checkpoint) => (
-          <button
-            aria-label={`Decode checkpoint at ${formatTime(checkpoint.atMs)}`}
-            className="event-tick decode-tick"
-            key={checkpoint.checkpointId}
-            onClick={() => {
-              setPlaying(false);
-              setPlayhead(checkpoint.atMs);
-            }}
-            style={{ left: `${(checkpoint.atMs / Math.max(1, run.durationMs)) * 100}%` }}
-          />
-        ))}
+        <TimelineMarkers run={run} filters={filters} checkpoints={checkpoints} onSeek={onSeek} />
         <input
           aria-label="Run playhead"
           type="range"
           min="0"
           max={Math.max(1, run.durationMs)}
           value={playhead}
-          onChange={(event) => {
-            setPlaying(false);
-            setPlayhead(Number(event.target.value));
-          }}
+          onChange={(event) => onSeek(Number(event.target.value))}
         />
       </div>
       <div className="transport-row">
@@ -543,20 +591,25 @@ function Timeline({
 function App() {
   const [run, setRun] = useState<ViewerRun>();
   const [loadError, setLoadError] = useState<string>();
-  const [checkpoints, setCheckpoints] = useState<DecodeCheckpoint[]>([]);
+  const [snapshots, setSnapshots] = useState<readonly DecodeSnapshot[]>([]);
+  const snapshotsRef = useRef<readonly DecodeSnapshot[]>([]);
   const [replayStatus, setReplayStatus] = useState("preparing");
   const [playhead, setPlayhead] = useState(0);
+  const playheadRef = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(60);
   const [filters, setFilters] = useState<Set<ViewerEventCategory>>(() => new Set(CATEGORIES));
   const [mobilePanel, setMobilePanel] = useState("agents");
+  const [originId, setOriginId] = useState("shared");
 
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/run", { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Viewer API returned ${String(response.status)}.`);
-        setRun((await response.json()) as ViewerRun);
+        const loaded = (await response.json()) as ViewerRun;
+        setRun(loaded);
+        setOriginId(loaded.origins[0]?.originId ?? "shared");
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
@@ -566,16 +619,20 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (run === undefined) return;
+    const wordCount = countCiphertextWords(run.ciphertext);
     const source = new EventSource("/api/decode/events");
     source.addEventListener("replay", (rawEvent) => {
       const event = JSON.parse((rawEvent as MessageEvent<string>).data) as DecodeStreamEvent;
       if (event.type === "checkpoint") {
-        setCheckpoints((current) => {
-          const next = current.filter(
-            ({ checkpointId }) => checkpointId !== event.checkpoint.checkpointId,
-          );
-          return [...next, event.checkpoint];
-        });
+        try {
+          const next = appendDecodeCheckpoint(snapshotsRef.current, event.checkpoint, wordCount);
+          snapshotsRef.current = next;
+          startTransition(() => setSnapshots(next));
+        } catch (error) {
+          setReplayStatus(error instanceof Error ? error.message : String(error));
+          source.close();
+        }
       } else if (event.type === "complete") {
         setReplayStatus("complete");
         source.close();
@@ -590,20 +647,41 @@ function App() {
       );
     };
     return () => source.close();
-  }, []);
+  }, [run]);
+
+  const commitPlayhead = useCallback(
+    (value: number) => {
+      const bounded = Math.min(run?.durationMs ?? value, Math.max(0, value));
+      playheadRef.current = bounded;
+      setPlayhead(bounded);
+    },
+    [run?.durationMs],
+  );
+  const seek = useCallback(
+    (value: number) => {
+      setPlaying(false);
+      commitPlayhead(value);
+    },
+    [commitPlayhead],
+  );
 
   useEffect(() => {
     if (!playing || run === undefined) return;
     let frame = 0;
-    let previous = performance.now();
+    const anchorTime = performance.now();
+    const anchorPlayhead = playheadRef.current;
+    let lastPublished = anchorTime - CLOCK_PUBLISH_INTERVAL_MS;
     const advance = (now: number) => {
-      const elapsed = now - previous;
-      previous = now;
-      setPlayhead((current) => {
-        const next = Math.min(run.durationMs, current + elapsed * speed);
-        if (next >= run.durationMs) setPlaying(false);
-        return next;
-      });
+      const next = replayTimeAt(anchorPlayhead, now - anchorTime, speed, run.durationMs);
+      if (now - lastPublished >= CLOCK_PUBLISH_INTERVAL_MS || next >= run.durationMs) {
+        playheadRef.current = next;
+        setPlayhead(next);
+        lastPublished = now;
+      }
+      if (next >= run.durationMs) {
+        setPlaying(false);
+        return;
+      }
       frame = requestAnimationFrame(advance);
     };
     frame = requestAnimationFrame(advance);
@@ -619,16 +697,44 @@ function App() {
         event.preventDefault();
         setPlaying((current) => !current);
       } else if (event.code === "ArrowLeft") {
-        setPlaying(false);
-        setPlayhead((current) => Math.max(0, current - 5_000));
+        seek(playheadRef.current - 5_000);
       } else if (event.code === "ArrowRight") {
-        setPlaying(false);
-        setPlayhead((current) => Math.min(run.durationMs, current + 5_000));
+        seek(playheadRef.current + 5_000);
       }
     };
     window.addEventListener("keydown", keyboard);
     return () => window.removeEventListener("keydown", keyboard);
-  }, [run]);
+  }, [run, seek]);
+
+  const replayIndex = useMemo(
+    () => (run === undefined ? undefined : buildViewerReplayIndex(run)),
+    [run],
+  );
+  const lanes = useMemo(
+    () => replayIndex?.lanes.map((lane) => filterViewerLane(lane, filters)) ?? [],
+    [filters, replayIndex],
+  );
+  const checkpoints = useMemo(() => snapshots.map(({ checkpoint }) => checkpoint), [snapshots]);
+  const originSnapshots = useMemo(
+    () => snapshots.filter((snapshot) => snapshot.checkpoint.originId === originId),
+    [originId, snapshots],
+  );
+  const originCheckpointTimes = useMemo(
+    () => originSnapshots.map(({ checkpoint }) => checkpoint.atMs),
+    [originSnapshots],
+  );
+  const visibleCheckpointCount = upperBound(originCheckpointTimes, playhead);
+  const activeSnapshot = originSnapshots[visibleCheckpointCount - 1];
+  const teamVisibleCount =
+    replayIndex === undefined ? 0 : upperBound(replayIndex.teamMessageTimes, playhead);
+  const toggleFilter = useCallback((category: ViewerEventCategory) => {
+    setFilters((current) => {
+      const next = new Set(current);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  }, []);
 
   if (loadError !== undefined)
     return (
@@ -637,7 +743,7 @@ function App() {
         <p>{loadError}</p>
       </main>
     );
-  if (run === undefined)
+  if (run === undefined || replayIndex === undefined)
     return (
       <main className="loading-screen">
         <span />
@@ -645,14 +751,6 @@ function App() {
       </main>
     );
 
-  const toggleFilter = (category: ViewerEventCategory) => {
-    setFilters((current) => {
-      const next = new Set(current);
-      if (next.has(category)) next.delete(category);
-      else next.add(category);
-      return next;
-    });
-  };
   return (
     <div className="app-shell">
       <header className="run-header">
@@ -700,30 +798,33 @@ function App() {
       <main className="replay-grid" data-mobile-panel={mobilePanel}>
         <div className="observation-side">
           <div className="agent-grid">
-            {run.agents.map(({ agentId }) => (
-              <AgentLane
-                key={agentId}
-                run={run}
-                agentId={agentId}
-                playhead={playhead}
-                filters={filters}
-                playing={playing}
-              />
-            ))}
+            {lanes.map((lane) => {
+              const boundaryIndex = upperBound(lane.transitionTimes, playhead);
+              return (
+                <AgentLane
+                  key={lane.agentId}
+                  lane={lane}
+                  boundaryTime={lane.transitionTimes[boundaryIndex - 1] ?? -1}
+                  playing={playing}
+                />
+              );
+            })}
           </div>
-          <TeamRoom run={run} playhead={playhead} />
+          <TeamRoom messages={run.teamMessages} visibleCount={teamVisibleCount} />
         </div>
         <DecodePane
           run={run}
-          playhead={playhead}
-          checkpoints={checkpoints}
+          snapshot={activeSnapshot}
           replayStatus={replayStatus}
+          originId={originId}
+          visibleCheckpointCount={visibleCheckpointCount}
+          checkpointCount={originSnapshots.length}
+          onOriginChange={setOriginId}
         />
       </main>
       <Timeline
         run={run}
         playhead={playhead}
-        setPlayhead={setPlayhead}
         playing={playing}
         setPlaying={setPlaying}
         speed={speed}
@@ -731,6 +832,7 @@ function App() {
         filters={filters}
         toggleFilter={toggleFilter}
         checkpoints={checkpoints}
+        onSeek={seek}
       />
     </div>
   );
