@@ -42,29 +42,49 @@ function observed(measureId: string, value: number): JsonObject {
   };
 }
 
+function reviewCoded(
+  measureId: string,
+  ledger: "epistemic" | "social" | "instrumental",
+  value: number,
+): JsonObject {
+  return {
+    ...observed(measureId, value),
+    ledger,
+    basis: "review-coded",
+  };
+}
+
 function rated(dimensionId: string, rating: number): JsonObject {
   return { dimensionId, state: "rated", rating };
 }
 
-function scorecard(runId: string, originId: string): JsonObject {
+function scorecard(
+  runId: string,
+  originId: string,
+  mechanicalMeasures: readonly JsonObject[],
+  codedMeasureValue: number,
+): JsonObject {
   return {
     schemaVersion: 1,
     runId,
     canonicalOrigins: [{ originId, status: "eligible" }],
     outcome: { evaluations: [] },
     epistemic: {
+      measures: mechanicalMeasures,
       reviewers: [
         { judge: 1, dimensions: [rated("epistemic.revision", 2)] },
         { judge: 2, dimensions: [rated("epistemic.revision", 3)] },
       ],
     },
     social: {
+      measures: [reviewCoded("social.uptake-rate.judge-a.v1", "social", codedMeasureValue)],
       reviewers: [
         { judge: 1, dimensions: [] },
         { judge: 2, dimensions: [] },
       ],
     },
     instrumental: {
+      measures: [],
       reviewers: [
         { judge: 1, dimensions: [] },
         { judge: 2, dimensions: [] },
@@ -83,6 +103,11 @@ async function publishAnalyses(options: {
   completed?: boolean;
   graderVersion?: string;
   rubricVersion?: string;
+  codedMeasureValue?: number;
+  scorecardProcessMeasures?: (
+    measures: readonly JsonObject[],
+    originIndex: number,
+  ) => readonly JsonObject[];
 }): Promise<void> {
   const performanceId = `performance-${options.record.runId}`;
   const reviewId = `process-review-${options.record.runId}`;
@@ -129,7 +154,17 @@ async function publishAnalyses(options: {
     origins: originIds.map((originId) => ({ originId, status: "eligible" })),
   };
   const completed = options.completed ?? true;
-  const scorecards = originIds.map((originId) => scorecard(options.record.runId, originId));
+  const scorecards = originIds.map((originId, index) =>
+    scorecard(
+      options.record.runId,
+      originId,
+      options.scorecardProcessMeasures?.(
+        metrics.measures[index]!.values.filter(({ ledger }) => ledger !== "outcome"),
+        index,
+      ) ?? metrics.measures[index]!.values.filter(({ ledger }) => ledger !== "outcome"),
+      options.codedMeasureValue ?? 0.25 + index / 10,
+    ),
+  );
   const scorecardBytes = `${JSON.stringify(scorecards, null, 2)}\n`;
   const processManifest = {
     schemaVersion: 1,
@@ -336,6 +371,11 @@ describe("reportRuns", () => {
     expect(result.report.dimensions).toEqual([
       expect.objectContaining({ dimensionId: "epistemic.revision", ratingCount: 4 }),
     ]);
+    expect(result.report.outcomeLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ processMeasureId: "social.uptake-rate.judge-a.v1" }),
+      ]),
+    );
     expect(hasCompositeField(result.report)).toBe(false);
     expect(JSON.parse(await readFile(join(output, "report.json"), "utf8"))).toEqual(result.report);
     await expect(stat(join(output, "report.json"))).resolves.toMatchObject({
@@ -462,6 +502,113 @@ describe("reportRuns", () => {
     expect(result.report.dimensions).toEqual([
       expect.objectContaining({ uncertainty: expect.objectContaining({ clusterCount: 1 }) }),
     ]);
+  });
+
+  it("clusters separate executions independently when their run IDs match", async () => {
+    const collection = await tempRoot();
+    const first = await createSharedRunFixture({
+      root: join(collection, "first"),
+      configurationRoot: collection,
+      runId: "reused-run",
+    });
+    const secondFixture = await createSharedRunFixture({
+      root: join(collection, "second"),
+      configurationRoot: collection,
+      runId: "reused-run",
+    });
+    const second = {
+      ...secondFixture,
+      record: withRunInput(secondFixture.record, (run) => ({
+        ...run,
+        capabilities: { ...run.capabilities, checker: false },
+      })),
+    };
+    await Promise.all([
+      publishAnalyses({ ...first, root: collection, codedMeasureValue: 0.25 }),
+      publishAnalyses({ ...second, root: collection, codedMeasureValue: 0.75 }),
+    ]);
+    const configPath = await writeConfig(collection, {
+      schemaVersion: 1,
+      claimType: "descriptive",
+      include: { runIds: ["reused-run"], labels: {} },
+      versions: { grader: "epistemic-process-v1", rubric: "epistemic-process-v1" },
+      matchingFields: [],
+      experimentalUnit: "team",
+      clusterBy: "run",
+    });
+    const result = await reportRuns({
+      root: collection,
+      artifactsRoot: collection,
+      configPath,
+      output: join(collection, "report-output"),
+    });
+    expect(result.includedRunCount).toBe(2);
+    expect(result.report.dimensions).toEqual([
+      expect.objectContaining({ uncertainty: expect.objectContaining({ clusterCount: 2 }) }),
+    ]);
+    expect(result.report.outcomeLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          processMeasureId: "social.uptake-rate.judge-a.v1",
+          clusterCount: 2,
+        }),
+      ]),
+    );
+  });
+
+  it("rejects scorecard process measures that diverge from performance metrics", async () => {
+    const collection = await tempRoot();
+    const fixture = await createSharedRunFixture({ root: collection, runId: "run-a" });
+    await publishAnalyses({
+      ...fixture,
+      scorecardProcessMeasures: (measures) => [
+        ...measures,
+        observed("epistemic.extra-mechanical.v1", 0.5),
+      ],
+    });
+    const configPath = await writeConfig(collection, {
+      schemaVersion: 1,
+      claimType: "descriptive",
+      include: { runIds: [], labels: {} },
+      versions: { grader: "epistemic-process-v1", rubric: "epistemic-process-v1" },
+      matchingFields: [],
+      experimentalUnit: "team",
+      clusterBy: "run",
+    });
+    await expect(
+      reportRuns({
+        root: collection,
+        artifactsRoot: collection,
+        configPath,
+        output: join(collection, "report-output"),
+      }),
+    ).rejects.toThrow(/mechanical process measures differ/i);
+  });
+
+  it("rejects duplicate process measure IDs in a scorecard", async () => {
+    const collection = await tempRoot();
+    const fixture = await createSharedRunFixture({ root: collection, runId: "run-a" });
+    await publishAnalyses({
+      ...fixture,
+      scorecardProcessMeasures: (measures) => [measures[0]!, measures[0]!],
+    });
+    const configPath = await writeConfig(collection, {
+      schemaVersion: 1,
+      claimType: "descriptive",
+      include: { runIds: [], labels: {} },
+      versions: { grader: "epistemic-process-v1", rubric: "epistemic-process-v1" },
+      matchingFields: [],
+      experimentalUnit: "team",
+      clusterBy: "run",
+    });
+    await expect(
+      reportRuns({
+        root: collection,
+        artifactsRoot: collection,
+        configPath,
+        output: join(collection, "report-output"),
+      }),
+    ).rejects.toThrow(/repeats measure IDs/i);
   });
 
   it("records incompatible analysis versions as explicit descriptive exclusions", async () => {

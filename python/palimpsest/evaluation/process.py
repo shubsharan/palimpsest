@@ -429,11 +429,9 @@ def _decode_scorecard(value: object, index: int) -> dict[str, Any]:
         name=name,
         required={"runId", "originId", "clusterId", "outcomes", "processMeasures", "reviews"},
     )
-    run_id = _identifier(item["runId"], f"{name}.runId")
+    _identifier(item["runId"], f"{name}.runId")
     _identifier(item["originId"], f"{name}.originId")
-    cluster_id = _identifier(item["clusterId"], f"{name}.clusterId")
-    if cluster_id != run_id:
-        raise ValueError(f"{name}.clusterId must equal its run ID when clusterBy is run.")
+    _identifier(item["clusterId"], f"{name}.clusterId")
     for field in ("outcomes", "processMeasures"):
         entries = [
             _decode_scalar(scalar, f"{name}.{field}[{scalar_index}]")
@@ -472,9 +470,9 @@ def _decode_aggregate_request(value: object) -> dict[str, Any]:
         _decode_scorecard(scorecard, index)
         for index, scorecard in enumerate(_array(request["scorecards"], "scorecards"))
     ]
-    identities = [(scorecard["runId"], scorecard["originId"]) for scorecard in scorecards]
+    identities = [(scorecard["clusterId"], scorecard["originId"]) for scorecard in scorecards]
     if not scorecards or len(identities) != len(set(identities)):
-        raise ValueError("scorecards must have unique run and origin identities.")
+        raise ValueError("scorecards must have unique execution and origin identities.")
     if design["experimentalUnit"] == "team" and any(
         scorecard["originId"] != "shared" for scorecard in scorecards
     ):

@@ -68,7 +68,7 @@
 - [x] T019 [US1] Implement strict run/trace/topology validation, complete evidence indexing, reviewer-safe redaction, chronological windows, and omission manifests in `src/grading/evidence.ts`
 - [x] T020 [US1] Implement mechanical outcome, elapsed-time, stage-latency, tool, checker, message/read, Git-activity, token, termination, and publication measures in `python/palimpsest/evaluation/process.py`
 - [x] T021 [US1] Implement provider-free grading orchestration, Python invocation, atomic detail-directory publication, duplicate detection, and `performance` analysis append in `src/grading/grade.ts`
-- [x] T022 [US1] Implement strict grading-config loading, distinct-provider validation, per-reviewer ceilings, leakage preflight, and literal spend authorization before provider creation in `src/grading/review.ts`
+- [x] T022 [US1] Implement strict grading-config loading, distinct-provider validation, per-reviewer token limits, leakage preflight, and literal spend authorization before provider creation in `src/grading/review.ts`
 - [x] T023 [US1] Implement two independent judge calls, immutable raw response retention, output/citation validation, explicit incomplete states, and no automatic retry or consensus in `src/grading/review.ts`
 - [x] T024 [US1] Freeze process judgments before joining canonical-origin evaluations and publish separate outcome, epistemic, social, and instrumental scorecard sections in `src/grading/review.ts`
 - [x] T025 [US1] Route `grade` and `review` flags, success JSON, and non-zero diagnostics through `src/cli.ts`
@@ -168,7 +168,7 @@
 - [x] T062 Run the provider-free quickstart against synthetic artifacts and correct command or contract drift in `specs/022-epistemic-process-grader/quickstart.md`
 - [x] T063 Run `pnpm verify` and the focused grading CLI/pytest suites, resolving failures only in feature-touched files listed by `specs/022-epistemic-process-grader/plan.md`
 - [x] T064 Inspect prompt, tools, trace, run-record, and report outputs against all specification success criteria and record completed evidence in `specs/022-epistemic-process-grader/checklists/requirements.md`
-- [x] T065 Validate the exact grading configuration, completed run artifacts, leakage scan, provider-free grade path, and reviewer ceilings before any separately authorized findings-bearing review described in `grading/epistemic-process-v1.yaml`
+- [x] T065 Validate the exact grading configuration, completed run artifacts, leakage scan, provider-free grade path, and reviewer token limits before any separately authorized findings-bearing review described in `grading/epistemic-process-v1.yaml`
 
 ---
 

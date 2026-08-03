@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { contentDigest } from "../../src/canonical.js";
 import { buildFixture, derivedFixtureDefinition } from "../../src/fixture/build.js";
+import type { QuantitativeMeasure } from "../../src/grading/contracts.js";
 import { loadResolvedExperiment } from "../../src/experiment/manifest.js";
 import { parseFlags } from "../../src/flags.js";
 import {
@@ -70,37 +71,51 @@ async function publishSyntheticCompletedReview(
   const loaded = await loadRunRecord(projectRoot, runRoot);
   const performance = loaded.record.analyses.find((analysis) => analysis.kind === "performance");
   if (performance === undefined) throw new Error("Synthetic CLI fixture is missing performance.");
+  const metrics = JSON.parse(
+    await readFile(join(runRoot, dirname(performance.detailsPath), "metrics.json"), "utf8"),
+  ) as {
+    measures: readonly {
+      originId: string;
+      values: readonly QuantitativeMeasure[];
+    }[];
+  };
   const analysisId = "process-review-cli-fixture";
-  const scorecards = loaded.record.topology.origins.map(({ originId }) => ({
-    schemaVersion: 1,
-    runId: loaded.record.runId,
-    canonicalOrigins: [{ originId, status: "eligible" }],
-    outcome: { evaluations: [] },
-    epistemic: {
-      measures: [],
-      reviewers: [
-        { judge: 1, dimensions: [] },
-        { judge: 2, dimensions: [] },
-      ],
-    },
-    social: {
-      measures: [],
-      reviewers: [
-        { judge: 1, dimensions: [] },
-        { judge: 2, dimensions: [] },
-      ],
-    },
-    instrumental: {
-      measures: [],
-      reviewers: [
-        { judge: 1, dimensions: [] },
-        { judge: 2, dimensions: [] },
-      ],
-    },
-    disagreements: [],
-    eligibility: { status: "completed" },
-    limitations: ["Synthetic CLI routing fixture."],
-  }));
+  const scorecards = loaded.record.topology.origins.map(({ originId }) => {
+    const measureGroup = metrics.measures.find((group) => group.originId === originId);
+    if (measureGroup === undefined) {
+      throw new Error(`Synthetic CLI fixture is missing metrics for ${originId}.`);
+    }
+    return {
+      schemaVersion: 1,
+      runId: loaded.record.runId,
+      canonicalOrigins: [{ originId, status: "eligible" }],
+      outcome: { evaluations: [] },
+      epistemic: {
+        measures: measureGroup.values.filter(({ ledger }) => ledger === "epistemic"),
+        reviewers: [
+          { judge: 1, dimensions: [] },
+          { judge: 2, dimensions: [] },
+        ],
+      },
+      social: {
+        measures: measureGroup.values.filter(({ ledger }) => ledger === "social"),
+        reviewers: [
+          { judge: 1, dimensions: [] },
+          { judge: 2, dimensions: [] },
+        ],
+      },
+      instrumental: {
+        measures: measureGroup.values.filter(({ ledger }) => ledger === "instrumental"),
+        reviewers: [
+          { judge: 1, dimensions: [] },
+          { judge: 2, dimensions: [] },
+        ],
+      },
+      disagreements: [],
+      eligibility: { status: "completed" },
+      limitations: ["Synthetic CLI routing fixture."],
+    };
+  });
   const scorecardBytes = `${JSON.stringify(scorecards, null, 2)}\n`;
   const manifest = {
     schemaVersion: 1,

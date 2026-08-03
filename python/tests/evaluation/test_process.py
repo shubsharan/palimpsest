@@ -384,7 +384,7 @@ def test_aggregation_clusters_origins_and_calculates_uncertainty_and_association
     [
         (lambda request: request["design"].update({"unknown": True}), "exactly"),
         (lambda request: request["scorecards"].append(request["scorecards"][0]), "unique"),
-        (lambda request: request["scorecards"][0].update({"clusterId": "other"}), "run ID"),
+        (lambda request: request["scorecards"][0].update({"clusterId": "INVALID"}), "canonical"),
     ],
 )
 def test_aggregate_decoder_rejects_unknown_duplicate_and_invalid_cluster_inputs(

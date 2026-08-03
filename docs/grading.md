@@ -10,7 +10,7 @@ Large payloads are represented by bounded excerpts and explicit omission metadat
 
 ## Independent Process Review
 
-`puzzle:review` requires the exact performance analysis, one strict grading configuration, two reviewer profiles from different official provider families, per-reviewer ceilings, and literal `--allow-spend true`. Validation and leakage checks complete before provider construction. The authorization bounds the declared reviewer requests; it is not a billing guarantee.
+`puzzle:review` requires the exact performance analysis, one strict grading configuration, two reviewer profiles from different official provider families, a cumulative token limit and per-call output limit for each reviewer, and literal `--allow-spend true`. Validation and leakage checks complete before provider construction. Provider-reported input and output tokens accumulate independently for each reviewer. A response that crosses the cumulative limit is still retained, but the review becomes incomplete and makes no further call. The authorization permits provider access; it is not a monetary billing cap.
 
 Each reviewer receives the same deterministic evidence windows and versioned rubric. Model and provider identity, experiment labels that reveal identity, oracle material, final evaluations, reconstruction scores, success labels, and prior reviews are absent. Raw window and integration responses are retained separately from validated reviews. Every rating and episode transition must resolve to allowed evidence. Invalid citations, malformed output, provider failure, confidence, counterevidence, and disagreement remain explicit; there is no automatic retry, consensus, or averaging.
 

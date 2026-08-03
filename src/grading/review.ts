@@ -62,7 +62,8 @@ export interface GradingModelProfile {
 
 export interface GradingReviewerProfile {
   readonly profile: string;
-  readonly spendCeilingCents: number;
+  readonly tokenLimit: number;
+  readonly maxOutputTokens: number;
 }
 
 export interface GradingConfiguration {
@@ -77,7 +78,8 @@ export interface ReviewAdapterOptions {
   readonly providerFamily: OfficialProviderFamily;
   readonly model: string;
   readonly apiKeyEnv: string;
-  readonly spendCeilingCents: number;
+  readonly tokenLimit: number;
+  readonly maxOutputTokens: number;
   readonly env: NodeJS.ProcessEnv;
 }
 
@@ -260,7 +262,7 @@ export function decodeGradingConfiguration(value: unknown): GradingConfiguration
   const reviewers = decoded.reviewers.map((value, index): GradingReviewerProfile => {
     const reviewer = exact(
       value,
-      ["profile", "spendCeilingCents"],
+      ["profile", "tokenLimit", "maxOutputTokens"],
       `Grading reviewer ${String(index + 1)}`,
     );
     const profile = controlledId(reviewer.profile, `Grading reviewer ${String(index + 1)}.profile`);
@@ -271,9 +273,13 @@ export function decodeGradingConfiguration(value: unknown): GradingConfiguration
     }
     return {
       profile,
-      spendCeilingCents: positiveInteger(
-        reviewer.spendCeilingCents,
-        `Grading reviewer ${String(index + 1)}.spendCeilingCents`,
+      tokenLimit: positiveInteger(
+        reviewer.tokenLimit,
+        `Grading reviewer ${String(index + 1)}.tokenLimit`,
+      ),
+      maxOutputTokens: positiveInteger(
+        reviewer.maxOutputTokens,
+        `Grading reviewer ${String(index + 1)}.maxOutputTokens`,
       ),
     };
   }) as [GradingReviewerProfile, GradingReviewerProfile];
@@ -332,7 +338,8 @@ function credentialPreflight(
       providerFamily: model.provider,
       model: model.model,
       apiKeyEnv,
-      spendCeilingCents: reviewer.spendCeilingCents,
+      tokenLimit: reviewer.tokenLimit,
+      maxOutputTokens: reviewer.maxOutputTokens,
       env,
     };
   });
@@ -343,6 +350,7 @@ function defaultCreateAdapter(options: ReviewAdapterOptions): ModelAdapter {
     providerId: options.providerFamily,
     provider: { driver: options.providerFamily, apiKeyEnv: options.apiKeyEnv },
     model: options.model,
+    settings: { maxOutputTokens: options.maxOutputTokens },
     env: options.env,
   });
 }
@@ -617,14 +625,45 @@ class ProviderCallError extends Error {
   }
 }
 
+class ReviewerTokenLimitError extends Error {
+  constructor(tokenLimit: number, observedTokens: number) {
+    super(
+      observedTokens > tokenLimit
+        ? `Reviewer token limit ${String(tokenLimit)} was exceeded by the retained response (${String(observedTokens)} cumulative tokens).`
+        : `Reviewer token limit ${String(tokenLimit)} was reached; no further provider calls are allowed.`,
+    );
+    this.name = "ReviewerTokenLimitError";
+  }
+}
+
+function addTurnUsage(total: number, turn: RetainedTurn): number {
+  if (
+    !Number.isSafeInteger(turn.usage.inputTokens) ||
+    turn.usage.inputTokens < 0 ||
+    !Number.isSafeInteger(turn.usage.outputTokens) ||
+    turn.usage.outputTokens < 0
+  ) {
+    throw new Error("Reviewer token usage must contain non-negative safe integers.");
+  }
+  const next = total + turn.usage.inputTokens + turn.usage.outputTokens;
+  if (!Number.isSafeInteger(next) || next < total) {
+    throw new Error("Reviewer cumulative token usage must be a non-negative safe integer.");
+  }
+  return next;
+}
+
 function reviewSurfaceForOrigin(
   bundle: EvidenceBundle,
   record: RunRecord,
   originId: string,
 ): EvidenceBundle {
   if (bundle.communicationMode === "shared") return bundle;
-  const origin = record.topology.origins.find((candidate) => candidate.originId === originId);
+  const originIndex = record.topology.origins.findIndex(
+    (candidate) => candidate.originId === originId,
+  );
+  const origin = record.topology.origins[originIndex];
   if (origin === undefined) throw new Error(`Unknown canonical origin ${originId}.`);
+  const repositoryId = `origin-${String(originIndex + 1)}`;
   const actorIds = new Set(
     origin.agentIds.map((agentId) => {
       const sessionIndex = record.sessions.findIndex((session) => session.agentId === agentId);
@@ -635,9 +674,18 @@ function reviewSurfaceForOrigin(
       return actorId;
     }),
   );
-  const items = bundle.items.filter(
-    (item) => item.actorId === "runner" || actorIds.has(item.actorId),
-  );
+  const items = bundle.items.filter((item) => {
+    if (item.actorId !== "runner") return actorIds.has(item.actorId);
+    const content =
+      typeof item.content === "object" && item.content !== null && !Array.isArray(item.content)
+        ? (item.content as Record<string, unknown>)
+        : undefined;
+    if (typeof content?.repositoryId === "string") {
+      return content.repositoryId === repositoryId;
+    }
+    // Git changes are origin-scoped; missing or excerpted scope must not cross isolated origins.
+    return item.kind !== "git.changed";
+  });
   const visibleIds = new Set(items.map(({ evidenceId }) => evidenceId));
   const windows = bundle.windows.flatMap((window) => {
     const evidenceIds = window.evidenceIds.filter((evidenceId) => visibleIds.has(evidenceId));
@@ -696,6 +744,18 @@ async function runJudge(
 ): Promise<JudgeAttempt> {
   const origins: OriginTranscript[] = [];
   const reviewedOrigins: ValidatedOriginReview[] = [];
+  let cumulativeTokens = 0;
+  const requireRemainingBudget = (): void => {
+    if (cumulativeTokens >= adapterOptions.tokenLimit) {
+      throw new ReviewerTokenLimitError(adapterOptions.tokenLimit, cumulativeTokens);
+    }
+  };
+  const retainUsage = (turn: RetainedTurn): void => {
+    cumulativeTokens = addTurnUsage(cumulativeTokens, turn);
+    if (cumulativeTokens > adapterOptions.tokenLimit) {
+      throw new ReviewerTokenLimitError(adapterOptions.tokenLimit, cumulativeTokens);
+    }
+  };
   const transcript = (error?: string): JudgeTranscript => ({
     schemaVersion: 1,
     reviewId,
@@ -713,6 +773,7 @@ async function runJudge(
       origins.push({ originId, windows });
       await onTranscript(transcript());
       for (const [windowIndex, window] of surface.windows.entries()) {
+        requireRemainingBudget();
         const turn = await callReviewer(
           adapter,
           `agent-${String(judgeIndex + 1)}` as AgentId,
@@ -720,9 +781,11 @@ async function runJudge(
         );
         windows.push({ windowId: window.windowId, turn });
         await onTranscript(transcript());
+        retainUsage(turn);
         const candidateValue = JSON.parse(turn.response) as unknown;
         candidates.push(decodeCandidateOutput(candidateValue, window.windowId, surface));
       }
+      requireRemainingBudget();
       const integration = await callReviewer(
         adapter,
         `agent-${String(judgeIndex + 1)}` as AgentId,
@@ -730,6 +793,7 @@ async function runJudge(
       );
       origins[originIndex] = { originId, windows, integration };
       await onTranscript(transcript());
+      retainUsage(integration);
       const output = validateReviewerOutputAgainstBundle(
         decodeReviewerOutput(JSON.parse(integration.response) as unknown),
         surface,

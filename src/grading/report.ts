@@ -928,34 +928,92 @@ function aggregateReviews(
     .map(([reviewerId, dimensions]) => ({ reviewerId, dimensions }));
 }
 
+function scorecardMeasures(
+  ledger: Record<string, unknown>,
+  expectedLedger: "epistemic" | "social" | "instrumental",
+  name: string,
+): readonly QuantitativeMeasure[] {
+  if (!Array.isArray(ledger.measures)) {
+    throw new Error(`${name}.measures must be an array.`);
+  }
+  const measures = ledger.measures.map((measure, index) =>
+    decodeQuantitativeMeasure(measure, `${name}.measures[${index}]`),
+  );
+  if (measures.some(({ ledger: measureLedger }) => measureLedger !== expectedLedger)) {
+    throw new Error(`${name}.measures must belong to the ${expectedLedger} ledger.`);
+  }
+  return measures;
+}
+
+function uniqueMeasures(
+  measures: readonly QuantitativeMeasure[],
+  name: string,
+): readonly QuantitativeMeasure[] {
+  const ids = measures.map(({ measureId }) => measureId);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(`${name} repeats measure IDs.`);
+  }
+  return measures;
+}
+
+function canonicalMeasures(measures: readonly QuantitativeMeasure[]): string {
+  return canonicalJson(
+    [...measures].sort((left, right) => left.measureId.localeCompare(right.measureId)),
+  );
+}
+
 function toAggregateScorecards(run: EligibleRun): readonly AggregateScorecard[] {
   return run.scorecards.map((scorecard, index) => {
     const originId = scorecard.canonicalOrigins[0]!.originId;
     const metricGroup = run.metrics[index]!;
     const processLedgers = [
-      object(scorecard.epistemic, "epistemic scorecard ledger"),
-      object(scorecard.social, "social scorecard ledger"),
-      object(scorecard.instrumental, "instrumental scorecard ledger"),
+      {
+        id: "epistemic" as const,
+        value: object(scorecard.epistemic, "epistemic scorecard ledger"),
+      },
+      { id: "social" as const, value: object(scorecard.social, "social scorecard ledger") },
+      {
+        id: "instrumental" as const,
+        value: object(scorecard.instrumental, "instrumental scorecard ledger"),
+      },
     ];
     const outcomes = aggregateScalars(
       metricGroup.values.filter(({ ledger }) => ledger === "outcome"),
       "outcome measures",
     );
-    const processMeasures = aggregateScalars(
+    const immutableProcessMeasures = uniqueMeasures(
       metricGroup.values.filter(({ ledger }) => ledger !== "outcome"),
-      "process measures",
+      `Performance process measures for origin ${originId}`,
     );
-    const measureIds = processMeasures.map(({ measureId }) => measureId);
-    if (new Set(measureIds).size !== measureIds.length) {
-      throw new Error(`Scorecard repeats process measure IDs for origin ${originId}.`);
+    if (immutableProcessMeasures.some(({ basis }) => basis !== "mechanical")) {
+      throw new Error(`Performance process measures for origin ${originId} must be mechanical.`);
+    }
+    const reviewedProcessMeasures = uniqueMeasures(
+      processLedgers.flatMap(({ id, value }) =>
+        scorecardMeasures(value, id, `${id} scorecard ledger`),
+      ),
+      `Scorecard process measures for origin ${originId}`,
+    );
+    const reviewedMechanicalMeasures = reviewedProcessMeasures.filter(
+      ({ basis }) => basis === "mechanical",
+    );
+    if (
+      canonicalMeasures(reviewedMechanicalMeasures) !== canonicalMeasures(immutableProcessMeasures)
+    ) {
+      throw new Error(
+        `Scorecard mechanical process measures differ from performance metrics for origin ${originId}.`,
+      );
     }
     return {
       runId: controlledId(run.record.runId, "Scorecard runId"),
       originId: controlledId(originId, "Scorecard originId"),
-      clusterId: controlledId(run.record.runId, "Scorecard clusterId"),
+      clusterId: controlledId(run.performance.sourceDigest, "Scorecard clusterId"),
       outcomes,
-      processMeasures,
-      reviews: aggregateReviews(processLedgers, `scorecard origin ${originId}`),
+      processMeasures: aggregateScalars(reviewedProcessMeasures, "process measures"),
+      reviews: aggregateReviews(
+        processLedgers.map(({ value }) => value),
+        `scorecard origin ${originId}`,
+      ),
     };
   });
 }

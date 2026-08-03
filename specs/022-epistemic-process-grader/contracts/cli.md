@@ -43,11 +43,12 @@ pnpm puzzle:review \
 
 - Requires an exact valid `performance` analysis and unchanged source digest.
 - Rejects absent or non-literal `--allow-spend true` before provider construction.
-- Validates two reviewer profiles from distinct provider families and their declared spend ceilings.
+- Validates two reviewer profiles from distinct provider families, each with a cumulative `tokenLimit` and per-call `maxOutputTokens`.
 - Supplies both judges the same blinded bundle and rubric, never the run/model identity or final outcome.
-- Writes each raw response before validation, validates strict structure and every evidence citation, then freezes the two reviews before joining existing outcome facts.
+- Writes each raw response before validation, accounts provider-reported input plus output usage, validates strict structure and every evidence citation, then freezes the two reviews before joining existing outcome facts.
 - Appends `status: completed` only when both reviews validate. Provider errors or invalid reviews remain an explicit `status: incomplete` analysis and are not findings-bearing.
-- Does not average ratings, force consensus, or automatically retry.
+- Retains a response that crosses its reviewer's cumulative token limit, publishes the attempt incomplete, and makes no further call for that reviewer.
+- Does not average ratings, force consensus, or automatically retry. Literal spend authorization is not a monetary billing cap.
 
 Success shape:
 
@@ -107,9 +108,11 @@ models:
     model: claude-opus-5
 reviewers:
   - profile: reviewer-openai
-    spendCeilingCents: 300
+    tokenLimit: 500000
+    maxOutputTokens: 8000
   - profile: reviewer-anthropic
-    spendCeilingCents: 300
+    tokenLimit: 500000
+    maxOutputTokens: 8000
 ```
 
 The system derives analysis IDs, evidence windows, prompt structure, output schema, provider credentials, paths, digests, and publication order. Reviewer profiles must resolve through existing local model configuration and must belong to distinct provider families.
@@ -117,5 +120,5 @@ The system derives analysis IDs, evidence windows, prompt structure, output sche
 ## Exit Semantics
 
 - `0`: requested artifact published and validated.
-- Non-zero: no success-shaped result. Diagnostics identify configuration, artifact, leakage, citation, provider, spend, or publication failure.
+- Non-zero: no success-shaped result. Diagnostics identify configuration, artifact, leakage, citation, provider, token-limit, spend-authorization, or publication failure.
 - An incomplete paid review is an explicit published observation but exits non-zero so automation cannot mistake it for a findings-bearing grade.

@@ -9,6 +9,7 @@ import type {
   ModelRequest,
   ModelSessionContext,
   ModelTurn,
+  TokenUsage,
 } from "../model/contracts.js";
 import { appendRunAnalysis, loadRunRecord, type PerformanceRunAnalysis } from "../run/record.js";
 import {
@@ -42,8 +43,8 @@ const CONFIG: GradingConfiguration = {
     "reviewer-anthropic": { provider: "anthropic", model: "review-model-b" },
   },
   reviewers: [
-    { profile: "reviewer-openai", spendCeilingCents: 300 },
-    { profile: "reviewer-anthropic", spendCeilingCents: 300 },
+    { profile: "reviewer-openai", tokenLimit: 500_000, maxOutputTokens: 8_000 },
+    { profile: "reviewer-anthropic", tokenLimit: 500_000, maxOutputTokens: 8_000 },
   ],
 };
 
@@ -60,7 +61,8 @@ function yamlConfig(config: GradingConfiguration = CONFIG): string {
     "reviewers:",
     ...config.reviewers.flatMap((reviewer) => [
       `  - profile: ${reviewer.profile}`,
-      `    spendCeilingCents: ${String(reviewer.spendCeilingCents)}`,
+      `    tokenLimit: ${String(reviewer.tokenLimit)}`,
+      `    maxOutputTokens: ${String(reviewer.maxOutputTokens)}`,
     ]),
     "",
   ].join("\n");
@@ -164,6 +166,7 @@ class FakeAdapter implements ModelAdapter {
     rating: 0 | 1 | 2 | 3 | 4,
     prompt: string,
   ) => string;
+  readonly #usage: TokenUsage;
 
   constructor(
     bundle: EvidenceBundle,
@@ -174,10 +177,12 @@ class FakeAdapter implements ModelAdapter {
         reviewerOutput(value, score, { reference: candidates[0]!.candidates[0]!.evidence[0]! }),
       );
     },
+    usage: TokenUsage = { inputTokens: 10, outputTokens: 10 },
   ) {
     this.#bundle = bundle;
     this.#rating = rating;
     this.#integration = integration;
+    this.#usage = usage;
   }
 
   openSession(_context: ModelSessionContext) {
@@ -194,7 +199,7 @@ class FakeAdapter implements ModelAdapter {
                 return candidate(windowId!, items[0]!.reference);
               })()
             : this.#integration(this.#bundle, this.#rating, prompt),
-          usage: { inputTokens: 10, outputTokens: 10 },
+          usage: this.#usage,
           responseIdentity: { actualProvider: "fake", actualModel: "fake-reviewer" },
         };
       },
@@ -224,7 +229,26 @@ async function preparedRun(communicationMode: "shared" | "isolated" = "shared") 
             },
           ],
         })
-      : await createIsolatedRunFixture();
+      : await createIsolatedRunFixture({
+          observations: [
+            {
+              kind: "git.changed",
+              data: {
+                repositoryId: "agent-1",
+                refs: ["refs/heads/private-one"],
+                targets: [{ ref: "refs/heads/private-one", objectId: "1".repeat(40) }],
+              },
+            },
+            {
+              kind: "git.changed",
+              data: {
+                repositoryId: "agent-2",
+                refs: ["refs/heads/private-two"],
+                targets: [{ ref: "refs/heads/private-two", objectId: "2".repeat(40) }],
+              },
+            },
+          ],
+        });
   const configPath = join(fixture.root, "grading.yaml");
   const configurationSource = yamlConfig();
   await writeFile(configPath, configurationSource, "utf8");
@@ -428,6 +452,27 @@ describe("grading review configuration", () => {
     expect(() =>
       decodeGradingConfiguration({ ...CONFIG, reviewers: [{ ...CONFIG.reviewers[0] }] }),
     ).toThrow(/exactly two/i);
+    expect(() =>
+      decodeGradingConfiguration({
+        ...CONFIG,
+        reviewers: CONFIG.reviewers.map(({ profile }) => ({
+          profile,
+          spendCeilingCents: 300,
+        })),
+      }),
+    ).toThrow(/unknown or missing fields/i);
+    expect(() =>
+      decodeGradingConfiguration({
+        ...CONFIG,
+        reviewers: [{ ...CONFIG.reviewers[0], tokenLimit: 0 }, { ...CONFIG.reviewers[1] }],
+      }),
+    ).toThrow(/tokenLimit.*positive safe integer/i);
+    expect(() =>
+      decodeGradingConfiguration({
+        ...CONFIG,
+        reviewers: [{ ...CONFIG.reviewers[0], maxOutputTokens: 0 }, { ...CONFIG.reviewers[1] }],
+      }),
+    ).toThrow(/maxOutputTokens.*positive safe integer/i);
   });
 
   it("rejects authorization, credentials, leakage, and exact-input drift before adapter construction", async () => {
@@ -663,6 +708,51 @@ describe("independent qualitative review", () => {
     expect(duplicateConstructions).toBe(0);
   });
 
+  it("retains budget-boundary responses and makes no further reviewer calls", async () => {
+    const fixture = await preparedRun("isolated");
+    const first = new FakeAdapter(fixture.bundle, 2, undefined, {
+      inputTokens: 250_000,
+      outputTokens: 50_001,
+    });
+    const second = new FakeAdapter(fixture.bundle, 3, undefined, {
+      inputTokens: 450_000,
+      outputTokens: 50_000,
+    });
+    const deps = dependencies([first, second]);
+
+    let incomplete: PublishedIncompleteReviewError | undefined;
+    try {
+      await reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+        },
+        deps.value,
+      );
+    } catch (error) {
+      if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+      else throw error;
+    }
+
+    expect(incomplete).toBeDefined();
+    expect(incomplete!.result.analysis.reviews.map(({ status }) => status)).toEqual([
+      "invalid",
+      "invalid",
+    ]);
+    expect(first.prompts).toHaveLength(2);
+    expect(second.prompts).toHaveLength(1);
+    const firstRaw = await readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8");
+    expect(firstRaw).toContain('"inputTokens":250000');
+    expect(firstRaw).toContain('"outputTokens":50001');
+    expect(firstRaw).toMatch(/token limit 500000 was exceeded by the retained response/i);
+    const secondRaw = await readFile(join(incomplete!.result.path, "judge-2.raw.json"), "utf8");
+    expect(secondRaw).toContain('"inputTokens":450000');
+    expect(secondRaw).toMatch(/token limit 500000 was reached; no further provider calls/i);
+  });
+
   it("rejects hidden-state narration while retaining evidence-linked competing episode views", async () => {
     const fixture = await preparedRun();
     const hidden = new FakeAdapter(fixture.bundle, 2, (bundle) =>
@@ -750,6 +840,8 @@ describe("independent qualitative review", () => {
       "OPENAI_API_KEY",
       "ANTHROPIC_API_KEY",
     ]);
+    expect(deps.created.map(({ tokenLimit }) => tokenLimit)).toEqual([500_000, 500_000]);
+    expect(deps.created.map(({ maxOutputTokens }) => maxOutputTokens)).toEqual([8_000, 8_000]);
     const windowPrompts = first.prompts.filter((prompt) => prompt.includes("_WINDOW_V1"));
     const firstOriginPrompts = windowPrompts.filter((prompt) =>
       prompt.includes("Anonymous canonical origin ordinal: 1"),
@@ -759,8 +851,24 @@ describe("independent qualitative review", () => {
     );
     expect(firstOriginPrompts.length).toBeGreaterThan(0);
     expect(secondOriginPrompts.length).toBeGreaterThan(0);
-    expect(firstOriginPrompts.join("\n")).not.toContain('"actorId":"actor-2"');
-    expect(secondOriginPrompts.join("\n")).not.toContain('"actorId":"actor-1"');
+    const firstOriginSurface = firstOriginPrompts.join("\n");
+    const secondOriginSurface = secondOriginPrompts.join("\n");
+    expect(firstOriginSurface).not.toContain('"actorId":"actor-2"');
+    expect(secondOriginSurface).not.toContain('"actorId":"actor-1"');
+    expect(firstOriginSurface).toContain('"kind":"run.context"');
+    expect(secondOriginSurface).toContain('"kind":"run.context"');
+    expect(firstOriginSurface).toContain('"repositoryId":"origin-1"');
+    expect(firstOriginSurface).toContain("refs/heads/private-one");
+    expect(firstOriginSurface).toContain("1".repeat(40));
+    expect(firstOriginSurface).not.toContain('"repositoryId":"origin-2"');
+    expect(firstOriginSurface).not.toContain("refs/heads/private-two");
+    expect(firstOriginSurface).not.toContain("2".repeat(40));
+    expect(secondOriginSurface).toContain('"repositoryId":"origin-2"');
+    expect(secondOriginSurface).toContain("refs/heads/private-two");
+    expect(secondOriginSurface).toContain("2".repeat(40));
+    expect(secondOriginSurface).not.toContain('"repositoryId":"origin-1"');
+    expect(secondOriginSurface).not.toContain("refs/heads/private-one");
+    expect(secondOriginSurface).not.toContain("1".repeat(40));
     const publishedReviews = JSON.parse(
       await readFile(join(result.path, "judge-1.review.json"), "utf8"),
     ) as unknown[];

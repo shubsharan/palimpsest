@@ -178,7 +178,7 @@ The `RunAnalysis` variant appended by qualitative review.
 | `status` | `completed` or `incomplete` | Completed requires two valid reviews |
 | `performanceAnalysisId` | string | References the exact provider-free basis |
 | `rubricVersion` | string | Exact anchors and prompts |
-| `configurationDigest` | SHA-256 | Includes reviewer profiles and ceilings |
+| `configurationDigest` | SHA-256 | Includes reviewer profiles and token limits |
 | `bundleDigest` | SHA-256 | Identical for both judges |
 | `detailsPath` | safe relative path | Under `grading/<analysisId>/` |
 | `detailsDigest` | SHA-256 | Covers reviews and scorecard |

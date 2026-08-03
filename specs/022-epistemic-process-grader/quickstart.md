@@ -47,12 +47,14 @@ models:
     model: claude-opus-5
 reviewers:
   - profile: reviewer-openai
-    spendCeilingCents: 300
+    tokenLimit: 500000
+    maxOutputTokens: 8000
   - profile: reviewer-anthropic
-    spendCeilingCents: 300
+    tokenLimit: 500000
+    maxOutputTokens: 8000
 ```
 
-The review command validates the completed run, exact performance analysis, source digest, evidence-bundle leakage rules, reviewer distinction, credentials, and ceilings before provider construction.
+The review command validates the completed run, exact performance analysis, source digest, evidence-bundle leakage rules, reviewer distinction, credentials, cumulative token limits, and per-call output limits before provider construction.
 
 ## 4. Run the Explicitly Authorized Review
 
@@ -64,7 +66,7 @@ pnpm puzzle:review \
   --allow-spend true
 ```
 
-The literal authorization applies only to the two declared reviewer ceilings. Each judge sees the same blinded evidence and returns an independent review. The system freezes both process judgments before linking the existing outcome.
+The literal authorization permits paid calls for only the two declared reviewers; it is not a monetary billing cap. Each judge sees the same blinded evidence and returns an independent review. Provider-reported input and output usage accumulates independently per judge. A response that crosses `tokenLimit` is retained, the attempt becomes incomplete, and no further call or automatic retry occurs. Every individual response is capped by `maxOutputTokens`. The system freezes both completed process judgments before linking the existing outcome.
 
 Inspect:
 

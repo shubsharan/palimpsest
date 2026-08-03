@@ -11,6 +11,8 @@ models:
 
 reviewers:
   - profile: reviewer-openai
-    spendCeilingCents: 300
+    tokenLimit: 500000
+    maxOutputTokens: 8000
   - profile: reviewer-anthropic
-    spendCeilingCents: 300
+    tokenLimit: 500000
+    maxOutputTokens: 8000
