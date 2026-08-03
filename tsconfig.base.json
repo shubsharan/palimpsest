@@ -5,6 +5,7 @@
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
+    "jsx": "react-jsx",
     "lib": ["ES2024", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",

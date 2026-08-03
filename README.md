@@ -84,6 +84,14 @@ pnpm puzzle:evaluate --run-root artifacts/experiments/example/shared
 pnpm puzzle:analyze --run-root artifacts/experiments/example/shared
 ```
 
+Replay a terminal run in the local read-only viewer:
+
+```bash
+pnpm puzzle:view --run-root artifacts/experiments/example/shared
+```
+
+The viewer binds to `127.0.0.1`, presents synchronized agent, tool, team-room, and timeline streams, and reconstructs published solver checkpoints in the run's recorded Docker sandbox. Existing records use visibly approximate Git commit timing; newly recorded Git updates retain exact ref targets. Replay never executes a solver on the host or changes canonical run artifacts.
+
 Re-evaluation appends results atomically without changing frozen inputs or earlier evidence. Analysis scans reachable frozen Git history for overlap, defaults to 32-word spans, and remains separate from status and scoring. Both operations strictly reload and validate the relocatable record before atomically appending one history entry. A directory with a trace but no `run.json` is interrupted, not complete.
 
 ## Verification

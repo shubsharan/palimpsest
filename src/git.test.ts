@@ -101,8 +101,8 @@ describe("condition-assigned ordinary Git", () => {
     const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
-      onChange: (repositoryId, agentIds, refs) => {
-        changes.push({ repositoryId, agentIds, refs });
+      onChange: (repositoryId, agentIds, updates) => {
+        changes.push({ repositoryId, agentIds, updates });
       },
       pollIntervalMs: 60_000,
     });
@@ -118,7 +118,13 @@ describe("condition-assigned ordinary Git", () => {
       {
         repositoryId: "agent-1",
         agentIds: ["agent-1"],
-        refs: ["refs/heads/rule/revision"],
+        updates: [
+          {
+            ref: "refs/heads/rule/revision",
+            before: null,
+            after: expect.stringMatching(/^[0-9a-f]{40}$/),
+          },
+        ],
       },
     ]);
     await monitor.stop();
@@ -133,8 +139,8 @@ describe("condition-assigned ordinary Git", () => {
     const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
-      onChange: (repositoryId, agentIds, refs) => {
-        changes.push({ repositoryId, agentIds, refs });
+      onChange: (repositoryId, agentIds, updates) => {
+        changes.push({ repositoryId, agentIds, updates });
       },
       pollIntervalMs: 60_000,
     });
@@ -150,7 +156,13 @@ describe("condition-assigned ordinary Git", () => {
       {
         repositoryId: "shared",
         agentIds: AGENTS,
-        refs: ["refs/heads/rule/revision"],
+        updates: [
+          {
+            ref: "refs/heads/rule/revision",
+            before: null,
+            after: expect.stringMatching(/^[0-9a-f]{40}$/),
+          },
+        ],
       },
     ]);
     await monitor.stop();

@@ -145,6 +145,24 @@ async function readExistingEvents(path: string): Promise<readonly ObservationEve
   return events;
 }
 
+export async function readObservationTrace(path: string): Promise<{
+  metadata: TraceMetadata;
+  events: readonly ObservationEvent[];
+}> {
+  const metadataPath = metadataPathFor(path);
+  let metadataValue: unknown;
+  try {
+    metadataValue = JSON.parse(await readFile(metadataPath, "utf8"));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${metadataPath} is not valid JSON: ${detail}`);
+  }
+  return {
+    metadata: requireMetadata(metadataValue, metadataPath),
+    events: await readExistingEvents(path),
+  };
+}
+
 export class JsonlObservationLog {
   readonly path: string;
   readonly metadataPath: string;
@@ -217,16 +235,8 @@ export class JsonlObservationLog {
   ): Promise<JsonlObservationLog> {
     const metadataPath = metadataPathFor(path);
     const textPath = textLogPathFor(path);
-    let metadataValue: unknown;
-    try {
-      metadataValue = JSON.parse(await readFile(metadataPath, "utf8"));
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`${metadataPath} is not valid JSON: ${detail}`);
-    }
-    const metadata = requireMetadata(metadataValue, metadataPath);
+    const { metadata, events } = await readObservationTrace(path);
     const startedAtMs = Date.parse(metadata.startedAt);
-    const events = await readExistingEvents(path);
     await writeFile(textPath, renderTextLog(metadata, events), "utf8");
     const last = events.at(-1);
     return new JsonlObservationLog({
