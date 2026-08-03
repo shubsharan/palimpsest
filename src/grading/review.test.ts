@@ -34,6 +34,7 @@ import {
   type ReviewDependencies,
 } from "./review.js";
 import { EPISTEMIC_PROCESS_RUBRIC } from "./rubric.js";
+import type { ReviewPacket } from "./packets.js";
 
 const CONFIG: GradingConfiguration = {
   schemaVersion: 1,
@@ -66,23 +67,6 @@ function yamlConfig(config: GradingConfiguration = CONFIG): string {
     ]),
     "",
   ].join("\n");
-}
-
-interface ProviderCandidateWindowOutput {
-  readonly schemaVersion: 1;
-  readonly windowId: string;
-  readonly candidates: readonly {
-    readonly summary: string;
-    readonly evidenceIds: readonly string[];
-  }[];
-}
-
-function candidate(windowId: string, evidenceIds: readonly string[]): string {
-  return JSON.stringify({
-    schemaVersion: 1,
-    windowId,
-    candidates: [{ summary: "Observed a test of a competing mapping.", evidenceIds }],
-  });
 }
 
 function reviewerOutput(
@@ -166,51 +150,66 @@ function reviewerOutput(
   };
 }
 
-function providerReviewerOutput(bundle: EvidenceBundle, output: ReviewerOutput): unknown {
-  const evidenceId = (reference: EvidenceReference): string =>
-    bundle.items.find((item) => JSON.stringify(item.reference) === JSON.stringify(reference))
-      ?.evidenceId ?? `e-${"9".repeat(24)}`;
-  const evidenceIds = (references: readonly EvidenceReference[]) => references.map(evidenceId);
+function providerPacketOutput(
+  packet: ReviewPacket,
+  bundle: EvidenceBundle,
+  output: ReviewerOutput,
+): unknown {
+  const citationId = (reference: EvidenceReference): string => {
+    const evidenceId = bundle.items.find(
+      (item) => JSON.stringify(item.reference) === JSON.stringify(reference),
+    )?.evidenceId;
+    return (
+      packet.citations.find((citation) => citation.evidenceId === evidenceId)?.citationId ?? "c9999"
+    );
+  };
+  const citationIds = (references: readonly EvidenceReference[]) => references.map(citationId);
+  const dimensions = output.dimensions.filter(({ ledger }) => ledger === packet.ledger);
   return {
-    schemaVersion: output.schemaVersion,
+    schemaVersion: 1,
     rubricVersion: output.rubricVersion,
     bundleDigest: output.bundleDigest,
+    packetId: packet.packetId,
+    packetDigest: packet.contentDigest,
+    ledger: packet.ledger,
     dimensions: Object.fromEntries(
-      output.dimensions.map(
-        ({ dimensionId, ledger: _ledger, evidence, counterevidence, ...item }) => [
-          dimensionId,
-          {
-            ...item,
-            evidenceIds: evidenceIds(evidence),
-            counterevidenceIds: evidenceIds(counterevidence),
-          },
-        ],
-      ),
+      dimensions.map(({ dimensionId, ledger: _ledger, evidence, counterevidence, ...item }) => [
+        dimensionId,
+        {
+          ...item,
+          evidenceIds: citationIds(evidence),
+          counterevidenceIds: citationIds(counterevidence),
+        },
+      ]),
     ),
-    episodes: output.episodes.map(
-      ({
-        evidence,
-        commitment,
-        test,
-        revision,
-        transmission,
-        uptake,
-        integration,
-        counterevidence,
-        ...episode
-      }) => ({
-        ...episode,
-        evidenceIds: evidenceIds(evidence),
-        commitmentIds: evidenceIds(commitment),
-        testIds: evidenceIds(test),
-        revisionIds: evidenceIds(revision),
-        transmissionIds: evidenceIds(transmission),
-        uptakeIds: evidenceIds(uptake),
-        integrationIds: evidenceIds(integration),
-        counterevidenceIds: evidenceIds(counterevidence),
-      }),
-    ),
-    overallCautions: output.overallCautions,
+    ...(packet.ledger === "epistemic"
+      ? {
+          episodes: output.episodes.map(
+            ({
+              evidence,
+              commitment,
+              test,
+              revision,
+              transmission,
+              uptake,
+              integration,
+              counterevidence,
+              ...episode
+            }) => ({
+              ...episode,
+              evidenceIds: citationIds(evidence),
+              commitmentIds: citationIds(commitment),
+              testIds: citationIds(test),
+              revisionIds: citationIds(revision),
+              transmissionIds: citationIds(transmission),
+              uptakeIds: citationIds(uptake),
+              integrationIds: citationIds(integration),
+              counterevidenceIds: citationIds(counterevidence),
+            }),
+          ),
+        }
+      : {}),
+    cautions: output.overallCautions,
   };
 }
 
@@ -290,32 +289,35 @@ class FakeAdapter implements ModelAdapter {
   readonly structuredOutputs: NonNullable<ModelRequest["structuredOutput"]>[] = [];
   readonly #bundle: EvidenceBundle;
   readonly #rating: 0 | 1 | 2 | 3 | 4;
-  readonly #integration: (
-    bundle: EvidenceBundle,
-    rating: 0 | 1 | 2 | 3 | 4,
-    prompt: string,
-  ) => string;
+  readonly #packet: (bundle: EvidenceBundle, rating: 0 | 1 | 2 | 3 | 4, prompt: string) => string;
   readonly #usage: TokenUsage;
+  readonly #identity: (call: number) => NonNullable<ModelTurn["responseIdentity"]>;
+  readonly #failureAtCall: number | undefined;
 
   constructor(
     bundle: EvidenceBundle,
     rating: 0 | 1 | 2 | 3 | 4,
-    integration = (value: EvidenceBundle, score: 0 | 1 | 2 | 3 | 4, prompt: string) => {
-      const candidates = JSON.parse(
-        prompt.split("Candidates: ")[1]!,
-      ) as ProviderCandidateWindowOutput[];
-      const evidenceId = candidates[0]!.candidates[0]!.evidenceIds[0]!;
+    packet = (value: EvidenceBundle, score: 0 | 1 | 2 | 3 | 4, prompt: string) => {
+      const reviewPacket = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const evidenceId = reviewPacket.citations[0]!.evidenceId;
       const reference = value.items.find((item) => item.evidenceId === evidenceId)!.reference;
       return JSON.stringify(
-        providerReviewerOutput(value, reviewerOutput(value, score, { reference })),
+        providerPacketOutput(reviewPacket, value, reviewerOutput(value, score, { reference })),
       );
     },
     usage: TokenUsage = { inputTokens: 10, outputTokens: 10 },
+    identity: (call: number) => NonNullable<ModelTurn["responseIdentity"]> = () => ({
+      actualProvider: "fake",
+      actualModel: "fake-reviewer",
+    }),
+    failureAtCall?: number,
   ) {
     this.#bundle = bundle;
     this.#rating = rating;
-    this.#integration = integration;
+    this.#packet = packet;
     this.#usage = usage;
+    this.#identity = identity;
+    this.#failureAtCall = failureAtCall;
   }
 
   openSession(_context: ModelSessionContext) {
@@ -323,24 +325,18 @@ class FakeAdapter implements ModelAdapter {
       respond: async (request: ModelRequest): Promise<ModelTurn> => {
         const prompt = request.prompt ?? "";
         this.prompts.push(prompt);
+        if (this.prompts.length === this.#failureAtCall) {
+          throw new Error(`synthetic provider outage at call ${String(this.prompts.length)}`);
+        }
         if (request.structuredOutput === undefined) {
           throw new Error("Review requests require structured output.");
         }
         this.structuredOutputs.push(request.structuredOutput);
         return {
           toolCalls: [],
-          finalResponse: prompt.includes("_WINDOW_V1")
-            ? (() => {
-                const windowId = /Window ID: ([^\n]+)/.exec(prompt)?.[1];
-                const items = JSON.parse(prompt.split("Evidence: ")[1]!) as EvidenceBundle["items"];
-                return candidate(
-                  windowId!,
-                  items.map(({ evidenceId }) => evidenceId),
-                );
-              })()
-            : this.#integration(this.#bundle, this.#rating, prompt),
+          finalResponse: this.#packet(this.#bundle, this.#rating, prompt),
           usage: this.#usage,
-          responseIdentity: { actualProvider: "fake", actualModel: "fake-reviewer" },
+          responseIdentity: this.#identity(this.prompts.length),
         };
       },
     };
@@ -693,7 +689,7 @@ describe("grading review configuration", () => {
 });
 
 describe("independent qualitative review", () => {
-  it("runs window extraction then integration independently and publishes separate ratings", async () => {
+  it("runs three ledger packets independently and publishes separate ratings", async () => {
     const fixture = await preparedRun();
     const first = new FakeAdapter(fixture.bundle, 2);
     const second = new FakeAdapter(fixture.bundle, 4);
@@ -714,26 +710,24 @@ describe("independent qualitative review", () => {
       "openai",
       "anthropic",
     ]);
-    expect(first.prompts).toHaveLength(2);
-    expect(second.prompts).toHaveLength(2);
-    expect(first.prompts[0]).toContain("PALIMPSEST_PROCESS_REVIEW_WINDOW_V1");
-    expect(first.prompts[1]).toContain("PALIMPSEST_PROCESS_REVIEW_INTEGRATION_V1");
+    expect(first.prompts).toHaveLength(3);
+    expect(second.prompts).toHaveLength(3);
+    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V1"))).toBe(true);
+    expect(first.prompts.join("\n")).not.toContain("INTEGRATION_V1");
     expect(first.structuredOutputs.map(({ name }) => name)).toEqual([
-      "palimpsest_process_window",
-      "palimpsest_process_review",
+      "palimpsest_epistemic_packet",
+      "palimpsest_social_packet",
+      "palimpsest_instrumental_packet",
     ]);
     first.structuredOutputs.forEach(({ schema }) => expectPortableStructuredOutputSchema(schema));
-    const windowSchema = JSON.stringify(first.structuredOutputs[0]!.schema);
-    const integrationSchema = JSON.stringify(first.structuredOutputs[1]!.schema);
-    expect(windowSchema).toContain(fixture.bundle.items[0]!.evidenceId);
-    expect(windowSchema).not.toContain(fixture.bundle.items[0]!.reference.excerptDigest);
-    expect(windowSchema).toContain('"schemaVersion":{"type":"integer","const":1}');
-    expect(windowSchema).toContain('"windowId":{"type":"string","const":"window-0001"}');
-    expect(integrationSchema).toContain('"$ref":"#/$defs/evidenceId"');
-    expect(integrationSchema).toContain('"anyOf"');
-    expect(integrationSchema).not.toContain('"oneOf"');
+    const schemas = first.structuredOutputs.map(({ schema }) => JSON.stringify(schema));
+    expect(schemas[0]).toContain('"$ref":"#/$defs/citationId"');
+    expect(schemas[0]).toContain('"c001"');
+    expect(schemas[0]).not.toContain(fixture.bundle.items[0]!.evidenceId);
+    expect(schemas.join("\n")).toContain('"anyOf"');
+    expect(schemas.join("\n")).not.toContain('"oneOf"');
     for (const { dimensionId } of EPISTEMIC_PROCESS_RUBRIC.dimensions) {
-      expect(integrationSchema).toContain(`"${dimensionId}"`);
+      expect(schemas.join("\n")).toContain(`"${dimensionId}"`);
     }
     expect(first.prompts.join("\n")).not.toMatch(/synthetic-run|matchedWords|review-model-a/);
     expect(result.scorecards).toHaveLength(1);
@@ -744,7 +738,7 @@ describe("independent qualitative review", () => {
     expect(scorecardText).toContain("epistemic.supported-revision-rate.judge-1.v1");
     expect(scorecardText).not.toMatch(/"(?:average|composite|totalScore)"\s*:/i);
     await expect(readFile(join(result.path, "judge-1.raw.json"), "utf8")).resolves.toContain(
-      "window-0001",
+      "packet-epistemic",
     );
     await expect(readFile(join(result.path, "judge-2.review.json"), "utf8")).resolves.toContain(
       "epistemic.framing",
@@ -758,23 +752,17 @@ describe("independent qualitative review", () => {
     );
   });
 
-  it("rejects a window candidate whose evidence ID is outside that exact window", async () => {
+  it("rejects a citation ID outside the exact ledger packet", async () => {
     const fixture = await preparedRun();
-    const invalidWindow: ModelAdapter = {
-      openSession: () => ({
-        respond: (request): Promise<ModelTurn> =>
-          Promise.resolve({
-            toolCalls: [],
-            finalResponse: candidate(
-              /Window ID: ([^\n]+)/.exec(request.prompt ?? "")?.[1] ?? "window-0001",
-              [`e-${"9".repeat(24)}`],
-            ),
-            usage: { inputTokens: 1, outputTokens: 1 },
-            responseIdentity: { actualProvider: "fake", actualModel: "invalid-window" },
-          }),
-      }),
-    };
-    const deps = dependencies([invalidWindow as FakeAdapter, new FakeAdapter(fixture.bundle, 3)]);
+    const invalid = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating));
+      const dimensions = (output as { dimensions: Record<string, { evidenceIds: string[] }> })
+        .dimensions;
+      dimensions[Object.keys(dimensions)[0]!]!.evidenceIds = ["c9999"];
+      return JSON.stringify(output);
+    });
+    const deps = dependencies([invalid, new FakeAdapter(fixture.bundle, 3)]);
 
     let incomplete: PublishedIncompleteReviewError | undefined;
     try {
@@ -796,20 +784,19 @@ describe("independent qualitative review", () => {
     expect(incomplete!.result.analysis.reviews[0].status).toBe("invalid");
     await expect(
       readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8"),
-    ).resolves.toContain("outside the exact evidence window");
+    ).resolves.toContain("outside the exact packet");
   });
 
-  it("preserves invalid citations and malformed integration as published incomplete analyses", async () => {
+  it("preserves invalid citations and malformed packet output as incomplete analyses", async () => {
     const fixture = await preparedRun();
-    const invalidReference = {
-      ...fixture.bundle.items[0]!.reference,
-      excerptDigest: "9".repeat(64),
-    };
-    const invalid = new FakeAdapter(fixture.bundle, 2, (bundle) =>
-      JSON.stringify(
-        providerReviewerOutput(bundle, reviewerOutput(bundle, 2, { reference: invalidReference })),
-      ),
-    );
+    const invalid = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating));
+      const dimensions = (output as { dimensions: Record<string, { evidenceIds: string[] }> })
+        .dimensions;
+      dimensions[Object.keys(dimensions)[0]!]!.evidenceIds = ["c9999"];
+      return JSON.stringify(output);
+    });
     const malformed = new FakeAdapter(fixture.bundle, 2, () => "not-json");
     const deps = dependencies([invalid, malformed]);
 
@@ -836,24 +823,17 @@ describe("independent qualitative review", () => {
       "invalid",
     ]);
     const rawInvalid = await readFile(join(published!.result.path, "judge-1.raw.json"), "utf8");
-    expect(rawInvalid).toContain("outside the candidates");
-    const rawTranscript = JSON.parse(rawInvalid) as {
-      origins: readonly { integration?: { response: string } }[];
-    };
-    expect(rawTranscript.origins[0]!.integration!.response).toContain(`e-${"9".repeat(24)}`);
+    expect(rawInvalid).toContain("outside the exact packet");
+    expect(rawInvalid).toContain("c9999");
     await expect(
       readFile(join(published!.result.path, "scorecard.json"), "utf8"),
     ).rejects.toThrow();
   });
 
-  it("retains provider failure without retry and permits one explicit manual retry", async () => {
+  it("retains provider failure and resumes only missing packets from an immutable predecessor", async () => {
     const fixture = await preparedRun();
-    const failure: ModelAdapter = {
-      openSession: () => ({
-        respond: () => Promise.reject(new Error("synthetic provider outage")),
-      }),
-    };
-    const firstDeps = dependencies([failure as FakeAdapter, new FakeAdapter(fixture.bundle, 3)]);
+    const failedMiddle = new FakeAdapter(fixture.bundle, 2, undefined, undefined, undefined, 2);
+    const firstDeps = dependencies([failedMiddle, new FakeAdapter(fixture.bundle, 3)]);
     let incomplete: PublishedIncompleteReviewError | undefined;
     try {
       await reviewRun(
@@ -871,11 +851,15 @@ describe("independent qualitative review", () => {
       else throw error;
     }
     expect(incomplete!.result.analysis.reviews[0].status).toBe("provider-error");
-
-    const retryDeps = dependencies(
-      [new FakeAdapter(fixture.bundle, 3), new FakeAdapter(fixture.bundle, 3)],
-      "retry",
+    expect(failedMiddle.prompts).toHaveLength(3);
+    const predecessorManifest = await readFile(
+      join(incomplete!.result.path, "manifest.json"),
+      "utf8",
     );
+
+    const resumedFirst = new FakeAdapter(fixture.bundle, 3);
+    const resumedSecond = new FakeAdapter(fixture.bundle, 3);
+    const retryDeps = dependencies([resumedFirst, resumedSecond], "retry");
     const completed = await reviewRun(
       {
         projectRoot: fixture.root,
@@ -883,10 +867,20 @@ describe("independent qualitative review", () => {
         configPath: fixture.configPath,
         performanceAnalysisId: fixture.performance.analysisId,
         allowSpend: true,
+        resumeAnalysisId: incomplete!.result.analysis.analysisId,
       },
       retryDeps.value,
     );
     expect(completed.analysis.status).toBe("completed");
+    expect(completed.analysis.resumedFromAnalysisId).toBe(incomplete!.result.analysis.analysisId);
+    expect(resumedFirst.prompts).toHaveLength(1);
+    expect(resumedSecond.prompts).toHaveLength(0);
+    await expect(readFile(join(incomplete!.result.path, "manifest.json"), "utf8")).resolves.toBe(
+      predecessorManifest,
+    );
+    await expect(readFile(join(completed.path, "judge-2.raw.json"), "utf8")).resolves.toContain(
+      '"cumulativeTokens":60',
+    );
 
     let duplicateConstructions = 0;
     await expect(
@@ -908,6 +902,159 @@ describe("independent qualitative review", () => {
       ),
     ).rejects.toThrow(/already exists/i);
     expect(duplicateConstructions).toBe(0);
+  });
+
+  it("retains response diagnostics and stops a reviewer when usage is unavailable", async () => {
+    const fixture = await preparedRun();
+    let calls = 0;
+    const missingUsage: ModelAdapter = {
+      openSession: () => ({
+        respond: async (request): Promise<ModelTurn> => {
+          calls += 1;
+          const prompt = request.prompt ?? "";
+          const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+          const responseText = JSON.stringify(
+            providerPacketOutput(packet, fixture.bundle, reviewerOutput(fixture.bundle, 2)),
+          );
+          return {
+            toolCalls: [],
+            finalResponse: responseText,
+            responseText,
+            finishReason: "stop",
+            rawFinishReason: "completed-without-usage",
+            responseId: "response-without-usage",
+            responseIdentity: { actualProvider: "fake", actualModel: "fake-reviewer" },
+            usageUnavailable: true,
+            structuredOutputValidation: { status: "validated" },
+          };
+        },
+      }),
+    };
+    const deps = dependencies([missingUsage as FakeAdapter, new FakeAdapter(fixture.bundle, 3)]);
+
+    let incomplete: PublishedIncompleteReviewError | undefined;
+    try {
+      await reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+        },
+        deps.value,
+      );
+    } catch (error) {
+      if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+      else throw error;
+    }
+
+    expect(calls).toBe(1);
+    expect(incomplete!.result.analysis.reviews[0].status).toBe("invalid");
+    const transcript = await readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8");
+    expect(transcript).toContain('"classification":"usage-unavailable"');
+    expect(transcript).toContain('"usage":{"status":"unavailable"}');
+    expect(transcript).toContain('"responseId":"response-without-usage"');
+    expect(transcript).toContain('"textReturned":true');
+  });
+
+  it("retains stable classifications for distinct provider and output failures", async () => {
+    const fixture = await preparedRun();
+    const response = (
+      responseText: string,
+      finishReason: NonNullable<ModelTurn["finishReason"]> = "stop",
+      structuredOutputValidation: NonNullable<ModelTurn["structuredOutputValidation"]> = {
+        status: "invalid",
+        error: "synthetic structured output failure",
+      },
+    ): ModelTurn => ({
+      toolCalls: [],
+      finalResponse: responseText,
+      responseText,
+      finishReason,
+      rawFinishReason: `raw-${finishReason}`,
+      responseId: `response-${finishReason}`,
+      responseIdentity: { actualProvider: "fake", actualModel: "fake-reviewer" },
+      usage: { inputTokens: 1, outputTokens: 1 },
+      structuredOutputValidation,
+    });
+    const scenarios: readonly [string, Error | ModelTurn][] = [
+      ["overloaded", new Error("provider overloaded")],
+      ["refusal", new Error("provider refused the request")],
+      ["provider-error", new Error("socket closed")],
+      ["empty-output", response("")],
+      ["finish-length", response("partial", "length")],
+      ["finish-content-filter", response("filtered", "content-filter")],
+      ["malformed-json", response("not-json")],
+      ["schema-invalid", response('{"unexpected":true}')],
+    ];
+
+    for (const [index, [classification, outcome]] of scenarios.entries()) {
+      const adapter: ModelAdapter = {
+        openSession: () => ({
+          respond: () =>
+            outcome instanceof Error ? Promise.reject(outcome) : Promise.resolve(outcome),
+        }),
+      };
+      const deps = dependencies(
+        [adapter as FakeAdapter, new FakeAdapter(fixture.bundle, 3)],
+        `failure-${String(index + 1)}`,
+      );
+      let incomplete: PublishedIncompleteReviewError | undefined;
+      try {
+        await reviewRun(
+          {
+            projectRoot: fixture.root,
+            runRoot: fixture.runRoot,
+            configPath: fixture.configPath,
+            performanceAnalysisId: fixture.performance.analysisId,
+            allowSpend: true,
+          },
+          deps.value,
+        );
+      } catch (error) {
+        if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+        else throw error;
+      }
+      await expect(
+        readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8"),
+      ).resolves.toContain(`"classification":"${classification}"`);
+    }
+  });
+
+  it("leaves a reviewer incomplete when actual identity drifts across packets", async () => {
+    const fixture = await preparedRun();
+    const drifting = new FakeAdapter(
+      fixture.bundle,
+      2,
+      undefined,
+      { inputTokens: 10, outputTokens: 10 },
+      (call) => ({ actualProvider: "fake", actualModel: call === 1 ? "served-a" : "served-b" }),
+    );
+    const deps = dependencies([drifting, new FakeAdapter(fixture.bundle, 3)]);
+
+    let incomplete: PublishedIncompleteReviewError | undefined;
+    try {
+      await reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+        },
+        deps.value,
+      );
+    } catch (error) {
+      if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+      else throw error;
+    }
+
+    expect(drifting.prompts).toHaveLength(3);
+    expect(incomplete!.result.analysis.reviews[0].status).toBe("invalid");
+    await expect(
+      readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8"),
+    ).resolves.toContain("inconsistent actual provider or model identities");
   });
 
   it("retains budget-boundary responses and makes no further reviewer calls", async () => {
@@ -957,19 +1104,22 @@ describe("independent qualitative review", () => {
 
   it("rejects hidden-state narration while retaining evidence-linked competing episode views", async () => {
     const fixture = await preparedRun();
-    const hidden = new FakeAdapter(fixture.bundle, 2, (bundle) =>
-      JSON.stringify(
-        providerReviewerOutput(
+    const hidden = new FakeAdapter(fixture.bundle, 2, (bundle, _rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      return JSON.stringify(
+        providerPacketOutput(
+          packet,
           bundle,
           reviewerOutput(bundle, 2, { hiddenClaim: true, episode: "asserted" }),
         ),
-      ),
-    );
-    const competing = new FakeAdapter(fixture.bundle, 3, (bundle) =>
-      JSON.stringify(
-        providerReviewerOutput(bundle, reviewerOutput(bundle, 3, { episode: "asserted" })),
-      ),
-    );
+      );
+    });
+    const competing = new FakeAdapter(fixture.bundle, 3, (bundle, _rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      return JSON.stringify(
+        providerPacketOutput(packet, bundle, reviewerOutput(bundle, 3, { episode: "asserted" })),
+      );
+    });
     const deps = dependencies([hidden, competing]);
     await expect(
       reviewRun(
@@ -996,22 +1146,25 @@ describe("independent qualitative review", () => {
     const integration = fixture.bundle.items.find(
       (item) => item.kind === "git.canonical",
     )!.reference;
-    const linked = new FakeAdapter(fixture.bundle, 3, (bundle) =>
-      JSON.stringify(
-        providerReviewerOutput(
+    const linked = new FakeAdapter(fixture.bundle, 3, (bundle, _rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      return JSON.stringify(
+        providerPacketOutput(
+          packet,
           bundle,
           reviewerOutput(bundle, 3, {
             episode: "uptake",
             episodeReferences: { transmission, uptake, integration },
           }),
         ),
-      ),
-    );
-    const assertedOnly = new FakeAdapter(fixture.bundle, 2, (bundle) =>
-      JSON.stringify(
-        providerReviewerOutput(bundle, reviewerOutput(bundle, 2, { episode: "asserted" })),
-      ),
-    );
+      );
+    });
+    const assertedOnly = new FakeAdapter(fixture.bundle, 2, (bundle, _rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      return JSON.stringify(
+        providerPacketOutput(packet, bundle, reviewerOutput(bundle, 2, { episode: "asserted" })),
+      );
+    });
     const deps = dependencies([linked, assertedOnly]);
     const result = await reviewRun(
       {
@@ -1056,16 +1209,18 @@ describe("independent qualitative review", () => {
     ]);
     expect(deps.created.map(({ tokenLimit }) => tokenLimit)).toEqual([500_000, 500_000]);
     expect(deps.created.map(({ maxOutputTokens }) => maxOutputTokens)).toEqual([8_000, 8_000]);
-    const windowPrompts = first.prompts.filter((prompt) => prompt.includes("_WINDOW_V1"));
-    expect(windowPrompts.every((prompt) => prompt.includes("never return reference objects"))).toBe(
+    expect(first.prompts).toHaveLength(4);
+    expect(first.prompts.every((prompt) => !prompt.includes("Ledger: social"))).toBe(true);
+    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V1"));
+    expect(packetPrompts.every((prompt) => prompt.includes("Never return reference objects"))).toBe(
       true,
     );
-    expect(windowPrompts.every((prompt) => prompt.includes("at most six"))).toBe(true);
-    expect(first.prompts.at(-1)).toContain("reserve enough budget to complete it");
-    const firstOriginPrompts = windowPrompts.filter((prompt) =>
+    expect(packetPrompts.every((prompt) => prompt.includes("at most six"))).toBe(true);
+    expect(first.prompts.at(-1)).toContain("reserve enough output budget to complete it");
+    const firstOriginPrompts = packetPrompts.filter((prompt) =>
       prompt.includes("Anonymous canonical origin ordinal: 1"),
     );
-    const secondOriginPrompts = windowPrompts.filter((prompt) =>
+    const secondOriginPrompts = packetPrompts.filter((prompt) =>
       prompt.includes("Anonymous canonical origin ordinal: 2"),
     );
     expect(firstOriginPrompts.length).toBeGreaterThan(0);

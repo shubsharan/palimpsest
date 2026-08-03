@@ -68,7 +68,7 @@ switch (command) {
   case "review": {
     allowOnly(
       flags,
-      ["--run-root", "--config", "--performance-analysis", "--allow-spend"],
+      ["--run-root", "--config", "--performance-analysis", "--allow-spend", "--resume"],
       "review",
     );
     const reviewed = await reviewRun({
@@ -77,6 +77,7 @@ switch (command) {
       configPath: requiredFlag(flags, "--config"),
       performanceAnalysisId: requiredFlag(flags, "--performance-analysis"),
       allowSpend: requiredFlag(flags, "--allow-spend"),
+      ...(flags.get("--resume") === undefined ? {} : { resumeAnalysisId: flags.get("--resume")! }),
     });
     result = {
       runRoot: requiredFlag(flags, "--run-root"),

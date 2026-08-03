@@ -9,7 +9,9 @@ import type {
   AgentId,
   JsonObject,
   ModelAdapter,
+  ModelFinishReason,
   ModelResponseIdentity,
+  ModelTurn,
   ProviderDriver,
   StructuredOutputRequest,
   TokenUsage,
@@ -24,6 +26,8 @@ import {
 } from "../run/record.js";
 import {
   decodeEvidenceBundle,
+  decodeDimensionReview,
+  decodeEpistemicEpisode,
   decodeJudgeReview,
   decodeReviewerOutput,
   decodeRunScorecard,
@@ -49,6 +53,13 @@ import {
   type ReviewMeasureInput,
 } from "./grade.js";
 import { EPISTEMIC_PROCESS_RUBRIC, EPISTEMIC_PROCESS_RUBRIC_VERSION } from "./rubric.js";
+import {
+  compileReviewPackets,
+  REVIEW_PACKET_PROJECTION_VERSION,
+  REVIEW_PACKET_ROUTING_VERSION,
+  type ReviewPacket,
+  type ReviewPacketLedger,
+} from "./packets.js";
 
 export {
   decodeGradingConfiguration,
@@ -90,6 +101,7 @@ export interface ReviewRunOptions {
   readonly configPath: string;
   readonly performanceAnalysisId: string;
   readonly allowSpend: unknown;
+  readonly resumeAnalysisId?: string;
 }
 
 export interface ReviewRunResult {
@@ -104,43 +116,26 @@ export interface ReviewRunFlags {
   readonly config?: string;
   readonly "performance-analysis"?: string;
   readonly "allow-spend"?: unknown;
+  readonly resume?: string;
 }
 
-export interface CandidateEpisode {
-  readonly summary: string;
-  readonly evidence: readonly EvidenceReference[];
-}
-
-export interface CandidateWindowOutput {
-  readonly schemaVersion: 1;
-  readonly windowId: string;
-  readonly candidates: readonly CandidateEpisode[];
-}
-
-interface ProviderCandidateEpisode {
-  readonly summary: string;
-  readonly evidenceIds: readonly string[];
-}
-
-interface ProviderCandidateWindowOutput {
-  readonly schemaVersion: 1;
-  readonly windowId: string;
-  readonly candidates: readonly ProviderCandidateEpisode[];
-}
+export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v1" as const;
+export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v1" as const;
+export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v1" as const;
 
 interface RetainedTurn {
   readonly response: string;
-  readonly responseIdentity?: ModelResponseIdentity;
+  readonly responseIdentity: ModelResponseIdentity;
   readonly usage: TokenUsage;
+  readonly finishReason?: ModelFinishReason;
+  readonly rawFinishReason?: string;
+  readonly responseId?: string;
+  readonly structuredOutputValidation?: ModelTurn["structuredOutputValidation"];
 }
 
 interface OriginTranscript {
   readonly originId: string;
-  readonly windows: readonly {
-    readonly windowId: string;
-    readonly turn: RetainedTurn;
-  }[];
-  readonly integration?: RetainedTurn;
+  readonly packets: readonly PacketCallArtifact[];
 }
 
 interface JudgeTranscript {
@@ -148,8 +143,10 @@ interface JudgeTranscript {
   readonly reviewId: string;
   readonly providerFamily: OfficialProviderFamily;
   readonly requestedModel: string;
+  readonly reviewerProfile: string;
   readonly bundleDigest: string;
   readonly origins: readonly OriginTranscript[];
+  readonly cumulativeTokens: number;
   readonly error?: string;
 }
 
@@ -182,6 +179,116 @@ interface DetailFile {
   readonly path: string;
   readonly role: string;
   readonly content: unknown;
+}
+
+interface PacketRequestIdentity {
+  readonly schemaVersion: 1;
+  readonly protocolVersion: typeof REVIEW_PROTOCOL_VERSION;
+  readonly promptVersion: typeof REVIEW_PROMPT_VERSION;
+  readonly outputSchemaVersion: typeof REVIEW_OUTPUT_SCHEMA_VERSION;
+  readonly routingVersion: typeof REVIEW_PACKET_ROUTING_VERSION;
+  readonly projectionVersion: typeof REVIEW_PACKET_PROJECTION_VERSION;
+  readonly bundleDigest: string;
+  readonly configurationDigest: string;
+  readonly rubricDigest: string;
+  readonly reviewerProfile: string;
+  readonly providerFamily: OfficialProviderFamily;
+  readonly requestedModel: string;
+  readonly packetId: string;
+  readonly packetDigest: string;
+}
+
+interface CompletedPacketCallArtifact {
+  readonly schemaVersion: 1;
+  readonly status: "completed";
+  readonly artifactKey: string;
+  readonly request: PacketRequestIdentity;
+  readonly actualProvider: string;
+  readonly actualModel: string;
+  readonly turn: RetainedTurn;
+  readonly output: PacketReviewerOutput;
+}
+
+interface FailedPacketCallArtifact {
+  readonly schemaVersion: 1;
+  readonly status: "failed";
+  readonly artifactKey: string;
+  readonly request: PacketRequestIdentity;
+  readonly failure: {
+    readonly classification: string;
+    readonly message: string;
+    readonly finishReason: ModelFinishReason | UnavailableMetadata;
+    readonly rawFinishReason: string | UnavailableMetadata;
+    readonly usage: TokenUsage | UnavailableMetadata;
+    readonly responseId: string | UnavailableMetadata;
+    readonly responseIdentity: ModelResponseIdentity | UnavailableMetadata;
+    readonly structuredOutputValidation:
+      | NonNullable<ModelTurn["structuredOutputValidation"]>
+      | UnavailableMetadata;
+    readonly textReturned: boolean;
+    readonly responseText: string;
+  };
+}
+
+interface UnavailableMetadata {
+  readonly status: "unavailable";
+}
+
+const UNAVAILABLE_METADATA: UnavailableMetadata = { status: "unavailable" };
+
+type PacketCallArtifact = CompletedPacketCallArtifact | FailedPacketCallArtifact;
+
+interface PacketReview {
+  readonly ledger: ReviewPacketLedger;
+  readonly dimensions: readonly DimensionReview[];
+  readonly episodes: ReviewerOutput["episodes"];
+  readonly cautions: readonly string[];
+}
+
+export interface PacketDimensionOutput {
+  readonly state: "rated" | "unobservable" | "not-applicable";
+  readonly rating?: 0 | 1 | 2 | 3 | 4;
+  readonly rationale: string;
+  readonly evidenceIds: readonly string[];
+  readonly counterevidenceIds: readonly string[];
+  readonly confidence: "low" | "medium" | "high";
+}
+
+export interface PacketEpisodeOutput {
+  readonly episodeId: string;
+  readonly summary: string;
+  readonly status:
+    | "supported-revision"
+    | "asserted-only"
+    | "missed-revision"
+    | "unchanged"
+    | "ambiguous";
+  readonly evidenceIds: readonly string[];
+  readonly commitmentIds: readonly string[];
+  readonly testIds: readonly string[];
+  readonly revisionIds: readonly string[];
+  readonly transmissionIds: readonly string[];
+  readonly uptakeIds: readonly string[];
+  readonly integrationIds: readonly string[];
+  readonly counterevidenceIds: readonly string[];
+  readonly confidence: "low" | "medium" | "high";
+}
+
+export interface PacketReviewerOutput {
+  readonly schemaVersion: 1;
+  readonly rubricVersion: string;
+  readonly bundleDigest: string;
+  readonly packetId: string;
+  readonly packetDigest: string;
+  readonly ledger: ReviewPacketLedger;
+  readonly dimensions: Readonly<Record<string, PacketDimensionOutput>>;
+  readonly episodes?: readonly PacketEpisodeOutput[];
+  readonly cautions: readonly string[];
+}
+
+interface DecodedPacketReviewerOutput {
+  readonly output: PacketReviewerOutput;
+  readonly review: PacketReview;
 }
 
 const object = (value: unknown, name: string): Record<string, unknown> => {
@@ -441,95 +548,66 @@ function validateReviewerOutputAgainstBundle(
   return output;
 }
 
-function decodeCandidateOutput(
+function decodePacketReviewerOutput(
   value: unknown,
-  windowId: string,
-  bundle: EvidenceBundle,
-): ProviderCandidateWindowOutput {
-  const decoded = exact(value, ["schemaVersion", "windowId", "candidates"], "Candidate output");
-  if (decoded.schemaVersion !== 1 || decoded.windowId !== windowId) {
-    throw new Error("Candidate output does not identify the requested evidence window.");
+  packet: ReviewPacket,
+): DecodedPacketReviewerOutput {
+  const required = [
+    "schemaVersion",
+    "rubricVersion",
+    "bundleDigest",
+    "packetId",
+    "packetDigest",
+    "ledger",
+    "dimensions",
+    ...(packet.ledger === "epistemic" ? ["episodes"] : []),
+    "cautions",
+  ];
+  const decoded = exact(value, required, "Packet reviewer output");
+  if (
+    decoded.schemaVersion !== 1 ||
+    decoded.rubricVersion !== EPISTEMIC_PROCESS_RUBRIC_VERSION ||
+    decoded.bundleDigest !== packet.bundleDigest ||
+    decoded.packetId !== packet.packetId ||
+    decoded.packetDigest !== packet.contentDigest ||
+    decoded.ledger !== packet.ledger
+  ) {
+    throw new Error("Packet reviewer output identity differs from the exact packet request.");
   }
-  if (!Array.isArray(decoded.candidates))
-    throw new Error("Candidate output candidates must be an array.");
-  const window = bundle.windows.find((candidate) => candidate.windowId === windowId)!;
-  const allowed = new Set(window.evidenceIds);
-  const candidates = decoded.candidates.map((value, index): ProviderCandidateEpisode => {
-    const candidate = exact(value, ["summary", "evidenceIds"], `Candidate ${String(index + 1)}`);
-    const summary = nonEmptyText(candidate.summary, `Candidate ${String(index + 1)}.summary`);
-    validateObservableText(summary, `Candidate ${String(index + 1)}.summary`);
-    if (!Array.isArray(candidate.evidenceIds)) {
-      throw new Error(`Candidate ${String(index + 1)}.evidenceIds must be an array.`);
-    }
-    const evidenceIds = candidate.evidenceIds.map((evidenceId, evidenceIndex) => {
-      const id = nonEmptyText(
-        evidenceId,
-        `Candidate ${String(index + 1)}.evidenceIds[${String(evidenceIndex)}]`,
-      );
-      if (!allowed.has(id)) {
-        throw new Error(
-          `Candidate ${String(index + 1)}.evidenceIds contains an ID outside the exact evidence window.`,
-        );
-      }
-      return id;
-    });
-    if (evidenceIds.length === 0) {
-      throw new Error(`Candidate ${String(index + 1)}.evidenceIds must be non-empty.`);
-    }
-    if (new Set(evidenceIds).size !== evidenceIds.length) {
-      throw new Error(`Candidate ${String(index + 1)}.evidenceIds must be unique.`);
-    }
-    return { summary, evidenceIds };
-  });
-  return { schemaVersion: 1, windowId, candidates };
-}
-
-function resolveReviewerEvidenceIds(
-  value: unknown,
-  candidates: readonly ProviderCandidateWindowOutput[],
-  bundle: EvidenceBundle,
-): unknown {
-  const allowed = new Set(
-    candidates.flatMap(({ candidates: episodes }) =>
-      episodes.flatMap(({ evidenceIds }) => evidenceIds),
-    ),
+  const references = new Map(
+    packet.citations.map(({ citationId, reference }) => [citationId, reference] as const),
   );
-  const items = new Map(bundle.items.map((item) => [item.evidenceId, item] as const));
   const resolveCitations = (citations: unknown, name: string): readonly EvidenceReference[] => {
     if (!Array.isArray(citations)) throw new Error(`${name} must be an array.`);
-    return citations.map((citation, index) => {
-      const evidenceId = nonEmptyText(citation, `${name}[${String(index)}]`);
-      if (!allowed.has(evidenceId)) {
-        throw new Error(`${name}[${String(index)}] cites an evidence ID outside the candidates.`);
+    const resolved = citations.map((citation, index) => {
+      const citationId = nonEmptyText(citation, `${name}[${String(index)}]`);
+      const reference = references.get(citationId);
+      if (reference === undefined) {
+        throw new Error(`${name}[${String(index)}] cites an ID outside the exact packet.`);
       }
-      return items.get(evidenceId)!.reference;
+      return reference;
     });
+    if (new Set(citations).size !== citations.length) throw new Error(`${name} must be unique.`);
+    return resolved;
   };
-  const decoded = exact(
-    value,
-    ["schemaVersion", "rubricVersion", "bundleDigest", "dimensions", "episodes", "overallCautions"],
-    "Reviewer output",
+  const rubricDimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
+    ({ ledger }) => ledger === packet.ledger,
   );
   const dimensions = exact(
     decoded.dimensions,
-    EPISTEMIC_PROCESS_RUBRIC.dimensions.map(({ dimensionId }) => dimensionId),
-    "Reviewer output dimensions",
+    rubricDimensions.map(({ dimensionId }) => dimensionId),
+    "Packet reviewer dimensions",
   );
-  if (!Array.isArray(decoded.episodes))
-    throw new Error("Reviewer output episodes must be an array.");
-  return {
-    schemaVersion: decoded.schemaVersion,
-    rubricVersion: decoded.rubricVersion,
-    bundleDigest: decoded.bundleDigest,
-    dimensions: EPISTEMIC_PROCESS_RUBRIC.dimensions.map(({ dimensionId, ledger }, index) => {
-      const name = `Reviewer dimension ${String(index + 1)}`;
-      const candidate = object(dimensions[dimensionId], name);
-      const required = ["state", "rationale", "evidenceIds", "counterevidenceIds", "confidence"];
-      const item =
-        candidate.state === "rated"
-          ? exact(candidate, [...required, "rating"], name)
-          : exact(candidate, required, name);
-      return {
+  const resolvedDimensions = rubricDimensions.map(({ dimensionId, ledger }, index) => {
+    const name = `Packet reviewer dimension ${String(index + 1)}`;
+    const candidate = object(dimensions[dimensionId], name);
+    const common = ["state", "rationale", "evidenceIds", "counterevidenceIds", "confidence"];
+    const item =
+      candidate.state === "rated"
+        ? exact(candidate, [...common, "rating"], name)
+        : exact(candidate, common, name);
+    const resolved = decodeDimensionReview(
+      {
         dimensionId,
         ledger,
         state: item.state,
@@ -538,29 +616,36 @@ function resolveReviewerEvidenceIds(
         evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
         counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
         confidence: item.confidence,
-      };
-    }),
-    episodes: decoded.episodes.map((episode, index) => {
-      const name = `Reviewer episode ${String(index + 1)}`;
-      const item = exact(
-        episode,
-        [
-          "episodeId",
-          "summary",
-          "status",
-          "evidenceIds",
-          "commitmentIds",
-          "testIds",
-          "revisionIds",
-          "transmissionIds",
-          "uptakeIds",
-          "integrationIds",
-          "counterevidenceIds",
-          "confidence",
-        ],
-        name,
-      );
-      return {
+      },
+      name,
+    );
+    validateObservableText(resolved.rationale, `${name}.rationale`);
+    return resolved;
+  });
+  const episodesValue = packet.ledger === "epistemic" ? decoded.episodes : [];
+  if (!Array.isArray(episodesValue)) throw new Error("Packet reviewer episodes must be an array.");
+  const episodes = episodesValue.map((episode, index) => {
+    const name = `Packet reviewer episode ${String(index + 1)}`;
+    const item = exact(
+      episode,
+      [
+        "episodeId",
+        "summary",
+        "status",
+        "evidenceIds",
+        "commitmentIds",
+        "testIds",
+        "revisionIds",
+        "transmissionIds",
+        "uptakeIds",
+        "integrationIds",
+        "counterevidenceIds",
+        "confidence",
+      ],
+      name,
+    );
+    const resolved = decodeEpistemicEpisode(
+      {
         episodeId: item.episodeId,
         summary: item.summary,
         status: item.status,
@@ -573,9 +658,27 @@ function resolveReviewerEvidenceIds(
         integration: resolveCitations(item.integrationIds, `${name}.integrationIds`),
         counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
         confidence: item.confidence,
-      };
-    }),
-    overallCautions: decoded.overallCautions,
+      },
+      name,
+    );
+    validateObservableText(resolved.summary, `${name}.summary`);
+    return resolved;
+  });
+  if (!Array.isArray(decoded.cautions))
+    throw new Error("Packet reviewer cautions must be an array.");
+  const cautions = decoded.cautions.map((value, index) => {
+    const caution = nonEmptyText(value, `Packet reviewer cautions[${String(index)}]`);
+    validateObservableText(caution, `Packet reviewer cautions[${String(index)}]`);
+    return caution;
+  });
+  return {
+    output: value as PacketReviewerOutput,
+    review: {
+      ledger: packet.ledger,
+      dimensions: resolvedDimensions,
+      episodes,
+      cautions,
+    },
   };
 }
 
@@ -593,7 +696,7 @@ function strictObjectSchema(
 
 function evidenceIdDefinitions(evidenceIds: readonly string[]): JsonObject {
   return {
-    evidenceId: {
+    citationId: {
       type: "string",
       ...(evidenceIds.length === 0 ? { const: "__no_valid_evidence_id__" } : { enum: evidenceIds }),
     },
@@ -603,24 +706,7 @@ function evidenceIdDefinitions(evidenceIds: readonly string[]): JsonObject {
 function citationIdsSchema(): JsonObject {
   return {
     type: "array",
-    items: { $ref: "#/$defs/evidenceId" },
-  };
-}
-
-function candidateOutputSchema(windowId: string, evidenceIds: readonly string[]): JsonObject {
-  return {
-    ...strictObjectSchema({
-      schemaVersion: { type: "integer", const: 1 },
-      windowId: { type: "string", const: windowId },
-      candidates: {
-        type: "array",
-        items: strictObjectSchema({
-          summary: { type: "string" },
-          evidenceIds: citationIdsSchema(),
-        }),
-      },
-    }),
-    $defs: evidenceIdDefinitions(evidenceIds),
+    items: { $ref: "#/$defs/citationId" },
   };
 }
 
@@ -677,48 +763,32 @@ function episodeOutputSchema(): JsonObject {
   });
 }
 
-function integrationOutputSchema(
-  bundle: EvidenceBundle,
-  candidates: readonly ProviderCandidateWindowOutput[],
-): JsonObject {
-  const evidenceIds = [
-    ...new Set(
-      candidates.flatMap(({ candidates: episodes }) =>
-        episodes.flatMap((episode) => episode.evidenceIds),
-      ),
-    ),
-  ];
+function packetOutputSchema(packet: ReviewPacket): JsonObject {
+  const dimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
+    ({ ledger }) => ledger === packet.ledger,
+  );
   return {
     ...strictObjectSchema({
       schemaVersion: { type: "integer", const: 1 },
       rubricVersion: { type: "string", const: EPISTEMIC_PROCESS_RUBRIC_VERSION },
-      bundleDigest: { type: "string", const: bundle.contentDigest },
+      bundleDigest: { type: "string", const: packet.bundleDigest },
+      packetId: { type: "string", const: packet.packetId },
+      packetDigest: { type: "string", const: packet.contentDigest },
+      ledger: { type: "string", const: packet.ledger },
       dimensions: strictObjectSchema(
         Object.fromEntries(
-          EPISTEMIC_PROCESS_RUBRIC.dimensions.map(({ dimensionId, ledger }) => [
+          dimensions.map(({ dimensionId, ledger }) => [
             dimensionId,
-            dimensionOutputSchema(ledger, bundle.communicationMode),
+            dimensionOutputSchema(ledger, "shared"),
           ]),
         ),
       ),
-      episodes: { type: "array", items: episodeOutputSchema() },
-      overallCautions: { type: "array", items: { type: "string" } },
+      ...(packet.ledger === "epistemic"
+        ? { episodes: { type: "array", items: episodeOutputSchema() } }
+        : {}),
+      cautions: { type: "array", items: { type: "string" } },
     }),
-    $defs: evidenceIdDefinitions(evidenceIds),
-  };
-}
-
-function retainedTurn(
-  turn: Awaited<ReturnType<Awaited<ReturnType<ModelAdapter["openSession"]>>["respond"]>>,
-): RetainedTurn {
-  if (turn.toolCalls.length > 0) throw new Error("Reviewer responses cannot invoke tools.");
-  if (turn.finalResponse === undefined || turn.finalResponse.trim() === "") {
-    throw new Error("Reviewer returned no response text.");
-  }
-  return {
-    response: turn.finalResponse,
-    ...(turn.responseIdentity === undefined ? {} : { responseIdentity: turn.responseIdentity }),
-    usage: turn.usage,
+    $defs: evidenceIdDefinitions(packet.citations.map(({ citationId }) => citationId)),
   };
 }
 
@@ -727,16 +797,49 @@ async function callReviewer(
   agentId: AgentId,
   prompt: string,
   structuredOutput: StructuredOutputRequest,
-): Promise<RetainedTurn> {
+): Promise<ModelTurn> {
   try {
     const session = await adapter.openSession({ agentId, tools: [] });
     const signal = new AbortController().signal;
-    return retainedTurn(
-      await session.respond({ prompt, toolResults: [], signal, structuredOutput }),
-    );
+    return await session.respond({ prompt, toolResults: [], signal, structuredOutput });
   } catch (error) {
     throw new ProviderCallError(error);
   }
+}
+
+function retainedCompletedTurn(turn: ModelTurn): RetainedTurn {
+  if (turn.toolCalls.length > 0) throw new Error("Reviewer responses cannot invoke tools.");
+  const response = turn.responseText ?? turn.finalResponse ?? "";
+  if (response.trim() === "") throw new Error("Reviewer returned no response text.");
+  if (turn.finishReason !== undefined && turn.finishReason !== "stop") {
+    throw new Error(`Reviewer response did not stop normally (${turn.finishReason}).`);
+  }
+  if (
+    turn.structuredOutputValidation !== undefined &&
+    turn.structuredOutputValidation.status !== "validated"
+  ) {
+    throw new Error(turn.structuredOutputValidation.error);
+  }
+  if (turn.usage === undefined) {
+    throw new Error("Reviewer response token usage is unavailable.");
+  }
+  if (
+    turn.responseIdentity?.actualProvider === undefined ||
+    turn.responseIdentity.actualModel === undefined
+  ) {
+    throw new Error("Reviewer response did not report its actual provider and model identity.");
+  }
+  return {
+    response,
+    responseIdentity: turn.responseIdentity,
+    usage: turn.usage,
+    ...(turn.finishReason === undefined ? {} : { finishReason: turn.finishReason }),
+    ...(turn.rawFinishReason === undefined ? {} : { rawFinishReason: turn.rawFinishReason }),
+    ...(turn.responseId === undefined ? {} : { responseId: turn.responseId }),
+    ...(turn.structuredOutputValidation === undefined
+      ? {}
+      : { structuredOutputValidation: turn.structuredOutputValidation }),
+  };
 }
 
 class ProviderCallError extends Error {
@@ -819,66 +922,172 @@ function reviewSurfaceForOrigin(
   return { ...bundle, items, windows };
 }
 
-function windowPrompt(bundle: EvidenceBundle, originOrdinal: number, windowIndex: number): string {
-  const window = bundle.windows[windowIndex]!;
-  const items = bundle.items.filter((item) => window.evidenceIds.includes(item.evidenceId));
+function packetPrompt(packet: ReviewPacket): string {
+  const rubric = {
+    ...EPISTEMIC_PROCESS_RUBRIC,
+    dimensions: EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
+      ({ ledger }) => ledger === packet.ledger,
+    ),
+  };
   return [
-    "PALIMPSEST_PROCESS_REVIEW_WINDOW_V1",
-    "Assess only observable retained behavior. Never infer private beliefs, intentions, or hidden reasoning.",
-    "Do not infer outcome, success, final score, model identity, or provider identity.",
-    `Bundle digest: ${bundle.contentDigest}`,
-    `Anonymous canonical origin ordinal: ${String(originOrdinal + 1)}`,
-    `Window ID: ${window.windowId}`,
-    "Return strict JSON: {schemaVersion:1,windowId,candidates:[{summary,evidenceIds:[string,...]}]}.",
-    "Every evidenceIds entry must copy an exact evidenceId from this window; never return reference objects or partial IDs.",
-    "Select at most six highest-value candidate episodes. Use one concise sentence per summary and at most six evidence IDs per candidate.",
-    "The total output budget includes reasoning. Begin the final JSON early and do not spend the budget on extended analysis.",
-    `Evidence: ${canonicalJson(items)}`,
+    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V1",
+    `Ledger: ${packet.ledger}`,
+    `Anonymous canonical origin ordinal: ${String(packet.origin.ordinal)}`,
+    "Judge only observable retained behavior. Never infer private beliefs, intentions, hidden reasoning, outcome, success, score, model identity, or provider identity.",
+    "Return one concise evidence-bounded assessment for every rubric dimension in this packet. Preserve missingness, ambiguity, and counterevidence.",
+    packet.ledger === "epistemic"
+      ? "Also reconstruct at most eight highest-value observable episodes. Transmission, uptake, and integration require exact cited behavior; leave unsupported stages empty."
+      : "Do not return epistemic episodes; this packet owns only its ledger dimensions and cautions.",
+    "Every citation field must contain exact short citationId values from this packet. Never return reference objects, evidenceId values, or partial IDs.",
+    "Use one concise sentence per rationale, at most six citation IDs per field, and at most four concise cautions. Begin final JSON early and reserve enough output budget to complete it.",
+    `Rubric: ${canonicalJson(rubric)}`,
+    `Packet: ${canonicalJson(packet)}`,
   ].join("\n\n");
 }
 
-function integrationPrompt(
-  bundle: EvidenceBundle,
-  originOrdinal: number,
-  candidates: readonly ProviderCandidateWindowOutput[],
-): string {
-  return [
-    "PALIMPSEST_PROCESS_REVIEW_INTEGRATION_V1",
-    "Integrate only the cited candidates below. Preserve ambiguity and counterevidence.",
-    "Describe observable commitments, tests, assertions, behavioral revisions, transmission, uptake, and integration.",
-    "Never infer private beliefs, intentions, hidden reasoning, outcome, success, score, model, or provider.",
-    `Anonymous canonical origin ordinal: ${String(originOrdinal + 1)}`,
-    `Communication mode: ${bundle.communicationMode}`,
-    `Bundle digest: ${bundle.contentDigest}`,
-    `Rubric: ${canonicalJson(EPISTEMIC_PROCESS_RUBRIC)}`,
-    "Return the schema-constrained review object. The dimensions object is keyed by rubric dimension ID; do not repeat dimension IDs or ledgers inside its values. Every citation field ends in Ids and must contain exact evidenceId strings from the candidates, never reference objects.",
-    "Use one concise sentence per rationale, at most eight highest-value episodes, at most six IDs in each citation field, and at most four concise cautions.",
-    "The total output budget includes reasoning. Begin the final JSON early and reserve enough budget to complete it.",
-    `Candidates: ${canonicalJson(candidates)}`,
-  ].join("\n\n");
+function packetRequestIdentity(
+  packet: ReviewPacket,
+  options: ReviewAdapterOptions,
+): PacketRequestIdentity {
+  return {
+    schemaVersion: 1,
+    protocolVersion: REVIEW_PROTOCOL_VERSION,
+    promptVersion: REVIEW_PROMPT_VERSION,
+    outputSchemaVersion: REVIEW_OUTPUT_SCHEMA_VERSION,
+    routingVersion: packet.routingVersion,
+    projectionVersion: packet.projectionVersion,
+    bundleDigest: packet.bundleDigest,
+    configurationDigest: packet.configurationDigest,
+    rubricDigest: packet.rubricDigest,
+    reviewerProfile: options.profileId,
+    providerFamily: options.providerFamily,
+    requestedModel: options.model,
+    packetId: packet.packetId,
+    packetDigest: packet.contentDigest,
+  };
+}
+
+function completedPacketArtifact(
+  request: PacketRequestIdentity,
+  turn: ModelTurn,
+  output: PacketReviewerOutput,
+): CompletedPacketCallArtifact {
+  const retained = retainedCompletedTurn(turn);
+  const actualProvider = retained.responseIdentity.actualProvider!;
+  const actualModel = retained.responseIdentity.actualModel!;
+  const content = {
+    schemaVersion: 1 as const,
+    status: "completed" as const,
+    request,
+    actualProvider,
+    actualModel,
+    turn: retained,
+    output,
+  };
+  return { ...content, artifactKey: contentDigest(content) };
+}
+
+function failureClassification(error: unknown, turn?: ModelTurn): string {
+  if (turn?.finishReason !== undefined && turn.finishReason !== "stop") {
+    return `finish-${turn.finishReason}`;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/overload/i.test(message)) return "overloaded";
+  if (/refus/i.test(message)) return "refusal";
+  if (/token usage is unavailable/i.test(message)) return "usage-unavailable";
+  if (error instanceof ProviderCallError) return "provider-error";
+  const responseText = turn?.responseText ?? turn?.finalResponse ?? "";
+  if (responseText.trim() === "" || /no response text|no output|empty/i.test(message)) {
+    return "empty-output";
+  }
+  if (turn?.structuredOutputValidation?.status === "invalid") {
+    try {
+      JSON.parse(responseText);
+      return "schema-invalid";
+    } catch {
+      return "malformed-json";
+    }
+  }
+  return "invalid-output";
+}
+
+function failedPacketArtifact(
+  request: PacketRequestIdentity,
+  error: unknown,
+  turn?: ModelTurn,
+): FailedPacketCallArtifact {
+  const responseText = turn?.responseText ?? turn?.finalResponse ?? "";
+  const message = error instanceof Error ? error.message : String(error);
+  const content = {
+    schemaVersion: 1 as const,
+    status: "failed" as const,
+    request,
+    failure: {
+      classification: failureClassification(error, turn),
+      message,
+      finishReason: turn?.finishReason ?? UNAVAILABLE_METADATA,
+      rawFinishReason: turn?.rawFinishReason ?? UNAVAILABLE_METADATA,
+      usage: turn?.usage ?? UNAVAILABLE_METADATA,
+      responseId: turn?.responseId ?? UNAVAILABLE_METADATA,
+      responseIdentity: turn?.responseIdentity ?? UNAVAILABLE_METADATA,
+      structuredOutputValidation: turn?.structuredOutputValidation ?? UNAVAILABLE_METADATA,
+      textReturned: responseText.length > 0,
+      responseText,
+    },
+  };
+  return { ...content, artifactKey: contentDigest(content) };
+}
+
+function deterministicSocialDimensions(): readonly DimensionReview[] {
+  return EPISTEMIC_PROCESS_RUBRIC.dimensions
+    .filter(({ ledger }) => ledger === "social")
+    .map(({ dimensionId, ledger }) => ({
+      dimensionId,
+      ledger,
+      state: "not-applicable" as const,
+      rationale: "No peer collaboration channel was available in this condition.",
+      evidence: [],
+      counterevidence: [],
+      confidence: "high" as const,
+    }));
 }
 
 async function runJudge(
   adapter: ModelAdapter,
   adapterOptions: ReviewAdapterOptions,
   bundle: EvidenceBundle,
-  record: RunRecord,
-  originIds: readonly string[],
+  originPackets: readonly {
+    readonly originId: string;
+    readonly surface: EvidenceBundle;
+    readonly packets: readonly [ReviewPacket, ReviewPacket, ReviewPacket];
+  }[],
   reviewId: string,
   judgeIndex: number,
-  onTranscript: (transcript: JudgeTranscript) => Promise<void>,
+  resumeArtifacts: readonly PacketCallArtifact[],
+  initialCumulativeTokens: number,
+  onArtifact: (artifact: PacketCallArtifact) => Promise<void>,
 ): Promise<JudgeAttempt> {
   const origins: OriginTranscript[] = [];
   const reviewedOrigins: ValidatedOriginReview[] = [];
-  let cumulativeTokens = 0;
+  let cumulativeTokens = initialCumulativeTokens;
+  let usageUnavailable = false;
+  const errors: string[] = [];
+  let providerFailure = false;
+  let actualIdentity: string | undefined;
+  const reusable = new Map(
+    resumeArtifacts
+      .filter(
+        (artifact): artifact is CompletedPacketCallArtifact => artifact.status === "completed",
+      )
+      .map((artifact) => [contentDigest(artifact.request), artifact] as const),
+  );
   const requireRemainingBudget = (): void => {
-    if (cumulativeTokens >= adapterOptions.tokenLimit) {
-      throw new ReviewerTokenLimitError(adapterOptions.tokenLimit, cumulativeTokens);
+    if (usageUnavailable) {
+      throw new Error(
+        "Reviewer token usage is unavailable; no further provider calls are allowed.",
+      );
     }
-  };
-  const retainUsage = (turn: RetainedTurn): void => {
-    cumulativeTokens = addTurnUsage(cumulativeTokens, turn);
-    if (cumulativeTokens > adapterOptions.tokenLimit) {
+    if (cumulativeTokens >= adapterOptions.tokenLimit) {
       throw new ReviewerTokenLimitError(adapterOptions.tokenLimit, cumulativeTokens);
     }
   };
@@ -887,61 +1096,120 @@ async function runJudge(
     reviewId,
     providerFamily: adapterOptions.providerFamily,
     requestedModel: adapterOptions.model,
+    reviewerProfile: adapterOptions.profileId,
     bundleDigest: bundle.contentDigest,
     origins,
+    cumulativeTokens,
     ...(error === undefined ? {} : { error }),
   });
-  try {
-    for (const [originIndex, originId] of originIds.entries()) {
-      const surface = reviewSurfaceForOrigin(bundle, record, originId);
-      const windows: { windowId: string; turn: RetainedTurn }[] = [];
-      const candidates: ProviderCandidateWindowOutput[] = [];
-      origins.push({ originId, windows });
-      await onTranscript(transcript());
-      for (const [windowIndex, window] of surface.windows.entries()) {
-        requireRemainingBudget();
-        const turn = await callReviewer(
-          adapter,
-          `agent-${String(judgeIndex + 1)}` as AgentId,
-          windowPrompt(surface, originIndex, windowIndex),
-          {
-            name: "palimpsest_process_window",
-            description: "Observable process-review candidates with exact evidence IDs.",
-            schema: candidateOutputSchema(window.windowId, window.evidenceIds),
-          },
-        );
-        windows.push({ windowId: window.windowId, turn });
-        await onTranscript(transcript());
-        retainUsage(turn);
-        const candidateValue = JSON.parse(turn.response) as unknown;
-        candidates.push(decodeCandidateOutput(candidateValue, window.windowId, surface));
+  for (const { originId, surface, packets } of originPackets) {
+    const artifacts: PacketCallArtifact[] = [];
+    const reviews = new Map<ReviewPacketLedger, PacketReview>();
+    origins.push({ originId, packets: artifacts });
+    const selectedPackets = packets.filter(
+      ({ ledger }) => !(surface.communicationMode === "isolated" && ledger === "social"),
+    );
+    for (const packet of selectedPackets) {
+      const request = packetRequestIdentity(packet, adapterOptions);
+      let artifact: PacketCallArtifact | undefined = reusable.get(contentDigest(request));
+      if (artifact !== undefined) {
+        try {
+          const { review } = decodePacketReviewerOutput(artifact.output, packet);
+          reviews.set(packet.ledger, review);
+          await onArtifact(artifact);
+        } catch {
+          artifact = undefined;
+        }
       }
-      requireRemainingBudget();
-      const integration = await callReviewer(
-        adapter,
-        `agent-${String(judgeIndex + 1)}` as AgentId,
-        integrationPrompt(surface, originIndex, candidates),
-        {
-          name: "palimpsest_process_review",
-          description: "A complete outcome-blinded process review using candidate evidence IDs.",
-          schema: integrationOutputSchema(surface, candidates),
-        },
-      );
-      origins[originIndex] = { originId, windows, integration };
-      await onTranscript(transcript());
-      retainUsage(integration);
+      if (artifact === undefined) {
+        try {
+          requireRemainingBudget();
+          const turn = await callReviewer(
+            adapter,
+            `agent-${String(judgeIndex + 1)}` as AgentId,
+            packetPrompt(packet),
+            {
+              name: `palimpsest_${packet.ledger}_packet`,
+              description: `Outcome-blind ${packet.ledger} ledger review with exact packet citations.`,
+              schema: packetOutputSchema(packet),
+            },
+          );
+          if (turn.usage !== undefined) {
+            cumulativeTokens = addTurnUsage(cumulativeTokens, {
+              response: turn.responseText ?? turn.finalResponse ?? "",
+              responseIdentity: turn.responseIdentity ?? {},
+              usage: turn.usage,
+            });
+          } else {
+            usageUnavailable = true;
+          }
+          let value: unknown;
+          try {
+            const retained = retainedCompletedTurn(turn);
+            value = JSON.parse(retained.response) as unknown;
+            const decodedOutput = decodePacketReviewerOutput(value, packet);
+            artifact = completedPacketArtifact(request, turn, decodedOutput.output);
+            reviews.set(packet.ledger, decodedOutput.review);
+          } catch (error) {
+            artifact = failedPacketArtifact(request, error, turn);
+          }
+        } catch (error) {
+          artifact = failedPacketArtifact(request, error);
+        }
+        await onArtifact(artifact);
+      }
+      artifacts.push(artifact);
+      if (artifact.status === "failed") {
+        errors.push(`${packet.packetId}: ${artifact.failure.message}`);
+        if (
+          artifact.failure.classification === "provider-error" ||
+          artifact.failure.classification === "overloaded" ||
+          artifact.failure.classification.startsWith("finish-")
+        ) {
+          providerFailure = true;
+        }
+        continue;
+      }
+      const identity = `${artifact.actualProvider}\0${artifact.actualModel}`;
+      if (actualIdentity === undefined) actualIdentity = identity;
+      else if (actualIdentity !== identity) {
+        errors.push("Reviewer packets reported inconsistent actual provider or model identities.");
+      }
+      if (!reviews.has(packet.ledger)) {
+        reviews.set(packet.ledger, decodePacketReviewerOutput(artifact.output, packet).review);
+      }
+    }
+    if (
+      reviews.has("epistemic") &&
+      reviews.has("instrumental") &&
+      (surface.communicationMode === "isolated" || reviews.has("social")) &&
+      !errors.some((message) => message.includes("inconsistent actual"))
+    ) {
+      const epistemic = reviews.get("epistemic")!;
+      const socialDimensions =
+        surface.communicationMode === "isolated"
+          ? deterministicSocialDimensions()
+          : reviews.get("social")!.dimensions;
+      const instrumental = reviews.get("instrumental")!;
       const output = validateReviewerOutputAgainstBundle(
-        decodeReviewerOutput(
-          resolveReviewerEvidenceIds(
-            JSON.parse(integration.response) as unknown,
-            candidates,
-            surface,
-          ),
-        ),
+        decodeReviewerOutput({
+          schemaVersion: 1,
+          rubricVersion: EPISTEMIC_PROCESS_RUBRIC_VERSION,
+          bundleDigest: bundle.contentDigest,
+          dimensions: [...epistemic.dimensions, ...socialDimensions, ...instrumental.dimensions],
+          episodes: epistemic.episodes,
+          overallCautions: [
+            ...epistemic.cautions,
+            ...(surface.communicationMode === "isolated" ? [] : reviews.get("social")!.cautions),
+            ...instrumental.cautions,
+          ],
+        }),
         surface,
       );
       reviewedOrigins.push({ originId, output });
     }
+  }
+  if (reviewedOrigins.length === originPackets.length && errors.length === 0) {
     return {
       status: "completed",
       transcript: transcript(),
@@ -954,15 +1222,12 @@ async function runJudge(
         origins: reviewedOrigins,
       },
     };
-  } catch (error) {
-    const status = error instanceof ProviderCallError ? "provider-error" : "invalid";
-    const failureTranscript = transcript(error instanceof Error ? error.message : String(error));
-    await onTranscript(failureTranscript);
-    return {
-      status,
-      transcript: failureTranscript,
-    };
   }
+  const failureTranscript = transcript(errors.join(" | ") || "Reviewer packets are incomplete.");
+  return {
+    status: providerFailure ? "provider-error" : "invalid",
+    transcript: failureTranscript,
+  };
 }
 
 function dimensionsByLedger(
@@ -1161,6 +1426,124 @@ function jsonBytes(value: unknown): string {
   return `${canonicalJson(value)}\n`;
 }
 
+function artifactFileName(artifact: PacketCallArtifact): string {
+  return `packet-${artifact.artifactKey}.json`;
+}
+
+function assertPacketArtifact(value: unknown, name: string): PacketCallArtifact {
+  const decoded = object(value, name);
+  if (
+    decoded.schemaVersion !== 1 ||
+    (decoded.status !== "completed" && decoded.status !== "failed")
+  ) {
+    throw new Error(`${name} has an unsupported schema or status.`);
+  }
+  const artifactKey = nonEmptyText(decoded.artifactKey, `${name}.artifactKey`);
+  const { artifactKey: _artifactKey, ...content } = decoded;
+  if (contentDigest(content) !== artifactKey) throw new Error(`${name} content digest is invalid.`);
+  const request = object(decoded.request, `${name}.request`);
+  if (
+    request.schemaVersion !== 1 ||
+    request.protocolVersion !== REVIEW_PROTOCOL_VERSION ||
+    request.promptVersion !== REVIEW_PROMPT_VERSION ||
+    request.outputSchemaVersion !== REVIEW_OUTPUT_SCHEMA_VERSION ||
+    request.routingVersion !== REVIEW_PACKET_ROUTING_VERSION ||
+    request.projectionVersion !== REVIEW_PACKET_PROJECTION_VERSION
+  ) {
+    throw new Error(`${name} request protocol is incompatible.`);
+  }
+  return decoded as unknown as PacketCallArtifact;
+}
+
+async function writePacketArtifact(path: string, artifact: PacketCallArtifact): Promise<void> {
+  const file = join(path, artifactFileName(artifact));
+  try {
+    await writeFile(file, jsonBytes(artifact), { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existing = JSON.parse(await readFile(file, "utf8")) as unknown;
+    if (canonicalJson(existing) !== canonicalJson(artifact)) {
+      throw new Error(
+        `Packet artifact ${artifact.artifactKey} already exists with different bytes.`,
+      );
+    }
+  }
+}
+
+interface ResumeState {
+  readonly analysis: ProcessReviewRunAnalysis;
+  readonly artifactsByProfile: ReadonlyMap<string, readonly PacketCallArtifact[]>;
+  readonly cumulativeTokensByProfile: ReadonlyMap<string, number>;
+}
+
+async function loadResumeState(
+  runRoot: string,
+  record: RunRecord,
+  analysisId: string,
+): Promise<ResumeState> {
+  const analysis = record.analyses.find(
+    (item): item is ProcessReviewRunAnalysis =>
+      item.kind === "process-review" && item.analysisId === analysisId,
+  );
+  if (analysis === undefined) throw new Error(`Unknown process review ${analysisId}.`);
+  if (analysis.status !== "incomplete")
+    throw new Error("Only an incomplete process review can resume.");
+  if (analysis.protocolVersion !== REVIEW_PROTOCOL_VERSION) {
+    throw new Error("Legacy or incompatible process reviews cannot resume into ledger packets.");
+  }
+  const resolvedRoot = await realpath(resolve(runRoot));
+  const manifestPath = resolve(resolvedRoot, analysis.detailsPath);
+  if (!manifestPath.startsWith(`${resolvedRoot}${sep}`)) {
+    throw new Error("Resume detail manifest escapes its run root.");
+  }
+  const manifestValue = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  const manifest = exact(manifestValue, ["schemaVersion", "files"], "Resume detail manifest");
+  if (
+    manifest.schemaVersion !== 1 ||
+    !Array.isArray(manifest.files) ||
+    contentDigest(manifestValue) !== analysis.detailsDigest
+  ) {
+    throw new Error("Resume detail manifest differs from its analysis reference.");
+  }
+  const artifacts: PacketCallArtifact[] = [];
+  const cumulativeTokensByProfile = new Map<string, number>();
+  const artifactsByProfile = new Map<string, PacketCallArtifact[]>();
+  for (const [index, entryValue] of manifest.files.entries()) {
+    const entry = object(entryValue, `Resume manifest file ${String(index + 1)}`);
+    if (entry.role !== "packet-call-result") continue;
+    const path = nonEmptyText(entry.path, `Resume manifest file ${String(index + 1)}.path`);
+    if (!/^packet-[0-9a-f]{64}\.json$/.test(path)) {
+      throw new Error("Resume packet artifact path is invalid.");
+    }
+    const value = JSON.parse(await readFile(join(dirname(manifestPath), path), "utf8")) as unknown;
+    if (contentDigest(value) !== entry.contentDigest) {
+      throw new Error(`Resume packet artifact ${path} differs from its manifest digest.`);
+    }
+    artifacts.push(assertPacketArtifact(value, `Resume packet artifact ${path}`));
+  }
+  for (const artifact of artifacts) {
+    const list = artifactsByProfile.get(artifact.request.reviewerProfile) ?? [];
+    list.push(artifact);
+    artifactsByProfile.set(artifact.request.reviewerProfile, list);
+  }
+  for (const [judgeIndex, summary] of analysis.reviews.entries()) {
+    const rawPath = join(dirname(manifestPath), `judge-${String(judgeIndex + 1)}.raw.json`);
+    const value = object(
+      JSON.parse(await readFile(rawPath, "utf8")) as unknown,
+      `Resume judge ${String(judgeIndex + 1)} transcript`,
+    );
+    const profile = nonEmptyText(value.reviewerProfile, "Resume transcript reviewerProfile");
+    if (!Number.isSafeInteger(value.cumulativeTokens) || (value.cumulativeTokens as number) < 0) {
+      throw new Error("Resume transcript cumulativeTokens is invalid.");
+    }
+    if (summary.providerFamily !== value.providerFamily) {
+      throw new Error("Resume transcript provider family differs from its analysis summary.");
+    }
+    cumulativeTokensByProfile.set(profile, value.cumulativeTokens as number);
+  }
+  return { analysis, artifactsByProfile, cumulativeTokensByProfile };
+}
+
 async function writeTranscriptSnapshot(path: string, transcript: JudgeTranscript): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   await writeFile(temporaryPath, jsonBytes(transcript), { encoding: "utf8", flag: "wx" });
@@ -1179,7 +1562,9 @@ function publishedJudgeReviews(
   const rawResponsePath = `judge-${String(judgeIndex + 1)}.raw.json`;
   const rawResponseDigest = contentDigest(attempt.transcript);
   const reviews = attempt.review.origins.map(({ output }, originIndex) => {
-    const identity = attempt.transcript.origins[originIndex]?.integration?.responseIdentity;
+    const identity = attempt.transcript.origins[originIndex]?.packets.find(
+      (artifact): artifact is CompletedPacketCallArtifact => artifact.status === "completed",
+    );
     return decodeJudgeReview({
       reviewId:
         attempt.review!.origins.length === 1
@@ -1191,10 +1576,8 @@ function publishedJudgeReviews(
       judge: {
         providerFamily: attempt.review!.providerFamily,
         requestedModel: attempt.review!.requestedModel,
-        ...(identity?.actualProvider === undefined
-          ? {}
-          : { actualProvider: identity.actualProvider }),
-        ...(identity?.actualModel === undefined ? {} : { actualModel: identity.actualModel }),
+        ...(identity === undefined ? {} : { actualProvider: identity.actualProvider }),
+        ...(identity === undefined ? {} : { actualModel: identity.actualModel }),
       },
       dimensions: output.dimensions,
       episodes: output.episodes,
@@ -1395,6 +1778,35 @@ export async function reviewRun(
   }
   assertOutcomeBlindEvidenceBundle(bundle, loaded.record);
   validateReviewerBundleLeakage(bundle, loaded.record);
+  const rubricDigest = contentDigest(EPISTEMIC_PROCESS_RUBRIC);
+  const originPackets = originIds.map((originId, originIndex) => {
+    const surface = reviewSurfaceForOrigin(bundle, loaded.record, originId);
+    return {
+      originId,
+      surface,
+      packets: compileReviewPackets({
+        bundle,
+        originId,
+        originOrdinal: originIndex + 1,
+        configurationDigest,
+        rubricDigest,
+        items: surface.items,
+      }),
+    };
+  });
+  const resume =
+    options.resumeAnalysisId === undefined
+      ? undefined
+      : await loadResumeState(options.runRoot, loaded.record, options.resumeAnalysisId);
+  if (
+    resume !== undefined &&
+    (resume.analysis.performanceAnalysisId !== performance.analysisId ||
+      resume.analysis.configurationDigest !== configurationDigest ||
+      resume.analysis.rubricVersion !== config.rubric ||
+      resume.analysis.bundleDigest !== bundle.contentDigest)
+  ) {
+    throw new Error("Resume analysis differs from the exact review inputs.");
+  }
   const env = dependencies.env ?? process.env;
   const adapterOptions = credentialPreflight(config, env);
   const createAdapter = dependencies.createAdapter ?? defaultCreateAdapter;
@@ -1409,15 +1821,20 @@ export async function reviewRun(
         adapter,
         adapterOptions[index]!,
         bundle,
-        loaded.record,
-        originIds,
+        originPackets,
         `review-${uuid()}`,
         index,
-        (transcript) =>
-          writeTranscriptSnapshot(
-            join(rawJournal, `judge-${String(index + 1)}.raw.json`),
-            transcript,
-          ),
+        resume?.artifactsByProfile.get(adapterOptions[index]!.profileId) ?? [],
+        resume?.cumulativeTokensByProfile.get(adapterOptions[index]!.profileId) ?? 0,
+        (artifact) => writePacketArtifact(rawJournal, artifact),
+      ),
+    ),
+  );
+  await Promise.all(
+    attempts.map((attempt, index) =>
+      writeTranscriptSnapshot(
+        join(rawJournal, `judge-${String(index + 1)}.raw.json`),
+        attempt.transcript,
       ),
     ),
   );
@@ -1441,6 +1858,13 @@ export async function reviewRun(
             content: publishedJudgeReviews(attempt, index),
           },
         ]),
+    ...attempt.transcript.origins.flatMap(({ packets }) =>
+      packets.map((artifact) => ({
+        path: artifactFileName(artifact),
+        role: "packet-call-result",
+        content: artifact,
+      })),
+    ),
   ]);
   let scorecards: readonly RunScorecard[] | undefined;
   let scorecardRecord = loaded.record;
@@ -1510,6 +1934,8 @@ export async function reviewRun(
     rubricVersion: config.rubric,
     configurationDigest,
     bundleDigest: bundle.contentDigest,
+    protocolVersion: REVIEW_PROTOCOL_VERSION,
+    ...(resume === undefined ? {} : { resumedFromAnalysisId: resume.analysis.analysisId }),
     detailsPath: detail.detailsPath,
     detailsDigest: detail.detailsDigest,
     reviews: [
@@ -1572,6 +1998,9 @@ export async function reviewRunFromFlags(
       configPath: nonEmptyText(flags.config, "--config"),
       performanceAnalysisId: nonEmptyText(flags["performance-analysis"], "--performance-analysis"),
       allowSpend: flags["allow-spend"],
+      ...(flags.resume === undefined
+        ? {}
+        : { resumeAnalysisId: nonEmptyText(flags.resume, "--resume") }),
     },
     dependencies,
   );

@@ -248,6 +248,23 @@ describe("operator CLI contract", () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
     expect(result.stderr).toMatch(/(?:OPENAI_API_KEY|ANTHROPIC_API_KEY)/);
+
+    const resumed = await execute([
+      "review",
+      "--run-root",
+      fixture.runRoot,
+      "--config",
+      join(root, "grading", "epistemic-process-v1.yaml"),
+      "--performance-analysis",
+      analysisId,
+      "--resume",
+      "process-review-missing",
+      "--allow-spend",
+      "true",
+    ]);
+    expect(resumed.exitCode).not.toBe(0);
+    expect(resumed.stdout).toBe("");
+    expect(resumed.stderr).toMatch(/unknown process review process-review-missing/i);
   }, 30_000);
 
   it("publishes a provider-free descriptive report through the CLI", async () => {

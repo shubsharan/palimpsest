@@ -38,17 +38,22 @@ pnpm puzzle:review \
   --run-root <run-dir> \
   --config <grading.yaml> \
   --performance-analysis <analysis-id> \
+  [--resume <incomplete-process-review-analysis-id>] \
   --allow-spend true
 ```
 
 - Requires an exact valid `performance` analysis and unchanged source digest.
 - Rejects absent or non-literal `--allow-spend true` before provider construction.
 - Validates two reviewer profiles from distinct provider families, each with a cumulative `tokenLimit` and per-call `maxOutputTokens`.
-- Supplies both judges the same blinded bundle and rubric, never the run/model identity or final outcome.
-- Writes each raw response before validation, accounts provider-reported input plus output usage, validates strict structure and every evidence citation, then freezes the two reviews before joining existing outcome facts.
+- Compiles the same bounded epistemic, social, and instrumental packets for both reviewers, never exposing run/model identity or final outcome. Every source item is routed at least once or receives an explicit omission record.
+- Calls each reviewer's packets serially in epistemic, social, then instrumental order while allowing the two reviewers to run independently. A shared origin makes six calls; an isolated origin makes four and receives deterministic `not-applicable` social dimensions.
+- Checkpoints every success or failure immediately, accounts provider-reported input plus output usage, validates strict packet structure and packet-local citations, and assembles each public review deterministically. There is no model integration or adjudication call.
 - Appends `status: completed` only when both reviews validate. Provider errors or invalid reviews remain an explicit `status: incomplete` analysis and are not findings-bearing.
 - Retains a response that crosses its reviewer's cumulative token limit, publishes the attempt incomplete, and makes no further call for that reviewer.
-- Does not average ratings, force consensus, or automatically retry. Literal spend authorization is not a monetary billing cap.
+- Without `--resume`, every invocation starts a new attempt and never discovers or reuses earlier work.
+- With `--resume`, requires the named predecessor to be an immutable incomplete packet-protocol analysis with matching source, bundle, configuration, rubric, reviewer bindings, packets, prompts, schemas, and actual identities. It reuses only validated completed packet artifacts, counts predecessor usage toward reviewer limits, and calls each missing or failed packet at most once.
+- Resume requires literal `--allow-spend true` again and appends a new analysis with predecessor lineage; it never rewrites the predecessor. Legacy window-based analyses are not resumable.
+- Does not average ratings, force consensus, automatically retry, or automatically adjudicate. Literal spend authorization is not a monetary billing cap.
 
 Success shape:
 
@@ -115,10 +120,10 @@ reviewers:
     maxOutputTokens: 8000
 ```
 
-The system derives analysis IDs, evidence windows, prompt structure, output schema, provider credentials, paths, digests, and publication order. Reviewer profiles must resolve through existing local model configuration and must belong to distinct provider families.
+The system derives analysis IDs, ledger packets, short packet-local citation IDs, prompt structure, strict output schemas, content-addressed artifact keys, provider credentials, paths, digests, and publication order. Reviewer profiles must resolve through existing local model configuration and must belong to distinct provider families.
 
 ## Exit Semantics
 
 - `0`: requested artifact published and validated.
-- Non-zero: no success-shaped result. Diagnostics identify configuration, artifact, leakage, citation, provider, token-limit, spend-authorization, or publication failure.
+- Non-zero: no success-shaped result. Diagnostics identify configuration, artifact, leakage, citation, provider, finish reason, structured parsing, token-limit, resume, spend-authorization, or publication failure.
 - An incomplete paid review is an explicit published observation but exits non-zero so automation cannot mistake it for a findings-bearing grade.

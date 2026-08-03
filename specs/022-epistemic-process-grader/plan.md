@@ -6,7 +6,7 @@
 
 ## Summary
 
-Add a local, evidence-first grading pipeline for completed Palimpsest runs. A provider-free pass validates the frozen run, constructs a blinded evidence index, and computes deterministic outcome and activity measures. A separately authorized review pass sends only outcome-blind evidence windows to two distinct-provider judges, validates every citation, preserves each judgment and disagreement, then links the frozen process review to the existing outcome. A reporting pass compares dimension distributions only across explicitly matched runs. The result is a non-composite scorecard that distinguishes what happened, what reviewers infer, and what the experiment can support.
+Add a local, evidence-first grading pipeline for completed Palimpsest runs. A provider-free grading pass validates the frozen run, constructs a blinded evidence index, and computes deterministic outcome and activity measures. A separately authorized review pass deterministically compiles three ledger packets per canonical origin before provider construction, checkpoints one strict response for each applicable packet from two distinct-provider reviewers, assembles each review without a model integration call, preserves each judgment and disagreement, then links the frozen process review to the existing outcome. An explicit resume command reuses only validated completed packet artifacts from one named incomplete predecessor. A reporting pass compares dimension distributions only across explicitly matched runs. The result is a non-composite scorecard that distinguishes what happened, what reviewers infer, and what the experiment can support.
 
 ## Technical Context
 
@@ -17,7 +17,8 @@ Add a local, evidence-first grading pipeline for completed Palimpsest runs. A pr
 **Target Platform**: Local macOS and Linux command line; provider-free grading requires no Docker or provider credential  
 **Project Type**: Local research CLI with TypeScript orchestration and Python scoring  
 **Performance Goals**: Provider-free evidence extraction and metrics remain linear in retained events and Git objects; a representative multi-thousand-event run completes without loading unrelated repository blobs; batch reporting streams scorecards rather than traces  
-**Constraints**: No database or hosted service; no mutation of frozen evidence or original scores; no hidden-state claims; no outcome or model-identity leakage into process review; no automatic reviewer retry; explicit spend authorization for qualitative review; legacy missing observations stay missing  
+**Constraints**: No database or hosted service; no mutation of frozen evidence, prior analyses, or original scores; no hidden-state claims; no outcome or model-identity leakage into process review; no automatic retry or predecessor discovery; explicit spend authorization for every qualitative review or resume; legacy missing observations stay missing
+
 **Scale/Scope**: Individual runs with thousands of trace events and tens of megabytes of frozen work; findings-bearing batches of tens to low hundreds of completed runs; one team unit for shared runs and all canonical origins for isolated runs  
 **Puzzle Contribution**: None. The feature evaluates existing observable behavior and leaves puzzle mechanics and solver feedback unchanged.  
 **Agent Instructions & Tools**: Existing objective, team identity, evidence, communication condition, ordinary Git, shell/file tools, optional checker, and `origin/main:solver.py` contract remain unchanged; the grader adds no role, turn, checkpoint, report, branch, or coordination requirement.  
@@ -64,9 +65,9 @@ src/
 ├── trace.ts                       # strict observation loading; future ref-target field
 ├── grading/
 │   ├── contracts.ts               # evidence, metric, review, and report decoders
-│   ├── evidence.ts                # blinded evidence index and chronological windows
+│   ├── evidence.ts                # blinded evidence index and deterministic ledger packets
 │   ├── grade.ts                   # provider-free run analysis orchestration
-│   ├── review.ts                  # authorized independent judge orchestration
+│   ├── review.ts                  # checkpointed packet review and deterministic assembly
 │   ├── report.ts                  # matched-run aggregation
 │   └── rubric.ts                  # versioned dimensions and rating anchors
 ├── model/                         # existing provider-neutral judge adapters
@@ -93,17 +94,17 @@ tests/
 2. Build the provider-free evidence compiler: validate the run boundary, index every eligible observation, redact identity/outcome fields, record omissions, and verify stable citations.
 3. Add Python quantitative measures for outcome, activity, resource, publication, and collaboration opportunity, with explicit denominators and missingness.
 4. Implement `puzzle:grade` to atomically publish evidence/metrics details and append one `performance` analysis without changing prior evidence or scores.
-5. Add the versioned rubric and two-judge review pipeline, including chronological evidence windows, spend preflight, citation checks, immutable raw reviews, and outcome linkage only after process judgments freeze.
-6. Implement `puzzle:review` and append `process-review` analyses whose incomplete or disagreeing reviewer states remain explicit.
+5. Add the versioned rubric and two-reviewer packet pipeline. Compile bounded epistemic, social, and instrumental packets with complete routing/omission accounting, then validate each strict packet response and its local citations.
+6. Implement `puzzle:review` with content-addressed call artifacts, rich failure retention, deterministic `ReviewerOutput` assembly, explicit `--resume` lineage, and append-only completed or incomplete `process-review` analyses.
 7. Implement `puzzle:report` for per-dimension distributions, uncertainty, eligibility, disagreement, and declared matched contrasts; reject unsupported causal labels and composite rankings.
 8. Add synthetic contrast fixtures, leakage/citation failures, historical missingness cases, redacted-real artifact cases, and provider-free end-to-end verification.
 
 ## Verification Strategy
 
-- Contract tests reject unknown fields, unsafe paths, broken digests, invalid evidence pointers, outcome leakage, model identity leakage, duplicate analyses, and malformed judge output.
+- Contract tests reject unknown fields, unsafe paths, broken digests, invalid packet-local citations, outcome leakage, model identity leakage, oversized packets or citation enums, duplicate analyses, and malformed packet output.
 - Golden tests prove identical provider-free measures for identical artifacts and prove that unavailable observations are missing rather than zero.
 - Contrast fixtures cover lucky success, strong-process failure, ignored contrary evidence, supported revision, asserted-only revision, useful uptake, empty communication, duplication, and isolated not-applicable collaboration.
-- Judge tests use deterministic fake adapters to prove independent reviews remain separate, invalid citations fail, disagreement survives, and outcome changes cannot affect frozen process input.
+- Reviewer tests use deterministic fake adapters to prove six ordered shared-origin calls or four isolated-origin calls, immediate packet checkpointing, independent reviews, identity consistency, deterministic assembly, missing-only resume, retained failures, preserved disagreement, and outcome-blind invariance.
 - Run-record tests prove analysis append is atomic and leaves trace, evaluations, topology, and previous analyses byte-stable.
 - Aggregate tests enforce matching declarations, cluster related origins by run, retain distributions/uncertainty, and refuse a composite or single-run causal claim.
 - Prompt and tool-surface regression tests prove the feature adds no agent-facing process requirement.

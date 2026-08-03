@@ -34,6 +34,7 @@ Origin status is `eligible`, `unavailable`, or `not-applicable` with a required 
   "rubricVersion": "epistemic-process-v1",
   "configurationDigest": "<sha256>",
   "bundleDigest": "<sha256>",
+  "protocolVersion": "ledger-packets-v1",
   "detailsPath": "grading/process-review-<uuid>/manifest.json",
   "detailsDigest": "<sha256>",
   "reviews": [
@@ -43,7 +44,7 @@ Origin status is `eligible`, `unavailable`, or `not-applicable` with a required 
 }
 ```
 
-The stored provider family and model identity are provenance added after each response returns. They are absent from the evidence bundle and judge prompt. `status: completed` requires exactly two completed reviews with distinct provider families and identical bundle/rubric digests.
+The stored provider family and model identity are provenance added after each response returns. They are absent from packets and reviewer prompts. `status: completed` requires exactly two completed reviews with distinct provider families, identical bundle/rubric digests, and one consistent actual provider/model identity across every packet for each reviewer. `resumedFromAnalysisId` is omitted for an initial attempt and names exactly one immutable incomplete packet-protocol predecessor for an explicit resume.
 
 ## Detail Directory Contract
 
@@ -52,9 +53,10 @@ grading/<analysis-id>/
 ├── manifest.json
 ├── evidence.json                 # performance analysis only
 ├── metrics.json                  # performance analysis only
-├── judge-1.raw.json              # process review only
-├── judge-1.review.json           # when structurally valid
+├── packet-<artifact-key>.json    # process review call checkpoints
+├── judge-1.raw.json              # ordered packet transcript
 ├── judge-2.raw.json
+├── judge-1.review.json           # when every applicable packet validates
 ├── judge-2.review.json
 └── scorecard.json                # completed process review only
 ```
@@ -63,50 +65,63 @@ grading/<analysis-id>/
 - `manifest.json` lists schema version, file path, content digest, byte count, and semantic role for every detail file.
 - Paths are relative, forward-slash separated, contained under the run root, and contain no empty, dot, parent, absolute, or backslash segment.
 - Detail files are immutable after the analysis reference enters `run.json`.
-- Unreferenced detail directories are non-evidentiary and are reported by validation; the normal publication path removes only the newly created directory if record append fails.
+- Unreferenced detail directories are non-evidentiary. A final append race leaves already-paid content-addressed call evidence intact for diagnosis rather than discarding it.
 
-## Review Output Contract
+Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity.
 
-Each judge must return one strict object:
+## Packet Output Contract
+
+Each provider call returns one strict object for exactly one ledger packet:
 
 ```json
 {
   "schemaVersion": 1,
   "rubricVersion": "epistemic-process-v1",
   "bundleDigest": "<sha256>",
-  "dimensions": [
-    {
-      "dimensionId": "epistemic.revision",
-      "ledger": "epistemic",
+  "packetId": "packet-epistemic-<digest-prefix>",
+  "packetDigest": "<sha256>",
+  "ledger": "epistemic",
+  "dimensions": {
+    "epistemic.revision": {
       "state": "rated",
       "rating": 3,
       "rationale": "The team changed the mapping after a conflicting stage and tested the replacement.",
-      "evidence": [
-        {
-          "source": "trace",
-          "traceSequence": 314,
-          "excerptDigest": "<sha256>",
-          "role": "support"
-        }
-      ],
-      "counterevidence": [],
+      "evidenceIds": ["c017"],
+      "counterevidenceIds": [],
       "confidence": "medium"
     }
-  ],
+  },
   "episodes": [],
-  "overallCautions": []
+  "cautions": []
 }
 ```
 
 Validation rules:
 
-- The dimension list exactly matches the rubric's ordered dimensions.
+- The root and every nested object set `additionalProperties: false`; all declared fields are required.
+- Packet identity and ledger exactly match the request, and citation values come from the packet-local enum.
+- The dimension object contains exactly the packet ledger's rubric dimension keys.
 - Ratings are integers 0-4 and appear only with `state: rated`.
 - Every rated dimension has at least one valid supporting reference.
 - `unobservable` and `not-applicable` have no rating and explain why.
-- Social dimensions are `not-applicable`, not zero, when peer communication is unavailable.
-- All references resolve within the exact evidence bundle and reproduce their excerpt digest.
+- The epistemic output contains the required evidence-linked episode structure. Social and instrumental packet schemas omit that field.
+- All local citations resolve within the exact packet and reproduce their source reference and excerpt digest.
 - No field contains a total score, model guess, unsupported hidden-state claim, or outcome claim.
+
+For isolated origins the system makes no social call and inserts the ordered social dimensions as `not-applicable`. Deterministic review assembly orders all dimensions by the global rubric, takes episodes only from epistemic output, and concatenates cautions in epistemic/social/instrumental order.
+
+## Packet Failure Contract
+
+Every unsuccessful call is retained with:
+
+- a stable classification and sanitized message;
+- normalized and raw finish reasons when a response exists;
+- provider-reported usage or an explicit unavailable marker;
+- response ID and actual provider/model identity when supplied;
+- `textReturned` and any returned outcome-blind text;
+- structured parse status distinguishing malformed JSON, schema-invalid output, refusal, filtering, length exhaustion, and unavailable parsing.
+
+Transport/SDK failures remain typed and sanitized. Missing metadata is recorded as unavailable rather than replaced with success-shaped values or a generic empty-output failure.
 
 ## Rubric V1
 
@@ -154,6 +169,7 @@ Allowed process context includes anonymous actor IDs, communication availability
 ## Compatibility
 
 - A legacy record without grading analyses decodes unchanged.
+- A legacy window/candidate/integration review remains readable but cannot supply packet checkpoints to `--resume`.
 - Historical `git.changed` events without ref targets remain valid. Measures that need an event-time object ID return `unavailable`.
 - A trace without `run.json` remains an interrupted attempt and cannot receive completed-run analyses.
 - Unknown future rubric, grader, or detail schema versions fail explicitly.

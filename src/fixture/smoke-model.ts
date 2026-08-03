@@ -12,7 +12,8 @@ type FixtureScriptSource = FixtureScripts | ((context: ModelSessionContext) => F
 function copyTurn(turn: ModelTurn): ModelTurn {
   const common = {
     toolCalls: turn.toolCalls.map((call) => ({ ...call, arguments: { ...call.arguments } })),
-    usage: { ...turn.usage },
+    ...(turn.usage === undefined ? {} : { usage: { ...turn.usage } }),
+    ...(turn.usageUnavailable === undefined ? {} : { usageUnavailable: true as const }),
   };
   return turn.finalResponse === undefined
     ? common

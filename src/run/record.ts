@@ -188,6 +188,8 @@ export interface ProcessReviewRunAnalysis {
   readonly rubricVersion: string;
   readonly configurationDigest: string;
   readonly bundleDigest: string;
+  readonly protocolVersion?: string;
+  readonly resumedFromAnalysisId?: string;
   readonly detailsPath: string;
   readonly detailsDigest: string;
   readonly reviews: readonly [ProcessReviewSummary, ProcessReviewSummary];
@@ -984,6 +986,8 @@ function processReviewSummary(value: unknown, name: string): ProcessReviewSummar
 
 function processReviewAnalysis(value: unknown, index: number): ProcessReviewRunAnalysis {
   const name = `Analysis ${String(index + 1)}`;
+  const input = object(value, name);
+  const packetProtocol = input.protocolVersion !== undefined;
   const decoded = exactObject(
     value,
     [
@@ -995,6 +999,8 @@ function processReviewAnalysis(value: unknown, index: number): ProcessReviewRunA
       "rubricVersion",
       "configurationDigest",
       "bundleDigest",
+      ...(packetProtocol ? ["protocolVersion"] : []),
+      ...(input.resumedFromAnalysisId === undefined ? [] : ["resumedFromAnalysisId"]),
       "detailsPath",
       "detailsDigest",
       "reviews",
@@ -1033,6 +1039,17 @@ function processReviewAnalysis(value: unknown, index: number): ProcessReviewRunA
     rubricVersion: text(decoded.rubricVersion, `${name}.rubricVersion`),
     configurationDigest: digest(decoded.configurationDigest, `${name}.configurationDigest`),
     bundleDigest: digest(decoded.bundleDigest, `${name}.bundleDigest`),
+    ...(decoded.protocolVersion === undefined
+      ? {}
+      : { protocolVersion: pathSegment(decoded.protocolVersion, `${name}.protocolVersion`) }),
+    ...(decoded.resumedFromAnalysisId === undefined
+      ? {}
+      : {
+          resumedFromAnalysisId: pathSegment(
+            decoded.resumedFromAnalysisId,
+            `${name}.resumedFromAnalysisId`,
+          ),
+        }),
     detailsPath: analysisDetailPath(decoded.detailsPath, analysisId, `${name}.detailsPath`),
     detailsDigest: digest(decoded.detailsDigest, `${name}.detailsDigest`),
     reviews,
@@ -1245,6 +1262,30 @@ function validateRelationships(record: RunRecord): void {
         );
       if (performance === undefined) {
         throw new Error("A process review must reference an earlier performance analysis.");
+      }
+      if (item.resumedFromAnalysisId !== undefined) {
+        const predecessor = record.analyses
+          .slice(0, index)
+          .find(
+            (candidate): candidate is ProcessReviewRunAnalysis =>
+              candidate.kind === "process-review" &&
+              candidate.analysisId === item.resumedFromAnalysisId,
+          );
+        if (
+          predecessor === undefined ||
+          predecessor.status !== "incomplete" ||
+          predecessor.protocolVersion === undefined ||
+          item.protocolVersion === undefined ||
+          predecessor.performanceAnalysisId !== item.performanceAnalysisId ||
+          predecessor.configurationDigest !== item.configurationDigest ||
+          predecessor.rubricVersion !== item.rubricVersion ||
+          predecessor.bundleDigest !== item.bundleDigest ||
+          predecessor.protocolVersion !== item.protocolVersion
+        ) {
+          throw new Error(
+            "A resumed process review must reference an earlier compatible incomplete analysis.",
+          );
+        }
       }
       if (item.status === "completed") {
         const identity = [

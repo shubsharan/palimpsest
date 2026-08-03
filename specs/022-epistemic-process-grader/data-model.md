@@ -53,12 +53,33 @@ The complete local index and the outcome-blind surface used for process review.
 | `communicationMode` | `shared` or `isolated` | Required to determine social applicability |
 | `actors` | ordered anonymized IDs | Must match eligible agents |
 | `items` | ordered `EvidenceItem[]` | Strictly chronological, then source-stable |
-| `windows` | ordered evidence-ID ranges | Covers every item exactly once for first-pass review |
 | `omissions` | omission manifests | Records excluded fields, payload sizes, digests, and reasons |
 | `sourceDigest` | SHA-256 | Covers original run/trace/topology identities |
 | `contentDigest` | SHA-256 | Covers the canonical bundle |
 
 Prohibited reviewer content includes model profile, requested or actual model/provider, experiment labels that reveal identity, oracle material, final evaluation, reconstruction score, success label, and post-run outcome analysis.
+
+## ReviewPacket
+
+A bounded, outcome-blind projection for exactly one origin and process ledger.
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `schemaVersion` | `1` | Required |
+| `packetId` | deterministic string | Unique within the exact bundle and review protocol |
+| `origin` | positive ordinal | Contains no canonical origin label or identity-bearing value |
+| `ledger` | `epistemic`, `social`, or `instrumental` | Exactly one ledger |
+| `bundleDigest` | SHA-256 | Exact provider-free evidence basis |
+| `configurationDigest` | SHA-256 | Exact review configuration |
+| `rubricDigest` | SHA-256 | Digest of rubric content, not only its label |
+| `routingVersion` | version string | Exact evidence-to-ledger rules |
+| `projectionVersion` | version string | Exact normalization and excerpt rules |
+| `citations` | ordered local citation index | At most 499 short packet-local IDs resolving to source references and excerpt digests |
+| `items` | ordered projected evidence | Bounded reviewer-visible content using only local citation IDs |
+| `omissions` | ordered omission records | Every unrouted source item and every shortened payload has a reason and digest |
+| `contentDigest` | SHA-256 | Canonical digest of every preceding field |
+
+Packet compilation is byte-identical for fixed inputs. Related tool starts and completions are paired, duplicated call material is removed from model responses, and large payloads use deterministic bounded head/tail excerpts. Evidence may appear in multiple packets when required by multiple ledgers. Every source item is routed at least once or appears in the omission records. Canonical serialized size is at most 256 KiB; compilation fails before provider access if the local citation index alone cannot fit. The social packet for an isolated origin is never sent to a provider; its dimensions are assembled deterministically as `not-applicable`.
 
 ## QuantitativeMeasure
 
@@ -115,24 +136,54 @@ One ordinal judgment under a versioned rubric.
 
 Rating anchors are dimension-specific, but share this direction: 0 is absent or actively harmful when observable; 1 is weak; 2 is mixed or partial; 3 is strong; 4 is unusually strong and consistently evidenced. Unobservable and not applicable are never encoded as zero.
 
-## JudgeReview
+## PacketReviewerOutput
 
-One independent, immutable qualitative interpretation.
+One strict provider response for exactly one packet.
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `reviewId` | string | Unique and immutable |
-| `status` | `completed`, `invalid`, or `provider-error` | Required |
-| `rubricVersion` | string | Exact version |
-| `bundleDigest` | SHA-256 | Must match reviewed bundle |
-| `judge` | provider family, requested model, actual identity | Attached only after judgment returns |
-| `dimensions` | complete dimension set | Required when completed |
-| `episodes` | `EpistemicEpisode[]` | Required when completed |
-| `overallCautions` | bounded strings | No total score |
-| `rawResponsePath` | safe relative path | Immutable raw response or failure detail |
-| `rawResponseDigest` | SHA-256 | Required when a response exists |
+| `schemaVersion` | `1` | Required |
+| `rubricVersion` | string | Must match the frozen rubric |
+| `bundleDigest` | SHA-256 | Must match the exact evidence bundle |
+| `packetId` | string | Must match the requested packet |
+| `packetDigest` | SHA-256 | Must match the packet content digest |
+| `ledger` | process ledger | Must match the packet |
+| `dimensions` | object keyed by exact ledger dimension IDs | No dimensions from another ledger |
+| `episodes` | packet-local episode array | Required only for epistemic |
+| `cautions` | bounded strings | Packet-local cautions; no total score |
 
-Two reviews for the same analysis must use distinct provider families. A failed review remains visible and prevents findings-bearing completion; the operator may start a new explicit review analysis but the system does not retry automatically.
+The provider schema is portable strict JSON: the root and every nested object set `additionalProperties: false`, all properties are required, and citation fields use only the packet's bounded local-ID enum. The system resolves local IDs to full `EvidenceReference` values and validates citations before accepting the artifact.
+
+## PacketCallArtifact
+
+An immutable success or failure checkpoint written immediately after one provider call.
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `artifactKey` | SHA-256 | Covers bundle/configuration/rubric digests, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and actual provider/model identity |
+| `status` | `completed` or `failed` | Completed requires a valid `PacketReviewerOutput` |
+| `request` | exact request identity | Contains reviewer profile, requested binding, packet ID/digest, source digests, and protocol versions |
+| `actualProvider`, `actualModel` | strings | Required at the top level only for completed calls |
+| `turn` | retained response diagnostics | Required only when completed; includes text, usage, identity, finish reasons, response ID, and parse status when supplied |
+| `failure` | classification and retained diagnostics | Required only when failed; absent metadata uses an explicit unavailable marker |
+| `output` | `PacketReviewerOutput` | Required only when completed |
+
+Stable failure classifications distinguish transport/SDK failure, overload, refusal, empty output, length exhaustion, content filtering, malformed JSON, and schema validation failure. The artifact does not invent absent usage or identity metadata.
+
+## ReviewerOutput
+
+One deterministically assembled, immutable qualitative interpretation.
+
+| Field             | Type                   | Rules                      |
+| ----------------- | ---------------------- | -------------------------- |
+| `schemaVersion`   | `1`                    | Required                   |
+| `rubricVersion`   | string                 | Exact version              |
+| `bundleDigest`    | SHA-256                | Must match reviewed bundle |
+| `dimensions`      | complete dimension set | Required when completed    |
+| `episodes`        | `EpistemicEpisode[]`   | Required when completed    |
+| `overallCautions` | bounded strings        | No total score             |
+
+Assembly is deterministic: dimensions follow global rubric order, episodes come only from the epistemic packet, and cautions concatenate in epistemic/social/instrumental order. Isolated origins receive deterministic `not-applicable` social dimensions. The enclosing `JudgeReview` records review identity, status, requested and actual identity, raw transcript path, and digest. Two outputs for the same analysis must use distinct provider families. Any failed packet, missing actual identity, or identity drift leaves that reviewer and analysis incomplete.
 
 ## RunScorecard
 
@@ -180,9 +231,13 @@ The `RunAnalysis` variant appended by qualitative review.
 | `rubricVersion` | string | Exact anchors and prompts |
 | `configurationDigest` | SHA-256 | Includes reviewer profiles and token limits |
 | `bundleDigest` | SHA-256 | Identical for both judges |
+| `protocolVersion` | string | Present for packet-protocol analyses; absent legacy analyses remain readable |
 | `detailsPath` | safe relative path | Under `grading/<analysisId>/` |
 | `detailsDigest` | SHA-256 | Covers reviews and scorecard |
 | `reviews` | ordered status/provenance summaries | Exactly two configured reviewer attempts |
+| `resumedFromAnalysisId` | string | Required only for an explicit resume; must name an incomplete packet-protocol predecessor |
+
+Every invocation receives a new analysis ID and immutable detail directory. Resume validates the predecessor reference and digest, every artifact-key input, and every reused completed packet artifact. Failed or missing packets are called at most once in the new invocation. Prior usage counts toward the configured reviewer token limit. Legacy window-protocol analyses remain readable but cannot be resumed into this protocol.
 
 ## BehaviorReport
 
@@ -208,8 +263,10 @@ A provider-free, cross-run output that does not mutate source run records.
 ```text
 RunRecord
   ├── PerformanceAnalysis ──> EvidenceBundle + QuantitativeMeasure[]
-  └── ProcessReviewAnalysis ──> JudgeReview[2] ──> DimensionReview[]
-                                      └──────────> EpistemicEpisode[]
+  └── ProcessReviewAnalysis ──> ReviewPacket[origin][ledger]
+                         └────> PacketCallArtifact[reviewer][packet]
+                         └────> ReviewerOutput[2] ──> DimensionReview[]
+                                      └────────────> EpistemicEpisode[]
                          └────────────> RunScorecard
 
 BehaviorReport ──> many RunScorecards + declared matching design
@@ -225,9 +282,9 @@ Any failure stops before the next state. A run with status other than completed 
 
 ### Qualitative Review
 
-`loaded -> exact-input-validated -> leakage-checked -> spend-authorized -> judge-responses-retained -> citations-validated -> process-frozen -> outcome-linked -> analysis-appended`
+`loaded -> exact-input-validated -> packets-compiled -> leakage-checked -> spend-authorized -> packet-results-checkpointed -> reviewer-outputs-assembled -> process-frozen -> outcome-linked -> analysis-appended`
 
-Missing authorization stops before provider construction. One invalid or failed judge produces an explicit incomplete review analysis and no findings-bearing scorecard. There is no automatic retry or consensus stage.
+Missing authorization stops before provider construction. The two reviewers are independent; each reviewer's applicable packets execute serially in epistemic/social/instrumental order. A packet failure produces an explicit immutable incomplete analysis and no findings-bearing scorecard. An explicit resume starts from the same validation path and adds predecessor validation before spend authorization. There is no automatic retry, model integration, consensus, or adjudication stage.
 
 ### Batch Report
 

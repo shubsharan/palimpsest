@@ -55,7 +55,7 @@ The important limits are equally informative. `git.changed` currently identifies
 
 ### 6. Preserve Two Independent Reviewer Views
 
-**Decision**: Findings-bearing review uses two configured judges from distinct provider families. Each works from the same blinded evidence bundle and rubric. Raw outputs, validated reviews, confidence, counterevidence, and disagreement remain separate; no automatic retry or silent averaging occurs.
+**Decision**: Findings-bearing review uses two configured reviewers from distinct provider families. Each receives the same deterministically compiled ledger packets and rubric. Raw packet outputs, assembled reviews, confidence, counterevidence, and disagreement remain separate; no model adjudication, automatic retry, or silent averaging occurs.
 
 **Rationale**: A second differently sourced judgment reveals rubric ambiguity and judge-specific priors. Preserved disagreement is data about the measurement instrument, not noise to hide.
 
@@ -69,13 +69,15 @@ The important limits are equally informative. `git.changed` currently identifies
 
 **Alternatives considered**: Free-form rationales were rejected because they cannot reliably distinguish inspection from invention. Line-number-only citations into rendered logs were rejected because rendering can change.
 
-### 8. Use Chronological Evidence Windows Without Silent Loss
+### 8. Route Three Deterministic Ledger Packets
 
-**Decision**: Retain a complete evidence index locally and create deterministic chronological review windows sized to the configured judge context. Every omitted or summarized payload is represented by its source reference, digest, size, and reason. Judges first annotate candidate episodes per window, then integrate only cited candidates across the full run.
+**Decision**: Retain a complete local evidence index and compile one outcome-blind packet for each epistemic, social, and instrumental ledger per canonical origin. Projection is deterministic and non-evaluative: it pairs related tool events, removes duplicated call material, uses bounded head/tail excerpts, retains source digests, and allows evidence to appear in more than one packet when two ledgers need it. Every source item appears in at least one packet or has an explicit omission record. Each serialized packet is at most 256 KiB, and provider-free preflight fails if even the packet reference index cannot fit.
 
-**Rationale**: Current traces can contain thousands of events. Windowing preserves order and coverage while avoiding a one-shot context overflow. The omission manifest makes information loss visible.
+Each reviewer makes one structured call per applicable packet, serially in epistemic, social, then instrumental order. Reviewers run independently and may execute concurrently. A shared origin therefore requires six successful calls; an isolated origin requires four because social dimensions are deterministically `not-applicable`. The epistemic packet alone produces the episode structure. The system orders and combines packet-local dimensions and cautions into the public review without a final model integration call.
 
-**Alternatives considered**: Sending only team messages was rejected because tool and Git consequences matter. One unrestricted prompt was rejected because it fails unpredictably on long runs. Model-generated summaries without source pointers were rejected because they compound interpretation.
+**Rationale**: The provider judges bounded evidence instead of performing pagination, cross-window citation collection, or final JSON assembly. Three focused calls reduce independent failure points and output-budget pressure while preserving ledger separation and complete, auditable routing.
+
+**Alternatives considered**: Per-window candidate extraction plus a large integration call was rejected because one late transient failure discards many valid paid calls and the integration prompt grows with the run. One unrestricted prompt was rejected because it creates attention and context risk. Model-generated summaries without source pointers were rejected because they compound interpretation.
 
 ### 9. Add Only a Neutral Future Git Observation
 
@@ -85,17 +87,19 @@ The important limits are equally informative. `git.changed` currently identifies
 
 **Alternatives considered**: Periodic forced snapshots were rejected because they impose infrastructure cadence and storage cost. Timestamp inference for historical runs was rejected as false precision.
 
-### 10. Extend the Existing Append-Only Analysis Boundary
+### 10. Checkpoint Calls and Resume Explicitly
 
-**Decision**: Add `performance` and `process-review` variants to `RunAnalysis`. Store large immutable details in `grading/<analysis-id>/` and append strict digested references to `run.json`. Write the details atomically before appending the record; remove a newly written unreferenced directory if publication fails.
+**Decision**: Add `performance` and `process-review` variants to `RunAnalysis`. Persist every validated packet response immediately and atomically under a content-addressed key covering its bundle, configuration, rubric, reviewer binding, packet, prompt, schema, and actual model identity. Retain failed calls separately with sanitized classification and message, normalized and raw finish reasons, usage availability, response identity, actual provider/model identity, whether text was returned, and returned outcome-blind text when available.
 
-**Rationale**: This reuses the existing analysis history without bloating the record or changing frozen evidence. A run record remains the index of evidentiary analyses.
+Every invocation appends a new immutable completed or incomplete analysis. `--resume <incomplete-analysis-id>` validates the named predecessor and every key field, counts predecessor usage against reviewer limits, reuses only validated completed packets, and calls each missing packet at most once. It requires new literal spend authorization and records `resumedFromAnalysisId`; it never discovers a predecessor, rewrites one, retries automatically, or imports legacy window responses.
 
-**Alternatives considered**: A database was rejected as unnecessary. Mutating existing evaluations was rejected because it would erase the outcome/process distinction. A parallel mutable current-score file was rejected because it weakens provenance.
+**Rationale**: Packet-level checkpoints preserve valid paid work without weakening the no-hidden-retry rule. Append-only predecessors preserve the history of failure, authorization, usage, and recovery.
+
+**Alternatives considered**: A database was rejected as unnecessary. Whole-review retries were rejected because they repeat paid calls and obscure failure history. Mutating an incomplete attempt or maintaining a mutable current pointer was rejected because either weakens provenance.
 
 ### 11. Keep Runtime Ownership Consistent
 
-**Decision**: TypeScript validates artifacts, builds/redacts evidence, observes Git, invokes judges, and publishes analyses. Python calculates deterministic measures and batch statistics from strict requests. Reuse the existing provider adapters and Python subprocess boundary.
+**Decision**: TypeScript validates artifacts, builds/redacts evidence, compiles packets, observes Git, invokes reviewers, and publishes analyses. Provider adapters expose response ID, actual identity, usage, returned text, normalized and raw finish reason, and structured-parse status whenever a response exists; transport failures remain typed and sanitized rather than becoming generic empty-output errors. Python calculates deterministic measures and batch statistics from strict requests. Reuse the existing provider adapters and Python subprocess boundary.
 
 **Rationale**: This matches Palimpsest's current ownership rules and avoids duplicate parsing or a new service boundary.
 

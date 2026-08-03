@@ -70,6 +70,23 @@ export interface ModelResponseIdentity {
   readonly actualModel?: string;
 }
 
+export type ModelFinishReason =
+  | "stop"
+  | "length"
+  | "content-filter"
+  | "tool-calls"
+  | "error"
+  | "other";
+
+export type StructuredOutputValidation =
+  | {
+      readonly status: "validated";
+    }
+  | {
+      readonly status: "invalid" | "not-validated";
+      readonly error: string;
+    };
+
 export interface InputTokenDetails {
   readonly noCacheTokens?: number;
   readonly cacheReadTokens?: number;
@@ -141,8 +158,14 @@ export interface ModelTurn {
   reasoningSummary?: string;
   returnedReasoningSummary?: ReturnedReasoningSummary;
   finalResponse?: string;
-  usage: TokenUsage;
+  responseText?: string;
+  finishReason?: ModelFinishReason;
+  rawFinishReason?: string;
+  responseId?: string;
+  usage?: TokenUsage;
+  usageUnavailable?: true;
   responseIdentity?: ModelResponseIdentity;
+  structuredOutputValidation?: StructuredOutputValidation;
 }
 
 export interface StructuredOutputRequest {

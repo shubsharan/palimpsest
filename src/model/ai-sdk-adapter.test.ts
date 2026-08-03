@@ -42,6 +42,11 @@ describe("AI SDK provider", () => {
         finishReason: { unified: "stop", raw: "completed" },
         usage: usage(7, 3),
         warnings: [],
+        response: {
+          id: "response-structured",
+          modelId: "served-model",
+          timestamp: new Date(0),
+        },
       },
     });
     const schema = {
@@ -64,6 +69,11 @@ describe("AI SDK provider", () => {
     });
 
     expect(turn.finalResponse).toBe('{"schemaVersion":1,"value":"ok"}');
+    expect(turn.responseText).toBe('{"schemaVersion":1,"value":"ok"}');
+    expect(turn.finishReason).toBe("stop");
+    expect(turn.rawFinishReason).toBe("completed");
+    expect(turn.responseId).toBe("response-structured");
+    expect(turn.structuredOutputValidation).toEqual({ status: "validated" });
     expect(turn.usage).toMatchObject({ inputTokens: 7, outputTokens: 3 });
     expect(model.doGenerateCalls[0]!.responseFormat).toEqual({
       type: "json",
@@ -76,33 +86,53 @@ describe("AI SDK provider", () => {
   it.each([
     ["malformed JSON", [{ type: "text" as const, text: "not-json" }]],
     ["empty output", []],
-  ])("rejects %s when structured output cannot be parsed", async (_name, content) => {
+    ["schema-invalid JSON", [{ type: "text" as const, text: '{"value":1}' }]],
+  ])("retains %s and metadata when structured output cannot be parsed", async (_name, content) => {
     const model = new MockLanguageModelV4({
+      provider: "mock-provider",
+      modelId: "requested-model",
       doGenerate: {
         content,
         finishReason: { unified: "stop", raw: "completed" },
         usage: usage(1, 1),
         warnings: [],
+        response: {
+          id: "response-invalid",
+          modelId: "served-model",
+          timestamp: new Date(0),
+        },
       },
     });
     const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
 
-    await expect(
-      session.respond({
-        prompt: "return the object",
-        toolResults: [],
-        signal: new AbortController().signal,
-        structuredOutput: {
-          name: "structured_test",
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: { value: { type: "string" } },
-            required: ["value"],
-          },
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { value: { type: "string" } },
+          required: ["value"],
         },
-      }),
-    ).rejects.toThrow();
+      },
+    });
+
+    expect(turn.responseText).toBe(content[0]?.text ?? "");
+    expect(turn.finishReason).toBe("stop");
+    expect(turn.rawFinishReason).toBe("completed");
+    expect(turn.responseId).toBe("response-invalid");
+    expect(turn.responseIdentity).toEqual({
+      actualProvider: "mock-provider",
+      actualModel: "served-model",
+    });
+    expect(turn.usage).toMatchObject({ inputTokens: 1, outputTokens: 1 });
+    expect(turn.structuredOutputValidation).toMatchObject({
+      status: "invalid",
+      error: expect.stringMatching(/no object generated|did not match schema/i),
+    });
   });
 
   it("reports a structured-output length finish with retained usage", async () => {
@@ -116,22 +146,74 @@ describe("AI SDK provider", () => {
     });
     const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
 
-    await expect(
-      session.respond({
-        prompt: "return the object",
-        toolResults: [],
-        signal: new AbortController().signal,
-        structuredOutput: {
-          name: "structured_test",
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: { value: { type: "string" } },
-            required: ["value"],
-          },
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { value: { type: "string" } },
+          required: ["value"],
         },
-      }),
-    ).rejects.toThrow("finish reason length; 8000 output tokens");
+      },
+    });
+
+    expect(turn).toMatchObject({
+      responseText: "",
+      finishReason: "length",
+      rawFinishReason: "max_output_tokens",
+      usage: { inputTokens: 9, outputTokens: 8_000 },
+      structuredOutputValidation: {
+        status: "not-validated",
+        error: "Structured output did not complete (finish reason length).",
+      },
+    });
+  });
+
+  it("retains response diagnostics when provider usage is unavailable", async () => {
+    const model = new MockLanguageModelV4({
+      provider: "mock-provider",
+      doGenerate: {
+        content: [{ type: "text", text: '{"value":"ok"}' }],
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(undefined, undefined),
+        warnings: [],
+        response: {
+          id: "response-without-usage",
+          modelId: "served-model",
+          timestamp: new Date(0),
+        },
+      },
+    });
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      },
+    });
+
+    expect(turn).toMatchObject({
+      responseText: '{"value":"ok"}',
+      finishReason: "stop",
+      rawFinishReason: "completed",
+      responseId: "response-without-usage",
+      usageUnavailable: true,
+      structuredOutputValidation: { status: "validated" },
+    });
+    expect(turn.usage).toBeUndefined();
   });
 
   it("retains exact OpenAI Responses reasoning summary items separately from normalized text", async () => {
@@ -312,6 +394,10 @@ describe("AI SDK provider", () => {
         actualProvider: "mock-provider",
         actualModel: "served-model",
       },
+      responseText: "",
+      finishReason: "tool-calls",
+      rawFinishReason: "tool_calls",
+      responseId: "response-1",
       reasoningSummary: "Inspect the repository before changing it.",
     });
     await expect(
@@ -332,6 +418,10 @@ describe("AI SDK provider", () => {
         actualProvider: "mock-provider",
         actualModel: "served-model",
       },
+      responseText: "done",
+      finishReason: "stop",
+      rawFinishReason: "stop",
+      responseId: "response-2",
     });
 
     expect(model.doGenerateCalls).toHaveLength(2);
@@ -461,7 +551,7 @@ describe("AI SDK provider", () => {
   it.each([
     { input: undefined, output: 1 },
     { input: 1, output: undefined },
-  ])("rejects missing normalized usage: %j", async ({ input, output }) => {
+  ])("marks missing normalized usage unavailable: %j", async ({ input, output }) => {
     const model = new MockLanguageModelV4({
       doGenerate: {
         content: [{ type: "text", text: "done" }],
@@ -475,13 +565,14 @@ describe("AI SDK provider", () => {
       tools: TOOL_DEFINITIONS,
     });
 
-    await expect(
-      session.respond({
-        prompt: "solve",
-        toolResults: [],
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toThrow(/token usage/i);
+    const turn = await session.respond({
+      prompt: "solve",
+      toolResults: [],
+      signal: new AbortController().signal,
+    });
+    expect(turn.usage).toBeUndefined();
+    expect(turn.usageUnavailable).toBe(true);
+    expect(turn.responseText).toBe("done");
   });
 
   it("scrubs credential values from provider failures", async () => {
