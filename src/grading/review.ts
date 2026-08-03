@@ -1191,22 +1191,26 @@ async function runJudge(
           ? deterministicSocialDimensions()
           : reviews.get("social")!.dimensions;
       const instrumental = reviews.get("instrumental")!;
-      const output = validateReviewerOutputAgainstBundle(
-        decodeReviewerOutput({
-          schemaVersion: 1,
-          rubricVersion: EPISTEMIC_PROCESS_RUBRIC_VERSION,
-          bundleDigest: bundle.contentDigest,
-          dimensions: [...epistemic.dimensions, ...socialDimensions, ...instrumental.dimensions],
-          episodes: epistemic.episodes,
-          overallCautions: [
-            ...epistemic.cautions,
-            ...(surface.communicationMode === "isolated" ? [] : reviews.get("social")!.cautions),
-            ...instrumental.cautions,
-          ],
-        }),
-        surface,
-      );
-      reviewedOrigins.push({ originId, output });
+      try {
+        const output = validateReviewerOutputAgainstBundle(
+          decodeReviewerOutput({
+            schemaVersion: 1,
+            rubricVersion: EPISTEMIC_PROCESS_RUBRIC_VERSION,
+            bundleDigest: bundle.contentDigest,
+            dimensions: [...epistemic.dimensions, ...socialDimensions, ...instrumental.dimensions],
+            episodes: epistemic.episodes,
+            overallCautions: [
+              ...epistemic.cautions,
+              ...(surface.communicationMode === "isolated" ? [] : reviews.get("social")!.cautions),
+              ...instrumental.cautions,
+            ],
+          }),
+          surface,
+        );
+        reviewedOrigins.push({ originId, output });
+      } catch (error) {
+        errors.push(`${originId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
   if (reviewedOrigins.length === originPackets.length && errors.length === 0) {

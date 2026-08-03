@@ -1135,6 +1135,48 @@ describe("independent qualitative review", () => {
     ).rejects.toBeInstanceOf(PublishedIncompleteReviewError);
   });
 
+  it("publishes an incomplete analysis when assembled episodes violate cross-stage invariants", async () => {
+    const fixture = await preparedRun();
+    const invalidEpisode = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const output = providerPacketOutput(
+        packet,
+        bundle,
+        reviewerOutput(bundle, rating, { episode: "asserted" }),
+      ) as {
+        episodes?: { integrationIds: string[] }[];
+      };
+      if (packet.ledger === "epistemic") {
+        output.episodes![0]!.integrationIds = [packet.citations[0]!.citationId];
+      }
+      return JSON.stringify(output);
+    });
+    const deps = dependencies([invalidEpisode, new FakeAdapter(fixture.bundle, 3)]);
+
+    let incomplete: PublishedIncompleteReviewError | undefined;
+    try {
+      await reviewRun(
+        {
+          projectRoot: fixture.root,
+          runRoot: fixture.runRoot,
+          configPath: fixture.configPath,
+          performanceAnalysisId: fixture.performance.analysisId,
+          allowSpend: true,
+        },
+        deps.value,
+      );
+    } catch (error) {
+      if (error instanceof PublishedIncompleteReviewError) incomplete = error;
+      else throw error;
+    }
+
+    expect(incomplete!.result.analysis.status).toBe("incomplete");
+    expect(incomplete!.result.analysis.reviews[0].status).toBe("invalid");
+    await expect(
+      readFile(join(incomplete!.result.path, "judge-1.raw.json"), "utf8"),
+    ).resolves.toContain("integration requires cited uptake");
+  });
+
   it("links cross-agent contribution, uptake, and canonical integration while preserving a competing interpretation", async () => {
     const fixture = await preparedRun();
     const transmission = fixture.bundle.items.find(

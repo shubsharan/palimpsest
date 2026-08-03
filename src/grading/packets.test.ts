@@ -104,9 +104,9 @@ describe("ledger review packet compilation", () => {
 
     expect(first).toEqual(second);
     expect(first.map(({ ledger }) => ledger)).toEqual(["epistemic", "social", "instrumental"]);
-    expect(epistemic.items.find(({ kind }) => kind === "tool.exchange")?.citationIds).toHaveLength(
-      2,
-    );
+    expect(
+      instrumental.items.find(({ kind }) => kind === "tool.exchange")?.citationIds,
+    ).toHaveLength(2);
     expect(epistemic.items.find(({ kind }) => kind === "model.response")?.content).toEqual({
       reasoningSummary: "Two mappings remain plausible.",
     });

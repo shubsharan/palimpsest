@@ -12,7 +12,8 @@ export const REVIEW_PACKET_SCHEMA_VERSION = 1 as const;
 export const REVIEW_PACKET_ROUTING_VERSION = "ledger-routing-v1" as const;
 export const REVIEW_PACKET_PROJECTION_VERSION = "evidence-projection-v1" as const;
 export const REVIEW_PACKET_MAX_BYTES = 256 * 1024;
-export const REVIEW_PACKET_MAX_CITATIONS = 499;
+// OpenAI permits up to 1000 enum values across a schema; reserve one slot below that cap.
+export const REVIEW_PACKET_MAX_CITATIONS = 999;
 export const REVIEW_PACKET_ITEM_EXCERPT_BYTES = 4 * 1024;
 
 const DIGEST = /^[0-9a-f]{64}$/;
@@ -142,13 +143,17 @@ function uniqueLedgers(ledgers: readonly ProcessLedger[]): readonly ProcessLedge
 /** Routes observable kinds, never their semantic content or apparent quality. */
 export function packetLedgersForEvidence(item: EvidenceItem): readonly ProcessLedger[] {
   const ledgers: ProcessLedger[] = [];
-  const actorAction = item.actorId !== "runner";
+  const socialActorAction =
+    item.actorId !== "runner" &&
+    !item.kind.startsWith("tool.") &&
+    !item.kind.startsWith("checker.") &&
+    !item.kind.startsWith("usage.") &&
+    !item.kind.startsWith("session.");
   if (
     item.kind === "run.context" ||
     item.kind.startsWith("stage.") ||
     item.kind === "model.response" ||
     item.kind.startsWith("team.") ||
-    item.kind.startsWith("tool.") ||
     item.kind.startsWith("checker.") ||
     item.kind.startsWith("git.")
   ) {
@@ -159,14 +164,12 @@ export function packetLedgersForEvidence(item: EvidenceItem): readonly ProcessLe
     item.kind.startsWith("stage.") ||
     item.kind.startsWith("team.") ||
     item.kind.startsWith("git.") ||
-    actorAction
+    socialActorAction
   ) {
     ledgers.push("social");
   }
   if (
     item.kind === "run.context" ||
-    item.kind.startsWith("stage.") ||
-    item.kind === "model.response" ||
     item.kind.startsWith("tool.") ||
     item.kind.startsWith("checker.") ||
     item.kind.startsWith("git.") ||

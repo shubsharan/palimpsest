@@ -74,7 +74,7 @@ A bounded, outcome-blind projection for exactly one origin and process ledger.
 | `rubricDigest` | SHA-256 | Digest of rubric content, not only its label |
 | `routingVersion` | version string | Exact evidence-to-ledger rules |
 | `projectionVersion` | version string | Exact normalization and excerpt rules |
-| `citations` | ordered local citation index | At most 499 short packet-local IDs resolving to source references and excerpt digests |
+| `citations` | ordered local citation index | At most 999 short packet-local IDs resolving to source references and excerpt digests |
 | `items` | ordered projected evidence | Bounded reviewer-visible content using only local citation IDs |
 | `omissions` | ordered omission records | Every unrouted source item and every shortened payload has a reason and digest |
 | `contentDigest` | SHA-256 | Canonical digest of every preceding field |
