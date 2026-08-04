@@ -76,10 +76,10 @@ A bounded, outcome-blind projection for exactly one origin and process ledger.
 | `projectionVersion` | version string | Exact normalization and excerpt rules |
 | `citations` | ordered compact rows | At most 999 `[citationId, sourceDigest, reference]` rows using `c001`-`c999` IDs |
 | `opportunities` | ordered compact event rows | `[opportunityId, kind, atMs, actorIds, citationIds, observationKind, projection, content]`; combines the registry and bounded reviewer-visible projection without duplicated event metadata |
-| `omissions` | ordered compact rows | Every unrouted source item has an `[evidenceId, sourceDigest, reason]` row; excerpted routed sources remain represented by their citation source digest |
+| `omissions` | ordered compact rows | Unrouted sources use `[evidenceId, sourceDigest, reason]`; deterministic head/tail overflow uses a content-addressed batch row whose digest covers the ordered omitted evidence IDs and source digests |
 | `contentDigest` | SHA-256 | Canonical digest of every preceding field |
 
-Packet compilation is byte-identical for fixed inputs. Every packet declares a `shared-team` or `isolated-origin` evaluation unit and an ordered opportunity registry. Related tool events are paired, duplicated response call material is removed, and large payloads use deterministic head/tail excerpts. Every source item is represented by a citation source digest or explicitly omitted. Canonical serialized size is at most 128 KiB. The social packet for an isolated origin is never sent; its dimensions are assembled as `not-applicable`.
+Packet compilation is byte-identical for fixed inputs. Every packet declares a `shared-team` or `isolated-origin` evaluation unit and an ordered opportunity registry. Related tool events are paired, duplicated response call material is removed, and large payload or reference sets use deterministic head/tail bounds. Every source item is represented by a citation source digest or a content-addressed individual/batch omission. Canonical serialized size is at most 128 KiB. The social packet for an isolated origin is never sent; its dimensions are assembled as `not-applicable`.
 
 ## QuantitativeMeasure
 

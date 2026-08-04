@@ -9,7 +9,7 @@ import {
 } from "./contracts.js";
 
 export const REVIEW_PACKET_SCHEMA_VERSION = 1 as const;
-export const REVIEW_PACKET_ROUTING_VERSION = "ledger-routing-v2" as const;
+export const REVIEW_PACKET_ROUTING_VERSION = "ledger-routing-v3" as const;
 export const REVIEW_PACKET_PROJECTION_VERSION = "evidence-projection-v2" as const;
 export const REVIEW_PACKET_MAX_BYTES = 128 * 1024;
 // OpenAI permits up to 1000 enum values across a schema; reserve one slot below that cap.
@@ -332,6 +332,7 @@ function buildPacket(
   options: CompileReviewPacketsOptions,
   ledger: ProcessLedger,
   routed: readonly RoutedItem[],
+  boundedOut: readonly RoutedItem[],
   unrouted: readonly RoutedItem[],
   contentLimit: number,
 ): ReviewPacket {
@@ -343,14 +344,29 @@ function buildPacket(
   const citationByEvidence = new Map(
     routed.map(({ item }, index) => [item.evidenceId, citations[index]![0]] as const),
   );
-  const omissions: PacketOmission[] =
-    ledger === "instrumental"
-      ? unrouted.map(({ item, sourceDigest }) => [
-          item.evidenceId,
-          sourceDigest,
-          `${REVIEW_PACKET_ROUTING_VERSION} has no route for observation kind ${item.kind}.`,
-        ])
-      : [];
+  const boundedRows = boundedOut.map(({ item, sourceDigest }) => [item.evidenceId, sourceDigest]);
+  const boundedOmissions: PacketOmission[] =
+    boundedRows.length === 0
+      ? []
+      : [
+          [
+            `batch-${contentDigest(boundedRows).slice(0, 24)}`,
+            contentDigest(boundedRows),
+            `${REVIEW_PACKET_ROUTING_VERSION} deterministically bounded ${String(boundedRows.length)} middle observations outside this ledger packet.`,
+          ],
+        ];
+  const omissions: PacketOmission[] = [
+    ...boundedOmissions,
+    ...(ledger === "instrumental"
+      ? unrouted.map(
+          ({ item, sourceDigest }): PacketOmission => [
+            item.evidenceId,
+            sourceDigest,
+            `${REVIEW_PACKET_ROUTING_VERSION} has no route for observation kind ${item.kind}.`,
+          ],
+        )
+      : []),
+  ];
   const sources = projectionSources(routed);
   const opportunities: ReviewOpportunity[] = sources.map((source, index) => {
     const bounded = boundedProjection(source.content, contentLimit);
@@ -401,6 +417,22 @@ function buildPacket(
   return { ...packetBase, packetId, contentDigest: contentDigestValue };
 }
 
+function balancedHeadTail<T>(values: readonly T[], count: number): readonly T[] {
+  if (count >= values.length) return values;
+  if (count <= 0) return [];
+  const headCount = Math.ceil(count / 2);
+  const tailCount = count - headCount;
+  return [...values.slice(0, headCount), ...(tailCount === 0 ? [] : values.slice(-tailCount))];
+}
+
+function excludedFromSelection(
+  routed: readonly RoutedItem[],
+  selected: readonly RoutedItem[],
+): readonly RoutedItem[] {
+  const retained = new Set(selected.map(({ item }) => item.evidenceId));
+  return routed.filter(({ item }) => !retained.has(item.evidenceId));
+}
+
 function compilePacket(
   options: CompileReviewPacketsOptions,
   ledger: ProcessLedger,
@@ -408,28 +440,35 @@ function compilePacket(
 ): ReviewPacket {
   const routed = allItems.filter((item) => item.ledgers.includes(ledger));
   const unrouted = allItems.filter((item) => item.ledgers.length === 0);
-  if (routed.length > REVIEW_PACKET_MAX_CITATIONS) {
-    throw new Error(
-      `${ledger} packet requires ${String(routed.length)} citations, exceeding the portable structured-schema limit ${String(REVIEW_PACKET_MAX_CITATIONS)}.`,
-    );
+  let selectionLow = 0;
+  let selectionHigh = Math.min(routed.length, REVIEW_PACKET_MAX_CITATIONS);
+  while (selectionLow < selectionHigh) {
+    const candidate = Math.ceil((selectionLow + selectionHigh) / 2);
+    const selected = balancedHeadTail(routed, candidate);
+    const boundedOut = excludedFromSelection(routed, selected);
+    if (
+      byteCount(buildPacket(options, ledger, selected, boundedOut, unrouted, 0)) <=
+      REVIEW_PACKET_MAX_BYTES
+    ) {
+      selectionLow = candidate;
+    } else {
+      selectionHigh = candidate - 1;
+    }
   }
-
-  const referenceOnly = buildPacket(options, ledger, routed, unrouted, 0);
-  if (
-    byteCount({ citations: referenceOnly.citations, omissions: referenceOnly.omissions }) >
-    REVIEW_PACKET_MAX_BYTES
-  ) {
+  if (selectionLow === 0 && routed.length > 0) {
     throw new Error(
       `${ledger} packet reference index cannot fit within ${String(REVIEW_PACKET_MAX_BYTES)} bytes.`,
     );
   }
+  const selected = balancedHeadTail(routed, selectionLow);
+  const boundedOut = excludedFromSelection(routed, selected);
 
   let low = 0;
   let high = REVIEW_PACKET_ITEM_EXCERPT_BYTES;
   while (low < high) {
     const candidate = Math.ceil((low + high) / 2);
     if (
-      byteCount(buildPacket(options, ledger, routed, unrouted, candidate)) <=
+      byteCount(buildPacket(options, ledger, selected, boundedOut, unrouted, candidate)) <=
       REVIEW_PACKET_MAX_BYTES
     ) {
       low = candidate;
@@ -437,7 +476,7 @@ function compilePacket(
       high = candidate - 1;
     }
   }
-  const packet = buildPacket(options, ledger, routed, unrouted, low);
+  const packet = buildPacket(options, ledger, selected, boundedOut, unrouted, low);
   if (byteCount(packet) > REVIEW_PACKET_MAX_BYTES) {
     throw new Error(`${ledger} packet exceeds ${String(REVIEW_PACKET_MAX_BYTES)} bytes.`);
   }

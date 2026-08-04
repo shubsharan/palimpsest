@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { parse } from "yaml";
 
 import { contentDigest } from "../canonical.js";
+import { EVIDENCE_COMPILER_VERSION } from "./evidence.js";
 import { EPISTEMIC_PROCESS_RUBRIC_VERSION } from "./rubric.js";
 
 export type OfficialProviderFamily = "openai" | "anthropic" | "google";
@@ -154,6 +155,7 @@ export function gradingConfigurationDigest(source: string | Buffer): string {
   const configurationFileDigest = createHash("sha256").update(source).digest("hex");
   return contentDigest({
     graderVersion: EPISTEMIC_PROCESS_RUBRIC_VERSION,
+    evidenceCompilerVersion: EVIDENCE_COMPILER_VERSION,
     configurationFileDigest,
   });
 }

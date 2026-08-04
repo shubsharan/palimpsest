@@ -19,6 +19,7 @@ import {
 
 export const EVIDENCE_EXCERPT_BYTES = 8 * 1024;
 export const EVIDENCE_WINDOW_BYTES = 48 * 1024;
+export const EVIDENCE_COMPILER_VERSION = "outcome-blind-evidence-v2";
 
 const ALLOWED_TRACE_KIND =
   /^(?:stage\.|model\.response$|tool\.|team\.|git\.|usage\.|session\.|run\.(?:configured|sessions-ended|frozen)$|checker\.)/;
@@ -82,7 +83,7 @@ function omission(
 }
 
 const PROHIBITED_OUTCOME_TEXT =
-  /\b(?:oracle|plaintext|final\s+(?:answer|reconstruction|score)|final\s+output\s+(?:was|is)\s+(?:correct|incorrect|right|wrong)|(?:checker\s+)?(?:score|accuracy|coverage)\s*(?:is|=|:)?\s*\d+(?:\.\d+)?%?|checker\s+(?:passed|failed|succeeded)|matched\s+\d+\s*(?:of|\/)\s*\d+|(?:i|we|the\s+team|the\s+solver)\s+(?:have\s+)?(?:solved|reconstructed|decoded|decrypted)|(?:we|i)\s+got\s+\d+(?:\.\d+)?\s*(?:percent|%)|the\s+run\s+(?:succeeded|passed|failed))(?!\w)/i;
+  /\b(?:oracle|plaintext|final\s+(?:answer|reconstruction|score)|final\s+output\s+(?:was|is)\s+(?:correct|incorrect|right|wrong)|(?:checker\s+)?(?:score|accuracy|coverage)\s*(?:is|=|:)?\s*\d+(?:\.\d+)?%?|checker\s+(?:passed|failed|succeeded)|matched\s+\d+\s*(?:of|\/)\s*\d+|matched\s+words|reconstruction\s+score|(?:earlier|previous|current|later)\s+score|successful\s+run|unsuccessful\s+run|evaluation\.completed|(?:i|we|the\s+team|the\s+solver)\s+(?:have\s+)?(?:solved|reconstructed|decoded|decrypted)|(?:we|i)\s+got\s+\d+(?:\.\d+)?\s*(?:percent|%)|the\s+run\s+(?:succeeded|passed|failed))(?!\w)/i;
 
 function sanitizeText(value: string, sourcePath: string, context: EvidenceBuildContext): string {
   let result = value;

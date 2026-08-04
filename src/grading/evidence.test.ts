@@ -298,6 +298,15 @@ describe("reviewer-safe evidence compilation", () => {
           atMs: 7,
           data: { message: "final output was correct" },
         },
+        {
+          kind: "model.response",
+          agentId: "agent-2",
+          atMs: 8,
+          data: {
+            reasoningSummary:
+              "The earlier score was higher; perhaps matched words include unchanged words.",
+          },
+        },
       ],
     });
 
@@ -310,13 +319,15 @@ describe("reviewer-safe evidence compilation", () => {
     expect(encoded).not.toContain("we got 75 percent");
     expect(encoded).not.toContain("checker passed");
     expect(encoded).not.toContain("final output was correct");
+    expect(encoded).not.toContain("earlier score was higher");
+    expect(encoded).not.toContain("matched words include unchanged words");
     expect(
       bundle.items.filter(({ content }) =>
         JSON.stringify(content).includes("[redacted-outcome-content]"),
       ),
-    ).toHaveLength(7);
+    ).toHaveLength(8);
     expect(bundle.omissions.filter(({ reason }) => reason.includes("free-form text"))).toHaveLength(
-      7,
+      8,
     );
   });
 });

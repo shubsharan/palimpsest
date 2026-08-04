@@ -200,20 +200,37 @@ describe("ledger review packet compilation", () => {
     ).toEqual(packets);
   });
 
-  it("rejects a citation index beyond the portable structured-schema limit", () => {
+  it("deterministically bounds citation overflow with a content-addressed omission batch", () => {
     const items = Array.from({ length: REVIEW_PACKET_MAX_CITATIONS + 1 }, (_, index) =>
       evidence(index + 1, "model.response", { reasoningSummary: String(index) }),
     );
 
-    expect(() => compile(items)).toThrow(/citation.*portable structured-schema limit/i);
+    const packets = compile(items);
+    expect(packets.every(({ citations }) => citations.length <= REVIEW_PACKET_MAX_CITATIONS)).toBe(
+      true,
+    );
+    expect(packets[0].omissions).toEqual([
+      expect.arrayContaining([
+        expect.stringMatching(/^batch-[0-9a-f]{24}$/),
+        expect.stringMatching(/^[0-9a-f]{64}$/),
+        expect.stringMatching(/deterministically bounded.*middle observations/i),
+      ]),
+    ]);
+    expect(compile(items)).toEqual(packets);
   });
 
-  it("fails preflight when reference metadata alone cannot fit", () => {
+  it("reduces retained head-tail references when reference metadata alone would not fit", () => {
     const items = Array.from({ length: 800 }, (_, index) =>
       evidence(index + 1, "model.response", { reasoningSummary: String(index) }),
     );
 
-    expect(() => compile(items)).toThrow(/reference index cannot fit/i);
+    const [epistemic] = compile(items);
+    expect(epistemic.citations.length).toBeLessThan(items.length);
+    expect(epistemic.citations[0]?.[2]).toEqual(items[0]?.reference);
+    expect(epistemic.citations.at(-1)?.[2]).toEqual(items.at(-1)?.reference);
+    expect(Buffer.byteLength(canonicalJson(epistemic), "utf8")).toBeLessThanOrEqual(
+      REVIEW_PACKET_MAX_BYTES,
+    );
   });
 
   it("requires an exact order-preserving origin subset", () => {
