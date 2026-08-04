@@ -101,8 +101,8 @@ describe("condition-assigned ordinary Git", () => {
     const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
-      onChange: (repositoryId, agentIds, refs, targets) => {
-        changes.push({ repositoryId, agentIds, refs, targets });
+      onChange: (repositoryId, agentIds, updates) => {
+        changes.push({ repositoryId, agentIds, updates });
       },
       pollIntervalMs: 60_000,
     });
@@ -118,11 +118,11 @@ describe("condition-assigned ordinary Git", () => {
       {
         repositoryId: "agent-1",
         agentIds: ["agent-1"],
-        refs: ["refs/heads/rule/revision"],
-        targets: [
+        updates: [
           {
             ref: "refs/heads/rule/revision",
-            objectId: expect.stringMatching(/^[0-9a-f]{40}$/),
+            before: null,
+            after: expect.stringMatching(/^[0-9a-f]{40}$/),
           },
         ],
       },
@@ -139,8 +139,8 @@ describe("condition-assigned ordinary Git", () => {
     const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
-      onChange: (repositoryId, agentIds, refs, targets) => {
-        changes.push({ repositoryId, agentIds, refs, targets });
+      onChange: (repositoryId, agentIds, updates) => {
+        changes.push({ repositoryId, agentIds, updates });
       },
       pollIntervalMs: 60_000,
     });
@@ -156,11 +156,11 @@ describe("condition-assigned ordinary Git", () => {
       {
         repositoryId: "shared",
         agentIds: AGENTS,
-        refs: ["refs/heads/rule/revision"],
-        targets: [
+        updates: [
           {
             ref: "refs/heads/rule/revision",
-            objectId: expect.stringMatching(/^[0-9a-f]{40}$/),
+            before: null,
+            after: expect.stringMatching(/^[0-9a-f]{40}$/),
           },
         ],
       },
@@ -168,18 +168,17 @@ describe("condition-assigned ordinary Git", () => {
     await monitor.stop();
   });
 
-  it("reports a null object ID when a previously observed ref is deleted", async () => {
+  it("reports a null target when a previously observed ref is deleted", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-git-deleted-ref-"));
     const environment = await createGitEnvironment(root, "shared", AGENTS);
-    const workspace = environment.workspaces[0];
     const repository = environment.repositories[0];
-    if (!workspace || !repository) throw new Error("Expected shared Git resources.");
+    if (!repository) throw new Error("Expected shared Git resources.");
     const changes: unknown[] = [];
     const monitor = new GitActivityMonitor({
       repository,
       pollIntervalMs: 60_000,
-      onChange: (repositoryId, agentIds, refs, targets) => {
-        changes.push({ repositoryId, agentIds, refs, targets });
+      onChange: (repositoryId, agentIds, updates) => {
+        changes.push({ repositoryId, agentIds, updates });
       },
     });
     await monitor.start();
@@ -190,8 +189,13 @@ describe("condition-assigned ordinary Git", () => {
       {
         repositoryId: "shared",
         agentIds: AGENTS,
-        refs: ["refs/heads/main"],
-        targets: [{ ref: "refs/heads/main", objectId: null }],
+        updates: [
+          {
+            ref: "refs/heads/main",
+            before: expect.stringMatching(/^[0-9a-f]{40}$/),
+            after: null,
+          },
+        ],
       },
     ]);
     await monitor.stop();

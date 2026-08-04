@@ -128,8 +128,9 @@ describe("attempt runtime", () => {
 
   it("publishes Git activity only to the repository's assigned agents", async () => {
     const { runtime, observations } = fixture({ teamChannelEnabled: false });
+    const updates = [{ ref: "refs/heads/main", before: null, after: "a".repeat(40) }] as const;
     const targets = [{ ref: "refs/heads/main", objectId: "a".repeat(40) }] as const;
-    await runtime.recordGitChange("agent-1", ["agent-1"], ["refs/heads/main"], targets);
+    await runtime.recordGitChange("agent-1", ["agent-1"], updates);
 
     await expect(runtime.forAgent("agent-1").waitForActivity(0)).resolves.toEqual({
       kind: "git-changed",
@@ -140,7 +141,7 @@ describe("attempt runtime", () => {
     expect(observations).toEqual([
       {
         kind: "git.changed",
-        data: { repositoryId: "agent-1", refs: ["refs/heads/main"], targets },
+        data: { repositoryId: "agent-1", refs: ["refs/heads/main"], targets, updates },
       },
     ]);
     const waiting = runtime.forAgent("agent-2").waitForActivity(0);

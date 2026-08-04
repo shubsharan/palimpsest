@@ -198,6 +198,8 @@ export async function loadObservationTrace(path: string): Promise<LoadedObservat
   };
 }
 
+export const readObservationTrace = loadObservationTrace;
+
 export class JsonlObservationLog {
   readonly path: string;
   readonly metadataPath: string;

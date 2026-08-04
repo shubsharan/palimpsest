@@ -4,9 +4,22 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { JsonlObservationLog, loadObservationTrace } from "./trace.js";
+import { JsonlObservationLog, loadObservationTrace, readObservationTrace } from "./trace.js";
 
 describe("trace log", () => {
+  it("validates canonical events without rewriting the readable projection", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-read-observations-"));
+    const path = join(root, "trace.jsonl");
+    const log = await JsonlObservationLog.create(path, { startedAtMs: 1_000, nowMs: () => 10 });
+    await log.append("model.response", { finalResponse: "visible" }, "agent-1");
+    await writeFile(log.textPath, "sentinel projection\n", "utf8");
+
+    const trace = await readObservationTrace(path);
+
+    expect(trace.events).toHaveLength(1);
+    expect(await readFile(log.textPath, "utf8")).toBe("sentinel projection\n");
+  });
+
   it("serializes concurrent appends monotonically and redacts host secrets", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-observations-"));
     const path = join(root, "trace.jsonl");

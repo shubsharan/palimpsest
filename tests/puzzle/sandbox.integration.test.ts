@@ -30,6 +30,10 @@ import { sandboxDockerBuildArguments } from "../../src/fixture/build.js";
 import { resolveWorkspaceRegularFile } from "../../src/sandbox/workspace.js";
 import { createGitEnvironment, listRemoteRefs, type GitCommunicationMode } from "../../src/git.js";
 import type { AgentId } from "../../src/model/contracts.js";
+import {
+  executePublishedSolver,
+  PUBLISHED_MAIN_REF,
+} from "../../src/evaluation/published-solver.js";
 
 const execFileAsync = promisify(execFile);
 const originalApiKey = process.env.OPENAI_API_KEY;
@@ -375,6 +379,44 @@ describe("real Docker command containment", () => {
     expect(await readFile(join(output, "reconstruction.txt"), "utf8")).toBe(
       "complete-ciphertext\n",
     );
+    await assertNoSandboxContainers(sandbox.containerLabelValue);
+  }, 60_000);
+
+  it("executes a Git-free replay checkpoint in the real solver sandbox", async () => {
+    const fixture = await agentFixture();
+    const ciphertext = join(fixture.root, "replay-ciphertext.txt");
+    const submission = join(fixture.root, "replay-checkpoint");
+    const output = join(fixture.root, "replay-output");
+    await Promise.all([mkdir(submission), mkdir(output), writeFile(ciphertext, "cipher word\n")]);
+    await writeFile(
+      join(submission, "solver.py"),
+      [
+        "import os",
+        "from pathlib import Path",
+        "source = Path(os.environ['PALIMPSEST_CIPHERTEXT'])",
+        "target = Path(os.environ['PALIMPSEST_OUTPUT'])",
+        "target.write_text(source.read_text().replace('cipher', 'plain'))",
+        "",
+      ].join("\n"),
+    );
+
+    const sandbox = await createTestSandbox();
+    const result = await executePublishedSolver({
+      snapshot: {
+        ref: PUBLISHED_MAIN_REF,
+        commit: "a".repeat(40),
+        snapshotPath: submission,
+      },
+      ciphertextPath: ciphertext,
+      outputRoot: output,
+      sandbox,
+    });
+
+    expect(result).toMatchObject({ kind: "succeeded" });
+    expect(await readFile(join(output, "reconstruction.txt"), "utf8")).toBe("plain word\n");
+    await expect(readFile(join(submission, ".git"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await assertNoSandboxContainers(sandbox.containerLabelValue);
   }, 60_000);
 

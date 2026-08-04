@@ -8,6 +8,7 @@ import { gradeRunFromFlags } from "./grading/grade.js";
 import { calibrateReviews } from "./grading/calibrate.js";
 import { reportRuns } from "./grading/report.js";
 import { reviewRun } from "./grading/review.js";
+import { runViewerFromFlags } from "./viewer/server.js";
 
 function allowOnly(flags: ReadonlyMap<string, string>, names: readonly string[], command: string) {
   const allowed = new Set(names);
@@ -124,6 +125,9 @@ switch (command) {
     break;
   case "analyze":
     result = await analyzeRunFromFlags(flags);
+    break;
+  case "view":
+    await runViewerFromFlags(flags);
     break;
   default:
     throw new Error(
