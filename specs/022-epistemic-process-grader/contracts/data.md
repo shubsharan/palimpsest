@@ -34,7 +34,7 @@ Origin status is `eligible`, `unavailable`, or `not-applicable` with a required 
   "rubricVersion": "epistemic-process-v1",
   "configurationDigest": "<sha256>",
   "bundleDigest": "<sha256>",
-  "protocolVersion": "ledger-packets-v5",
+  "protocolVersion": "ledger-packets-v6",
   "detailsPath": "grading/process-review-<uuid>/manifest.json",
   "detailsDigest": "<sha256>",
   "reviews": [
@@ -67,7 +67,7 @@ grading/<analysis-id>/
 - Detail files are immutable after the analysis reference enters `run.json`.
 - Unreferenced detail directories are non-evidentiary. A final append race leaves already-paid content-addressed call evidence intact for diagnosis rather than discarding it.
 
-Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity. Current request identities use `ledger-packets-v5`, `ledger-packet-prompt-v5`, and `ledger-packet-output-v5`; all three must match for reuse. The packet also binds its explicit evaluation unit and deterministic opportunity registry.
+Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity. Current request identities use `ledger-packets-v6`, `ledger-packet-prompt-v6`, and `ledger-packet-output-v6`; all three must match for reuse. The packet also binds its explicit evaluation unit and deterministic opportunity registry.
 
 ## Packet Output Contract
 
@@ -186,7 +186,7 @@ Allowed process context includes anonymous actor IDs, communication availability
 ## Compatibility
 
 - A legacy record without grading analyses decodes unchanged.
-- Legacy window/candidate/integration reviews and packet protocols v1-v4 remain readable but cannot supply packet checkpoints to protocol-v5 `--resume`.
+- Legacy window/candidate/integration reviews and packet protocols v1-v5 remain readable but cannot supply packet checkpoints to protocol-v6 `--resume`.
 - Historical `git.changed` events without ref targets remain valid. Measures that need an event-time object ID return `unavailable`.
 - A trace without `run.json` remains an interrupted attempt and cannot receive completed-run analyses.
 - Unknown future rubric, grader, or detail schema versions fail explicitly.

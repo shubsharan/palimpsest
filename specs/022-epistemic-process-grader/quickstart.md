@@ -68,7 +68,7 @@ pnpm puzzle:review \
 
 The literal authorization permits paid calls for only the two declared reviewers; it is not a monetary billing cap. For each shared origin, the system makes one epistemic, social, and instrumental call per reviewer: six calls total. For each isolated origin it skips social review, deterministically marks those dimensions `not-applicable`, and makes four calls. Each reviewer proceeds in epistemic/social/instrumental order, while the reviewers remain independent and may run concurrently.
 
-Every valid response or failure is checkpointed immediately. Protocol v5 returns bounded structured claims tied to exact opportunity and citation IDs, advisory dimension assessments that cite those claims, epistemic episodes, and cautions. Public prose is rendered deterministically. The completed scorecard v2 leads with independent evidence dossiers, typed disagreement, layered failure accounting, and post-freeze provenance; ratings remain separate and unaveraged.
+Every valid response or failure is checkpointed immediately. Protocol v6 returns bounded structured claims tied to exact opportunity and citation IDs, advisory dimension assessments that cite those claims, epistemic episodes, and cautions. Assembly assigns claim IDs by array order and conservatively normalizes actor order or scope with labeled cautions; raw responses remain unchanged. Public prose is rendered deterministically. The completed scorecard v2 leads with independent evidence dossiers, typed disagreement, layered failure accounting, and post-freeze provenance; ratings remain separate and unaveraged.
 
 The system assembles each review deterministically and makes no final model integration call. It suppresses uptake without an earlier transmission from a different actor, then suppresses integration before the latest retained uptake or all integration when no valid uptake remains. It omits a whole `supported-revision` or `asserted-only` episode if no revision citation supports that status. It never invents citations: the raw response remains unchanged and the assembled review receives labeled cautions naming each normalized stage/count and omitted episode ID/status. Both completed process judgments freeze before the existing outcome is linked.
 
@@ -91,7 +91,7 @@ pnpm puzzle:review \
   --allow-spend true
 ```
 
-Resume validates the predecessor and every source, configuration, rubric, reviewer, packet, opportunity, prompt, schema, and actual-identity key. It reuses only validated completed packets, counts their usage against the reviewer limit, calls only missing or failed packets once, and appends a new analysis with `resumedFromAnalysisId`. It does not rewrite the predecessor or auto-discover an attempt. Only exact protocol-v5 artifacts are eligible; all earlier protocols remain readable but cannot resume.
+Resume validates the predecessor and every source, configuration, rubric, reviewer, packet, opportunity, prompt, schema, and actual-identity key. It reuses only validated completed packets, counts their usage against the reviewer limit, calls only missing or failed packets once, and appends a new analysis with `resumedFromAnalysisId`. It does not rewrite the predecessor or auto-discover an attempt. Only exact protocol-v6 artifacts are eligible; all earlier protocols remain readable but cannot resume.
 
 ## 5. Produce a Cross-Run Report
 

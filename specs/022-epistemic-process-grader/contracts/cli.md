@@ -47,13 +47,13 @@ pnpm puzzle:review \
 - Validates two reviewer profiles from distinct provider families, each with a cumulative `tokenLimit` and per-call `maxOutputTokens`.
 - Compiles the same bounded epistemic, social, and instrumental packets for both reviewers, never exposing run/model identity or final outcome. Every source item is routed at least once or receives an explicit omission record.
 - Calls each reviewer's packets serially in epistemic, social, then instrumental order while allowing the two reviewers to run independently. A shared origin makes six calls; an isolated origin makes four and receives deterministic `not-applicable` social dimensions.
-- Uses protocol v5 provider JSON containing `schemaVersion`, bounded structured `claims`, ordered advisory `dimensions`, required `episodes`, and `cautions`. Claims bind to deterministic `opp-NNNN` opportunities and compact `cNNN` citations. Dimension rationales are rendered deterministically from claim IDs.
+- Uses protocol v6 provider JSON containing `schemaVersion`, bounded structured `claims`, ordered advisory `dimensions`, required `episodes`, and `cautions`. Claims bind to deterministic `opp-NNNN` opportunities and compact `cNNN` citations. Assembly assigns claim IDs by array order, remaps dimension references, and normalizes structurally inconsistent actor scope with labeled cautions. Dimension rationales are rendered deterministically from assembled claim IDs.
 - Requires `episodes: []` from social and instrumental packets. It checkpoints every success or failure immediately, accounts provider-reported input plus output usage, conservatively normalizes unsupported uptake/integration links, omits asserted or supported revision episodes without revision citations, and assembles each public review deterministically. Raw packet output remains unchanged and normalization adds labeled stage/count and episode-omission cautions. There is no model integration or adjudication call.
 - Appends `status: completed` only when both reviews validate. Provider errors or invalid reviews remain an explicit `status: incomplete` analysis and are not findings-bearing.
 - Retains a response that crosses its reviewer's cumulative token limit, publishes the attempt incomplete, and makes no further call for that reviewer.
 - Without `--resume`, every invocation starts a new attempt and never discovers or reuses earlier work.
-- With `--resume`, requires an immutable incomplete protocol-v5 predecessor with exact source, bundle, configuration, rubric, reviewer, packet, prompt, schema, opportunity, and actual-identity agreement. Protocol v4 cannot resume into v5.
-- Resume requires literal `--allow-spend true` again and appends a new analysis with predecessor lineage; it never rewrites the predecessor. All pre-v5 analyses are readable but not resumable into v5.
+- With `--resume`, requires an immutable incomplete protocol-v6 predecessor with exact source, bundle, configuration, rubric, reviewer, packet, prompt, schema, opportunity, and actual-identity agreement. Protocol v5 cannot resume into v6.
+- Resume requires literal `--allow-spend true` again and appends a new analysis with predecessor lineage; it never rewrites the predecessor. All pre-v6 analyses are readable but not resumable into v6.
 - Does not average ratings, force consensus, automatically retry, or automatically adjudicate. Literal spend authorization is not a monetary billing cap.
 
 Success shape:
@@ -81,7 +81,7 @@ pnpm puzzle:report \
 ```
 
 - Discovers only run records under the supplied contained root.
-- The report configuration declares descriptive versus matched-contrast intent, inclusion filters, grader/rubric/review-protocol identities, matching fields, treatment field, experimental unit, and clustering rule. `reviewProtocol: ledger-packets-v5` selects evidence-dossier scorecards when historical reviews coexist.
+- The report configuration declares descriptive versus matched-contrast intent, inclusion filters, grader/rubric/review-protocol identities, matching fields, treatment field, experimental unit, and clustering rule. `reviewProtocol: ledger-packets-v6` selects evidence-dossier scorecards when historical reviews coexist.
 - Rejects matched-contrast mode if material inputs differ outside the declared treatment or if required analysis versions differ.
 - Excludes incomplete, censored, invalid, and missing analyses with explicit reasons.
 - Reports per-dimension distributions, uncertainty, missingness, reviewer disagreement, and process-outcome links; it emits no composite score or global leaderboard.

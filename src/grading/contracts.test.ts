@@ -290,7 +290,7 @@ describe("grading contracts", () => {
         models: [],
         runRecordDigest: DIGEST,
         performanceAnalysisId: "performance-1",
-        reviewProtocol: "ledger-packets-v5",
+        reviewProtocol: "ledger-packets-v6",
         bundleDigest: DIGEST,
         checkerEnabled: false,
         omissionCount: 0,

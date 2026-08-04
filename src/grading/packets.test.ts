@@ -104,26 +104,28 @@ describe("ledger review packet compilation", () => {
 
     expect(first).toEqual(second);
     expect(first.map(({ ledger }) => ledger)).toEqual(["epistemic", "social", "instrumental"]);
-    expect(
-      instrumental.items.find(({ kind }) => kind === "tool.exchange")?.citationIds,
-    ).toHaveLength(2);
-    expect(epistemic.items.find(({ kind }) => kind === "model.response")?.content).toEqual({
+    expect(instrumental.opportunities.find((row) => row[5] === "tool.exchange")?.[4]).toHaveLength(
+      2,
+    );
+    expect(epistemic.opportunities.find((row) => row[5] === "model.response")?.[7]).toEqual({
       reasoningSummary: "Two mappings remain plausible.",
     });
-    expect(social.citations.map(({ evidenceId }) => evidenceId)).toContain("e-0004");
+    expect(social.citations.map(([, sourceDigest]) => sourceDigest)).toContain(
+      contentDigest(items[3]),
+    );
     expect(instrumental.omissions).toContainEqual(
-      expect.objectContaining({ evidenceId: "e-0007" }),
+      expect.arrayContaining(["e-0007", contentDigest(items[6])]),
     );
     expect(canonicalJson(first)).not.toContain("prohibited-outcome");
     expect(canonicalJson(first)).not.toContain("matchedWords");
     expect(
       new Set(
         first.flatMap((packet) => [
-          ...packet.citations.map(({ evidenceId }) => evidenceId),
-          ...packet.omissions.map(({ evidenceId }) => evidenceId),
+          ...packet.citations.map(([, sourceDigest]) => sourceDigest),
+          ...packet.omissions.map(([, sourceDigest]) => sourceDigest),
         ]),
       ),
-    ).toEqual(new Set(items.map(({ evidenceId }) => evidenceId)));
+    ).toEqual(new Set(items.map((item) => contentDigest(item))));
     expect(
       first.every(
         (packet) => Buffer.byteLength(canonicalJson(packet), "utf8") <= REVIEW_PACKET_MAX_BYTES,
@@ -155,7 +157,7 @@ describe("ledger review packet compilation", () => {
       ),
     ).toBe(true);
     expect(
-      packets.flatMap(({ items }) => items).some(({ projection }) => projection === "excerpted"),
+      packets.flatMap(({ opportunities }) => opportunities).some((row) => row[6] === "excerpted"),
     ).toBe(true);
     expect(canonicalJson(packets)).not.toContain("toolCalls");
     expect(compile(items)).toEqual(packets);
@@ -175,7 +177,7 @@ describe("ledger review packet compilation", () => {
     expect(packets[1]).toMatchObject({
       evaluationUnit: { kind: "isolated-origin", actorIds: ["actor-1"] },
     });
-    expect(packets[1]!.opportunities[0]).toMatchObject({ opportunityId: "opp-0001" });
+    expect(packets[1]!.opportunities[0]?.[0]).toBe("opp-0001");
     expect(JSON.stringify(packets)).not.toContain('"origin":{"id"');
   });
 
@@ -188,7 +190,7 @@ describe("ledger review packet compilation", () => {
     expect(
       packets
         .flatMap(({ opportunities }) => opportunities)
-        .every(({ opportunityId }) => /^opp-[0-9]{4}$/.test(opportunityId)),
+        .every(([opportunityId]) => /^opp-[0-9]{4}$/.test(opportunityId)),
     ).toBe(true);
     expect(
       compile([
@@ -207,10 +209,9 @@ describe("ledger review packet compilation", () => {
   });
 
   it("fails preflight when reference metadata alone cannot fit", () => {
-    const items = Array.from({ length: 100 }, (_, index) => ({
-      ...evidence(index + 1, "model.response", { reasoningSummary: String(index) }),
-      evidenceId: `e-${"x".repeat(3_000)}-${String(index)}`,
-    }));
+    const items = Array.from({ length: 800 }, (_, index) =>
+      evidence(index + 1, "model.response", { reasoningSummary: String(index) }),
+    );
 
     expect(() => compile(items)).toThrow(/reference index cannot fit/i);
   });

@@ -6,7 +6,7 @@
 
 ## Summary
 
-Add a local, evidence-first grading pipeline for completed Palimpsest runs. A provider-free grading pass validates frozen evidence and computes deterministic outcome and activity measures. Protocol v5 declares the shared team or isolated origin as the review unit, compiles a deterministic opportunity registry into three 128 KiB ledger packets, and asks two independent reviewers for structured claims tied to exact opportunities and citations. Deterministic assembly publishes an evidence-dossier-first scorecard v2 with advisory ratings, typed disagreement, layered failure accounting, and post-freeze provenance. Existing v1 scorecards and protocol-v4 analyses remain readable but are not resumable into v5.
+Add a local, evidence-first grading pipeline for completed Palimpsest runs. A provider-free grading pass validates frozen evidence and computes deterministic outcome and activity measures. Protocol v6 declares the shared team or isolated origin as the review unit, compiles a deterministic opportunity registry into three 128 KiB ledger packets, and asks two independent reviewers for structured claims tied to exact opportunities and citations. Deterministic assembly assigns packet-local claim IDs, conservatively normalizes actor scope, and publishes an evidence-dossier-first scorecard v2 with advisory ratings, typed disagreement, layered failure accounting, and post-freeze provenance. Existing v1 scorecards and protocol-v1-v5 analyses remain readable but are not resumable into v6.
 
 ## Technical Context
 
@@ -17,7 +17,7 @@ Add a local, evidence-first grading pipeline for completed Palimpsest runs. A pr
 **Target Platform**: Local macOS and Linux command line; provider-free grading requires no Docker or provider credential  
 **Project Type**: Local research CLI with TypeScript orchestration and Python scoring  
 **Performance Goals**: Provider-free evidence extraction and metrics remain linear in retained events and Git objects; a representative multi-thousand-event run completes without loading unrelated repository blobs; batch reporting streams scorecards rather than traces  
-**Constraints**: No database or hosted service; no mutation of frozen evidence, raw provider responses, prior analyses, or original scores; no hidden-state claims; no outcome or model-identity leakage into process review; no automatic retry or predecessor discovery; explicit spend authorization for every qualitative review or resume; all pre-v5 artifacts remain readable but are not resumable under v5; legacy missing observations stay missing
+**Constraints**: No database or hosted service; no mutation of frozen evidence, raw provider responses, prior analyses, or original scores; no hidden-state claims; no outcome or model-identity leakage into process review; no automatic retry or predecessor discovery; explicit spend authorization for every qualitative review or resume; all pre-v6 artifacts remain readable but are not resumable under v6; legacy missing observations stay missing
 
 **Scale/Scope**: Individual runs with thousands of trace events and tens of megabytes of frozen work; findings-bearing batches of tens to low hundreds of completed runs; one team unit for shared runs and all canonical origins for isolated runs  
 **Puzzle Contribution**: None. The feature evaluates existing observable behavior and leaves puzzle mechanics and solver feedback unchanged.  
@@ -95,7 +95,7 @@ tests/
 3. Add Python quantitative measures for outcome, activity, resource, publication, and collaboration opportunity, with explicit denominators and missingness.
 4. Implement `puzzle:grade` to atomically publish evidence/metrics details and append one `performance` analysis without changing prior evidence or scores.
 5. Add the versioned rubric and two-reviewer packet pipeline. Compile bounded epistemic, social, and instrumental packets with complete routing/omission accounting, then parse compact `cNNN` citation arrays and validate membership against the exact packet index.
-6. Implement protocol-v5 `puzzle:review` with an explicit evaluation unit, deterministic opportunity IDs, structured claims, advisory dimension assessments, content-addressed call artifacts, rich failure retention, conservative episode normalization, scorecard-v2 dossier assembly, and v5-only resume lineage.
+6. Implement protocol-v6 `puzzle:review` with an explicit evaluation unit, deterministic opportunity and claim IDs, structured claims, advisory dimension assessments, content-addressed call artifacts, rich failure retention, conservative actor-scope and episode normalization, scorecard-v2 dossier assembly, and v6-only resume lineage.
 7. Implement `puzzle:report` for mechanism prevalence, opportunity-conditioned rates, provenance, failure layers, advisory rating distributions, and declared matched contrasts; reject unsupported causal labels and composite rankings.
 8. Add synthetic contrast fixtures, leakage/citation failures, historical missingness cases, redacted-real artifact cases, and provider-free end-to-end verification.
 
@@ -104,7 +104,7 @@ tests/
 - Contract tests reject unknown fields, unsafe paths, broken digests, malformed or out-of-packet citation tokens, outcome leakage, model identity leakage, oversized packets or citation indexes, duplicate analyses, and malformed packet output.
 - Golden tests prove identical provider-free measures for identical artifacts and prove that unavailable observations are missing rather than zero.
 - Contrast fixtures cover lucky success, strong-process failure, ignored contrary evidence, supported revision, asserted-only revision, useful uptake, empty communication, duplication, and isolated not-applicable collaboration.
-- Reviewer tests use deterministic fake adapters to prove six ordered shared-origin calls or four isolated-origin calls, explicit evaluation units, stable opportunity IDs, structured claims, 128 KiB packets, deterministic prose and dossier assembly, v5-only resume, retained failures, typed disagreement, and outcome-blind invariance.
+- Reviewer tests use deterministic fake adapters to prove six ordered shared-origin calls or four isolated-origin calls, explicit evaluation units, stable opportunity and assembled claim IDs, structured claims, 128 KiB packets, deterministic prose and dossier assembly, v6-only resume, retained failures, typed disagreement, and outcome-blind invariance.
 - Run-record tests prove analysis append is atomic and leaves trace, evaluations, topology, and previous analyses byte-stable.
 - Aggregate tests enforce matching declarations, cluster related origins by run, retain distributions/uncertainty, and refuse a composite or single-run causal claim.
 - Prompt and tool-surface regression tests prove the feature adds no agent-facing process requirement.

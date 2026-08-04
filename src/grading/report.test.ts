@@ -104,6 +104,7 @@ async function publishAnalyses(options: {
   graderVersion?: string;
   rubricVersion?: string;
   codedMeasureValue?: number;
+  scorecardVersion?: 1 | 2;
   scorecardProcessMeasures?: (
     measures: readonly JsonObject[],
     originIndex: number,
@@ -154,8 +155,8 @@ async function publishAnalyses(options: {
     origins: originIds.map((originId) => ({ originId, status: "eligible" })),
   };
   const completed = options.completed ?? true;
-  const scorecards = originIds.map((originId, index) =>
-    scorecard(
+  const scorecards = originIds.map((originId, index) => {
+    const base = scorecard(
       options.record.runId,
       originId,
       options.scorecardProcessMeasures?.(
@@ -163,8 +164,65 @@ async function publishAnalyses(options: {
         index,
       ) ?? metrics.measures[index]!.values.filter(({ ledger }) => ledger !== "outcome"),
       options.codedMeasureValue ?? 0.25 + index / 10,
-    ),
-  );
+    );
+    if (options.scorecardVersion !== 2) return base;
+    const evidence = {
+      evaluationUnit: { kind: "shared-team", actorIds: ["actor-1"] },
+      opportunities: [
+        {
+          opportunityId: "opp-0001",
+          kind: "revision-opportunity",
+          atMs: 1,
+          actorIds: ["actor-1"],
+          evidence: [],
+        },
+      ],
+      claims: [
+        {
+          claimId: "claim-001",
+          opportunityId: "opp-0001",
+          ledger: "epistemic",
+          subjectScope: "evaluation-unit",
+          actorIds: ["actor-1"],
+          predicate: "revision",
+          state: "observed",
+          qualification: "direct",
+          evidence: [],
+          counterevidence: [],
+          confidence: "high",
+          missingReason: "",
+        },
+      ],
+      epistemicEpisodes: [],
+      influenceChains: [],
+      executionChains: [],
+    } as const;
+    return {
+      ...base,
+      schemaVersion: 2,
+      dossier: {
+        reviewers: [
+          { judge: 1, evidence },
+          { judge: 2, evidence },
+        ],
+      },
+      failureAccount: { causalAttribution: "prohibited", layers: [] },
+      provenance: {
+        fixture: {},
+        treatments: {},
+        experimentalUnit: "team",
+        models: [],
+        runRecordDigest: contentDigest(options.record),
+        performanceAnalysisId: performanceId,
+        reviewProtocol: "ledger-packets-v6",
+        bundleDigest: DIGEST,
+        checkerEnabled: true,
+        omissionCount: 0,
+        truncationCount: 0,
+        confounds: [],
+      },
+    } as const;
+  });
   const scorecardBytes = `${JSON.stringify(scorecards, null, 2)}\n`;
   const processManifest = {
     schemaVersion: 1,
@@ -273,14 +331,14 @@ describe("report configuration", () => {
         versions: {
           grader: "epistemic-process-v1",
           rubric: "epistemic-process-v1",
-          reviewProtocol: "ledger-packets-v5",
+          reviewProtocol: "ledger-packets-v6",
         },
         experimentalUnit: "team",
         clusterBy: "run",
       }),
     ).toMatchObject({
       matchingFields: [],
-      versions: { reviewProtocol: "ledger-packets-v5" },
+      versions: { reviewProtocol: "ledger-packets-v6" },
     });
     expect(() =>
       decodeReportConfiguration({
@@ -319,6 +377,52 @@ describe("report configuration", () => {
 });
 
 describe("reportRuns", () => {
+  it("aggregates v2 dossier mechanisms in descriptive reports without a treatment field", async () => {
+    const collection = await tempRoot();
+    const fixture = await createSharedRunFixture({ root: collection, runId: "run-v2" });
+    await publishAnalyses({ ...fixture, scorecardVersion: 2 });
+    const configPath = await writeConfig(collection, {
+      schemaVersion: 1,
+      claimType: "descriptive",
+      include: { runIds: [], labels: {} },
+      versions: { grader: "epistemic-process-v1", rubric: "epistemic-process-v1" },
+      matchingFields: [],
+      experimentalUnit: "team",
+      clusterBy: "run",
+    });
+
+    const result = await reportRuns({
+      root: collection,
+      artifactsRoot: collection,
+      configPath,
+      output: join(collection, "report-output"),
+    });
+    expect(result.report.schemaVersion).toBe(2);
+    if (result.report.schemaVersion !== 2) throw new Error("Expected behavior report v2.");
+
+    expect(result.report.mechanisms).toEqual([
+      expect.objectContaining({
+        judge: 1,
+        predicate: "revision",
+        opportunityKind: "revision-opportunity",
+        observedCount: 1,
+        claimCount: 1,
+        opportunityCount: 1,
+        opportunityConditionedRate: 1,
+      }),
+      expect.objectContaining({
+        judge: 2,
+        predicate: "revision",
+        opportunityKind: "revision-opportunity",
+        observedCount: 1,
+        claimCount: 1,
+        opportunityCount: 1,
+        opportunityConditionedRate: 1,
+      }),
+    ]);
+    expect(result.report.mechanisms.every((mechanism) => !("treatment" in mechanism))).toBe(true);
+  });
+
   it("discovers contained runs, excludes incomplete reviews, aggregates, and leaves sources byte-stable", async () => {
     const collection = await tempRoot();
     const first = await createSharedRunFixture({ root: collection, runId: "run-a" });

@@ -123,9 +123,9 @@ export interface ReviewRunFlags {
   readonly resume?: string;
 }
 
-export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v5" as const;
-export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v5" as const;
-export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v5" as const;
+export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v6" as const;
+export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v6" as const;
+export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v6" as const;
 
 interface RetainedTurn {
   readonly response: string;
@@ -489,11 +489,15 @@ const HIDDEN_STATE_CLAIM =
   /\b(?:believed|thought|knew|understood|realized|intended|wanted|felt|private reasoning|hidden state)\b/i;
 const OUTCOME_CLAIM =
   /\b(?:final outcome|final score|matched words|successful run|unsuccessful run|run (?:succeeded|failed)|won|lost)\b|\b(?:coverage|accuracy|score)\s*(?:=|:|was\s+(?:\d|high|low|perfect|zero)|is\s+(?:\d|high|low|perfect|zero))\b/i;
+const ALLOWED_OUTCOME_BOUNDARY =
+  /\b(?:final\s+)?outcome evidence\b[^.]{0,96}\b(?:redacted|unavailable)\b/gi;
 
 function validateObservableText(value: string, name: string): void {
   if (HIDDEN_STATE_CLAIM.test(value))
     throw new Error(`${name} makes a prohibited hidden-state claim.`);
-  if (OUTCOME_CLAIM.test(value)) throw new Error(`${name} makes a prohibited outcome claim.`);
+  if (OUTCOME_CLAIM.test(value.replaceAll(ALLOWED_OUTCOME_BOUNDARY, ""))) {
+    throw new Error(`${name} makes a prohibited outcome claim.`);
+  }
 }
 
 function validateReviewerOutputAgainstBundle(
@@ -617,7 +621,7 @@ function missingRevisionStatusEvidence(
   return undefined;
 }
 
-function decodePacketReviewerOutput(
+export function decodePacketReviewerOutput(
   value: unknown,
   packet: ReviewPacket,
 ): DecodedPacketReviewerOutput {
@@ -625,7 +629,9 @@ function decodePacketReviewerOutput(
   const decoded = exact(value, required, "Packet reviewer output");
   if (decoded.schemaVersion !== 1) throw new Error("Packet reviewer schemaVersion must be 1.");
   const references = new Map(
-    packet.citations.map(({ citationId, reference }) => [citationId, reference] as const),
+    packet.citations.map(
+      ([citationId, _sourceDigest, reference]) => [citationId, reference] as const,
+    ),
   );
   const resolveCitations = (citations: unknown, name: string): readonly EvidenceReference[] => {
     if (!Array.isArray(citations)) throw new Error(`${name} must be an array.`);
@@ -643,7 +649,8 @@ function decodePacketReviewerOutput(
   if (!Array.isArray(decoded.claims)) throw new Error("Packet reviewer claims must be an array.");
   if (decoded.claims.length > 16)
     throw new Error("Packet reviewer claims must contain at most 16 entries.");
-  const opportunityIds = new Set(packet.opportunities.map(({ opportunityId }) => opportunityId));
+  const structuralCautions: string[] = [];
+  const opportunityIds = new Set(packet.opportunities.map(([opportunityId]) => opportunityId));
   const predicates = new Set<ClaimPredicate>([
     "commitment",
     "alternative",
@@ -663,6 +670,9 @@ function decodePacketReviewerOutput(
     "failure",
     "recovery",
   ]);
+  const providerClaimIds = new Map<string, string[]>();
+  let normalizedClaimIdCount = 0;
+  let normalizedActorScopeCount = 0;
   const claims = decoded.claims.map((claim, index): ResolvedStructuredClaim => {
     const name = `Packet reviewer claim ${String(index + 1)}`;
     const item = exact(
@@ -682,10 +692,15 @@ function decodePacketReviewerOutput(
       ],
       name,
     );
-    const claimId = nonEmptyText(item.claimId, `${name}.claimId`);
-    if (claimId !== `claim-${String(index + 1).padStart(3, "0")}`) {
-      throw new Error(`${name}.claimId must use ordered claim IDs.`);
+    const providerClaimId = nonEmptyText(item.claimId, `${name}.claimId`);
+    if (!/^claim-[0-9]{3}$/.test(providerClaimId)) {
+      throw new Error(`${name}.claimId must use the packet-local claim-NNN form.`);
     }
+    const claimId = `claim-${String(index + 1).padStart(3, "0")}`;
+    if (providerClaimId !== claimId) normalizedClaimIdCount += 1;
+    const remapped = providerClaimIds.get(providerClaimId) ?? [];
+    remapped.push(claimId);
+    providerClaimIds.set(providerClaimId, remapped);
     const opportunityId = nonEmptyText(item.opportunityId, `${name}.opportunityId`);
     if (!opportunityIds.has(opportunityId))
       throw new Error(`${name} references an unknown opportunity.`);
@@ -698,25 +713,37 @@ function decodePacketReviewerOutput(
     ) {
       throw new Error(`${name}.subjectScope is invalid.`);
     }
+    const providerSubjectScope = item.subjectScope as ResolvedStructuredClaim["subjectScope"];
     if (!Array.isArray(item.actorIds)) throw new Error(`${name}.actorIds must be an array.`);
-    const actorIds = item.actorIds.map((actorId, actorIndex) =>
+    const providerActorIds = item.actorIds.map((actorId, actorIndex) =>
       nonEmptyText(actorId, `${name}.actorIds[${String(actorIndex)}]`),
     );
     if (
-      new Set(actorIds).size !== actorIds.length ||
-      actorIds.some((actorId) => !packet.evaluationUnit.actorIds.includes(actorId))
+      new Set(providerActorIds).size !== providerActorIds.length ||
+      providerActorIds.some((actorId) => !packet.evaluationUnit.actorIds.includes(actorId))
     ) {
       throw new Error(`${name}.actorIds must be unique members of the evaluation unit.`);
     }
+    const actorIds = packet.evaluationUnit.actorIds.filter((actorId) =>
+      providerActorIds.includes(actorId),
+    );
+    let subjectScope: ResolvedStructuredClaim["subjectScope"] = providerSubjectScope;
+    if (subjectScope === "evaluation-unit") {
+      if (actorIds.length === 1) subjectScope = "actor";
+      else if (actorIds.length > 1 && actorIds.length < packet.evaluationUnit.actorIds.length) {
+        subjectScope = "cross-actor";
+      }
+    } else if (subjectScope === "actor" || subjectScope === "cross-actor") {
+      if (actorIds.length === 0) {
+        throw new Error(`${name}.actorIds cannot be empty for an actor-scoped claim.`);
+      }
+      subjectScope = actorIds.length === 1 ? "actor" : "cross-actor";
+    }
     if (
-      (item.subjectScope === "actor" && actorIds.length !== 1) ||
-      (item.subjectScope === "cross-actor" && actorIds.length < 2) ||
-      (item.subjectScope === "evaluation-unit" &&
-        canonicalJson(actorIds) !== canonicalJson(packet.evaluationUnit.actorIds)) ||
-      ((item.subjectScope === "canonical-artifact" || item.subjectScope === "infrastructure") &&
-        actorIds.length !== 0)
+      subjectScope !== providerSubjectScope ||
+      canonicalJson(actorIds) !== canonicalJson(providerActorIds)
     ) {
-      throw new Error(`${name}.actorIds is inconsistent with subjectScope.`);
+      normalizedActorScopeCount += 1;
     }
     if (!predicates.has(item.predicate as ClaimPredicate))
       throw new Error(`${name}.predicate is invalid.`);
@@ -756,7 +783,7 @@ function decodePacketReviewerOutput(
       claimId,
       opportunityId,
       ledger: packet.ledger,
-      subjectScope: item.subjectScope,
+      subjectScope,
       actorIds,
       predicate: item.predicate as ClaimPredicate,
       state: item.state,
@@ -767,7 +794,18 @@ function decodePacketReviewerOutput(
       missingReason,
     };
   });
+  if (normalizedClaimIdCount > 0) {
+    structuralCautions.push(
+      `Deterministic assembly normalized ${String(normalizedClaimIdCount)} packet-local claim identifier(s) by array order.`,
+    );
+  }
+  if (normalizedActorScopeCount > 0) {
+    structuralCautions.push(
+      `Deterministic assembly normalized actor order or subject scope for ${String(normalizedActorScopeCount)} structured claim(s).`,
+    );
+  }
   const claimById = new Map(claims.map((claim) => [claim.claimId, claim] as const));
+  let positionalClaimReferenceCount = 0;
   const rubricDimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
     ({ ledger }) => ledger === packet.ledger,
   );
@@ -797,12 +835,19 @@ function decodePacketReviewerOutput(
     if (new Set(item.claimIds).size !== item.claimIds.length) {
       throw new Error(`${name}.claimIds must be unique.`);
     }
-    const dimensionClaims = item.claimIds.map((claimId, claimIndex) => {
+    const remappedClaimIds = item.claimIds.flatMap((claimId, claimIndex) => {
       const id = nonEmptyText(claimId, `${name}.claimIds[${String(claimIndex)}]`);
-      const claim = claimById.get(id);
-      if (claim === undefined) throw new Error(`${name} references an unknown claim.`);
-      return claim;
+      const mapped = providerClaimIds.get(id);
+      if (mapped !== undefined) return mapped;
+      const position = /^claim-([0-9]{3})$/.exec(id);
+      const positionalClaim = position === null ? undefined : claims[Number(position[1]) - 1];
+      if (positionalClaim === undefined) throw new Error(`${name} references an unknown claim.`);
+      positionalClaimReferenceCount += 1;
+      return [positionalClaim.claimId];
     });
+    const dimensionClaims = [...new Set(remappedClaimIds)].map((claimId) =>
+      claimById.get(claimId)!,
+    );
     if (state === "rated" && dimensionClaims.length === 0) {
       throw new Error(`${name} rated assessments require at least one structured claim.`);
     }
@@ -840,12 +885,17 @@ function decodePacketReviewerOutput(
     );
     return resolved;
   });
+  if (positionalClaimReferenceCount > 0) {
+    structuralCautions.push(
+      `Deterministic assembly resolved ${String(positionalClaimReferenceCount)} unmatched claim reference(s) by one-based array position.`,
+    );
+  }
   const episodesValue = decoded.episodes;
   if (!Array.isArray(episodesValue)) throw new Error("Packet reviewer episodes must be an array.");
   if (packet.ledger !== "epistemic" && episodesValue.length > 0) {
     throw new Error("Only the epistemic packet may return episodes.");
   }
-  const episodes = episodesValue.map((episode, index) => {
+  const episodes = episodesValue.flatMap((episode, index) => {
     const name = `Packet reviewer episode ${String(index + 1)}`;
     const item = exact(
       episode,
@@ -864,9 +914,20 @@ function decodePacketReviewerOutput(
       ],
       name,
     );
+    const episodeId = nonEmptyText(item.episodeId, `${name}.episodeId`);
+    if (
+      (item.status === "missed-revision" || item.status === "ambiguous") &&
+      Array.isArray(item.counterevidenceIds) &&
+      item.counterevidenceIds.length === 0
+    ) {
+      structuralCautions.push(
+        `Deterministic assembly omitted episode ${episodeId} because status ${item.status} requires cited counterevidence.`,
+      );
+      return [];
+    }
     const resolved = decodeEpistemicEpisode(
       {
-        episodeId: item.episodeId,
+        episodeId,
         summary: `Episode ${String(index + 1)} records ${String((item.evidenceIds as unknown[]).length)} cited observation(s) with status ${String(item.status)}.`,
         status: item.status,
         evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
@@ -882,7 +943,7 @@ function decodePacketReviewerOutput(
       name,
     );
     validateObservableText(resolved.summary, `${name}.summary`);
-    return resolved;
+    return [resolved];
   });
   if (!Array.isArray(decoded.cautions))
     throw new Error("Packet reviewer cautions must be an array.");
@@ -899,16 +960,13 @@ function decodePacketReviewerOutput(
       episodes,
       claims,
       opportunities: packet.opportunities.map((opportunity) => ({
-        opportunityId: `${packet.ledger}-${opportunity.opportunityId}`,
-        kind: opportunity.kind,
-        atMs: opportunity.atMs,
-        actorIds: opportunity.actorIds,
-        evidence: resolveCitations(
-          opportunity.citationIds,
-          `Opportunity ${opportunity.opportunityId}.citationIds`,
-        ),
+        opportunityId: `${packet.ledger}-${opportunity[0]}`,
+        kind: opportunity[1],
+        atMs: opportunity[2],
+        actorIds: opportunity[3],
+        evidence: resolveCitations(opportunity[4], `Opportunity ${opportunity[0]}.citationIds`),
       })),
-      cautions,
+      cautions: [...structuralCautions, ...cautions],
     },
   };
 }
@@ -1144,7 +1202,7 @@ function packetPrompt(packet: ReviewPacket): string {
     ),
   };
   return [
-    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V5",
+    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V6",
     `Ledger: ${packet.ledger}`,
     `Anonymous canonical origin ordinal: ${String(packet.origin.ordinal)}`,
     `Evaluation unit: ${packet.evaluationUnit.kind}; anonymized actors: ${packet.evaluationUnit.actorIds.join(", ")}`,
@@ -1154,6 +1212,7 @@ function packetPrompt(packet: ReviewPacket): string {
     "Judge only observable retained behavior. Never infer private beliefs, intentions, hidden reasoning, outcome, success, score, model identity, or provider identity.",
     "Do not assess artifact quality with score, accuracy, coverage, correctness, success, or failure language. You may state only that outcome evidence is redacted or unavailable.",
     "Return bounded structured claims tied to exact opportunity IDs, then one assessment for every rubric dimension in exact order using only claimIds from those claims. Use assessment rated-0 through rated-4, unobservable, or not-applicable. Preserve missingness, ambiguity, and counterevidence.",
+    "Number claims consecutively by array position as claim-001, claim-002, and so on. Use actor scope for one actor and cross-actor for two or more; evaluation-unit requires every listed unit actor. Canonical-artifact and infrastructure claims may list contributing actors.",
     packet.ledger === "epistemic"
       ? "Also reconstruct at most eight highest-value observable episodes. supported-revision and asserted-only require at least one revisionId; omit an episode when that status lacks a revision citation. Uptake requires an earlier cited contribution by a different actor; integration requires cited behavior at or after a cited uptake. Leave unsupported transmission, uptake, and integration stages empty."
       : "Return an empty episodes array; this packet owns only its ledger dimensions and cautions.",

@@ -365,7 +365,7 @@ describe("operator CLI contract", () => {
         models: [],
         runRecordDigest: "a".repeat(64),
         performanceAnalysisId: "performance-1",
-        reviewProtocol: "ledger-packets-v5",
+        reviewProtocol: "ledger-packets-v6",
         bundleDigest: "b".repeat(64),
         checkerEnabled: false,
         omissionCount: 0,

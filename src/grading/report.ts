@@ -1289,7 +1289,7 @@ function dossierMechanisms(
             judge: reviewer.judge,
             predicate,
             opportunityKind,
-            treatment,
+            ...(treatment === undefined ? {} : { treatment }),
           });
           const existing = groups.get(groupKey) ?? {
             judge: reviewer.judge,

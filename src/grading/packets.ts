@@ -43,38 +43,27 @@ export type ReviewOpportunityKind =
   | "failure"
   | "session-event";
 
-export interface ReviewOpportunity {
-  readonly opportunityId: string;
-  readonly kind: ReviewOpportunityKind;
-  readonly atMs: number;
-  readonly actorIds: readonly string[];
-  readonly citationIds: readonly string[];
-}
-
-export interface PacketCitation {
-  readonly citationId: string;
-  readonly evidenceId: string;
-  readonly sourceDigest: string;
-  readonly reference: EvidenceReference;
-}
+/** Compact rows keep the complete opportunity registry inside the packet byte bound. */
+export type PacketCitation = readonly [
+  citationId: string,
+  sourceDigest: string,
+  reference: EvidenceReference,
+];
 
 export type EvidenceProjection = "full" | "excerpted" | "metadata-only" | "paired-tool";
 
-export interface ProjectedEvidence {
-  readonly entryId: string;
-  readonly citationIds: readonly string[];
-  readonly atMs: number;
-  readonly actorId: string;
-  readonly kind: string;
-  readonly projection: EvidenceProjection;
-  readonly content: JsonValue;
-}
+export type ReviewOpportunity = readonly [
+  opportunityId: string,
+  kind: ReviewOpportunityKind,
+  atMs: number,
+  actorIds: readonly string[],
+  citationIds: readonly string[],
+  observationKind: string,
+  projection: EvidenceProjection,
+  content: JsonValue,
+];
 
-export interface PacketOmission {
-  readonly evidenceId: string;
-  readonly sourceDigest: string;
-  readonly reason: string;
-}
+export type PacketOmission = readonly [evidenceId: string, sourceDigest: string, reason: string];
 
 export interface ReviewPacket {
   readonly schemaVersion: typeof REVIEW_PACKET_SCHEMA_VERSION;
@@ -89,7 +78,6 @@ export interface ReviewPacket {
   readonly projectionVersion: typeof REVIEW_PACKET_PROJECTION_VERSION;
   readonly citations: readonly PacketCitation[];
   readonly opportunities: readonly ReviewOpportunity[];
-  readonly items: readonly ProjectedEvidence[];
   readonly omissions: readonly PacketOmission[];
   readonly contentDigest: string;
 }
@@ -347,62 +335,43 @@ function buildPacket(
   unrouted: readonly RoutedItem[],
   contentLimit: number,
 ): ReviewPacket {
-  const citations: PacketCitation[] = routed.map(({ item, sourceDigest }, index) => ({
-    citationId: `c${String(index + 1).padStart(3, "0")}`,
-    evidenceId: item.evidenceId,
+  const citations: PacketCitation[] = routed.map(({ item, sourceDigest }, index) => [
+    `c${String(index + 1).padStart(3, "0")}`,
     sourceDigest,
-    reference: item.reference,
-  }));
+    item.reference,
+  ]);
   const citationByEvidence = new Map(
-    citations.map(({ evidenceId, citationId }) => [evidenceId, citationId] as const),
+    routed.map(({ item }, index) => [item.evidenceId, citations[index]![0]] as const),
   );
   const omissions: PacketOmission[] =
     ledger === "instrumental"
-      ? unrouted.map(({ item, sourceDigest }) => ({
-          evidenceId: item.evidenceId,
+      ? unrouted.map(({ item, sourceDigest }) => [
+          item.evidenceId,
           sourceDigest,
-          reason: `${REVIEW_PACKET_ROUTING_VERSION} has no route for observation kind ${item.kind}.`,
-        }))
+          `${REVIEW_PACKET_ROUTING_VERSION} has no route for observation kind ${item.kind}.`,
+        ])
       : [];
   const sources = projectionSources(routed);
-  const items: ProjectedEvidence[] = sources.map((source, index) => {
+  const opportunities: ReviewOpportunity[] = sources.map((source, index) => {
     const bounded = boundedProjection(source.content, contentLimit);
-    if (bounded.excerpted) {
-      for (const item of source.items) {
-        omissions.push({
-          evidenceId: item.item.evidenceId,
-          sourceDigest: item.sourceDigest,
-          reason:
-            contentLimit === 0
-              ? "Packet size bound retained reference metadata only."
-              : `Packet projection retained bounded head/tail content within ${String(contentLimit)} bytes per entry.`,
-        });
-      }
-    }
     const inheritedAvailability = source.items.some(({ item }) => item.availability !== "full");
-    return {
-      entryId: `entry-${String(index + 1).padStart(4, "0")}`,
-      citationIds: source.items.map(({ item }) => citationByEvidence.get(item.evidenceId)!),
-      atMs: source.atMs,
-      actorId: source.actorId,
-      kind: source.kind,
-      projection: source.pairedTool
+    return [
+      `opp-${String(index + 1).padStart(4, "0")}`,
+      opportunityKind(source),
+      source.atMs,
+      source.actorId === "runner" ? [] : [source.actorId],
+      source.items.map(({ item }) => citationByEvidence.get(item.evidenceId)!),
+      source.kind,
+      source.pairedTool
         ? "paired-tool"
         : contentLimit === 0
           ? "metadata-only"
           : bounded.excerpted || inheritedAvailability
             ? "excerpted"
             : "full",
-      content: bounded.content,
-    };
+      bounded.content,
+    ];
   });
-  const opportunities: ReviewOpportunity[] = sources.map((source, index) => ({
-    opportunityId: `opp-${String(index + 1).padStart(4, "0")}`,
-    kind: opportunityKind(source),
-    atMs: source.atMs,
-    actorIds: source.actorId === "runner" ? [] : [source.actorId],
-    citationIds: source.items.map(({ item }) => citationByEvidence.get(item.evidenceId)!),
-  }));
   const actorIds = [
     ...new Set(
       (options.items ?? options.bundle.items)
@@ -425,7 +394,6 @@ function buildPacket(
     projectionVersion: REVIEW_PACKET_PROJECTION_VERSION,
     citations,
     opportunities,
-    items,
     omissions,
   } as const;
   const packetId = `packet-${ledger}-${contentDigest(packetBase).slice(0, 24)}`;
@@ -447,7 +415,10 @@ function compilePacket(
   }
 
   const referenceOnly = buildPacket(options, ledger, routed, unrouted, 0);
-  if (byteCount(referenceOnly) > REVIEW_PACKET_MAX_BYTES) {
+  if (
+    byteCount({ citations: referenceOnly.citations, omissions: referenceOnly.omissions }) >
+    REVIEW_PACKET_MAX_BYTES
+  ) {
     throw new Error(
       `${ledger} packet reference index cannot fit within ${String(REVIEW_PACKET_MAX_BYTES)} bytes.`,
     );
@@ -488,14 +459,11 @@ export function compileReviewPackets(
     compilePacket(options, "instrumental", routed),
   ] as const;
 
-  const accounted = new Set<string>();
-  for (const packet of packets) {
-    packet.citations.forEach(({ evidenceId }) => accounted.add(evidenceId));
-    packet.omissions.forEach(({ evidenceId }) => accounted.add(evidenceId));
-  }
-  const missing = items.filter(({ evidenceId }) => !accounted.has(evidenceId));
-  if (missing.length > 0) {
-    throw new Error(`Packet routing left evidence ${missing[0]!.evidenceId} unaccounted.`);
+  const missing = routed.filter(({ ledgers }) => ledgers.length === 0);
+  const omitted = new Set(packets[2].omissions.map(([evidenceId]) => evidenceId));
+  const unaccounted = missing.filter(({ item }) => !omitted.has(item.evidenceId));
+  if (unaccounted.length > 0) {
+    throw new Error(`Packet routing left evidence ${unaccounted[0]!.item.evidenceId} unaccounted.`);
   }
   return packets;
 }
@@ -548,6 +516,13 @@ function values<T>(
   return value.map((item, index) => decode(item, `${name}[${String(index)}]`));
 }
 
+function row(value: unknown, length: number, name: string): readonly unknown[] {
+  if (!Array.isArray(value) || value.length !== length) {
+    throw new Error(`${name} must be a compact row with ${String(length)} fields.`);
+  }
+  return value;
+}
+
 function packetLedger(value: unknown, name: string): ReviewPacketLedger {
   if (value !== "epistemic" && value !== "social" && value !== "instrumental") {
     throw new Error(`${name} is invalid.`);
@@ -556,66 +531,25 @@ function packetLedger(value: unknown, name: string): ReviewPacketLedger {
 }
 
 function decodeCitation(value: unknown, name: string): PacketCitation {
-  const decoded = exact(value, ["citationId", "evidenceId", "sourceDigest", "reference"], name);
-  const citationId = text(decoded.citationId, `${name}.citationId`);
+  const decoded = row(value, 3, name);
+  const citationId = text(decoded[0], `${name}[0]`);
   if (!/^c[0-9]{3}$/.test(citationId)) {
-    throw new Error(`${name}.citationId must use the short packet-local form c001.`);
+    throw new Error(`${name}[0] must use the short packet-local form c001.`);
   }
-  return {
+  return [
     citationId,
-    evidenceId: controlledId(decoded.evidenceId, `${name}.evidenceId`),
-    sourceDigest: digest(decoded.sourceDigest, `${name}.sourceDigest`),
-    reference: decodeEvidenceReference(decoded.reference, `${name}.reference`),
-  };
-}
-
-function decodeProjectedEvidence(value: unknown, name: string): ProjectedEvidence {
-  const decoded = exact(
-    value,
-    ["entryId", "citationIds", "atMs", "actorId", "kind", "projection", "content"],
-    name,
-  );
-  const entryId = text(decoded.entryId, `${name}.entryId`);
-  if (!/^entry-[0-9]{4}$/.test(entryId)) {
-    throw new Error(`${name}.entryId must use the ordered form entry-0001.`);
-  }
-  const citationIds = values(decoded.citationIds, text, `${name}.citationIds`);
-  if (citationIds.length === 0 || new Set(citationIds).size !== citationIds.length) {
-    throw new Error(`${name}.citationIds must be non-empty and unique.`);
-  }
-  const atMs = decoded.atMs;
-  if (typeof atMs !== "number" || !Number.isFinite(atMs) || atMs < 0) {
-    throw new Error(`${name}.atMs must be a non-negative finite number.`);
-  }
-  const kind = text(decoded.kind, `${name}.kind`);
-  if (!OBSERVATION_KIND.test(kind)) throw new Error(`${name}.kind is invalid.`);
-  if (
-    decoded.projection !== "full" &&
-    decoded.projection !== "excerpted" &&
-    decoded.projection !== "metadata-only" &&
-    decoded.projection !== "paired-tool"
-  ) {
-    throw new Error(`${name}.projection is invalid.`);
-  }
-  const content = JSON.parse(canonicalJson(decoded.content)) as JsonValue;
-  return {
-    entryId,
-    citationIds,
-    atMs,
-    actorId: controlledId(decoded.actorId, `${name}.actorId`),
-    kind,
-    projection: decoded.projection,
-    content,
-  };
+    digest(decoded[1], `${name}[1]`),
+    decodeEvidenceReference(decoded[2], `${name}[2]`),
+  ];
 }
 
 function decodePacketOmission(value: unknown, name: string): PacketOmission {
-  const decoded = exact(value, ["evidenceId", "sourceDigest", "reason"], name);
-  return {
-    evidenceId: controlledId(decoded.evidenceId, `${name}.evidenceId`),
-    sourceDigest: digest(decoded.sourceDigest, `${name}.sourceDigest`),
-    reason: text(decoded.reason, `${name}.reason`),
-  };
+  const decoded = row(value, 3, name);
+  return [
+    controlledId(decoded[0], `${name}[0]`),
+    digest(decoded[1], `${name}[1]`),
+    text(decoded[2], `${name}[2]`),
+  ];
 }
 
 /** Strictly decodes and verifies a persisted packet before checkpoint reuse. */
@@ -635,7 +569,6 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
       "projectionVersion",
       "citations",
       "opportunities",
-      "items",
       "omissions",
       "contentDigest",
     ],
@@ -670,23 +603,19 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
   const expectedCitationIds = citations.map(
     (_citation, index) => `c${String(index + 1).padStart(3, "0")}`,
   );
-  if (citations.some(({ citationId }, index) => citationId !== expectedCitationIds[index])) {
+  if (citations.some(([citationId], index) => citationId !== expectedCitationIds[index])) {
     throw new Error(`${name}.citations must use ordered packet-local IDs.`);
   }
   const citationIds = new Set(expectedCitationIds);
   const opportunities = values(
     decoded.opportunities,
     (value, opportunityName): ReviewOpportunity => {
-      const opportunity = exact(
-        value,
-        ["opportunityId", "kind", "atMs", "actorIds", "citationIds"],
-        opportunityName,
-      );
-      const opportunityId = text(opportunity.opportunityId, `${opportunityName}.opportunityId`);
+      const opportunity = row(value, 8, opportunityName);
+      const opportunityId = text(opportunity[0], `${opportunityName}[0]`);
       if (!/^opp-[0-9]{4}$/.test(opportunityId)) {
-        throw new Error(`${opportunityName}.opportunityId is invalid.`);
+        throw new Error(`${opportunityName}[0] is invalid.`);
       }
-      const kind = opportunity.kind;
+      const kind = opportunity[1];
       if (
         kind !== "stage-boundary" &&
         kind !== "peer-message" &&
@@ -699,47 +628,52 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
         kind !== "session-event"
       )
         throw new Error(`${opportunityName}.kind is invalid.`);
-      const opportunityActors = values(
-        opportunity.actorIds,
-        controlledId,
-        `${opportunityName}.actorIds`,
-      );
-      const opportunityCitations = values(
-        opportunity.citationIds,
-        text,
-        `${opportunityName}.citationIds`,
-      );
+      const opportunityActors = values(opportunity[3], controlledId, `${opportunityName}[3]`);
+      const opportunityCitations = values(opportunity[4], text, `${opportunityName}[4]`);
+      if (
+        opportunityCitations.length === 0 ||
+        new Set(opportunityCitations).size !== opportunityCitations.length
+      ) {
+        throw new Error(`${opportunityName}[4] must be non-empty and unique.`);
+      }
       if (opportunityCitations.some((citationId) => !citationIds.has(citationId))) {
         throw new Error(`${opportunityName} cites an ID outside the packet reference index.`);
       }
-      return {
+      const observationKind = text(opportunity[5], `${opportunityName}[5]`);
+      if (!OBSERVATION_KIND.test(observationKind)) {
+        throw new Error(`${opportunityName}[5] is invalid.`);
+      }
+      const projection = opportunity[6];
+      if (
+        projection !== "full" &&
+        projection !== "excerpted" &&
+        projection !== "metadata-only" &&
+        projection !== "paired-tool"
+      ) {
+        throw new Error(`${opportunityName}[6] is invalid.`);
+      }
+      return [
         opportunityId,
         kind,
-        atMs: integer(opportunity.atMs, 0, `${opportunityName}.atMs`),
-        actorIds: opportunityActors,
-        citationIds: opportunityCitations,
-      };
+        integer(opportunity[2], 0, `${opportunityName}[2]`),
+        opportunityActors,
+        opportunityCitations,
+        observationKind,
+        projection,
+        JSON.parse(canonicalJson(opportunity[7])) as JsonValue,
+      ];
     },
     `${name}.opportunities`,
   );
   if (
     opportunities.some(
-      ({ opportunityId }, index) => opportunityId !== `opp-${String(index + 1).padStart(4, "0")}`,
+      ([opportunityId], index) => opportunityId !== `opp-${String(index + 1).padStart(4, "0")}`,
     )
   ) {
     throw new Error(`${name}.opportunities must use ordered opportunity IDs.`);
   }
-  const items = values(decoded.items, decodeProjectedEvidence, `${name}.items`);
-  if (
-    items.some(({ entryId }, index) => entryId !== `entry-${String(index + 1).padStart(4, "0")}`)
-  ) {
-    throw new Error(`${name}.items must use ordered entry IDs.`);
-  }
-  if (items.some((item) => item.citationIds.some((citationId) => !citationIds.has(citationId)))) {
-    throw new Error(`${name}.items cites an ID outside the packet reference index.`);
-  }
-  if (items.some((item, index) => index > 0 && item.atMs < items[index - 1]!.atMs)) {
-    throw new Error(`${name}.items must be chronological.`);
+  if (opportunities.some((item, index) => index > 0 && item[2] < opportunities[index - 1]![2])) {
+    throw new Error(`${name}.opportunities must be chronological.`);
   }
   const packet = {
     schemaVersion: REVIEW_PACKET_SCHEMA_VERSION,
@@ -756,7 +690,6 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
     projectionVersion: REVIEW_PACKET_PROJECTION_VERSION,
     citations,
     opportunities,
-    items,
     omissions: values(decoded.omissions, decodePacketOmission, `${name}.omissions`),
     contentDigest: digest(decoded.contentDigest, `${name}.contentDigest`),
   } as const;

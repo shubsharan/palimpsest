@@ -74,12 +74,12 @@ A bounded, outcome-blind projection for exactly one origin and process ledger.
 | `rubricDigest` | SHA-256 | Digest of rubric content, not only its label |
 | `routingVersion` | version string | Exact evidence-to-ledger rules |
 | `projectionVersion` | version string | Exact normalization and excerpt rules |
-| `citations` | ordered local citation index | At most 999 ordered `c001`-`c999` IDs resolving to source references and excerpt digests |
-| `items` | ordered projected evidence | Bounded reviewer-visible content using only local citation IDs |
-| `omissions` | ordered omission records | Every unrouted source item and every shortened payload has a reason and digest |
+| `citations` | ordered compact rows | At most 999 `[citationId, sourceDigest, reference]` rows using `c001`-`c999` IDs |
+| `opportunities` | ordered compact event rows | `[opportunityId, kind, atMs, actorIds, citationIds, observationKind, projection, content]`; combines the registry and bounded reviewer-visible projection without duplicated event metadata |
+| `omissions` | ordered compact rows | Every unrouted source item has an `[evidenceId, sourceDigest, reason]` row; excerpted routed sources remain represented by their citation source digest |
 | `contentDigest` | SHA-256 | Canonical digest of every preceding field |
 
-Packet compilation is byte-identical for fixed inputs. Every packet declares a `shared-team` or `isolated-origin` evaluation unit and an ordered opportunity registry. Related tool events are paired, duplicated response call material is removed, and large payloads use deterministic head/tail excerpts. Every source item is routed or explicitly omitted. Canonical serialized size is at most 128 KiB. The social packet for an isolated origin is never sent; its dimensions are assembled as `not-applicable`.
+Packet compilation is byte-identical for fixed inputs. Every packet declares a `shared-team` or `isolated-origin` evaluation unit and an ordered opportunity registry. Related tool events are paired, duplicated response call material is removed, and large payloads use deterministic head/tail excerpts. Every source item is represented by a citation source digest or explicitly omitted. Canonical serialized size is at most 128 KiB. The social packet for an isolated origin is never sent; its dimensions are assembled as `not-applicable`.
 
 ## QuantitativeMeasure
 
@@ -228,13 +228,13 @@ The `RunAnalysis` variant appended by qualitative review.
 | `rubricVersion` | string | Exact anchors and prompts |
 | `configurationDigest` | SHA-256 | Includes reviewer profiles and token limits |
 | `bundleDigest` | SHA-256 | Identical for both judges |
-| `protocolVersion` | `ledger-packets-v5` | Required for current evidence-dossier analyses; older analyses remain readable |
+| `protocolVersion` | `ledger-packets-v6` | Required for current evidence-dossier analyses; older analyses remain readable |
 | `detailsPath` | safe relative path | Under `grading/<analysisId>/` |
 | `detailsDigest` | SHA-256 | Covers reviews and scorecard |
 | `reviews` | ordered status/provenance summaries | Exactly two configured reviewer attempts |
 | `resumedFromAnalysisId` | string | Required only for an explicit resume; must name an incomplete packet-protocol predecessor |
 
-Every invocation receives a new analysis ID and immutable detail directory. Resume validates the predecessor reference and digest, every artifact-key input, and every reused completed packet artifact. Failed or missing packets are called at most once in the new invocation. Prior usage counts toward the configured reviewer token limit. Resume requires the exact v5 protocol, prompt, output schema, evaluation unit, and opportunity registry. All earlier artifacts remain readable but cannot resume into v5.
+Every invocation receives a new analysis ID and immutable detail directory. Resume validates the predecessor reference and digest, every artifact-key input, and every reused completed packet artifact. Failed or missing packets are called at most once in the new invocation. Prior usage counts toward the configured reviewer token limit. Resume requires the exact v6 protocol, prompt, output schema, evaluation unit, and opportunity registry. All earlier artifacts remain readable but cannot resume into v6.
 
 ## Scorecard v2 Evidence Dossier
 
@@ -249,7 +249,7 @@ A provider-free, cross-run output that does not mutate source run records.
 | `reportId` | string | Derived from request and included analyses |
 | `createdAt` | timestamp | Required |
 | `claimType` | `descriptive` or `matched-contrast` | Causal language allowed only for declared matched contrasts |
-| `reviewProtocol` | protocol identity | Selects v5 dossier reviews when historical reviews coexist |
+| `reviewProtocol` | protocol identity | Selects v6 dossier reviews when historical reviews coexist |
 | `experimentalUnit` | declaration | Must state team/origin and clustering rule |
 | `matchingFields` | run input pointers | Required for matched contrast |
 | `treatmentField` | one declared input | Required for matched contrast |

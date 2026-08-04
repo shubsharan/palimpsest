@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { contentDigest } from "../canonical.js";
+import { canonicalJson, contentDigest } from "../canonical.js";
 import type {
   JsonObject,
   ModelAdapter,
@@ -154,15 +154,14 @@ function reviewerOutput(
 
 function providerPacketOutput(
   packet: ReviewPacket,
-  bundle: EvidenceBundle,
+  _bundle: EvidenceBundle,
   output: ReviewerOutput,
 ): unknown {
   const citationId = (reference: EvidenceReference): string => {
-    const evidenceId = bundle.items.find(
-      (item) => JSON.stringify(item.reference) === JSON.stringify(reference),
-    )?.evidenceId;
     return (
-      packet.citations.find((citation) => citation.evidenceId === evidenceId)?.citationId ?? "c9999"
+      packet.citations.find(
+        (citation) => canonicalJson(citation[2]) === canonicalJson(reference),
+      )?.[0] ?? "c9999"
     );
   };
   const citationIds = (references: readonly EvidenceReference[]) => references.map(citationId);
@@ -192,7 +191,7 @@ function providerPacketOutput(
   };
   const claims = dimensions.map((dimension, index) => ({
     claimId: `claim-${String(index + 1).padStart(3, "0")}`,
-    opportunityId: packet.opportunities[0]!.opportunityId,
+    opportunityId: packet.opportunities[0]![0],
     subjectScope: packet.evaluationUnit.kind === "shared-team" ? "evaluation-unit" : "actor",
     actorIds:
       packet.evaluationUnit.kind === "shared-team"
@@ -352,8 +351,7 @@ class FakeAdapter implements ModelAdapter {
     rating: 0 | 1 | 2 | 3 | 4,
     packet = (value: EvidenceBundle, score: 0 | 1 | 2 | 3 | 4, prompt: string) => {
       const reviewPacket = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
-      const evidenceId = reviewPacket.citations[0]!.evidenceId;
-      const reference = value.items.find((item) => item.evidenceId === evidenceId)!.reference;
+      const reference = reviewPacket.citations[0]![2];
       return JSON.stringify(
         providerPacketOutput(reviewPacket, value, reviewerOutput(value, score, { reference })),
       );
@@ -765,7 +763,7 @@ describe("independent qualitative review", () => {
     ]);
     expect(first.prompts).toHaveLength(3);
     expect(second.prompts).toHaveLength(3);
-    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V5"))).toBe(true);
+    expect(first.prompts.every((prompt) => prompt.includes("LEDGER_PACKET_V6"))).toBe(true);
     expect(first.prompts[0]).toContain("supported-revision and asserted-only require");
     expect(first.prompts.join("\n")).not.toContain("INTEGRATION_V1");
     expect(first.structuredOutputs.map(({ name }) => name)).toEqual([
@@ -805,7 +803,7 @@ describe("independent qualitative review", () => {
       schemaVersion: 2,
       dossier: { reviewers: [{ judge: 1 }, { judge: 2 }] },
       failureAccount: { causalAttribution: "prohibited" },
-      provenance: { experimentalUnit: "team", reviewProtocol: "ledger-packets-v5" },
+      provenance: { experimentalUnit: "team", reviewProtocol: "ledger-packets-v6" },
     });
     expect(
       first.prompts.every((prompt) =>
@@ -836,6 +834,62 @@ describe("independent qualitative review", () => {
     );
   });
 
+  it("deterministically normalizes provider claim IDs and structurally inconsistent actor scopes", async () => {
+    const fixture = await preparedRun();
+    const normalizingAdapter = () =>
+      new FakeAdapter(fixture.bundle, 3, (bundle, rating, prompt) => {
+        const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+        const output = providerPacketOutput(packet, bundle, reviewerOutput(bundle, rating)) as {
+          claims: { claimId: string; subjectScope: string; actorIds: string[] }[];
+          dimensions: { claimIds: string[] }[];
+        };
+        const replacements = new Map<string, string>();
+        output.claims.forEach((claim, index) => {
+          const replacement = `claim-${String((index + 1) * 11).padStart(3, "0")}`;
+          replacements.set(claim.claimId, replacement);
+          claim.claimId = replacement;
+        });
+        output.dimensions.forEach((dimension) => {
+          dimension.claimIds = dimension.claimIds.map((claimId) => replacements.get(claimId)!);
+        });
+        output.dimensions[0]!.claimIds = ["claim-001"];
+        output.claims[0]!.subjectScope = "cross-actor";
+        output.claims[0]!.actorIds = [packet.evaluationUnit.actorIds.at(-1)!];
+        output.claims[1]!.subjectScope = "evaluation-unit";
+        output.claims[1]!.actorIds = [...packet.evaluationUnit.actorIds].reverse();
+        output.claims[2]!.subjectScope = "canonical-artifact";
+        output.claims[2]!.actorIds = [packet.evaluationUnit.actorIds[0]!];
+        return JSON.stringify(output);
+      });
+
+    const result = await reviewRun(
+      {
+        projectRoot: fixture.root,
+        runRoot: fixture.runRoot,
+        configPath: fixture.configPath,
+        performanceAnalysisId: fixture.performance.analysisId,
+        allowSpend: true,
+      },
+      dependencies([normalizingAdapter(), normalizingAdapter()]).value,
+    );
+
+    expect(result.analysis.status).toBe("completed");
+    const scorecard = result.scorecards![0]!;
+    expect(scorecard.schemaVersion).toBe(2);
+    if (scorecard.schemaVersion !== 2) throw new Error("Expected scorecard v2.");
+    expect(scorecard.dossier.reviewers[0]!.evidence.claims[0]).toMatchObject({
+      claimId: "epistemic-claim-001",
+      subjectScope: "actor",
+      actorIds: ["actor-2"],
+    });
+    const published = await readFile(join(result.path, "judge-1.review.json"), "utf8");
+    expect(published).toContain("normalized 6 packet-local claim identifier(s)");
+    expect(published).toContain("normalized actor order or subject scope");
+    expect(published).toContain("unmatched claim reference(s) by one-based array position");
+    const raw = await readFile(join(result.path, "judge-1.raw.json"), "utf8");
+    expect(raw).toContain("claim-011");
+  });
+
   it("allows outcome-unavailability language but rejects asserted outcome values", async () => {
     const fixture = await preparedRun();
     const adapter = (rationale: string) =>
@@ -857,7 +911,7 @@ describe("independent qualitative review", () => {
       },
       dependencies([
         adapter(
-          "Solver coverage is obscured, the checker was disabled, and outcome evidence is unavailable.",
+          "Solver coverage is obscured, no checker was configured, and final outcome evidence is redacted or unavailable.",
         ),
         adapter("Outcome evidence is redacted and unavailable."),
       ]).value,
@@ -1114,7 +1168,7 @@ describe("independent qualitative review", () => {
     expect(duplicateConstructions).toBe(0);
   });
 
-  it("keeps v4 analyses readable but rejects them at the v5 resume boundary", async () => {
+  it("keeps v5 analyses readable but rejects them at the v6 resume boundary", async () => {
     const fixture = await preparedRun();
     const deps = dependencies([
       new FakeAdapter(fixture.bundle, 2, undefined, undefined, undefined, 1),
@@ -1136,11 +1190,11 @@ describe("independent qualitative review", () => {
       if (error instanceof PublishedIncompleteReviewError) incomplete = error;
       else throw error;
     }
-    const legacyAnalysisId = "process-review-legacy-v4";
+    const legacyAnalysisId = "process-review-legacy-v5";
     await appendRunAnalysis(fixture.runRoot, incomplete!.result.record, {
       ...incomplete!.result.analysis,
       analysisId: legacyAnalysisId,
-      protocolVersion: "ledger-packets-v4",
+      protocolVersion: "ledger-packets-v5",
       detailsPath: `grading/${legacyAnalysisId}/manifest.json`,
     });
     const constructions = deps.created.length;
@@ -1161,7 +1215,7 @@ describe("independent qualitative review", () => {
     expect(deps.created).toHaveLength(constructions);
   });
 
-  it("allows a v5 dossier review beside an immutable completed v4 review", async () => {
+  it("allows a v6 dossier review beside an immutable completed v4 review", async () => {
     const fixture = await preparedRun();
     const loaded = await loadRunRecord(fixture.root, fixture.runRoot);
     await appendRunAnalysis(fixture.runRoot, loaded.record, {
@@ -1191,7 +1245,7 @@ describe("independent qualitative review", () => {
       },
       dependencies([new FakeAdapter(fixture.bundle, 2), new FakeAdapter(fixture.bundle, 3)]).value,
     );
-    expect(result.analysis.protocolVersion).toBe("ledger-packets-v5");
+    expect(result.analysis.protocolVersion).toBe("ledger-packets-v6");
     expect(result.scorecards![0]!.schemaVersion).toBe(2);
   });
 
@@ -1438,7 +1492,7 @@ describe("independent qualitative review", () => {
         episodes?: { integrationIds: string[] }[];
       };
       if (packet.ledger === "epistemic") {
-        output.episodes![0]!.integrationIds = [packet.citations[0]!.citationId];
+        output.episodes![0]!.integrationIds = [packet.citations[0]![0]];
       }
       return JSON.stringify(output);
     });
@@ -1510,6 +1564,46 @@ describe("independent qualitative review", () => {
       expect(raw).toContain('\\"revisionIds\\":[]');
     },
   );
+
+  it("conservatively omits an ambiguous episode without cited counterevidence", async () => {
+    const fixture = await preparedRun();
+    const ambiguousEpisode = new FakeAdapter(fixture.bundle, 2, (bundle, rating, prompt) => {
+      const packet = JSON.parse(prompt.split("Packet: ")[1]!) as ReviewPacket;
+      const output = providerPacketOutput(
+        packet,
+        bundle,
+        reviewerOutput(bundle, rating, { episode: "asserted" }),
+      ) as {
+        episodes?: { episodeId: string; status: string; counterevidenceIds: string[] }[];
+      };
+      if (packet.ledger === "epistemic") {
+        output.episodes![0]!.episodeId = "episode-ambiguous";
+        output.episodes![0]!.status = "ambiguous";
+        output.episodes![0]!.counterevidenceIds = [];
+      }
+      return JSON.stringify(output);
+    });
+
+    const result = await reviewRun(
+      {
+        projectRoot: fixture.root,
+        runRoot: fixture.runRoot,
+        configPath: fixture.configPath,
+        performanceAnalysisId: fixture.performance.analysisId,
+        allowSpend: true,
+      },
+      dependencies([ambiguousEpisode, new FakeAdapter(fixture.bundle, 3)]).value,
+    );
+
+    expect(result.analysis.status).toBe("completed");
+    const review = decodeJudgeReview(
+      JSON.parse(await readFile(join(result.path, "judge-1.review.json"), "utf8")) as unknown,
+    );
+    expect(review.episodes).toEqual([]);
+    expect(review.overallCautions).toContain(
+      "Deterministic assembly omitted episode episode-ambiguous because status ambiguous requires cited counterevidence.",
+    );
+  });
 
   it("links cross-agent contribution, uptake, and canonical integration while preserving a competing interpretation", async () => {
     const fixture = await preparedRun();
@@ -1587,7 +1681,7 @@ describe("independent qualitative review", () => {
     expect(deps.created.map(({ maxOutputTokens }) => maxOutputTokens)).toEqual([8_000, 8_000]);
     expect(first.prompts).toHaveLength(4);
     expect(first.prompts.every((prompt) => !prompt.includes("Ledger: social"))).toBe(true);
-    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V5"));
+    const packetPrompts = first.prompts.filter((prompt) => prompt.includes("LEDGER_PACKET_V6"));
     expect(packetPrompts.every((prompt) => prompt.includes("Never return reference objects"))).toBe(
       true,
     );
@@ -1605,8 +1699,8 @@ describe("independent qualitative review", () => {
     const secondOriginSurface = secondOriginPrompts.join("\n");
     expect(firstOriginSurface).not.toContain('"actorId":"actor-2"');
     expect(secondOriginSurface).not.toContain('"actorId":"actor-1"');
-    expect(firstOriginSurface).toContain('"kind":"run.context"');
-    expect(secondOriginSurface).toContain('"kind":"run.context"');
+    expect(firstOriginSurface).toContain('"run.context"');
+    expect(secondOriginSurface).toContain('"run.context"');
     expect(firstOriginSurface).toContain('"repositoryId":"origin-1"');
     expect(firstOriginSurface).toContain("refs/heads/private-one");
     expect(firstOriginSurface).toContain("1".repeat(40));

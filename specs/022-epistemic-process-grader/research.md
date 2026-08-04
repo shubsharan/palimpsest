@@ -63,7 +63,7 @@ The important limits are equally informative. `git.changed` currently identifies
 
 ### 7. Require Evidence-Resolvable Citations
 
-**Decision**: Every substantive review claim cites stable trace sequences, run-record fields, or frozen Git objects. Protocol v5 binds each structured claim to a deterministic opportunity ID and compact packet-local citation tokens. The system validates opportunity and citation membership after parsing and renders rating rationales deterministically from structured claims.
+**Decision**: Every substantive review claim cites stable trace sequences, run-record fields, or frozen Git objects. Protocol v6 binds each structured claim to a deterministic opportunity ID and compact packet-local citation tokens. Assembly assigns claim IDs by array order, remaps dimension references, and conservatively normalizes actor scope with labeled cautions. The system validates opportunity and citation membership after parsing and renders rating rationales deterministically from structured claims.
 
 **Rationale**: Citations turn fluent evaluation into an auditable scientific artifact and allow human calibration without rereading an entire run. Keeping packet membership out of the provider schema avoids a large repeated enum while preserving exact post-response enforcement.
 
@@ -93,7 +93,7 @@ During deterministic assembly, uptake references are retained only when an earli
 
 **Decision**: Add `performance` and `process-review` variants to `RunAnalysis`. Persist every validated packet response immediately and atomically under a content-addressed key covering its bundle, configuration, rubric, reviewer binding, packet, prompt, schema, and actual model identity. Retain failed calls separately with sanitized classification and message, normalized and raw finish reasons, usage availability, response identity, actual provider/model identity, whether text was returned, and returned outcome-blind text when available.
 
-Every invocation appends a new immutable completed or incomplete analysis. `--resume <incomplete-analysis-id>` validates the named predecessor and every key field, counts predecessor usage against reviewer limits, reuses only validated completed packets, and calls each missing packet at most once. It requires new literal spend authorization and records `resumedFromAnalysisId`; it never discovers a predecessor, rewrites one, retries automatically, or imports legacy responses. Protocol, prompt, output schema, evaluation unit, and opportunity registry are all v5 identities, so every earlier protocol remains readable but ineligible for v5 resume.
+Every invocation appends a new immutable completed or incomplete analysis. `--resume <incomplete-analysis-id>` validates the named predecessor and every key field, counts predecessor usage against reviewer limits, reuses only validated completed packets, and calls each missing packet at most once. It requires new literal spend authorization and records `resumedFromAnalysisId`; it never discovers a predecessor, rewrites one, retries automatically, or imports legacy responses. Protocol, prompt, output schema, evaluation unit, and opportunity registry are all v6 identities, so every earlier protocol remains readable but ineligible for v6 resume.
 
 **Rationale**: Packet-level checkpoints preserve valid paid work without weakening the no-hidden-retry rule. Append-only predecessors preserve the history of failure, authorization, usage, and recovery.
 

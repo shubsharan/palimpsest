@@ -175,7 +175,7 @@ describe("AI SDK provider", () => {
       prompt: "Review the retained evidence.",
       toolResults: [],
       signal: new AbortController().signal,
-      structuredOutput: { name: "palimpsest_epistemic_packet_v5", schema },
+      structuredOutput: { name: "palimpsest_epistemic_packet_v6", schema },
     });
 
     const body = requestBody as Record<string, unknown>;

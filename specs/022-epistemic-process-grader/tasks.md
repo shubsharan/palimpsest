@@ -195,6 +195,7 @@
 - [x] T077 Add provider-free `puzzle:calibrate` structural calibration in `src/grading/calibrate.ts`, `src/cli.ts`, and `package.json`
 - [x] T078 Add provider-free contract, packet, review, report, migration, and CLI tests for protocol v5 and scorecard v2
 - [x] T079 Reconcile Feature 022 research, data, CLI, quickstart, grading documentation, and requirements evidence with the evidence-dossier boundary
+- [x] T080 Repair live-review structural failures under protocol v6 with deterministic claim-ID remapping, conservative actor-scope normalization, retained-output replay tests, and an accepted scorecard-v2 report
 
 ---
 
