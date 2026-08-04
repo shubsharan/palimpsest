@@ -752,30 +752,51 @@ def _mechanical_measures(
                 "Counts retained checker-use observations without assigning quality.",
                 completeness_evidence,
             ),
-            _count_measure(
-                "social.messages-sent.v1",
-                "social",
-                by_kind["message"],
-                "communication-available",
-                "Counts retained team messages when communication is available.",
-                completeness_evidence,
-            ),
-            _count_measure(
-                "social.messages-read.v1",
-                "social",
-                by_kind["read"],
-                "communication-available",
-                "Counts retained communication reads when communication is available.",
-                completeness_evidence,
-            ),
-            _count_measure(
-                "instrumental.git-change-events.v1",
-                "instrumental",
-                by_kind["git"],
-                "retained-git-events",
-                "Counts retained Git-change observations without assigning quality.",
-                completeness_evidence,
-            ),
+        )
+    )
+    communication_counts = (
+        (
+            "social.messages-sent.v1",
+            by_kind["message"],
+            "Counts retained team messages when communication is available.",
+        ),
+        (
+            "social.messages-read.v1",
+            by_kind["read"],
+            "Counts retained communication reads when communication is available.",
+        ),
+    )
+    for measure_id, communication_events, explanation in communication_counts:
+        if request["communicationMode"] == "isolated":
+            result.append(
+                _missing(
+                    measure_id,
+                    "social",
+                    "mechanical",
+                    "not-applicable",
+                    _eligibility("communication-available", explanation),
+                    "Peer communication is unavailable in the isolated condition.",
+                )
+            )
+        else:
+            result.append(
+                _count_measure(
+                    measure_id,
+                    "social",
+                    communication_events,
+                    "communication-available",
+                    explanation,
+                    completeness_evidence,
+                )
+            )
+    result.append(
+        _count_measure(
+            "instrumental.git-change-events.v1",
+            "instrumental",
+            by_kind["git"],
+            "retained-git-events",
+            "Counts retained Git-change observations without assigning quality.",
+            completeness_evidence,
         )
     )
     tools: dict[str, list[dict[str, Any]]] = defaultdict(list)

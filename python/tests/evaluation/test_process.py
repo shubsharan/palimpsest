@@ -244,6 +244,29 @@ def test_mechanical_metrics_cover_outcome_activity_usage_publication_and_tool_mi
     assert measures["social.participation-balance.v1"]["value"] == 1.0
 
 
+def test_message_counts_distinguish_unused_shared_from_unavailable_isolated() -> None:
+    shared = measure_request()
+    events = shared["events"]
+    assert isinstance(events, list)
+    shared["events"] = [event for event in events if event["kind"] not in {"message", "read"}]
+    shared_measures = values_by_id(process_request(decode_request(shared)))
+
+    for measure_id in ("social.messages-sent.v1", "social.messages-read.v1"):
+        assert shared_measures[measure_id]["state"] == "observed"
+        assert shared_measures[measure_id]["value"] == 0
+
+    isolated = json.loads(json.dumps(shared))
+    isolated["communicationMode"] = "isolated"
+    isolated_measures = values_by_id(process_request(decode_request(isolated)))
+
+    for measure_id in ("social.messages-sent.v1", "social.messages-read.v1"):
+        measure = isolated_measures[measure_id]
+        assert measure["state"] == "not-applicable"
+        assert "value" not in measure
+        assert "unit" not in measure
+        assert "Peer communication is unavailable" in measure["eligibility"]["explanation"]
+
+
 def test_review_coded_revision_and_collaboration_metrics_preserve_each_judge_basis() -> None:
     measures = values_by_id(process_request(decode_request(measure_request())))
 

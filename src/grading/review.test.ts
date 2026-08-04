@@ -439,6 +439,10 @@ async function preparedRun(communicationMode: "shared" | "isolated" = "shared") 
               },
             },
           ],
+          publishedFiles: {
+            "agent-1": { "solver.py": 'ORIGIN_MARKER = "amber-lantern"\n' },
+            "agent-2": { "solver.py": 'ORIGIN_MARKER = "cedar-compass"\n' },
+          },
         });
   const configPath = join(fixture.root, "grading.yaml");
   const configurationSource = yamlConfig();
@@ -1695,6 +1699,10 @@ describe("independent qualitative review", () => {
     );
     expect(firstOriginPrompts.length).toBeGreaterThan(0);
     expect(secondOriginPrompts.length).toBeGreaterThan(0);
+    expect(firstOriginPrompts.every((prompt) => prompt.includes("amber-lantern"))).toBe(true);
+    expect(firstOriginPrompts.every((prompt) => !prompt.includes("cedar-compass"))).toBe(true);
+    expect(secondOriginPrompts.every((prompt) => prompt.includes("cedar-compass"))).toBe(true);
+    expect(secondOriginPrompts.every((prompt) => !prompt.includes("amber-lantern"))).toBe(true);
     const firstOriginSurface = firstOriginPrompts.join("\n");
     const secondOriginSurface = secondOriginPrompts.join("\n");
     expect(firstOriginSurface).not.toContain('"actorId":"actor-2"');
@@ -1702,17 +1710,25 @@ describe("independent qualitative review", () => {
     expect(firstOriginSurface).toContain('"run.context"');
     expect(secondOriginSurface).toContain('"run.context"');
     expect(firstOriginSurface).toContain('"repositoryId":"origin-1"');
+    expect(firstOriginSurface).toContain('"originId":"origin-1"');
     expect(firstOriginSurface).toContain("refs/heads/private-one");
     expect(firstOriginSurface).toContain("1".repeat(40));
+    expect(firstOriginSurface).toContain("amber-lantern");
     expect(firstOriginSurface).not.toContain('"repositoryId":"origin-2"');
+    expect(firstOriginSurface).not.toContain('"originId":"origin-2"');
     expect(firstOriginSurface).not.toContain("refs/heads/private-two");
     expect(firstOriginSurface).not.toContain("2".repeat(40));
+    expect(firstOriginSurface).not.toContain("cedar-compass");
     expect(secondOriginSurface).toContain('"repositoryId":"origin-2"');
+    expect(secondOriginSurface).toContain('"originId":"origin-2"');
     expect(secondOriginSurface).toContain("refs/heads/private-two");
     expect(secondOriginSurface).toContain("2".repeat(40));
+    expect(secondOriginSurface).toContain("cedar-compass");
     expect(secondOriginSurface).not.toContain('"repositoryId":"origin-1"');
+    expect(secondOriginSurface).not.toContain('"originId":"origin-1"');
     expect(secondOriginSurface).not.toContain("refs/heads/private-one");
     expect(secondOriginSurface).not.toContain("1".repeat(40));
+    expect(secondOriginSurface).not.toContain("amber-lantern");
     const publishedReviews = JSON.parse(
       await readFile(join(result.path, "judge-1.review.json"), "utf8"),
     ) as unknown[];

@@ -1172,6 +1172,9 @@ function reviewSurfaceForOrigin(
   );
   const items = bundle.items.filter((item) => {
     if (item.actorId !== "runner") return actorIds.has(item.actorId);
+    if (item.reference.source === "git") {
+      return item.reference.originId === repositoryId;
+    }
     const content =
       typeof item.content === "object" && item.content !== null && !Array.isArray(item.content)
         ? (item.content as Record<string, unknown>)
@@ -1179,7 +1182,7 @@ function reviewSurfaceForOrigin(
     if (typeof content?.repositoryId === "string") {
       return content.repositoryId === repositoryId;
     }
-    // Git changes are origin-scoped; missing or excerpted scope must not cross isolated origins.
+    // Trace-backed Git changes are origin-scoped; missing scope must not cross isolated origins.
     return item.kind !== "git.changed";
   });
   const visibleIds = new Set(items.map(({ evidenceId }) => evidenceId));
