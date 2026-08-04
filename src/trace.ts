@@ -21,6 +21,11 @@ interface ObservationClockOptions {
   nowMs?: () => number;
 }
 
+export interface LoadedObservationTrace {
+  readonly metadata: TraceMetadata;
+  readonly events: readonly ObservationEvent[];
+}
+
 const secretKey =
   /^(?:api[-_]?key|authorization|credential|password|secret|oracle|plaintext|expected(?:words?)?)$/i;
 
@@ -117,7 +122,40 @@ function requireEvent(
   if (event.agentId !== undefined && !isAgentId(event.agentId)) {
     throw new Error(`${path} event ${expectedSequence} has an invalid agentId.`);
   }
+  if (event.kind === "git.changed") {
+    requireGitChangedTargets(event.data, `${path} event ${expectedSequence}`);
+  }
   return event as ObservationEvent;
+}
+
+function requireGitChangedTargets(value: unknown, name: string): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${name} git.changed data must be an object.`);
+  }
+  const data = value as Record<string, unknown>;
+  if (data.targets === undefined) return;
+  if (!Array.isArray(data.refs) || !Array.isArray(data.targets)) {
+    throw new Error(`${name} Git ref targets require refs and targets arrays.`);
+  }
+  if (data.targets.length !== data.refs.length) {
+    throw new Error(`${name} Git ref targets must correspond to every changed ref.`);
+  }
+  for (const [index, targetValue] of data.targets.entries()) {
+    if (typeof targetValue !== "object" || targetValue === null || Array.isArray(targetValue)) {
+      throw new Error(`${name} Git ref target ${String(index + 1)} must be an object.`);
+    }
+    const target = targetValue as Record<string, unknown>;
+    if (
+      Object.keys(target).sort().join("\0") !== "objectId\0ref" ||
+      target.ref !== data.refs[index] ||
+      (target.objectId !== null &&
+        (typeof target.objectId !== "string" || !/^[0-9a-f]{40}$/.test(target.objectId)))
+    ) {
+      throw new Error(
+        `${name} Git ref target ${String(index + 1)} has an invalid objectId or ref.`,
+      );
+    }
+  }
 }
 
 async function readExistingEvents(path: string): Promise<readonly ObservationEvent[]> {
@@ -145,10 +183,7 @@ async function readExistingEvents(path: string): Promise<readonly ObservationEve
   return events;
 }
 
-export async function readObservationTrace(path: string): Promise<{
-  metadata: TraceMetadata;
-  events: readonly ObservationEvent[];
-}> {
+export async function loadObservationTrace(path: string): Promise<LoadedObservationTrace> {
   const metadataPath = metadataPathFor(path);
   let metadataValue: unknown;
   try {
@@ -162,6 +197,8 @@ export async function readObservationTrace(path: string): Promise<{
     events: await readExistingEvents(path),
   };
 }
+
+export const readObservationTrace = loadObservationTrace;
 
 export class JsonlObservationLog {
   readonly path: string;
@@ -235,7 +272,7 @@ export class JsonlObservationLog {
   ): Promise<JsonlObservationLog> {
     const metadataPath = metadataPathFor(path);
     const textPath = textLogPathFor(path);
-    const { metadata, events } = await readObservationTrace(path);
+    const { metadata, events } = await loadObservationTrace(path);
     const startedAtMs = Date.parse(metadata.startedAt);
     await writeFile(textPath, renderTextLog(metadata, events), "utf8");
     const last = events.at(-1);

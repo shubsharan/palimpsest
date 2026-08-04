@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "adopted",
+      "communicationMode": "shared",
+      "contribution": "e1",
+      "uptake": "e2",
+      "integration": "e3"
+    },
+    {
+      "id": "ignored",
+      "communicationMode": "shared",
+      "contribution": "e1",
+      "uptake": null,
+      "useful": true
+    },
+    {
+      "id": "rediscovered",
+      "communicationMode": "shared",
+      "contribution": "e1",
+      "uptake": "e3",
+      "independentEvidence": "e2"
+    },
+    {
+      "id": "duplicated",
+      "communicationMode": "shared",
+      "contributions": ["e1", "e2"],
+      "sameWork": true
+    },
+    {
+      "id": "repaired-conflict",
+      "communicationMode": "shared",
+      "conflict": "e1",
+      "repair": "e2",
+      "integration": "e3"
+    },
+    {
+      "id": "ambiguous-authorship",
+      "communicationMode": "shared",
+      "integration": "e3",
+      "authors": ["actor-1", "actor-2"]
+    },
+    { "id": "isolated", "communicationMode": "isolated", "expectedSocialState": "not-applicable" }
+  ]
+}

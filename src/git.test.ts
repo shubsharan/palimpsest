@@ -168,6 +168,39 @@ describe("condition-assigned ordinary Git", () => {
     await monitor.stop();
   });
 
+  it("reports a null target when a previously observed ref is deleted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "palimpsest-git-deleted-ref-"));
+    const environment = await createGitEnvironment(root, "shared", AGENTS);
+    const repository = environment.repositories[0];
+    if (!repository) throw new Error("Expected shared Git resources.");
+    const changes: unknown[] = [];
+    const monitor = new GitActivityMonitor({
+      repository,
+      pollIntervalMs: 60_000,
+      onChange: (repositoryId, agentIds, updates) => {
+        changes.push({ repositoryId, agentIds, updates });
+      },
+    });
+    await monitor.start();
+    await runGit(["update-ref", "-d", "refs/heads/main"], repository.path);
+    await monitor.checkNow();
+
+    expect(changes).toEqual([
+      {
+        repositoryId: "shared",
+        agentIds: AGENTS,
+        updates: [
+          {
+            ref: "refs/heads/main",
+            before: expect.stringMatching(/^[0-9a-f]{40}$/),
+            after: null,
+          },
+        ],
+      },
+    ]);
+    await monitor.stop();
+  });
+
   it("does not consume a ref change when its canonical observer rejects it", async () => {
     const root = await mkdtemp(join(tmpdir(), "palimpsest-git-retry-"));
     const environment = await createGitEnvironment(root, "isolated", AGENTS);

@@ -13,7 +13,7 @@ import {
   type OriginOverlapAnalysis,
   type OverlapFinding,
   type OverlapScanMetadata,
-  type RunAnalysis,
+  type OverlapRunAnalysis,
 } from "../run/record.js";
 import { verifyTree } from "../seal.js";
 
@@ -218,7 +218,7 @@ export async function analyzeRun(options: {
   root: string;
   runRoot: string;
   minimumWords?: number;
-}): Promise<RunAnalysis> {
+}): Promise<OverlapRunAnalysis> {
   const root = resolve(options.root);
   const runRoot = resolve(options.runRoot);
   const minimumWords = options.minimumWords ?? DEFAULT_MINIMUM_WORDS;
@@ -250,7 +250,7 @@ export async function analyzeRun(options: {
         }),
       );
     }
-    const analysis: RunAnalysis = {
+    const analysis: OverlapRunAnalysis = {
       analysisId: `overlap-${analyzedAt.replaceAll(":", "-")}-${randomUUID()}`,
       kind: "overlap",
       analyzedAt,
@@ -267,7 +267,7 @@ export async function analyzeRun(options: {
 export function analyzeRunFromFlags(
   flags: ReadonlyMap<string, string>,
   root = resolve("."),
-): Promise<RunAnalysis> {
+): Promise<OverlapRunAnalysis> {
   for (const flag of flags.keys()) {
     if (flag !== "--run-root" && flag !== "--minimum-words") {
       throw new Error(`Unknown analysis option ${flag}.`);

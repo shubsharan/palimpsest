@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    { "id": "descriptive", "claimType": "descriptive", "runCount": 3, "eligible": true },
+    {
+      "id": "matched",
+      "claimType": "matched-contrast",
+      "matchingFields": [
+        "/configuration/run/fixture/constructionId",
+        "/configuration/run/schedule"
+      ],
+      "treatmentField": "/configuration/run/capabilities/teamRoom",
+      "eligible": true
+    },
+    {
+      "id": "mismatched",
+      "claimType": "matched-contrast",
+      "materialMismatch": true,
+      "eligible": false
+    },
+    {
+      "id": "mixed-version",
+      "graderVersions": ["epistemic-process-v1", "future"],
+      "eligible": false
+    },
+    {
+      "id": "clustered-origin",
+      "experimentalUnit": "origin",
+      "clusterBy": "run",
+      "originCount": 3
+    },
+    { "id": "incomplete-review", "reviewStatus": "incomplete", "eligible": false },
+    { "id": "single-run", "claimType": "descriptive", "runCount": 1, "causal": false }
+  ]
+}

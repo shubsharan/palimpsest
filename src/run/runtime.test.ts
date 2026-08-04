@@ -127,20 +127,38 @@ describe("attempt runtime", () => {
   });
 
   it("publishes Git activity only to the repository's assigned agents", async () => {
-    const { runtime } = fixture({ teamChannelEnabled: false });
-    await runtime.recordGitChange(
-      "agent-1",
-      ["agent-1"],
-      [{ ref: "refs/heads/main", before: null, after: "a".repeat(40) }],
-    );
+    const { runtime, observations } = fixture({ teamChannelEnabled: false });
+    const updates = [{ ref: "refs/heads/main", before: null, after: "a".repeat(40) }] as const;
+    const targets = [{ ref: "refs/heads/main", objectId: "a".repeat(40) }] as const;
+    await runtime.recordGitChange("agent-1", ["agent-1"], updates);
 
-    await expect(runtime.forAgent("agent-1").waitForActivity(0)).resolves.toMatchObject({
+    await expect(runtime.forAgent("agent-1").waitForActivity(0)).resolves.toEqual({
       kind: "git-changed",
       sequence: 1,
+      occurredAtMs: 25,
+      detail: { repositoryId: "agent-1", refs: ["refs/heads/main"] },
     });
+    expect(observations).toEqual([
+      {
+        kind: "git.changed",
+        data: { repositoryId: "agent-1", refs: ["refs/heads/main"], targets, updates },
+      },
+    ]);
     const waiting = runtime.forAgent("agent-2").waitForActivity(0);
     await runtime.close("sessions-ended");
     await expect(waiting).resolves.toEqual({ ended: true, reason: "sessions-ended" });
+  });
+
+  it("retains historical Git observations without ref targets", async () => {
+    const { runtime, observations } = fixture({ teamChannelEnabled: false });
+    await runtime.recordGitChange("shared", AGENTS, ["refs/heads/main"]);
+
+    expect(observations).toEqual([
+      {
+        kind: "git.changed",
+        data: { repositoryId: "shared", refs: ["refs/heads/main"] },
+      },
+    ]);
   });
 
   it("rejects invalid messages and pages without committing state", async () => {

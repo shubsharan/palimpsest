@@ -29,8 +29,9 @@ Done means two manifests can vary fixtures, geometry, schedules, models, and com
 - Publish one secret-free `RunRecord` plus an append-only behavioral trace.
 - Freeze and evaluate the one shared origin or every isolated agent origin; retain missing publication and integration as outcomes.
 - Permit provider-free re-evaluation and optional post-publication overlap analysis without changing frozen evidence or scores.
+- Add provider-free evidence indexing, deterministic process measures, separately authorized independent review, and design-aware reporting without a composite score.
 
-Done means a reviewer can reconstruct the declared conditions, inspect the observed behavior, and reproduce scoring from the frozen record without a live provider session.
+Done means a reviewer can reconstruct the declared conditions, inspect the observed behavior, reproduce scoring from the frozen record without a live provider session, and audit every substantive process judgment back to allowed retained evidence.
 
 ### Research Validation
 

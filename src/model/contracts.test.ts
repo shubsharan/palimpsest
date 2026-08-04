@@ -61,6 +61,14 @@ describe("dynamic model contracts", () => {
         actualProvider: "openai.responses",
         actualModel: "gpt-5.2-2026-07-01",
       },
+      responseText: "",
+      finishReason: "length",
+      rawFinishReason: "max_output_tokens",
+      responseId: "response-1",
+      structuredOutputValidation: {
+        status: "not-validated",
+        error: "Structured output did not complete (finish reason length).",
+      },
     };
 
     expect(binding).not.toHaveProperty("actualModel");
@@ -68,6 +76,7 @@ describe("dynamic model contracts", () => {
       actualProvider: "openai.responses",
       actualModel: "gpt-5.2-2026-07-01",
     });
-    expect(turn.usage.inputTokenDetails?.cacheReadTokens).toBe(2);
+    expect(turn.usage?.inputTokenDetails?.cacheReadTokens).toBe(2);
+    expect(turn.structuredOutputValidation?.status).toBe("not-validated");
   });
 });

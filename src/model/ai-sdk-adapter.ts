@@ -2,9 +2,11 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import {
   generateText,
   jsonSchema,
+  Output,
   tool,
   wrapLanguageModel,
   type JSONValue as AiJsonValue,
@@ -21,6 +23,8 @@ import {
   ModelSessionContext,
   ModelToolCall,
   ModelTurn,
+  type StructuredOutputRequest,
+  type StructuredOutputValidation,
   type ProviderConnection,
   ReturnedReasoningSummary,
   ReturnedReasoningSummaryItem,
@@ -45,15 +49,36 @@ export interface CreateAiSdkModelAdapterOptions {
 
 type AiProviderOptions = Record<string, { [key: string]: AiJsonValue | undefined }>;
 
-function requireTokenCount(value: number | undefined, name: string): number {
-  if (!Number.isSafeInteger(value) || value === undefined || value < 0) {
-    throw new Error(`AI SDK ${name} token usage must be a non-negative safe integer.`);
-  }
-  return value;
-}
+const structuredOutputAjv = new Ajv2020({ allErrors: true, strict: false });
 
 function optionalTokenCount(value: number | undefined): number | undefined {
   return Number.isSafeInteger(value) && value !== undefined && value >= 0 ? value : undefined;
+}
+
+function retainedUsage(value: {
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  inputTokenDetails: {
+    noCacheTokens: number | undefined;
+    cacheReadTokens: number | undefined;
+    cacheWriteTokens: number | undefined;
+  };
+  outputTokenDetails: {
+    textTokens: number | undefined;
+    reasoningTokens: number | undefined;
+  };
+}): Pick<ModelTurn, "usage" | "usageUnavailable"> {
+  const inputTokens = optionalTokenCount(value.inputTokens);
+  const outputTokens = optionalTokenCount(value.outputTokens);
+  if (inputTokens === undefined || outputTokens === undefined) return { usageUnavailable: true };
+  return {
+    usage: {
+      inputTokens,
+      outputTokens,
+      inputTokenDetails: inputTokenDetails(value.inputTokenDetails),
+      outputTokenDetails: outputTokenDetails(value.outputTokenDetails),
+    },
+  };
 }
 
 function inputTokenDetails(value: {
@@ -217,6 +242,48 @@ function scrubError(error: unknown, secrets: readonly string[]): Error {
   return scrubbed;
 }
 
+function retainedStructuredOutput(request: StructuredOutputRequest, secrets: readonly string[]) {
+  const validate = structuredOutputAjv.compile({ ...request.schema });
+  const output = Output.object({
+    schema: jsonSchema({ ...request.schema }),
+    name: request.name,
+    ...(request.description === undefined ? {} : { description: request.description }),
+  });
+  return {
+    ...output,
+    async parseCompleteOutput(...args: Parameters<typeof output.parseCompleteOutput>) {
+      try {
+        const value = await output.parseCompleteOutput(...args);
+        if (!validate(value)) {
+          const errors =
+            validate.errors
+              ?.map((error) => `${error.instancePath || "/"} ${error.message ?? "is invalid"}`)
+              .join("; ") ?? "unknown validation error";
+          return {
+            status: "invalid" as const,
+            error: `Structured output did not match schema: ${errors}`,
+          };
+        }
+        return { status: "validated" as const };
+      } catch (error) {
+        return {
+          status: "invalid" as const,
+          error: scrubError(error, secrets).message,
+        };
+      }
+    },
+  };
+}
+
+function incompleteStructuredOutput(
+  finishReason: ModelTurn["finishReason"],
+): StructuredOutputValidation {
+  return {
+    status: "not-validated",
+    error: `Structured output did not complete (finish reason ${String(finishReason)}).`,
+  };
+}
+
 function appendToolResults(
   messages: readonly ModelMessage[],
   pending: ReadonlyMap<string, string>,
@@ -308,6 +375,10 @@ export class AiSdkModelAdapter implements ModelAdapter {
                   },
                 })
               : baseModel;
+          const structuredOutput =
+            request.structuredOutput === undefined
+              ? undefined
+              : retainedStructuredOutput(request.structuredOutput, this.#secrets);
           const result = await generateText({
             model,
             messages: requestMessages,
@@ -325,7 +396,15 @@ export class AiSdkModelAdapter implements ModelAdapter {
             ...(this.#providerOptions === undefined
               ? {}
               : { providerOptions: this.#providerOptions }),
+            ...(structuredOutput === undefined ? {} : { output: structuredOutput }),
           });
+          const usage = retainedUsage(result.usage);
+          const structuredOutputValidation =
+            structuredOutput === undefined
+              ? undefined
+              : result.finishReason === "stop"
+                ? result.output
+                : incompleteStructuredOutput(result.finishReason);
           const nextPending = new Map<string, string>();
           const toolCalls: ModelToolCall[] = result.toolCalls.map((call) => {
             if (nextPending.has(call.toolCallId)) {
@@ -338,25 +417,26 @@ export class AiSdkModelAdapter implements ModelAdapter {
               arguments: requireToolArguments(call.input, call.toolName),
             };
           });
-          const usage = {
-            inputTokens: requireTokenCount(result.usage.inputTokens, "input"),
-            outputTokens: requireTokenCount(result.usage.outputTokens, "output"),
-            inputTokenDetails: inputTokenDetails(result.usage.inputTokenDetails),
-            outputTokenDetails: outputTokenDetails(result.usage.outputTokenDetails),
-          };
           messages = [...requestMessages, ...result.responseMessages];
           pending = nextPending;
           started = true;
           const reasoningSummary = result.finalStep.reasoningText;
           const common = {
             toolCalls,
-            usage,
+            ...usage,
+            responseText: result.text,
+            finishReason: result.finishReason,
+            ...(result.rawFinishReason === undefined
+              ? {}
+              : { rawFinishReason: result.rawFinishReason }),
+            ...(result.response.id === undefined ? {} : { responseId: result.response.id }),
             responseIdentity: {
               ...(actualProvider === undefined ? {} : { actualProvider }),
               actualModel: result.response.modelId,
             },
             ...(reasoningSummary === undefined ? {} : { reasoningSummary }),
             ...(returnedReasoningSummary === undefined ? {} : { returnedReasoningSummary }),
+            ...(structuredOutputValidation === undefined ? {} : { structuredOutputValidation }),
           };
           return result.text.length === 0 ? common : { ...common, finalResponse: result.text };
         } catch (error) {

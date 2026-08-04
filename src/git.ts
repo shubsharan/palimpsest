@@ -42,6 +42,11 @@ export interface AgentGitWorkspace {
 export type GitCommunicationMode = "shared" | "isolated";
 export type GitRepositoryId = "shared" | AgentId;
 
+export interface GitRefTarget {
+  readonly ref: string;
+  readonly objectId: string | null;
+}
+
 export interface GitRepository {
   repositoryId: GitRepositoryId;
   path: string;

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "rubricVersion": "epistemic-process-v1",
+  "identityBlind": true,
+  "outcomeBlind": true,
+  "fixtures": [
+    "tests/fixtures/grading/outcome-process-contrasts.json",
+    "tests/fixtures/grading/epistemic-episodes.json",
+    "tests/fixtures/grading/collaboration-contrasts.json"
+  ]
+}

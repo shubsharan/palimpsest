@@ -1,3 +1,4 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,6 +7,7 @@ import {
   createAiSdkModelAdapter,
   type AiSdkModelAdapterOptions,
 } from "./ai-sdk-adapter.js";
+import { packetReviewerOutputSchema } from "../grading/packet-output.js";
 import { TOOL_DEFINITIONS } from "../run/tools.js";
 
 function usage(inputTokens: number | undefined, outputTokens: number | undefined) {
@@ -35,6 +37,329 @@ function adapterWith(
 }
 
 describe("AI SDK provider", () => {
+  it("uses provider-native structured output while retaining response text and usage", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content: [{ type: "text", text: '{"schemaVersion":1,"value":"ok"}' }],
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(7, 3),
+        warnings: [],
+        response: {
+          id: "response-structured",
+          modelId: "served-model",
+          timestamp: new Date(0),
+        },
+      },
+    });
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: { schemaVersion: { const: 1 }, value: { type: "string" } },
+      required: ["schemaVersion", "value"],
+    } as const;
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        description: "Synthetic structured response.",
+        schema,
+      },
+    });
+
+    expect(turn.finalResponse).toBe('{"schemaVersion":1,"value":"ok"}');
+    expect(turn.responseText).toBe('{"schemaVersion":1,"value":"ok"}');
+    expect(turn.finishReason).toBe("stop");
+    expect(turn.rawFinishReason).toBe("completed");
+    expect(turn.responseId).toBe("response-structured");
+    expect(turn.structuredOutputValidation).toEqual({ status: "validated" });
+    expect(turn.usage).toMatchObject({ inputTokens: 7, outputTokens: 3 });
+    expect(model.doGenerateCalls[0]!.responseFormat).toEqual({
+      type: "json",
+      name: "structured_test",
+      description: "Synthetic structured response.",
+      schema,
+    });
+  });
+
+  it("sends a strict zero-union output schema through the real Anthropic provider", async () => {
+    const schema = packetReviewerOutputSchema();
+    const responseValue = {
+      schemaVersion: 1,
+      claims: [
+        {
+          claimId: "claim-001",
+          opportunityId: "opp-0001",
+          subjectScope: "evaluation-unit",
+          actorIds: ["actor-1"],
+          predicate: "commitment",
+          state: "observed",
+          qualification: "direct",
+          evidenceIds: ["c001"],
+          counterevidenceIds: [],
+          confidence: "high",
+          missingReason: "",
+        },
+        {
+          claimId: "claim-002",
+          opportunityId: "opp-0002",
+          subjectScope: "evaluation-unit",
+          actorIds: ["actor-1"],
+          predicate: "revision",
+          state: "unobservable",
+          qualification: "missing",
+          evidenceIds: [],
+          counterevidenceIds: [],
+          confidence: "medium",
+          missingReason: "No retained revision opportunity was observable.",
+        },
+      ],
+      dimensions: [
+        {
+          dimensionId: "epistemic.framing",
+          assessment: "rated-3",
+          claimIds: ["claim-001"],
+          confidence: "high",
+        },
+        {
+          dimensionId: "epistemic.revision",
+          assessment: "unobservable",
+          claimIds: ["claim-002"],
+          confidence: "medium",
+        },
+      ],
+      episodes: [],
+      cautions: [],
+    };
+    let requestBody: unknown;
+    const model = createAnthropic({
+      apiKey: "test-anthropic-key",
+      fetch: async (input, init) => {
+        const body =
+          init?.body ?? (input instanceof Request ? await input.clone().text() : undefined);
+        requestBody = JSON.parse(String(body));
+        return new Response(
+          JSON.stringify({
+            type: "message",
+            id: "msg_test_structured",
+            model: "claude-opus-5",
+            content: [{ type: "text", text: JSON.stringify(responseValue) }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: {
+              input_tokens: 11,
+              output_tokens: 7,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "request-id": "req_test_structured",
+            },
+          },
+        );
+      },
+    })("claude-opus-5");
+    const session = new AiSdkModelAdapter({ model }).openSession({
+      agentId: "agent-1",
+      tools: [],
+    });
+
+    const turn = await session.respond({
+      prompt: "Review the retained evidence.",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: { name: "palimpsest_epistemic_packet_v6", schema },
+    });
+
+    const body = requestBody as Record<string, unknown>;
+    expect(body).not.toHaveProperty("tools");
+    expect(body).not.toHaveProperty("tool_choice");
+    const outputConfig = body.output_config as Record<string, unknown>;
+    const format = outputConfig.format as Record<string, unknown>;
+    expect(format.type).toBe("json_schema");
+    const sentSchema = format.schema as Record<string, unknown>;
+    expect(Object.keys(sentSchema.properties as Record<string, unknown>)).toEqual([
+      "schemaVersion",
+      "claims",
+      "dimensions",
+      "episodes",
+      "cautions",
+    ]);
+    expect(JSON.stringify(sentSchema)).not.toContain('"ledger"');
+    expect(Buffer.byteLength(JSON.stringify(sentSchema), "utf8")).toBeLessThan(6 * 1024);
+    let unionCount = 0;
+    const inspectSchema = (value: unknown, path: string): void => {
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => inspectSchema(item, `${path}[${String(index)}]`));
+        return;
+      }
+      if (value === null || typeof value !== "object") return;
+      const item = value as Record<string, unknown>;
+      if (Array.isArray(item.anyOf)) unionCount += 1;
+      if (Array.isArray(item.type)) unionCount += 1;
+      if (item.type === "object") {
+        const properties = item.properties as Record<string, unknown>;
+        expect(item.additionalProperties, path).toBe(false);
+        expect(item.required, path).toEqual(Object.keys(properties));
+      }
+      Object.entries(item).forEach(([key, child]) => inspectSchema(child, `${path}.${key}`));
+    };
+    inspectSchema(sentSchema, "$output_config.format.schema");
+    expect(unionCount).toBe(0);
+    expect(turn).toMatchObject({
+      responseText: JSON.stringify(responseValue),
+      finishReason: "stop",
+      rawFinishReason: "end_turn",
+      responseId: "msg_test_structured",
+      responseIdentity: {
+        actualProvider: "anthropic.messages",
+        actualModel: "claude-opus-5",
+      },
+      structuredOutputValidation: { status: "validated" },
+      usage: { inputTokens: 11, outputTokens: 7 },
+    });
+  });
+
+  it.each([
+    ["malformed JSON", [{ type: "text" as const, text: "not-json" }]],
+    ["empty output", []],
+    ["schema-invalid JSON", [{ type: "text" as const, text: '{"value":1}' }]],
+  ])("retains %s and metadata when structured output cannot be parsed", async (_name, content) => {
+    const model = new MockLanguageModelV4({
+      provider: "mock-provider",
+      modelId: "requested-model",
+      doGenerate: {
+        content,
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(1, 1),
+        warnings: [],
+        response: {
+          id: "response-invalid",
+          modelId: "served-model",
+          timestamp: new Date(0),
+        },
+      },
+    });
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      },
+    });
+
+    expect(turn.responseText).toBe(content[0]?.text ?? "");
+    expect(turn.finishReason).toBe("stop");
+    expect(turn.rawFinishReason).toBe("completed");
+    expect(turn.responseId).toBe("response-invalid");
+    expect(turn.responseIdentity).toEqual({
+      actualProvider: "mock-provider",
+      actualModel: "served-model",
+    });
+    expect(turn.usage).toMatchObject({ inputTokens: 1, outputTokens: 1 });
+    expect(turn.structuredOutputValidation).toMatchObject({
+      status: "invalid",
+      error: expect.stringMatching(/no object generated|did not match schema/i),
+    });
+  });
+
+  it("reports a structured-output length finish with retained usage", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content: [],
+        finishReason: { unified: "length", raw: "max_output_tokens" },
+        usage: usage(9, 8_000),
+        warnings: [],
+      },
+    });
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      },
+    });
+
+    expect(turn).toMatchObject({
+      responseText: "",
+      finishReason: "length",
+      rawFinishReason: "max_output_tokens",
+      usage: { inputTokens: 9, outputTokens: 8_000 },
+      structuredOutputValidation: {
+        status: "not-validated",
+        error: "Structured output did not complete (finish reason length).",
+      },
+    });
+  });
+
+  it("retains response diagnostics when provider usage is unavailable", async () => {
+    const model = new MockLanguageModelV4({
+      provider: "mock-provider",
+      doGenerate: {
+        content: [{ type: "text", text: '{"value":"ok"}' }],
+        finishReason: { unified: "stop", raw: "completed" },
+        usage: usage(undefined, undefined),
+        warnings: [],
+        response: {
+          id: "response-without-usage",
+          modelId: "served-model",
+          timestamp: new Date(0),
+        },
+      },
+    });
+    const session = adapterWith(model).openSession({ agentId: "agent-1", tools: [] });
+
+    const turn = await session.respond({
+      prompt: "return the object",
+      toolResults: [],
+      signal: new AbortController().signal,
+      structuredOutput: {
+        name: "structured_test",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      },
+    });
+
+    expect(turn).toMatchObject({
+      responseText: '{"value":"ok"}',
+      finishReason: "stop",
+      rawFinishReason: "completed",
+      responseId: "response-without-usage",
+      usageUnavailable: true,
+      structuredOutputValidation: { status: "validated" },
+    });
+    expect(turn.usage).toBeUndefined();
+  });
+
   it("retains exact OpenAI Responses reasoning summary items separately from normalized text", async () => {
     const model = new MockLanguageModelV4({
       provider: "openai.responses",
@@ -213,6 +538,10 @@ describe("AI SDK provider", () => {
         actualProvider: "mock-provider",
         actualModel: "served-model",
       },
+      responseText: "",
+      finishReason: "tool-calls",
+      rawFinishReason: "tool_calls",
+      responseId: "response-1",
       reasoningSummary: "Inspect the repository before changing it.",
     });
     await expect(
@@ -233,6 +562,10 @@ describe("AI SDK provider", () => {
         actualProvider: "mock-provider",
         actualModel: "served-model",
       },
+      responseText: "done",
+      finishReason: "stop",
+      rawFinishReason: "stop",
+      responseId: "response-2",
     });
 
     expect(model.doGenerateCalls).toHaveLength(2);
@@ -356,12 +689,13 @@ describe("AI SDK provider", () => {
       seed: 9,
       providerOptions: { mock: { mode: "research" } },
     });
+    expect(model.doGenerateCalls[0]!.responseFormat).toBeUndefined();
   });
 
   it.each([
     { input: undefined, output: 1 },
     { input: 1, output: undefined },
-  ])("rejects missing normalized usage: %j", async ({ input, output }) => {
+  ])("marks missing normalized usage unavailable: %j", async ({ input, output }) => {
     const model = new MockLanguageModelV4({
       doGenerate: {
         content: [{ type: "text", text: "done" }],
@@ -375,13 +709,14 @@ describe("AI SDK provider", () => {
       tools: TOOL_DEFINITIONS,
     });
 
-    await expect(
-      session.respond({
-        prompt: "solve",
-        toolResults: [],
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toThrow(/token usage/i);
+    const turn = await session.respond({
+      prompt: "solve",
+      toolResults: [],
+      signal: new AbortController().signal,
+    });
+    expect(turn.usage).toBeUndefined();
+    expect(turn.usageUnavailable).toBe(true);
+    expect(turn.responseText).toBe("done");
   });
 
   it("scrubs credential values from provider failures", async () => {

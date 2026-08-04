@@ -157,6 +157,9 @@ describe("agent tools", () => {
     expect(TOOL_DEFINITIONS.find(({ name }) => name === "wait_for_activity")?.description).toBe(
       "Wait until new private evidence or Git activity is available.",
     );
+    expect(JSON.stringify(TOOL_DEFINITIONS)).not.toMatch(
+      /process review|scorecard|rubric|judge|checkpoint|consensus|merge/i,
+    );
   });
 
   it("reports Git activity without implying that a peer channel exists", async () => {

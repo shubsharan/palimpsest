@@ -144,6 +144,9 @@ export async function runAgentSession(options: {
     let turn;
     try {
       turn = await awaitWithAbort(model.respond(request), options.signal);
+      if (turn.usage === undefined) {
+        throw new Error("Adapter token usage is unavailable for an agent session response.");
+      }
       validateUsage(turn.usage);
       modelBinding = mergeResponseIdentity(modelBinding, turn.responseIdentity);
     } catch (error) {

@@ -16,7 +16,7 @@ import {
 } from "../model/contracts.js";
 import type { SandboxIdentity } from "../sandbox/contracts.js";
 import type { TreeSeal } from "../seal.js";
-import { readObservationTrace } from "../trace.js";
+import { loadObservationTrace } from "../trace.js";
 
 const DIGEST = /^[0-9a-f]{64}$/;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/;
@@ -147,13 +147,55 @@ export interface OriginOverlapAnalysis {
   readonly findings: readonly OverlapFinding[];
 }
 
-export interface RunAnalysis {
+export interface OverlapRunAnalysis {
   readonly analysisId: string;
   readonly kind: "overlap";
   readonly analyzedAt: string;
   readonly minimumWords: number;
   readonly origins: readonly OriginOverlapAnalysis[];
 }
+
+export interface AnalysisOriginStatus {
+  readonly originId: GitRepositoryId;
+  readonly status: "eligible" | "unavailable" | "not-applicable";
+  readonly reason?: string;
+}
+
+export interface PerformanceRunAnalysis {
+  readonly analysisId: string;
+  readonly kind: "performance";
+  readonly analyzedAt: string;
+  readonly graderVersion: string;
+  readonly configurationDigest: string;
+  readonly sourceDigest: string;
+  readonly detailsPath: string;
+  readonly detailsDigest: string;
+  readonly origins: readonly AnalysisOriginStatus[];
+}
+
+export interface ProcessReviewSummary {
+  readonly reviewId: string;
+  readonly providerFamily: string;
+  readonly status: "completed" | "invalid" | "provider-error";
+}
+
+export interface ProcessReviewRunAnalysis {
+  readonly analysisId: string;
+  readonly kind: "process-review";
+  readonly reviewedAt: string;
+  readonly status: "completed" | "incomplete";
+  readonly performanceAnalysisId: string;
+  readonly rubricVersion: string;
+  readonly configurationDigest: string;
+  readonly bundleDigest: string;
+  readonly protocolVersion?: string;
+  readonly resumedFromAnalysisId?: string;
+  readonly detailsPath: string;
+  readonly detailsDigest: string;
+  readonly reviews: readonly [ProcessReviewSummary, ProcessReviewSummary];
+}
+
+export type RunAnalysis = OverlapRunAnalysis | PerformanceRunAnalysis | ProcessReviewRunAnalysis;
 
 export interface SessionInfrastructureFailure {
   readonly agentId: AgentId;
@@ -259,6 +301,14 @@ function relativePath(value: unknown, name: string): string {
     decoded.split("/").some((part) => part === "" || part === "." || part === "..")
   ) {
     throw new Error(`${name} must be a safe relative path.`);
+  }
+  return decoded;
+}
+
+function pathSegment(value: unknown, name: string): string {
+  const decoded = text(value, name);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(decoded) || decoded === "." || decoded === "..") {
+    throw new Error(`${name} must be a safe path segment.`);
   }
   return decoded;
 }
@@ -817,7 +867,19 @@ function finding(value: unknown, name: string): OverlapFinding {
   };
 }
 
-function analysis(value: unknown, index: number): RunAnalysis {
+function originId(value: unknown, name: string): GitRepositoryId {
+  return value === "shared" ? "shared" : agentId(value, name);
+}
+
+function analysisDetailPath(value: unknown, analysisId: string, name: string): string {
+  const decoded = relativePath(value, name);
+  if (decoded !== `grading/${analysisId}/manifest.json`) {
+    throw new Error(`${name} must identify grading/${analysisId}/manifest.json.`);
+  }
+  return decoded;
+}
+
+function overlapAnalysis(value: unknown, index: number): OverlapRunAnalysis {
   const name = `Analysis ${String(index + 1)}`;
   const decoded = exactObject(
     value,
@@ -828,7 +890,7 @@ function analysis(value: unknown, index: number): RunAnalysis {
   if (!Array.isArray(decoded.origins) || decoded.origins.length === 0)
     throw new Error(`${name}.origins must be non-empty.`);
   return {
-    analysisId: text(decoded.analysisId, `${name}.analysisId`),
+    analysisId: pathSegment(decoded.analysisId, `${name}.analysisId`),
     kind: "overlap",
     analyzedAt: timestamp(decoded.analyzedAt, `${name}.analyzedAt`),
     minimumWords: integer(decoded.minimumWords, 8, `${name}.minimumWords`),
@@ -841,8 +903,7 @@ function analysis(value: unknown, index: number): RunAnalysis {
       if (!Array.isArray(origin.findings))
         throw new Error(`${name} origin findings must be an array.`);
       return {
-        originId:
-          origin.originId === "shared" ? "shared" : agentId(origin.originId, `${name} originId`),
+        originId: originId(origin.originId, `${name} originId`),
         scan: scan(origin.scan, `${name} origin scan`),
         findings: origin.findings.map((item, findingIndex) =>
           finding(item, `${name} finding ${String(findingIndex + 1)}`),
@@ -850,6 +911,157 @@ function analysis(value: unknown, index: number): RunAnalysis {
       };
     }),
   };
+}
+
+function analysisOriginStatus(value: unknown, name: string): AnalysisOriginStatus {
+  const decoded = optionalFields(value, ["originId", "status"], ["reason"], name);
+  if (
+    decoded.status !== "eligible" &&
+    decoded.status !== "unavailable" &&
+    decoded.status !== "not-applicable"
+  ) {
+    throw new Error(`${name}.status is invalid.`);
+  }
+  if ((decoded.status === "eligible") === (decoded.reason !== undefined)) {
+    throw new Error(`${name}.reason must exist exactly when status is not eligible.`);
+  }
+  return {
+    originId: originId(decoded.originId, `${name}.originId`),
+    status: decoded.status,
+    ...(decoded.reason === undefined ? {} : { reason: text(decoded.reason, `${name}.reason`) }),
+  };
+}
+
+function performanceAnalysis(value: unknown, index: number): PerformanceRunAnalysis {
+  const name = `Analysis ${String(index + 1)}`;
+  const decoded = exactObject(
+    value,
+    [
+      "analysisId",
+      "kind",
+      "analyzedAt",
+      "graderVersion",
+      "configurationDigest",
+      "sourceDigest",
+      "detailsPath",
+      "detailsDigest",
+      "origins",
+    ],
+    name,
+  );
+  const analysisId = pathSegment(decoded.analysisId, `${name}.analysisId`);
+  if (!Array.isArray(decoded.origins) || decoded.origins.length === 0) {
+    throw new Error(`${name}.origins must be non-empty.`);
+  }
+  return {
+    analysisId,
+    kind: "performance",
+    analyzedAt: timestamp(decoded.analyzedAt, `${name}.analyzedAt`),
+    graderVersion: text(decoded.graderVersion, `${name}.graderVersion`),
+    configurationDigest: digest(decoded.configurationDigest, `${name}.configurationDigest`),
+    sourceDigest: digest(decoded.sourceDigest, `${name}.sourceDigest`),
+    detailsPath: analysisDetailPath(decoded.detailsPath, analysisId, `${name}.detailsPath`),
+    detailsDigest: digest(decoded.detailsDigest, `${name}.detailsDigest`),
+    origins: decoded.origins.map((item, originIndex) =>
+      analysisOriginStatus(item, `${name} origin ${String(originIndex + 1)}`),
+    ),
+  };
+}
+
+function processReviewSummary(value: unknown, name: string): ProcessReviewSummary {
+  const decoded = exactObject(value, ["reviewId", "providerFamily", "status"], name);
+  if (
+    decoded.status !== "completed" &&
+    decoded.status !== "invalid" &&
+    decoded.status !== "provider-error"
+  ) {
+    throw new Error(`${name}.status is invalid.`);
+  }
+  return {
+    reviewId: pathSegment(decoded.reviewId, `${name}.reviewId`),
+    providerFamily: text(decoded.providerFamily, `${name}.providerFamily`),
+    status: decoded.status,
+  };
+}
+
+function processReviewAnalysis(value: unknown, index: number): ProcessReviewRunAnalysis {
+  const name = `Analysis ${String(index + 1)}`;
+  const input = object(value, name);
+  const packetProtocol = input.protocolVersion !== undefined;
+  const decoded = exactObject(
+    value,
+    [
+      "analysisId",
+      "kind",
+      "reviewedAt",
+      "status",
+      "performanceAnalysisId",
+      "rubricVersion",
+      "configurationDigest",
+      "bundleDigest",
+      ...(packetProtocol ? ["protocolVersion"] : []),
+      ...(input.resumedFromAnalysisId === undefined ? [] : ["resumedFromAnalysisId"]),
+      "detailsPath",
+      "detailsDigest",
+      "reviews",
+    ],
+    name,
+  );
+  const analysisId = pathSegment(decoded.analysisId, `${name}.analysisId`);
+  if (decoded.status !== "completed" && decoded.status !== "incomplete") {
+    throw new Error(`${name}.status is invalid.`);
+  }
+  if (!Array.isArray(decoded.reviews) || decoded.reviews.length !== 2) {
+    throw new Error(`${name}.reviews must contain exactly two attempts.`);
+  }
+  const reviews = decoded.reviews.map((item, reviewIndex) =>
+    processReviewSummary(item, `${name} review ${String(reviewIndex + 1)}`),
+  ) as unknown as readonly [ProcessReviewSummary, ProcessReviewSummary];
+  if (reviews[0].reviewId === reviews[1].reviewId) {
+    throw new Error(`${name}.reviews must have unique review IDs.`);
+  }
+  if (reviews[0].providerFamily === reviews[1].providerFamily) {
+    throw new Error(`${name}.reviews must use distinct provider families.`);
+  }
+  const allCompleted = reviews.every((review) => review.status === "completed");
+  if ((decoded.status === "completed") !== allCompleted) {
+    throw new Error(`${name}.status is inconsistent with its review attempts.`);
+  }
+  return {
+    analysisId,
+    kind: "process-review",
+    reviewedAt: timestamp(decoded.reviewedAt, `${name}.reviewedAt`),
+    status: decoded.status,
+    performanceAnalysisId: pathSegment(
+      decoded.performanceAnalysisId,
+      `${name}.performanceAnalysisId`,
+    ),
+    rubricVersion: text(decoded.rubricVersion, `${name}.rubricVersion`),
+    configurationDigest: digest(decoded.configurationDigest, `${name}.configurationDigest`),
+    bundleDigest: digest(decoded.bundleDigest, `${name}.bundleDigest`),
+    ...(decoded.protocolVersion === undefined
+      ? {}
+      : { protocolVersion: pathSegment(decoded.protocolVersion, `${name}.protocolVersion`) }),
+    ...(decoded.resumedFromAnalysisId === undefined
+      ? {}
+      : {
+          resumedFromAnalysisId: pathSegment(
+            decoded.resumedFromAnalysisId,
+            `${name}.resumedFromAnalysisId`,
+          ),
+        }),
+    detailsPath: analysisDetailPath(decoded.detailsPath, analysisId, `${name}.detailsPath`),
+    detailsDigest: digest(decoded.detailsDigest, `${name}.detailsDigest`),
+    reviews,
+  };
+}
+
+function analysis(value: unknown, index: number): RunAnalysis {
+  const decoded = object(value, `Analysis ${String(index + 1)}`);
+  if (decoded.kind === "overlap") return overlapAnalysis(value, index);
+  if (decoded.kind === "performance") return performanceAnalysis(value, index);
+  if (decoded.kind === "process-review") return processReviewAnalysis(value, index);
+  throw new Error(`Analysis ${String(index + 1)}.kind is unsupported.`);
 }
 
 function release(value: unknown, index: number): RunRelease {
@@ -1017,14 +1229,79 @@ function validateRelationships(record: RunRecord): void {
   ) {
     throw new Error("Frozen main commits must match the automatic evaluation batch.");
   }
-  for (const item of record.analyses) {
-    if (
-      !same(
-        item.origins.map(({ originId }) => originId),
-        origins.map(({ originId }) => originId),
-      )
-    )
-      throw new Error("Every analysis must cover frozen origins in order.");
+  const analysisIds = record.analyses.map(({ analysisId }) => analysisId);
+  if (new Set(analysisIds).size !== analysisIds.length) {
+    throw new Error("Run analysisId values must be unique.");
+  }
+  const performanceIdentities = new Set<string>();
+  const completedReviewIdentities = new Set<string>();
+  for (const [index, item] of record.analyses.entries()) {
+    if (item.kind === "overlap" || item.kind === "performance") {
+      if (
+        !same(
+          item.origins.map(({ originId }) => originId),
+          origins.map(({ originId }) => originId),
+        )
+      ) {
+        throw new Error("Every origin-scoped analysis must cover frozen origins in order.");
+      }
+    }
+    if (item.kind === "performance") {
+      const identity = [item.graderVersion, item.configurationDigest, item.sourceDigest].join("\0");
+      if (performanceIdentities.has(identity)) {
+        throw new Error("A performance analysis already exists for this source and configuration.");
+      }
+      performanceIdentities.add(identity);
+    }
+    if (item.kind === "process-review") {
+      const performance = record.analyses
+        .slice(0, index)
+        .find(
+          (candidate): candidate is PerformanceRunAnalysis =>
+            candidate.kind === "performance" && candidate.analysisId === item.performanceAnalysisId,
+        );
+      if (performance === undefined) {
+        throw new Error("A process review must reference an earlier performance analysis.");
+      }
+      if (item.resumedFromAnalysisId !== undefined) {
+        const predecessor = record.analyses
+          .slice(0, index)
+          .find(
+            (candidate): candidate is ProcessReviewRunAnalysis =>
+              candidate.kind === "process-review" &&
+              candidate.analysisId === item.resumedFromAnalysisId,
+          );
+        if (
+          predecessor === undefined ||
+          predecessor.status !== "incomplete" ||
+          predecessor.protocolVersion === undefined ||
+          item.protocolVersion === undefined ||
+          predecessor.performanceAnalysisId !== item.performanceAnalysisId ||
+          predecessor.configurationDigest !== item.configurationDigest ||
+          predecessor.rubricVersion !== item.rubricVersion ||
+          predecessor.bundleDigest !== item.bundleDigest ||
+          predecessor.protocolVersion !== item.protocolVersion
+        ) {
+          throw new Error(
+            "A resumed process review must reference an earlier compatible incomplete analysis.",
+          );
+        }
+      }
+      if (item.status === "completed") {
+        const identity = [
+          item.performanceAnalysisId,
+          item.configurationDigest,
+          item.rubricVersion,
+          item.protocolVersion ?? "legacy",
+        ].join("\0");
+        if (completedReviewIdentities.has(identity)) {
+          throw new Error(
+            "A completed process review already exists for this performance analysis, configuration, rubric, and protocol.",
+          );
+        }
+        completedReviewIdentities.add(identity);
+      }
+    }
   }
   const releases = new Map<AgentId, number>();
   for (const item of record.releases) {
@@ -1172,7 +1449,7 @@ export async function validateRunRecordTrace(runRoot: string, trace: unknown): P
   const decoded = exactObject(trace, ["path", "metadataPath"], "Run record trace");
   if (decoded.path !== "trace.jsonl" || decoded.metadataPath !== "trace.meta.json")
     throw new Error("Run record trace paths must be trace.jsonl and trace.meta.json.");
-  await readObservationTrace(join(resolve(runRoot), "trace.jsonl"));
+  await loadObservationTrace(join(resolve(runRoot), "trace.jsonl"));
 }
 
 async function serialized(record: RunRecord): Promise<string> {
@@ -1205,6 +1482,34 @@ async function replaceRunRecord(runRoot: string, record: RunRecord): Promise<voi
   }
 }
 
+async function withRunRecordAppendLock<T>(
+  runRoot: string,
+  expected: RunRecord,
+  update: (current: RunRecord) => Promise<T>,
+): Promise<T> {
+  const resolvedRunRoot = resolve(runRoot);
+  const lockPath = join(resolvedRunRoot, ".run-record-append.lock");
+  try {
+    await mkdir(lockPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("Another RunRecord append is already in progress.");
+    }
+    throw error;
+  }
+  try {
+    const current = decodeRunRecord(
+      JSON.parse(await readFile(join(resolvedRunRoot, "run.json"), "utf8")) as unknown,
+    );
+    if ((await serialized(current)) !== (await serialized(expected))) {
+      throw new Error("RunRecord changed before the append could be serialized.");
+    }
+    return await update(current);
+  } finally {
+    await rm(lockPath, { recursive: true, force: true });
+  }
+}
+
 export async function appendEvaluationBatch(
   runRoot: string,
   record: RunRecord,
@@ -1212,9 +1517,11 @@ export async function appendEvaluationBatch(
 ): Promise<RunRecord> {
   if (batch.kind !== "review")
     throw new Error("Post-publication evaluation batches must be reviews.");
-  const updated = decodeRunRecord({ ...record, evaluations: [...record.evaluations, batch] });
-  await replaceRunRecord(runRoot, updated);
-  return updated;
+  return withRunRecordAppendLock(runRoot, record, async (current) => {
+    const updated = decodeRunRecord({ ...current, evaluations: [...current.evaluations, batch] });
+    await replaceRunRecord(runRoot, updated);
+    return updated;
+  });
 }
 
 export async function appendRunAnalysis(
@@ -1222,7 +1529,9 @@ export async function appendRunAnalysis(
   record: RunRecord,
   item: RunAnalysis,
 ): Promise<RunRecord> {
-  const updated = decodeRunRecord({ ...record, analyses: [...record.analyses, item] });
-  await replaceRunRecord(runRoot, updated);
-  return updated;
+  return withRunRecordAppendLock(runRoot, record, async (current) => {
+    const updated = decodeRunRecord({ ...current, analyses: [...current.analyses, item] });
+    await replaceRunRecord(runRoot, updated);
+    return updated;
+  });
 }

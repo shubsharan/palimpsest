@@ -96,7 +96,7 @@ describe("lean research boundary", () => {
     expect(manifestSource).not.toContain("fixtures:");
   });
 
-  test("keeps current guidance on the Feature 021 scientific flow", async () => {
+  test("keeps the accepted runner boundary while selecting the current feature", async () => {
     const [proposal, quickstart, agents] = await Promise.all([
       readFile("docs/proposal.md", "utf8"),
       readFile("specs/021-lean-experiment-engine/quickstart.md", "utf8"),
@@ -108,7 +108,7 @@ describe("lean research boundary", () => {
     expect(proposal).toContain("RunRecord");
     expect(quickstart).toContain("pnpm puzzle:validate");
     expect(quickstart).toContain("--allow-spend true");
-    expect(agents).toContain("specs/021-lean-experiment-engine/plan.md");
+    expect(agents).toContain("specs/022-epistemic-process-grader/plan.md");
   });
 
   test("ignores caches and empty generated directories", async () => {

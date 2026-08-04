@@ -1,0 +1,18 @@
+schemaVersion: 1
+rubric: epistemic-process-v1
+
+models:
+  reviewer-openai:
+    provider: openai
+    model: gpt-5.6-sol
+  reviewer-anthropic:
+    provider: anthropic
+    model: claude-opus-5
+
+reviewers:
+  - profile: reviewer-openai
+    tokenLimit: 500000
+    maxOutputTokens: 8000
+  - profile: reviewer-anthropic
+    tokenLimit: 500000
+    maxOutputTokens: 8000

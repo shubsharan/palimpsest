@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "lucky-success",
+      "completed": true,
+      "outcome": { "status": "scored", "coverage": 1, "accuracy": 1 },
+      "events": [
+        {
+          "sequence": 1,
+          "atMs": 0,
+          "kind": "model.response",
+          "actorId": "actor-1",
+          "content": "Try the first mapping."
+        },
+        {
+          "sequence": 2,
+          "atMs": 10,
+          "kind": "git.changed",
+          "actorId": "actor-1",
+          "content": { "refs": ["refs/heads/main"] }
+        }
+      ],
+      "expected": { "outcomeSuccess": true, "processMayBeWeak": true }
+    },
+    {
+      "id": "strong-process-failure",
+      "completed": true,
+      "outcome": { "status": "scored", "coverage": 0.42, "accuracy": 0.61 },
+      "events": [
+        {
+          "sequence": 1,
+          "atMs": 0,
+          "kind": "model.response",
+          "actorId": "actor-1",
+          "content": "Hypothesis A predicts the second shard."
+        },
+        {
+          "sequence": 2,
+          "atMs": 20,
+          "kind": "tool.result",
+          "actorId": "actor-1",
+          "content": "The prediction fails on the second shard."
+        },
+        {
+          "sequence": 3,
+          "atMs": 30,
+          "kind": "model.response",
+          "actorId": "actor-1",
+          "content": "Reject A and test B."
+        }
+      ],
+      "expected": { "outcomeSuccess": false, "processPartialCredit": true }
+    },
+    {
+      "id": "missing-observation",
+      "completed": true,
+      "outcome": { "status": "no-output" },
+      "events": [],
+      "expected": { "unobservable": true, "zeroRating": false }
+    },
+    {
+      "id": "interrupted-attempt",
+      "completed": false,
+      "events": [
+        {
+          "sequence": 1,
+          "atMs": 0,
+          "kind": "model.response",
+          "actorId": "actor-1",
+          "content": "Partial work"
+        }
+      ],
+      "expected": { "eligible": false, "censored": true }
+    }
+  ]
+}
