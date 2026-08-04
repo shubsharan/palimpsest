@@ -8,6 +8,7 @@ import { createAiSdkModelAdapter } from "../model/ai-sdk-adapter.js";
 import type {
   AgentId,
   JsonObject,
+  JsonValue,
   ModelAdapter,
   ModelFinishReason,
   ModelResponseIdentity,
@@ -32,6 +33,8 @@ import {
   decodeReviewerOutput,
   decodeRunScorecard,
   type DimensionReview,
+  type DossierOpportunity,
+  type EvidenceDossier,
   type EvidenceBundle,
   type EvidenceItem,
   type EvidenceReference,
@@ -120,9 +123,9 @@ export interface ReviewRunFlags {
   readonly resume?: string;
 }
 
-export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v4" as const;
-export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v4" as const;
-export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v4" as const;
+export const REVIEW_PROTOCOL_VERSION = "ledger-packets-v5" as const;
+export const REVIEW_PROMPT_VERSION = "ledger-packet-prompt-v5" as const;
+export const REVIEW_OUTPUT_SCHEMA_VERSION = "ledger-packet-output-v5" as const;
 
 interface RetainedTurn {
   readonly response: string;
@@ -154,6 +157,7 @@ interface JudgeTranscript {
 interface ValidatedOriginReview {
   readonly originId: string;
   readonly output: ReviewerOutput;
+  readonly dossier: EvidenceDossier;
 }
 
 interface ValidatedJudgeReview {
@@ -243,7 +247,48 @@ interface PacketReview {
   readonly ledger: ReviewPacketLedger;
   readonly dimensions: readonly DimensionReview[];
   readonly episodes: ReviewerOutput["episodes"];
+  readonly claims: readonly ResolvedStructuredClaim[];
+  readonly opportunities: readonly DossierOpportunity[];
   readonly cautions: readonly string[];
+}
+
+export type ClaimPredicate =
+  | "commitment"
+  | "alternative"
+  | "test"
+  | "counterevidence"
+  | "revision"
+  | "transmission"
+  | "uptake"
+  | "verification"
+  | "integration"
+  | "duplication"
+  | "conflict"
+  | "repair"
+  | "tool-use"
+  | "validation"
+  | "publication"
+  | "failure"
+  | "recovery";
+
+export interface ResolvedStructuredClaim {
+  readonly claimId: string;
+  readonly opportunityId: string;
+  readonly ledger: ReviewPacketLedger;
+  readonly subjectScope:
+    | "evaluation-unit"
+    | "actor"
+    | "cross-actor"
+    | "canonical-artifact"
+    | "infrastructure";
+  readonly actorIds: readonly string[];
+  readonly predicate: ClaimPredicate;
+  readonly state: "observed" | "contradicted" | "unobservable" | "not-applicable";
+  readonly qualification: "direct" | "partial" | "ambiguous" | "missing";
+  readonly evidence: readonly EvidenceReference[];
+  readonly counterevidence: readonly EvidenceReference[];
+  readonly confidence: "low" | "medium" | "high";
+  readonly missingReason: string;
 }
 
 export interface PacketDimensionOutput {
@@ -256,15 +301,26 @@ export interface PacketDimensionOutput {
     | "rated-4"
     | "unobservable"
     | "not-applicable";
-  readonly rationale: string;
+  readonly claimIds: readonly string[];
+  readonly confidence: "low" | "medium" | "high";
+}
+
+export interface PacketStructuredClaimOutput {
+  readonly claimId: string;
+  readonly opportunityId: string;
+  readonly subjectScope: ResolvedStructuredClaim["subjectScope"];
+  readonly actorIds: readonly string[];
+  readonly predicate: ClaimPredicate;
+  readonly state: ResolvedStructuredClaim["state"];
+  readonly qualification: ResolvedStructuredClaim["qualification"];
   readonly evidenceIds: readonly string[];
   readonly counterevidenceIds: readonly string[];
-  readonly confidence: "low" | "medium" | "high";
+  readonly confidence: ResolvedStructuredClaim["confidence"];
+  readonly missingReason: string;
 }
 
 export interface PacketEpisodeOutput {
   readonly episodeId: string;
-  readonly summary: string;
   readonly status:
     | "supported-revision"
     | "asserted-only"
@@ -284,6 +340,7 @@ export interface PacketEpisodeOutput {
 
 export interface PacketReviewerOutput {
   readonly schemaVersion: 1;
+  readonly claims: readonly PacketStructuredClaimOutput[];
   readonly dimensions: readonly PacketDimensionOutput[];
   readonly episodes: readonly PacketEpisodeOutput[];
   readonly cautions: readonly string[];
@@ -564,7 +621,7 @@ function decodePacketReviewerOutput(
   value: unknown,
   packet: ReviewPacket,
 ): DecodedPacketReviewerOutput {
-  const required = ["schemaVersion", "dimensions", "episodes", "cautions"];
+  const required = ["schemaVersion", "claims", "dimensions", "episodes", "cautions"];
   const decoded = exact(value, required, "Packet reviewer output");
   if (decoded.schemaVersion !== 1) throw new Error("Packet reviewer schemaVersion must be 1.");
   const references = new Map(
@@ -583,6 +640,134 @@ function decodePacketReviewerOutput(
     if (new Set(citations).size !== citations.length) throw new Error(`${name} must be unique.`);
     return resolved;
   };
+  if (!Array.isArray(decoded.claims)) throw new Error("Packet reviewer claims must be an array.");
+  if (decoded.claims.length > 16)
+    throw new Error("Packet reviewer claims must contain at most 16 entries.");
+  const opportunityIds = new Set(packet.opportunities.map(({ opportunityId }) => opportunityId));
+  const predicates = new Set<ClaimPredicate>([
+    "commitment",
+    "alternative",
+    "test",
+    "counterevidence",
+    "revision",
+    "transmission",
+    "uptake",
+    "verification",
+    "integration",
+    "duplication",
+    "conflict",
+    "repair",
+    "tool-use",
+    "validation",
+    "publication",
+    "failure",
+    "recovery",
+  ]);
+  const claims = decoded.claims.map((claim, index): ResolvedStructuredClaim => {
+    const name = `Packet reviewer claim ${String(index + 1)}`;
+    const item = exact(
+      claim,
+      [
+        "claimId",
+        "opportunityId",
+        "subjectScope",
+        "actorIds",
+        "predicate",
+        "state",
+        "qualification",
+        "evidenceIds",
+        "counterevidenceIds",
+        "confidence",
+        "missingReason",
+      ],
+      name,
+    );
+    const claimId = nonEmptyText(item.claimId, `${name}.claimId`);
+    if (claimId !== `claim-${String(index + 1).padStart(3, "0")}`) {
+      throw new Error(`${name}.claimId must use ordered claim IDs.`);
+    }
+    const opportunityId = nonEmptyText(item.opportunityId, `${name}.opportunityId`);
+    if (!opportunityIds.has(opportunityId))
+      throw new Error(`${name} references an unknown opportunity.`);
+    if (
+      item.subjectScope !== "evaluation-unit" &&
+      item.subjectScope !== "actor" &&
+      item.subjectScope !== "cross-actor" &&
+      item.subjectScope !== "canonical-artifact" &&
+      item.subjectScope !== "infrastructure"
+    ) {
+      throw new Error(`${name}.subjectScope is invalid.`);
+    }
+    if (!Array.isArray(item.actorIds)) throw new Error(`${name}.actorIds must be an array.`);
+    const actorIds = item.actorIds.map((actorId, actorIndex) =>
+      nonEmptyText(actorId, `${name}.actorIds[${String(actorIndex)}]`),
+    );
+    if (
+      new Set(actorIds).size !== actorIds.length ||
+      actorIds.some((actorId) => !packet.evaluationUnit.actorIds.includes(actorId))
+    ) {
+      throw new Error(`${name}.actorIds must be unique members of the evaluation unit.`);
+    }
+    if (
+      (item.subjectScope === "actor" && actorIds.length !== 1) ||
+      (item.subjectScope === "cross-actor" && actorIds.length < 2) ||
+      (item.subjectScope === "evaluation-unit" &&
+        canonicalJson(actorIds) !== canonicalJson(packet.evaluationUnit.actorIds)) ||
+      ((item.subjectScope === "canonical-artifact" || item.subjectScope === "infrastructure") &&
+        actorIds.length !== 0)
+    ) {
+      throw new Error(`${name}.actorIds is inconsistent with subjectScope.`);
+    }
+    if (!predicates.has(item.predicate as ClaimPredicate))
+      throw new Error(`${name}.predicate is invalid.`);
+    if (
+      item.state !== "observed" &&
+      item.state !== "contradicted" &&
+      item.state !== "unobservable" &&
+      item.state !== "not-applicable"
+    )
+      throw new Error(`${name}.state is invalid.`);
+    if (
+      item.qualification !== "direct" &&
+      item.qualification !== "partial" &&
+      item.qualification !== "ambiguous" &&
+      item.qualification !== "missing"
+    )
+      throw new Error(`${name}.qualification is invalid.`);
+    if (item.confidence !== "low" && item.confidence !== "medium" && item.confidence !== "high")
+      throw new Error(`${name}.confidence is invalid.`);
+    const missingReason = typeof item.missingReason === "string" ? item.missingReason : "";
+    if (missingReason !== "") validateObservableText(missingReason, `${name}.missingReason`);
+    if (
+      (item.state === "unobservable" || item.qualification === "missing") &&
+      missingReason.trim() === ""
+    ) {
+      throw new Error(`${name}.missingReason is required for missing or unobservable claims.`);
+    }
+    const evidence = resolveCitations(item.evidenceIds, `${name}.evidenceIds`);
+    const counterevidence = resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`);
+    if (evidence.length > 6 || counterevidence.length > 6) {
+      throw new Error(`${name} citation fields must contain at most six IDs.`);
+    }
+    if ((item.state === "observed" || item.state === "contradicted") && evidence.length === 0) {
+      throw new Error(`${name} observed or contradicted claims require supporting evidence.`);
+    }
+    return {
+      claimId,
+      opportunityId,
+      ledger: packet.ledger,
+      subjectScope: item.subjectScope,
+      actorIds,
+      predicate: item.predicate as ClaimPredicate,
+      state: item.state,
+      qualification: item.qualification,
+      evidence,
+      counterevidence,
+      confidence: item.confidence,
+      missingReason,
+    };
+  });
+  const claimById = new Map(claims.map((claim) => [claim.claimId, claim] as const));
   const rubricDimensions = EPISTEMIC_PROCESS_RUBRIC.dimensions.filter(
     ({ ledger }) => ledger === packet.ledger,
   );
@@ -603,29 +788,56 @@ function decodePacketReviewerOutput(
   const resolvedDimensions = rubricDimensions.map(({ dimensionId, ledger }, index) => {
     const name = `Packet reviewer dimension ${String(index + 1)}`;
     const candidate = object(dimensionValues[index], name);
-    const item = exact(
-      candidate,
-      ["dimensionId", "assessment", "rationale", "evidenceIds", "counterevidenceIds", "confidence"],
-      name,
-    );
+    const item = exact(candidate, ["dimensionId", "assessment", "claimIds", "confidence"], name);
     const assessment = nonEmptyText(item.assessment, `${name}.assessment`);
     const ratingMatch = /^rated-([0-4])$/.exec(assessment);
     const state = ratingMatch === null ? assessment : "rated";
     const rating = ratingMatch === null ? undefined : Number(ratingMatch[1]);
+    if (!Array.isArray(item.claimIds)) throw new Error(`${name}.claimIds must be an array.`);
+    if (new Set(item.claimIds).size !== item.claimIds.length) {
+      throw new Error(`${name}.claimIds must be unique.`);
+    }
+    const dimensionClaims = item.claimIds.map((claimId, claimIndex) => {
+      const id = nonEmptyText(claimId, `${name}.claimIds[${String(claimIndex)}]`);
+      const claim = claimById.get(id);
+      if (claim === undefined) throw new Error(`${name} references an unknown claim.`);
+      return claim;
+    });
+    if (state === "rated" && dimensionClaims.length === 0) {
+      throw new Error(`${name} rated assessments require at least one structured claim.`);
+    }
+    const predicatesText = [...new Set(dimensionClaims.map(({ predicate }) => predicate))].join(
+      ", ",
+    );
+    const rationale =
+      state === "rated"
+        ? `Rating ${String(rating)} is supported by ${String(dimensionClaims.length)} structured claim(s): ${predicatesText}.`
+        : `The structured dossier marks this dimension ${state}.`;
     const resolved = decodeDimensionReview(
       {
         dimensionId,
         ledger,
         state,
         ...(rating === undefined ? {} : { rating }),
-        rationale: item.rationale,
-        evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
-        counterevidence: resolveCitations(item.counterevidenceIds, `${name}.counterevidenceIds`),
+        rationale,
+        evidence: [
+          ...new Map(
+            dimensionClaims
+              .flatMap((claim) => claim.evidence)
+              .map((reference) => [referenceLocator(reference), reference]),
+          ).values(),
+        ],
+        counterevidence: [
+          ...new Map(
+            dimensionClaims
+              .flatMap((claim) => claim.counterevidence)
+              .map((reference) => [referenceLocator(reference), reference]),
+          ).values(),
+        ],
         confidence: item.confidence,
       },
       name,
     );
-    validateObservableText(resolved.rationale, `${name}.rationale`);
     return resolved;
   });
   const episodesValue = decoded.episodes;
@@ -639,7 +851,6 @@ function decodePacketReviewerOutput(
       episode,
       [
         "episodeId",
-        "summary",
         "status",
         "evidenceIds",
         "commitmentIds",
@@ -656,7 +867,7 @@ function decodePacketReviewerOutput(
     const resolved = decodeEpistemicEpisode(
       {
         episodeId: item.episodeId,
-        summary: item.summary,
+        summary: `Episode ${String(index + 1)} records ${String((item.evidenceIds as unknown[]).length)} cited observation(s) with status ${String(item.status)}.`,
         status: item.status,
         evidence: resolveCitations(item.evidenceIds, `${name}.evidenceIds`),
         commitment: resolveCitations(item.commitmentIds, `${name}.commitmentIds`),
@@ -686,8 +897,54 @@ function decodePacketReviewerOutput(
       ledger: packet.ledger,
       dimensions: resolvedDimensions,
       episodes,
+      claims,
+      opportunities: packet.opportunities.map((opportunity) => ({
+        opportunityId: `${packet.ledger}-${opportunity.opportunityId}`,
+        kind: opportunity.kind,
+        atMs: opportunity.atMs,
+        actorIds: opportunity.actorIds,
+        evidence: resolveCitations(
+          opportunity.citationIds,
+          `Opportunity ${opportunity.opportunityId}.citationIds`,
+        ),
+      })),
       cautions,
     },
+  };
+}
+
+function assembleDossier(
+  packet: ReviewPacket,
+  reviews: readonly PacketReview[],
+  episodes: ReviewerOutput["episodes"],
+): EvidenceDossier {
+  const claims = reviews
+    .flatMap(({ claims }) => claims)
+    .map((claim) => ({
+      ...claim,
+      claimId: `${claim.ledger}-${claim.claimId}`,
+      opportunityId: `${claim.ledger}-${claim.opportunityId}`,
+    }));
+  const chain = (claim: (typeof claims)[number], prefix: "influence" | "execution") => ({
+    chainId: `${prefix}-${claim.claimId}-${claim.opportunityId}`,
+    claimIds: [claim.claimId],
+    state: claim.state,
+    evidence: claim.evidence,
+    counterevidence: claim.counterevidence,
+    confidence: claim.confidence,
+    missingReason: claim.missingReason,
+  });
+  return {
+    evaluationUnit: packet.evaluationUnit,
+    opportunities: reviews.flatMap(({ opportunities }) => opportunities),
+    claims,
+    epistemicEpisodes: episodes,
+    influenceChains: claims
+      .filter(({ ledger }) => ledger === "social")
+      .map((claim) => chain(claim, "influence")),
+    executionChains: claims
+      .filter(({ ledger }) => ledger === "instrumental")
+      .map((claim) => chain(claim, "execution")),
   };
 }
 
@@ -887,18 +1144,22 @@ function packetPrompt(packet: ReviewPacket): string {
     ),
   };
   return [
-    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V4",
+    "PALIMPSEST_PROCESS_REVIEW_LEDGER_PACKET_V5",
     `Ledger: ${packet.ledger}`,
     `Anonymous canonical origin ordinal: ${String(packet.origin.ordinal)}`,
+    `Evaluation unit: ${packet.evaluationUnit.kind}; anonymized actors: ${packet.evaluationUnit.actorIds.join(", ")}`,
+    packet.evaluationUnit.kind === "shared-team"
+      ? "Assess the complete shared-team trajectory. Actor-specific behavior is evidence about contribution within the team and must not replace the team as the evaluation unit."
+      : "Assess only this isolated canonical-origin trajectory.",
     "Judge only observable retained behavior. Never infer private beliefs, intentions, hidden reasoning, outcome, success, score, model identity, or provider identity.",
     "Do not assess artifact quality with score, accuracy, coverage, correctness, success, or failure language. You may state only that outcome evidence is redacted or unavailable.",
-    "Return one concise evidence-bounded assessment for every rubric dimension in the exact order shown. Use assessment rated-0 through rated-4, unobservable, or not-applicable. Preserve missingness, ambiguity, and counterevidence.",
+    "Return bounded structured claims tied to exact opportunity IDs, then one assessment for every rubric dimension in exact order using only claimIds from those claims. Use assessment rated-0 through rated-4, unobservable, or not-applicable. Preserve missingness, ambiguity, and counterevidence.",
     packet.ledger === "epistemic"
       ? "Also reconstruct at most eight highest-value observable episodes. supported-revision and asserted-only require at least one revisionId; omit an episode when that status lacks a revision citation. Uptake requires an earlier cited contribution by a different actor; integration requires cited behavior at or after a cited uptake. Leave unsupported transmission, uptake, and integration stages empty."
       : "Return an empty episodes array; this packet owns only its ledger dimensions and cautions.",
     "The immutable request already binds packet, bundle, rubric, and ledger identity. Do not echo those infrastructure fields.",
     "Every citation field must contain exact short citationId values from this packet. Never return reference objects, evidenceId values, or partial IDs.",
-    "Use one concise sentence per rationale, at most six citation IDs per field, and at most four concise cautions. Begin final JSON early and reserve enough output budget to complete it.",
+    "Return at most sixteen claims, at most six citation IDs per claim field, and at most four concise cautions. Begin final JSON early and reserve enough output budget to complete it.",
     `Rubric: ${canonicalJson(rubric)}`,
     `Packet: ${canonicalJson(packet)}`,
   ].join("\n\n");
@@ -1166,7 +1427,19 @@ async function runJudge(
           }),
           surface,
         );
-        reviewedOrigins.push({ originId, output });
+        reviewedOrigins.push({
+          originId,
+          output,
+          dossier: assembleDossier(
+            packets[0],
+            [
+              epistemic,
+              ...(surface.communicationMode === "isolated" ? [] : [reviews.get("social")!]),
+              instrumental,
+            ],
+            epistemic.episodes,
+          ),
+        });
       } catch (error) {
         errors.push(`${originId}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -1331,10 +1604,146 @@ function disagreement(left: DimensionReview, right: DimensionReview): JsonObject
     return undefined;
   }
   return {
-    dimensionId: left.dimensionId,
+    kind: left.state !== right.state ? "observability" : "rating-distance",
+    subjectId: left.dimensionId,
     judge1: left.state === "rated" ? left.rating : left.state,
     judge2: right.state === "rated" ? right.rating : right.state,
+    material:
+      left.state !== right.state ||
+      (left.state === "rated" &&
+        right.state === "rated" &&
+        Math.abs(left.rating - right.rating) >= 2),
   };
+}
+
+function dossierDisagreements(
+  left: ValidatedOriginReview,
+  right: ValidatedOriginReview,
+): readonly JsonObject[] {
+  const result: JsonObject[] = [];
+  const leftEpisodes = left.dossier.epistemicEpisodes.map(({ status }) => status);
+  const rightEpisodes = right.dossier.epistemicEpisodes.map(({ status }) => status);
+  if (canonicalJson(leftEpisodes) !== canonicalJson(rightEpisodes)) {
+    result.push({
+      kind: "episode-selection",
+      subjectId: "epistemic-episodes",
+      judge1: leftEpisodes,
+      judge2: rightEpisodes,
+      material: true,
+    });
+  }
+  const stageCounts = (review: ValidatedOriginReview) => ({
+    transmission: review.output.episodes.reduce(
+      (total, episode) => total + episode.transmission.length,
+      0,
+    ),
+    uptake: review.output.episodes.reduce((total, episode) => total + episode.uptake.length, 0),
+    integration: review.output.episodes.reduce(
+      (total, episode) => total + episode.integration.length,
+      0,
+    ),
+  });
+  const leftStages = stageCounts(left);
+  const rightStages = stageCounts(right);
+  if (canonicalJson(leftStages) !== canonicalJson(rightStages)) {
+    result.push({
+      kind: "stage-linkage",
+      subjectId: "cross-actor-stages",
+      judge1: leftStages,
+      judge2: rightStages,
+      material: true,
+    });
+  }
+  const claimStates = (review: ValidatedOriginReview) =>
+    Object.fromEntries(
+      review.dossier.claims.map((claim) => [
+        `${claim.opportunityId}:${claim.predicate}`,
+        claim.state,
+      ]),
+    );
+  const leftClaims = claimStates(left);
+  const rightClaims = claimStates(right);
+  const claimKeys = [...new Set([...Object.keys(leftClaims), ...Object.keys(rightClaims)])].sort();
+  for (const key of claimKeys) {
+    const leftState = leftClaims[key] ?? "not-selected";
+    const rightState = rightClaims[key] ?? "not-selected";
+    if (leftState === rightState) continue;
+    result.push({
+      kind: "claim-interpretation",
+      subjectId: key,
+      judge1: leftState,
+      judge2: rightState,
+      material: leftState === "contradicted" || rightState === "contradicted",
+    });
+  }
+  return result;
+}
+
+function failureAccount(
+  record: RunRecord,
+  originIndex: number,
+  reviews: readonly [ValidatedOriginReview, ValidatedOriginReview],
+): JsonObject {
+  const origin = record.topology.origins[originIndex]!;
+  const evaluation = record.evaluations.at(-1)?.results[originIndex];
+  const claims = reviews.flatMap(({ dossier }) => dossier.claims);
+  const integrationClaims = claims.filter(({ predicate }) => predicate === "integration");
+  const behavioralClaims = claims.filter(({ predicate }) => predicate === "failure");
+  const layer = (
+    name: string,
+    state: "observed" | "not-observed" | "unobservable",
+    explanation: string,
+    evidence: readonly EvidenceReference[] = [],
+  ): JsonObject => ({
+    layer: name,
+    state,
+    evidence: evidence as unknown as JsonValue,
+    explanation,
+  });
+  const integrationState = integrationClaims.some(({ state }) => state === "contradicted")
+    ? "observed"
+    : integrationClaims.some(({ state }) => state === "observed")
+      ? "not-observed"
+      : "unobservable";
+  const behavioralState = behavioralClaims.some(({ state }) => state === "observed")
+    ? "observed"
+    : behavioralClaims.length > 0
+      ? "not-observed"
+      : "unobservable";
+  const layers = [
+    layer(
+      "infrastructure",
+      record.status === "infrastructure-error" ? "observed" : "not-observed",
+      "The frozen run status determines infrastructure failure without reviewer inference.",
+    ),
+    layer(
+      "publication",
+      origin.mainCommit === null || evaluation?.status !== "scored" ? "observed" : "not-observed",
+      "The frozen canonical main and evaluation status determine publication failure.",
+    ),
+    layer(
+      "integration",
+      integrationState,
+      "Independent structured claims describe only observable integration behavior.",
+      integrationClaims.flatMap(({ evidence }) => evidence),
+    ),
+    layer(
+      "behavioral",
+      behavioralState,
+      "Independent structured claims describe observable failure behavior without assigning model causation.",
+      behavioralClaims.flatMap(({ evidence }) => evidence),
+    ),
+  ];
+  if (layers.some((item) => item.state === "unobservable")) {
+    layers.push(
+      layer(
+        "undetermined",
+        "observed",
+        "Retained evidence cannot uniquely separate all candidate failure layers.",
+      ),
+    );
+  }
+  return { causalAttribution: "prohibited", layers };
 }
 
 function buildScorecards(
@@ -1342,6 +1751,8 @@ function buildScorecards(
   reviews: readonly [ValidatedJudgeReview, ValidatedJudgeReview],
   performanceMetrics: PerformanceMetrics,
   codedMeasures: readonly (readonly QuantitativeMeasure[])[],
+  performanceAnalysisId: string,
+  bundle: EvidenceBundle,
 ): readonly RunScorecard[] {
   return record.topology.origins.map((origin, originIndex) => {
     const originReviews = [
@@ -1353,6 +1764,7 @@ function buildScorecards(
         disagreement(dimension, originReviews[1].output.dimensions[index]!),
       )
       .filter((item): item is JsonObject => item !== undefined);
+    differences.push(...dossierDisagreements(originReviews[0], originReviews[1]));
     const evaluationHistory = record.evaluations.map((batch) => ({
       evaluationId: batch.evaluationId,
       kind: batch.kind,
@@ -1364,8 +1776,15 @@ function buildScorecards(
       ...deterministic.filter(({ ledger }) => ledger !== "outcome"),
       ...codedMeasures[originIndex]!,
     ];
+    const fixture = record.configuration.run.fixture;
+    const models = record.configuration.models.map(({ agentId, binding }) => ({
+      agentId,
+      requestedModel: binding.requestedModel,
+      ...(binding.actualProvider === undefined ? {} : { actualProvider: binding.actualProvider }),
+      ...(binding.actualModel === undefined ? {} : { actualModel: binding.actualModel }),
+    }));
     return decodeRunScorecard({
-      schemaVersion: 1,
+      schemaVersion: 2,
       runId: record.runId,
       canonicalOrigins: [{ originId: origin.originId, status: "eligible" }],
       outcome: {
@@ -1375,6 +1794,37 @@ function buildScorecards(
       epistemic: dimensionsByLedger(originReviews, "epistemic", processMeasures),
       social: dimensionsByLedger(originReviews, "social", processMeasures),
       instrumental: dimensionsByLedger(originReviews, "instrumental", processMeasures),
+      dossier: {
+        reviewers: originReviews.map(({ dossier }, index) => ({
+          judge: index + 1,
+          evidence: dossier,
+        })),
+      },
+      failureAccount: failureAccount(record, originIndex, originReviews),
+      provenance: {
+        fixture,
+        treatments: {
+          capabilities: record.configuration.run.capabilities,
+          schedule: record.configuration.run.schedule,
+          limits: record.configuration.run.limits,
+        },
+        experimentalUnit: record.topology.communicationMode === "shared" ? "team" : "origin",
+        models,
+        runRecordDigest: contentDigest(record),
+        performanceAnalysisId,
+        reviewProtocol: REVIEW_PROTOCOL_VERSION,
+        bundleDigest: bundle.contentDigest,
+        checkerEnabled: record.configuration.run.capabilities.checker !== false,
+        omissionCount: bundle.omissions.length,
+        truncationCount: bundle.items.filter(({ availability }) => availability !== "full").length,
+        confounds: [
+          "Live provider serving and scheduling interleavings are not reproducible.",
+          "Automated reviewer interpretations are advisory and not construct-validated.",
+          ...(record.configuration.run.capabilities.checker === false
+            ? ["Checker feedback was disabled for this run."]
+            : []),
+        ],
+      },
       disagreements: differences,
       eligibility: { status: "completed" },
       limitations: [
@@ -1713,7 +2163,8 @@ export async function reviewRun(
         analysis.status === "completed" &&
         analysis.performanceAnalysisId === performance.analysisId &&
         analysis.configurationDigest === configurationDigest &&
-        analysis.rubricVersion === config.rubric,
+        analysis.rubricVersion === config.rubric &&
+        analysis.protocolVersion === REVIEW_PROTOCOL_VERSION,
     )
   ) {
     throw new Error(
@@ -1854,7 +2305,8 @@ export async function reviewRun(
           analysis.status === "completed" &&
           analysis.performanceAnalysisId === performance.analysisId &&
           analysis.configurationDigest === configurationDigest &&
-          analysis.rubricVersion === config.rubric,
+          analysis.rubricVersion === config.rubric &&
+          analysis.protocolVersion === REVIEW_PROTOCOL_VERSION,
       )
     ) {
       throw new Error("A completed process review was published concurrently.");
@@ -1882,6 +2334,8 @@ export async function reviewRun(
       [firstReview, secondReview],
       exactPerformance.metrics,
       codedMeasures,
+      performance.analysisId,
+      bundle,
     );
     files.push({ path: "scorecard.json", role: "run-scorecard", content: scorecards });
   }
@@ -1922,7 +2376,8 @@ export async function reviewRun(
       item.status === "completed" &&
       item.performanceAnalysisId === performance.analysisId &&
       item.configurationDigest === configurationDigest &&
-      item.rubricVersion === config.rubric,
+      item.rubricVersion === config.rubric &&
+      item.protocolVersion === REVIEW_PROTOCOL_VERSION,
   );
   if (duplicate !== undefined) {
     throw new Error(`Process review ${duplicate.analysisId} was published concurrently.`);

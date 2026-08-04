@@ -54,7 +54,7 @@ reviewers:
     maxOutputTokens: 8000
 ```
 
-The review command validates the completed run, exact performance analysis, source digest, deterministic ledger packets, the 256 KiB packet limit, complete routing/omission accounting, leakage rules, reviewer distinction, credentials, cumulative token limits, and per-call output limits before provider construction.
+The review command validates the completed run, exact performance analysis, explicit evaluation units, deterministic opportunity registries, 128 KiB ledger packets, routing/omission accounting, leakage rules, reviewer distinction, credentials, cumulative token limits, and per-call output limits before provider construction.
 
 ## 4. Run the Explicitly Authorized Review
 
@@ -68,7 +68,7 @@ pnpm puzzle:review \
 
 The literal authorization permits paid calls for only the two declared reviewers; it is not a monetary billing cap. For each shared origin, the system makes one epistemic, social, and instrumental call per reviewer: six calls total. For each isolated origin it skips social review, deterministically marks those dimensions `not-applicable`, and makes four calls. Each reviewer proceeds in epistemic/social/instrumental order, while the reviewers remain independent and may run concurrently.
 
-Every valid response or failure is checkpointed immediately. Protocol v4 provider JSON contains only `schemaVersion`, ordered `dimensions`, required `episodes`, and `cautions`; the immutable call request supplies packet, bundle, rubric, digest, and ledger identity. Each dimension uses one shared shape with a scalar `assessment` value (`rated-0` through `rated-4`, `unobservable`, or `not-applicable`), which deterministically decodes to the unchanged public state and rated-only numeric field. Citation fields remain compact `cNNN` string arrays; token syntax is schema-checked and exact dimension order and packet membership are checked after parsing. Social and instrumental packets must return `episodes: []`. Provider-reported input and output usage accumulates independently per reviewer. A response that crosses `tokenLimit` is retained, the attempt becomes incomplete, and no further call or automatic retry occurs for that reviewer. Every individual response is capped by `maxOutputTokens`.
+Every valid response or failure is checkpointed immediately. Protocol v5 returns bounded structured claims tied to exact opportunity and citation IDs, advisory dimension assessments that cite those claims, epistemic episodes, and cautions. Public prose is rendered deterministically. The completed scorecard v2 leads with independent evidence dossiers, typed disagreement, layered failure accounting, and post-freeze provenance; ratings remain separate and unaveraged.
 
 The system assembles each review deterministically and makes no final model integration call. It suppresses uptake without an earlier transmission from a different actor, then suppresses integration before the latest retained uptake or all integration when no valid uptake remains. It omits a whole `supported-revision` or `asserted-only` episode if no revision citation supports that status. It never invents citations: the raw response remains unchanged and the assembled review receives labeled cautions naming each normalized stage/count and omitted episode ID/status. Both completed process judgments freeze before the existing outcome is linked.
 
@@ -91,7 +91,7 @@ pnpm puzzle:review \
   --allow-spend true
 ```
 
-Resume validates the predecessor and every source, configuration, rubric, reviewer, packet, prompt, schema, and actual-identity key. It reuses only validated completed packets, counts their usage against the reviewer limit, calls only missing or failed packets once, and appends a new analysis with `resumedFromAnalysisId`. It does not rewrite the predecessor or auto-discover an attempt. Only `ledger-packets-v4` artifacts with matching `ledger-packet-prompt-v4` and `ledger-packet-output-v4` identities are eligible; window-protocol and packet-protocol v1-v3 analyses remain readable but cannot resume.
+Resume validates the predecessor and every source, configuration, rubric, reviewer, packet, opportunity, prompt, schema, and actual-identity key. It reuses only validated completed packets, counts their usage against the reviewer limit, calls only missing or failed packets once, and appends a new analysis with `resumedFromAnalysisId`. It does not rewrite the predecessor or auto-discover an attempt. Only exact protocol-v5 artifacts are eligible; all earlier protocols remain readable but cannot resume.
 
 ## 5. Produce a Cross-Run Report
 
@@ -102,11 +102,17 @@ pnpm puzzle:report \
   --output artifacts/reports/<report-id>
 ```
 
-Use descriptive mode for exploratory collections. Use matched-contrast mode only when the report configuration declares the treatment and all required non-treatment input fields. Inspect included and excluded runs, missingness, per-dimension distributions, reviewer agreement, clustering, uncertainty, and process-outcome associations before making claims.
+Use descriptive mode for exploratory collections. Use matched-contrast mode only when the report configuration declares the treatment and all required non-treatment input fields. Inspect mechanism prevalence, opportunity-conditioned rates, provenance, layered failure accounts, typed disagreement, advisory rating distributions, clustering, uncertainty, and process-outcome associations before making claims.
 
-## 6. Calibrate Before Findings-Bearing Use
+## 6. Run Automated Structural Calibration
 
-Run the rubric against the frozen calibration corpus, then audit a stratified sample without model or outcome identity. Confirm citation resolvability, leakage resistance, observability decisions, and per-dimension reviewer agreement. If anchors change, issue a new rubric version and re-review; never silently reinterpret an existing analysis.
+```bash
+pnpm puzzle:calibrate \
+  --artifacts-root artifacts/experiments/<experiment> \
+  --output artifacts/calibration/<calibration-id>
+```
+
+Inspect citation integrity, explicit unit scope, stage consistency, observability, and reviewer stability. This provider-free report does not establish construct validity. Fresh reviews used to populate it remain separately spend-authorized.
 
 ## Expected Boundaries
 

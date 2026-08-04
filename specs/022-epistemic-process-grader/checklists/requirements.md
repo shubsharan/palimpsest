@@ -35,7 +35,7 @@
 
 - Validated against the Palimpsest constitution before planning.
 - The specification contains no unresolved clarification markers.
-- Implementation evidence: `pnpm verify` passes formatting, lint, typecheck, 118 TypeScript unit tests, 142 TypeScript contract tests, 68 Python unit tests, and 5 Python contract tests.
+- Implementation evidence: `pnpm verify` passes formatting, lint, typecheck, 161 TypeScript unit tests, 143 TypeScript contract tests, 68 Python unit tests, and 5 Python contract tests.
 - Focused grading evidence covers strict contracts, outcome-blind evidence, atomic publication, independent fake reviewers, episode/collaboration interpretation, matched reporting, and an actual provider-free `puzzle:grade` CLI run on synthetic artifacts.
 - Prompt, tool, Git activity, trace, run-record, and report regressions confirm no prescribed agent workflow, no best-origin selection, read-only frozen evidence, explicit missingness, separate reviewer judgments, and no composite score.
 - Exact grading config, distinct provider families, reviewer token limits, bundle leakage, citation resolution, and literal spend authorization are validated before adapter construction; no provider call or spend was performed.

@@ -89,21 +89,45 @@ describe("AI SDK provider", () => {
     const schema = packetReviewerOutputSchema();
     const responseValue = {
       schemaVersion: 1,
+      claims: [
+        {
+          claimId: "claim-001",
+          opportunityId: "opp-0001",
+          subjectScope: "evaluation-unit",
+          actorIds: ["actor-1"],
+          predicate: "commitment",
+          state: "observed",
+          qualification: "direct",
+          evidenceIds: ["c001"],
+          counterevidenceIds: [],
+          confidence: "high",
+          missingReason: "",
+        },
+        {
+          claimId: "claim-002",
+          opportunityId: "opp-0002",
+          subjectScope: "evaluation-unit",
+          actorIds: ["actor-1"],
+          predicate: "revision",
+          state: "unobservable",
+          qualification: "missing",
+          evidenceIds: [],
+          counterevidenceIds: [],
+          confidence: "medium",
+          missingReason: "No retained revision opportunity was observable.",
+        },
+      ],
       dimensions: [
         {
           dimensionId: "epistemic.framing",
           assessment: "rated-3",
-          rationale: "The retained evidence supports a strong observable frame.",
-          evidenceIds: ["c001"],
-          counterevidenceIds: [],
+          claimIds: ["claim-001"],
           confidence: "high",
         },
         {
           dimensionId: "epistemic.revision",
           assessment: "unobservable",
-          rationale: "No retained revision opportunity was observable.",
-          evidenceIds: [],
-          counterevidenceIds: [],
+          claimIds: ["claim-002"],
           confidence: "medium",
         },
       ],
@@ -151,7 +175,7 @@ describe("AI SDK provider", () => {
       prompt: "Review the retained evidence.",
       toolResults: [],
       signal: new AbortController().signal,
-      structuredOutput: { name: "palimpsest_epistemic_packet_v4", schema },
+      structuredOutput: { name: "palimpsest_epistemic_packet_v5", schema },
     });
 
     const body = requestBody as Record<string, unknown>;
@@ -163,6 +187,7 @@ describe("AI SDK provider", () => {
     const sentSchema = format.schema as Record<string, unknown>;
     expect(Object.keys(sentSchema.properties as Record<string, unknown>)).toEqual([
       "schemaVersion",
+      "claims",
       "dimensions",
       "episodes",
       "cautions",

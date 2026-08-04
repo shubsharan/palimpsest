@@ -12,9 +12,9 @@ Large payloads are represented by bounded excerpts and explicit omission metadat
 
 `puzzle:review` requires the exact performance analysis, one strict grading configuration, two reviewer profiles from different official provider families, a cumulative token limit and per-call output limit for each reviewer, and literal `--allow-spend true`. Validation and leakage checks complete before provider construction. Provider-reported input and output tokens accumulate independently for each reviewer. A response that crosses the cumulative limit is still retained, but the review becomes incomplete and makes no further call. The authorization permits provider access; it is not a monetary billing cap.
 
-Each reviewer receives the same deterministic evidence windows and versioned rubric. Model and provider identity, experiment labels that reveal identity, oracle material, final evaluations, reconstruction scores, success labels, and prior reviews are absent. Raw window and integration responses are retained separately from validated reviews. Every rating and episode transition must resolve to allowed evidence. Invalid citations, malformed output, provider failure, confidence, counterevidence, and disagreement remain explicit; there is no automatic retry, consensus, or averaging.
+Each reviewer receives the same three deterministic ledger packets and versioned rubric. Protocol v5 explicitly declares the shared team or isolated origin as the evaluation unit and supplies a common opportunity registry. Model and provider identity, oracle material, final evaluations, scores, success labels, and prior reviews remain absent. Reviewers return structured claims tied to opportunity and citation IDs; readable rating rationales are rendered deterministically. Invalid citations, malformed output, provider failure, counterevidence, and disagreement remain explicit; there is no automatic retry, consensus, or averaging.
 
-One scorecard entry is published for each canonical origin. A shared run has one team entry; an isolated run retains every origin and reports social dimensions as not applicable. Process judgments freeze before outcome facts are joined.
+One scorecard-v2 entry is published for each canonical origin. Its primary surface is two independent evidence dossiers containing structured claims, epistemic episodes, influence chains, and execution chains. Advisory ratings follow the dossier. Layered failure accounts prohibit automated model causation, and full fixture/treatment/model/record/confound provenance is joined only after process judgments freeze.
 
 ## Rubric Interpretation
 
@@ -26,10 +26,10 @@ Mechanical activity counts describe what happened. Message, token, tool, checker
 
 `puzzle:report` reads completed scorecards without changing source runs. Descriptive reports may summarize any explicitly included compatible analyses. Matched contrasts additionally require a declared treatment, matched non-treatment input pointers, experimental unit, and run clustering. Mismatches, missing analyses, incomplete reviews, and incompatible versions are exclusions with reasons, not silent filtering.
 
-Reports preserve distributions, missingness, uncertainty, reviewer agreement, origin clustering, and process-outcome associations. A single run can illustrate a mechanism but cannot establish a stable model trait. Unmatched collections cannot support causal language, and software tests do not establish construct validity.
+Reports lead with mechanism prevalence and opportunity-conditioned rates, then preserve provenance, layered failure accounts, typed disagreement, advisory rating distributions, missingness, uncertainty, clustering, and process-outcome associations. A single run can illustrate a mechanism but cannot establish a stable model trait. Unmatched collections cannot support causal language.
 
-## Calibration And Censored Attempts
+## Automated Calibration And Censored Attempts
 
-Before findings-bearing use, freeze the rubric and calibration corpus, audit citations on a stratified identity-blind and outcome-blind sample, and inspect disagreement by dimension. Anchor changes require a new rubric version; existing reviews are immutable.
+`puzzle:calibrate` reads completed scorecard-v2 artifacts and reports citation integrity, explicit unit scope, stage consistency, observability, and reviewer stability without provider access. It does not adjudicate reviews or establish construct validity. Protocol or anchor changes require a new version; existing reviews remain immutable.
 
 A trace without a completed `run.json` is an interrupted attempt. Version 1 rejects it from completed grading and reporting. A future censored-summary surface may describe retained observations, but it must not assign a completed-run grade or enter completed denominators.

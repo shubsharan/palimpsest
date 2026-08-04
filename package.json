@@ -15,6 +15,7 @@
     "puzzle:evaluate": "tsx src/cli.ts evaluate",
     "puzzle:experiment": "tsx src/cli.ts experiment",
     "puzzle:grade": "tsx src/cli.ts grade",
+    "puzzle:calibrate": "tsx src/cli.ts calibrate",
     "puzzle:report": "tsx src/cli.ts report",
     "puzzle:review": "tsx src/cli.ts review",
     "puzzle:sandbox:build": "tsx src/cli.ts sandbox-build",

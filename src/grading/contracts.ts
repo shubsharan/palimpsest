@@ -188,7 +188,107 @@ export interface CanonicalOriginScorecardSummary {
   readonly reason?: string;
 }
 
-export interface RunScorecard {
+export type DossierObservationState =
+  | "observed"
+  | "contradicted"
+  | "unobservable"
+  | "not-applicable";
+
+export interface StructuredClaim {
+  readonly claimId: string;
+  readonly opportunityId: string;
+  readonly ledger: ProcessLedger;
+  readonly subjectScope:
+    | "evaluation-unit"
+    | "actor"
+    | "cross-actor"
+    | "canonical-artifact"
+    | "infrastructure";
+  readonly actorIds: readonly string[];
+  readonly predicate: string;
+  readonly state: DossierObservationState;
+  readonly qualification: "direct" | "partial" | "ambiguous" | "missing";
+  readonly evidence: readonly EvidenceReference[];
+  readonly counterevidence: readonly EvidenceReference[];
+  readonly confidence: ReviewConfidence;
+  readonly missingReason: string;
+}
+
+export interface DossierOpportunity {
+  readonly opportunityId: string;
+  readonly kind: string;
+  readonly atMs: number;
+  readonly actorIds: readonly string[];
+  readonly evidence: readonly EvidenceReference[];
+}
+
+export interface InfluenceChain {
+  readonly chainId: string;
+  readonly claimIds: readonly string[];
+  readonly state: DossierObservationState;
+  readonly evidence: readonly EvidenceReference[];
+  readonly counterevidence: readonly EvidenceReference[];
+  readonly confidence: ReviewConfidence;
+  readonly missingReason: string;
+}
+
+export interface ExecutionChain extends InfluenceChain {}
+
+export interface EvidenceDossier {
+  readonly evaluationUnit: {
+    readonly kind: "shared-team" | "isolated-origin";
+    readonly actorIds: readonly string[];
+  };
+  readonly opportunities: readonly DossierOpportunity[];
+  readonly claims: readonly StructuredClaim[];
+  readonly epistemicEpisodes: readonly EpistemicEpisode[];
+  readonly influenceChains: readonly InfluenceChain[];
+  readonly executionChains: readonly ExecutionChain[];
+}
+
+export interface FailureAccountLayer {
+  readonly layer: "infrastructure" | "publication" | "integration" | "behavioral" | "undetermined";
+  readonly state: "observed" | "not-observed" | "unobservable";
+  readonly evidence: readonly EvidenceReference[];
+  readonly explanation: string;
+}
+
+export interface FailureAccount {
+  readonly causalAttribution: "prohibited";
+  readonly layers: readonly FailureAccountLayer[];
+}
+
+export interface ProvenanceScope {
+  readonly fixture: JsonObject;
+  readonly treatments: JsonObject;
+  readonly experimentalUnit: "team" | "origin";
+  readonly models: readonly JsonObject[];
+  readonly runRecordDigest: string;
+  readonly performanceAnalysisId: string;
+  readonly reviewProtocol: string;
+  readonly bundleDigest: string;
+  readonly checkerEnabled: boolean;
+  readonly omissionCount: number;
+  readonly truncationCount: number;
+  readonly confounds: readonly string[];
+}
+
+export type DisagreementKind =
+  | "observability"
+  | "episode-selection"
+  | "stage-linkage"
+  | "claim-interpretation"
+  | "rating-distance";
+
+export interface TypedDisagreement {
+  readonly kind: DisagreementKind;
+  readonly subjectId: string;
+  readonly judge1: JsonValue;
+  readonly judge2: JsonValue;
+  readonly material: boolean;
+}
+
+export interface RunScorecardV1 {
   readonly schemaVersion: 1;
   readonly runId: string;
   readonly canonicalOrigins: readonly CanonicalOriginScorecardSummary[];
@@ -204,7 +304,209 @@ export interface RunScorecard {
   readonly limitations: readonly string[];
 }
 
-export interface BehaviorReport {
+export interface RunScorecardV2 extends Omit<RunScorecardV1, "schemaVersion" | "disagreements"> {
+  readonly schemaVersion: 2;
+  readonly dossier: {
+    readonly reviewers: readonly { readonly judge: 1 | 2; readonly evidence: EvidenceDossier }[];
+  };
+  readonly failureAccount: FailureAccount;
+  readonly provenance: ProvenanceScope;
+  readonly disagreements: readonly TypedDisagreement[];
+}
+
+export type RunScorecard = RunScorecardV1 | RunScorecardV2;
+
+function decodeDossier(value: unknown, name: string): EvidenceDossier {
+  const decoded = exact(
+    value,
+    [
+      "evaluationUnit",
+      "opportunities",
+      "claims",
+      "epistemicEpisodes",
+      "influenceChains",
+      "executionChains",
+    ],
+    name,
+  );
+  const unit = exact(decoded.evaluationUnit, ["kind", "actorIds"], `${name}.evaluationUnit`);
+  if (unit.kind !== "shared-team" && unit.kind !== "isolated-origin")
+    throw new Error(`${name}.evaluationUnit.kind is invalid.`);
+  const actorIds = strings(unit.actorIds, `${name}.evaluationUnit.actorIds`);
+  if (actorIds.length === 0) throw new Error(`${name}.evaluationUnit.actorIds must be non-empty.`);
+  unique(actorIds, `${name}.evaluationUnit.actorIds`);
+  const opportunities = array(
+    decoded.opportunities,
+    (item, itemName): DossierOpportunity => {
+      const opportunity = exact(
+        item,
+        ["opportunityId", "kind", "atMs", "actorIds", "evidence"],
+        itemName,
+      );
+      return {
+        opportunityId: controlledId(opportunity.opportunityId, `${itemName}.opportunityId`),
+        kind: controlledId(opportunity.kind, `${itemName}.kind`),
+        atMs: finite(opportunity.atMs, `${itemName}.atMs`),
+        actorIds: strings(opportunity.actorIds, `${itemName}.actorIds`),
+        evidence: array(opportunity.evidence, decodeEvidenceReference, `${itemName}.evidence`),
+      };
+    },
+    `${name}.opportunities`,
+  );
+  unique(
+    opportunities.map(({ opportunityId }) => opportunityId),
+    `${name}.opportunities`,
+  );
+  const opportunityIds = new Set(opportunities.map(({ opportunityId }) => opportunityId));
+  const claims = array(
+    decoded.claims,
+    (item, itemName): StructuredClaim => {
+      const claim = exact(
+        item,
+        [
+          "claimId",
+          "opportunityId",
+          "ledger",
+          "subjectScope",
+          "actorIds",
+          "predicate",
+          "state",
+          "qualification",
+          "evidence",
+          "counterevidence",
+          "confidence",
+          "missingReason",
+        ],
+        itemName,
+      );
+      const opportunityId = controlledId(claim.opportunityId, `${itemName}.opportunityId`);
+      if (!opportunityIds.has(opportunityId))
+        throw new Error(`${itemName}.opportunityId is not in the dossier registry.`);
+      if (
+        claim.ledger !== "epistemic" &&
+        claim.ledger !== "social" &&
+        claim.ledger !== "instrumental"
+      )
+        throw new Error(`${itemName}.ledger is invalid.`);
+      if (
+        claim.subjectScope !== "evaluation-unit" &&
+        claim.subjectScope !== "actor" &&
+        claim.subjectScope !== "cross-actor" &&
+        claim.subjectScope !== "canonical-artifact" &&
+        claim.subjectScope !== "infrastructure"
+      )
+        throw new Error(`${itemName}.subjectScope is invalid.`);
+      if (
+        claim.state !== "observed" &&
+        claim.state !== "contradicted" &&
+        claim.state !== "unobservable" &&
+        claim.state !== "not-applicable"
+      )
+        throw new Error(`${itemName}.state is invalid.`);
+      if (
+        claim.qualification !== "direct" &&
+        claim.qualification !== "partial" &&
+        claim.qualification !== "ambiguous" &&
+        claim.qualification !== "missing"
+      )
+        throw new Error(`${itemName}.qualification is invalid.`);
+      if (
+        claim.confidence !== "low" &&
+        claim.confidence !== "medium" &&
+        claim.confidence !== "high"
+      )
+        throw new Error(`${itemName}.confidence is invalid.`);
+      const claimActorIds = strings(claim.actorIds, `${itemName}.actorIds`);
+      if (claimActorIds.some((actorId) => !actorIds.includes(actorId))) {
+        throw new Error(`${itemName}.actorIds must belong to the evaluation unit.`);
+      }
+      return {
+        claimId: controlledId(claim.claimId, `${itemName}.claimId`),
+        opportunityId,
+        ledger: claim.ledger,
+        subjectScope: claim.subjectScope,
+        actorIds: claimActorIds,
+        predicate: controlledId(claim.predicate, `${itemName}.predicate`),
+        state: claim.state,
+        qualification: claim.qualification,
+        evidence: array(claim.evidence, decodeEvidenceReference, `${itemName}.evidence`),
+        counterevidence: array(
+          claim.counterevidence,
+          decodeEvidenceReference,
+          `${itemName}.counterevidence`,
+        ),
+        confidence: claim.confidence,
+        missingReason:
+          typeof claim.missingReason === "string"
+            ? claim.missingReason
+            : text(claim.missingReason, `${itemName}.missingReason`),
+      };
+    },
+    `${name}.claims`,
+  );
+  unique(
+    claims.map(({ claimId }) => claimId),
+    `${name}.claims`,
+  );
+  const claimIds = new Set(claims.map(({ claimId }) => claimId));
+  const decodeChain = (item: unknown, itemName: string): InfluenceChain => {
+    const chain = exact(
+      item,
+      [
+        "chainId",
+        "claimIds",
+        "state",
+        "evidence",
+        "counterevidence",
+        "confidence",
+        "missingReason",
+      ],
+      itemName,
+    );
+    const ids = strings(chain.claimIds, `${itemName}.claimIds`);
+    if (ids.some((id) => !claimIds.has(id)))
+      throw new Error(`${itemName}.claimIds references an unknown claim.`);
+    if (
+      chain.state !== "observed" &&
+      chain.state !== "contradicted" &&
+      chain.state !== "unobservable" &&
+      chain.state !== "not-applicable"
+    )
+      throw new Error(`${itemName}.state is invalid.`);
+    if (chain.confidence !== "low" && chain.confidence !== "medium" && chain.confidence !== "high")
+      throw new Error(`${itemName}.confidence is invalid.`);
+    return {
+      chainId: controlledId(chain.chainId, `${itemName}.chainId`),
+      claimIds: ids,
+      state: chain.state,
+      evidence: array(chain.evidence, decodeEvidenceReference, `${itemName}.evidence`),
+      counterevidence: array(
+        chain.counterevidence,
+        decodeEvidenceReference,
+        `${itemName}.counterevidence`,
+      ),
+      confidence: chain.confidence,
+      missingReason:
+        typeof chain.missingReason === "string"
+          ? chain.missingReason
+          : text(chain.missingReason, `${itemName}.missingReason`),
+    };
+  };
+  return {
+    evaluationUnit: { kind: unit.kind, actorIds },
+    opportunities,
+    claims,
+    epistemicEpisodes: array(
+      decoded.epistemicEpisodes,
+      decodeEpistemicEpisode,
+      `${name}.epistemicEpisodes`,
+    ),
+    influenceChains: array(decoded.influenceChains, decodeChain, `${name}.influenceChains`),
+    executionChains: array(decoded.executionChains, decodeChain, `${name}.executionChains`),
+  };
+}
+
+export interface BehaviorReportV1 {
   readonly schemaVersion: 1;
   readonly reportId: string;
   readonly createdAt: string;
@@ -222,6 +524,15 @@ export interface BehaviorReport {
   readonly outcomeLinks: readonly JsonObject[];
   readonly limitations: readonly string[];
 }
+
+export interface BehaviorReportV2 extends Omit<BehaviorReportV1, "schemaVersion"> {
+  readonly schemaVersion: 2;
+  readonly mechanisms: readonly JsonObject[];
+  readonly provenance: readonly JsonObject[];
+  readonly failureAccounts: readonly JsonObject[];
+}
+
+export type BehaviorReport = BehaviorReportV1 | BehaviorReportV2;
 
 function object(value: unknown, name: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -855,6 +1166,11 @@ function originSummary(value: unknown, name: string): CanonicalOriginScorecardSu
 }
 
 export function decodeRunScorecard(value: unknown, name = "Run scorecard"): RunScorecard {
+  const candidate = object(value, name);
+  if (candidate.schemaVersion !== 1 && candidate.schemaVersion !== 2) {
+    throw new Error(`${name}.schemaVersion is unsupported.`);
+  }
+  const version = candidate.schemaVersion;
   const decoded = exact(
     value,
     [
@@ -868,10 +1184,10 @@ export function decodeRunScorecard(value: unknown, name = "Run scorecard"): RunS
       "disagreements",
       "eligibility",
       "limitations",
+      ...(version === 2 ? ["dossier", "failureAccount", "provenance"] : []),
     ],
     name,
   );
-  if (decoded.schemaVersion !== 1) throw new Error(`${name}.schemaVersion is unsupported.`);
   const canonicalOrigins = array(
     decoded.canonicalOrigins,
     originSummary,
@@ -893,22 +1209,159 @@ export function decodeRunScorecard(value: unknown, name = "Run scorecard"): RunS
   if ((eligibility.status === "completed") === (eligibility.reason !== undefined)) {
     throw new Error(`${name}.eligibility.reason is inconsistent with status.`);
   }
-  return {
-    schemaVersion: 1,
+  const common = {
     runId: text(decoded.runId, `${name}.runId`),
     canonicalOrigins,
     outcome: jsonObject(decoded.outcome, `${name}.outcome`),
     epistemic: jsonObject(decoded.epistemic, `${name}.epistemic`),
     social: jsonObject(decoded.social, `${name}.social`),
     instrumental: jsonObject(decoded.instrumental, `${name}.instrumental`),
-    disagreements: array(decoded.disagreements, jsonObject, `${name}.disagreements`),
     eligibility: {
-      status: eligibility.status,
+      status: eligibility.status as "completed" | "censored" | "excluded",
       ...(eligibility.reason === undefined
         ? {}
         : { reason: text(eligibility.reason, `${name}.eligibility.reason`) }),
     },
     limitations: strings(decoded.limitations, `${name}.limitations`),
+  };
+  if (version === 1) {
+    return {
+      schemaVersion: 1,
+      ...common,
+      disagreements: array(decoded.disagreements, jsonObject, `${name}.disagreements`),
+    };
+  }
+  const dossierValue = exact(decoded.dossier, ["reviewers"], `${name}.dossier`);
+  const reviewers = array(
+    dossierValue.reviewers,
+    (item, reviewerName) => {
+      const reviewer = exact(item, ["judge", "evidence"], reviewerName);
+      if (reviewer.judge !== 1 && reviewer.judge !== 2)
+        throw new Error(`${reviewerName}.judge is invalid.`);
+      return {
+        judge: reviewer.judge as 1 | 2,
+        evidence: decodeDossier(reviewer.evidence, `${reviewerName}.evidence`),
+      };
+    },
+    `${name}.dossier.reviewers`,
+  );
+  if (reviewers.length !== 2 || reviewers[0]!.judge !== 1 || reviewers[1]!.judge !== 2)
+    throw new Error(`${name}.dossier.reviewers must preserve judges one and two.`);
+  const failureValue = exact(
+    decoded.failureAccount,
+    ["causalAttribution", "layers"],
+    `${name}.failureAccount`,
+  );
+  if (failureValue.causalAttribution !== "prohibited")
+    throw new Error(`${name}.failureAccount.causalAttribution must be prohibited.`);
+  const layers = array(
+    failureValue.layers,
+    (item, layerName): FailureAccountLayer => {
+      const layer = exact(item, ["layer", "state", "evidence", "explanation"], layerName);
+      if (
+        layer.layer !== "infrastructure" &&
+        layer.layer !== "publication" &&
+        layer.layer !== "integration" &&
+        layer.layer !== "behavioral" &&
+        layer.layer !== "undetermined"
+      )
+        throw new Error(`${layerName}.layer is invalid.`);
+      if (
+        layer.state !== "observed" &&
+        layer.state !== "not-observed" &&
+        layer.state !== "unobservable"
+      )
+        throw new Error(`${layerName}.state is invalid.`);
+      return {
+        layer: layer.layer,
+        state: layer.state,
+        evidence: array(layer.evidence, decodeEvidenceReference, `${layerName}.evidence`),
+        explanation: text(layer.explanation, `${layerName}.explanation`),
+      };
+    },
+    `${name}.failureAccount.layers`,
+  );
+  const provenanceValue = exact(
+    decoded.provenance,
+    [
+      "fixture",
+      "treatments",
+      "experimentalUnit",
+      "models",
+      "runRecordDigest",
+      "performanceAnalysisId",
+      "reviewProtocol",
+      "bundleDigest",
+      "checkerEnabled",
+      "omissionCount",
+      "truncationCount",
+      "confounds",
+    ],
+    `${name}.provenance`,
+  );
+  if (provenanceValue.experimentalUnit !== "team" && provenanceValue.experimentalUnit !== "origin")
+    throw new Error(`${name}.provenance.experimentalUnit is invalid.`);
+  if (typeof provenanceValue.checkerEnabled !== "boolean")
+    throw new Error(`${name}.provenance.checkerEnabled must be boolean.`);
+  const provenance: ProvenanceScope = {
+    fixture: jsonObject(provenanceValue.fixture, `${name}.provenance.fixture`),
+    treatments: jsonObject(provenanceValue.treatments, `${name}.provenance.treatments`),
+    experimentalUnit: provenanceValue.experimentalUnit,
+    models: array(provenanceValue.models, jsonObject, `${name}.provenance.models`),
+    runRecordDigest: digest(provenanceValue.runRecordDigest, `${name}.provenance.runRecordDigest`),
+    performanceAnalysisId: controlledId(
+      provenanceValue.performanceAnalysisId,
+      `${name}.provenance.performanceAnalysisId`,
+    ),
+    reviewProtocol: controlledId(
+      provenanceValue.reviewProtocol,
+      `${name}.provenance.reviewProtocol`,
+    ),
+    bundleDigest: digest(provenanceValue.bundleDigest, `${name}.provenance.bundleDigest`),
+    checkerEnabled: provenanceValue.checkerEnabled,
+    omissionCount: integer(provenanceValue.omissionCount, 0, `${name}.provenance.omissionCount`),
+    truncationCount: integer(
+      provenanceValue.truncationCount,
+      0,
+      `${name}.provenance.truncationCount`,
+    ),
+    confounds: strings(provenanceValue.confounds, `${name}.provenance.confounds`),
+  };
+  const disagreements = array(
+    decoded.disagreements,
+    (item, disagreementName): TypedDisagreement => {
+      const disagreement = exact(
+        item,
+        ["kind", "subjectId", "judge1", "judge2", "material"],
+        disagreementName,
+      );
+      if (
+        disagreement.kind !== "observability" &&
+        disagreement.kind !== "episode-selection" &&
+        disagreement.kind !== "stage-linkage" &&
+        disagreement.kind !== "claim-interpretation" &&
+        disagreement.kind !== "rating-distance"
+      )
+        throw new Error(`${disagreementName}.kind is invalid.`);
+      if (typeof disagreement.material !== "boolean")
+        throw new Error(`${disagreementName}.material must be boolean.`);
+      return {
+        kind: disagreement.kind,
+        subjectId: text(disagreement.subjectId, `${disagreementName}.subjectId`),
+        judge1: jsonValue(disagreement.judge1, `${disagreementName}.judge1`),
+        judge2: jsonValue(disagreement.judge2, `${disagreementName}.judge2`),
+        material: disagreement.material,
+      };
+    },
+    `${name}.disagreements`,
+  );
+  return {
+    schemaVersion: 2,
+    ...common,
+    dossier: { reviewers },
+    failureAccount: { causalAttribution: "prohibited", layers },
+    provenance,
+    disagreements,
   };
 }
 
@@ -917,6 +1370,11 @@ function reportObjects(value: unknown, name: string): readonly JsonObject[] {
 }
 
 export function decodeBehaviorReport(value: unknown, name = "Behavior report"): BehaviorReport {
+  const candidate = object(value, name);
+  if (candidate.schemaVersion !== 1 && candidate.schemaVersion !== 2) {
+    throw new Error(`${name}.schemaVersion is unsupported.`);
+  }
+  const version = candidate.schemaVersion;
   const decoded = fields(
     value,
     [
@@ -932,11 +1390,11 @@ export function decodeBehaviorReport(value: unknown, name = "Behavior report"): 
       "reviewerAgreement",
       "outcomeLinks",
       "limitations",
+      ...(version === 2 ? ["mechanisms", "provenance", "failureAccounts"] : []),
     ],
     ["treatmentField"],
     name,
   );
-  if (decoded.schemaVersion !== 1) throw new Error(`${name}.schemaVersion is unsupported.`);
   if (decoded.claimType !== "descriptive" && decoded.claimType !== "matched-contrast") {
     throw new Error(`${name}.claimType is invalid.`);
   }
@@ -964,13 +1422,12 @@ export function decodeBehaviorReport(value: unknown, name = "Behavior report"): 
   if (decoded.claimType === "descriptive" && decoded.treatmentField !== undefined) {
     throw new Error(`${name}.treatmentField is only valid for matched contrasts.`);
   }
-  return {
-    schemaVersion: 1,
+  const common = {
     reportId: controlledId(decoded.reportId, `${name}.reportId`),
     createdAt: timestamp(decoded.createdAt, `${name}.createdAt`),
-    claimType: decoded.claimType,
+    claimType: decoded.claimType as "descriptive" | "matched-contrast",
     experimentalUnit: {
-      unit: experimentalUnit.unit,
+      unit: experimentalUnit.unit as "team" | "origin",
       clusterByRun: experimentalUnit.clusterByRun,
     },
     matchingFields,
@@ -983,5 +1440,13 @@ export function decodeBehaviorReport(value: unknown, name = "Behavior report"): 
     reviewerAgreement: reportObjects(decoded.reviewerAgreement, `${name}.reviewerAgreement`),
     outcomeLinks: reportObjects(decoded.outcomeLinks, `${name}.outcomeLinks`),
     limitations: strings(decoded.limitations, `${name}.limitations`),
+  };
+  if (version === 1) return { schemaVersion: 1, ...common };
+  return {
+    schemaVersion: 2,
+    ...common,
+    mechanisms: reportObjects(decoded.mechanisms, `${name}.mechanisms`),
+    provenance: reportObjects(decoded.provenance, `${name}.provenance`),
+    failureAccounts: reportObjects(decoded.failureAccounts, `${name}.failureAccounts`),
   };
 }

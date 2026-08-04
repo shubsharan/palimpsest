@@ -270,11 +270,18 @@ describe("report configuration", () => {
         schemaVersion: 1,
         claimType: "descriptive",
         include: { runIds: [], labels: {} },
-        versions: { grader: "epistemic-process-v1", rubric: "epistemic-process-v1" },
+        versions: {
+          grader: "epistemic-process-v1",
+          rubric: "epistemic-process-v1",
+          reviewProtocol: "ledger-packets-v5",
+        },
         experimentalUnit: "team",
         clusterBy: "run",
-      }).matchingFields,
-    ).toEqual([]);
+      }),
+    ).toMatchObject({
+      matchingFields: [],
+      versions: { reviewProtocol: "ledger-packets-v5" },
+    });
     expect(() =>
       decodeReportConfiguration({
         schemaVersion: 1,

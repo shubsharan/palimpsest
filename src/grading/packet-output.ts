@@ -34,17 +34,57 @@ function dimensionOutputSchema(): JsonObject {
         "not-applicable",
       ],
     },
-    rationale: { type: "string" },
+    claimIds: { type: "array", items: { type: "string", pattern: "^claim-[0-9]{3}$" } },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  });
+}
+
+function structuredClaimSchema(): JsonObject {
+  return strictObjectSchema({
+    claimId: { type: "string", pattern: "^claim-[0-9]{3}$" },
+    opportunityId: { type: "string", pattern: "^opp-[0-9]{4}$" },
+    subjectScope: {
+      type: "string",
+      enum: ["evaluation-unit", "actor", "cross-actor", "canonical-artifact", "infrastructure"],
+    },
+    actorIds: {
+      type: "array",
+      items: { type: "string", pattern: "^[a-z0-9][a-z0-9._-]*$" },
+    },
+    predicate: {
+      type: "string",
+      enum: [
+        "commitment",
+        "alternative",
+        "test",
+        "counterevidence",
+        "revision",
+        "transmission",
+        "uptake",
+        "verification",
+        "integration",
+        "duplication",
+        "conflict",
+        "repair",
+        "tool-use",
+        "validation",
+        "publication",
+        "failure",
+        "recovery",
+      ],
+    },
+    state: { type: "string", enum: ["observed", "contradicted", "unobservable", "not-applicable"] },
+    qualification: { type: "string", enum: ["direct", "partial", "ambiguous", "missing"] },
+    evidenceIds: citationIdsSchema(),
     counterevidenceIds: citationIdsSchema(),
     confidence: { type: "string", enum: ["low", "medium", "high"] },
-    evidenceIds: citationIdsSchema(),
+    missingReason: { type: "string" },
   });
 }
 
 function episodeOutputSchema(): JsonObject {
   return strictObjectSchema({
     episodeId: { type: "string" },
-    summary: { type: "string" },
     status: {
       type: "string",
       enum: ["supported-revision", "asserted-only", "missed-revision", "unchanged", "ambiguous"],
@@ -64,6 +104,7 @@ function episodeOutputSchema(): JsonObject {
 export function packetReviewerOutputSchema(): JsonObject {
   return strictObjectSchema({
     schemaVersion: { type: "integer", const: 1 },
+    claims: { type: "array", items: structuredClaimSchema() },
     dimensions: { type: "array", items: dimensionOutputSchema() },
     episodes: { type: "array", items: episodeOutputSchema() },
     cautions: { type: "array", items: { type: "string" } },

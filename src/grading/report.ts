@@ -46,6 +46,7 @@ export interface ReportConfiguration {
   readonly versions: {
     readonly grader: string;
     readonly rubric: string;
+    readonly reviewProtocol?: string;
   };
   readonly matchingFields: readonly string[];
   readonly treatmentField?: string;
@@ -235,7 +236,12 @@ export function decodeReportConfiguration(
   const include = fields(decoded.include, ["runIds", "labels"], [], `${name}.include`);
   const runIds = strings(include.runIds, `${name}.include.runIds`);
   unique(runIds, `${name}.include.runIds`);
-  const versions = fields(decoded.versions, ["grader", "rubric"], [], `${name}.versions`);
+  const versions = fields(
+    decoded.versions,
+    ["grader", "rubric"],
+    ["reviewProtocol"],
+    `${name}.versions`,
+  );
   if (decoded.experimentalUnit !== "team" && decoded.experimentalUnit !== "origin") {
     throw new Error(`${name}.experimentalUnit must be team or origin.`);
   }
@@ -290,6 +296,14 @@ export function decodeReportConfiguration(
     versions: {
       grader: controlledId(versions.grader, `${name}.versions.grader`),
       rubric: controlledId(versions.rubric, `${name}.versions.rubric`),
+      ...(versions.reviewProtocol === undefined
+        ? {}
+        : {
+            reviewProtocol: controlledId(
+              versions.reviewProtocol,
+              `${name}.versions.reviewProtocol`,
+            ),
+          }),
     },
     matchingFields,
     ...(treatmentField === undefined ? {} : { treatmentField }),
@@ -401,6 +415,8 @@ function selectAnalyses(
   const candidates = reviews.filter(
     (review) =>
       review.rubricVersion === config.versions.rubric &&
+      (config.versions.reviewProtocol === undefined ||
+        review.protocolVersion === config.versions.reviewProtocol) &&
       compatiblePerformances.some(
         (performance) => performance.analysisId === review.performanceAnalysisId,
       ),
@@ -1228,6 +1244,115 @@ function limitations(
   return values;
 }
 
+function dossierMechanisms(
+  eligible: readonly EligibleRun[],
+  config: ReportConfiguration,
+): readonly JsonObject[] {
+  const groups = new Map<
+    string,
+    {
+      readonly judge: number;
+      readonly predicate: string;
+      readonly opportunityKind: string;
+      readonly treatment?: JsonValue;
+      observedCount: number;
+      claimCount: number;
+      opportunityCount: number;
+    }
+  >();
+  for (const run of eligible) {
+    const treatment =
+      config.treatmentField === undefined
+        ? undefined
+        : resolvePointer(
+            run.record,
+            config.treatmentField,
+            `Treatment field ${config.treatmentField}`,
+          );
+    for (const scorecard of run.scorecards) {
+      if (scorecard.schemaVersion !== 2) continue;
+      for (const reviewer of scorecard.dossier.reviewers) {
+        const opportunityById = new Map(
+          reviewer.evidence.opportunities.map(
+            (opportunity) => [opportunity.opportunityId, opportunity] as const,
+          ),
+        );
+        const claimsByGroup = new Map<string, typeof reviewer.evidence.claims>();
+        for (const claim of reviewer.evidence.claims) {
+          const opportunityKind = opportunityById.get(claim.opportunityId)?.kind ?? "unresolved";
+          const key = `${claim.predicate}\0${opportunityKind}`;
+          claimsByGroup.set(key, [...(claimsByGroup.get(key) ?? []), claim]);
+        }
+        for (const [claimKey, claims] of claimsByGroup) {
+          const [predicate, opportunityKind] = claimKey.split("\0") as [string, string];
+          const groupKey = canonicalJson({
+            judge: reviewer.judge,
+            predicate,
+            opportunityKind,
+            treatment,
+          });
+          const existing = groups.get(groupKey) ?? {
+            judge: reviewer.judge,
+            predicate,
+            opportunityKind,
+            ...(treatment === undefined ? {} : { treatment }),
+            observedCount: 0,
+            claimCount: 0,
+            opportunityCount: 0,
+          };
+          existing.observedCount += claims.filter(({ state }) => state === "observed").length;
+          existing.claimCount += claims.length;
+          existing.opportunityCount += reviewer.evidence.opportunities.filter(
+            ({ kind }) => kind === opportunityKind,
+          ).length;
+          groups.set(groupKey, existing);
+        }
+      }
+    }
+  }
+  return [...groups.values()]
+    .sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)))
+    .map((group) => ({
+      ...group,
+      state: group.opportunityCount === 0 ? "unavailable" : "observed",
+      ...(group.opportunityCount === 0
+        ? {}
+        : { opportunityConditionedRate: group.observedCount / group.opportunityCount }),
+    }));
+}
+
+function reportProvenance(eligible: readonly EligibleRun[]): readonly JsonObject[] {
+  return eligible.flatMap((run) =>
+    run.scorecards.flatMap((scorecard) =>
+      scorecard.schemaVersion === 2
+        ? [
+            {
+              runId: run.record.runId,
+              originId: scorecard.canonicalOrigins[0]!.originId,
+              ...scorecard.provenance,
+            } as unknown as JsonObject,
+          ]
+        : [],
+    ),
+  );
+}
+
+function reportFailureAccounts(eligible: readonly EligibleRun[]): readonly JsonObject[] {
+  return eligible.flatMap((run) =>
+    run.scorecards.flatMap((scorecard) =>
+      scorecard.schemaVersion === 2
+        ? [
+            {
+              runId: run.record.runId,
+              originId: scorecard.canonicalOrigins[0]!.originId,
+              account: scorecard.failureAccount,
+            } as unknown as JsonObject,
+          ]
+        : [],
+    ),
+  );
+}
+
 async function publishReport(output: string, report: BehaviorReport): Promise<string> {
   const resolvedOutput = resolve(output);
   try {
@@ -1294,7 +1419,7 @@ export async function reportRuns(options: ReportRunsOptions): Promise<ReportRuns
     })),
   }).slice(0, 24)}`;
   const report = decodeBehaviorReport({
-    schemaVersion: 1,
+    schemaVersion: 2,
     reportId,
     createdAt: (options.now?.() ?? new Date()).toISOString(),
     claimType: config.claimType,
@@ -1321,6 +1446,9 @@ export async function reportRuns(options: ReportRunsOptions): Promise<ReportRuns
             (value) => `${String(value.processMeasureId)}\0${String(value.outcomeMeasureId)}`,
           )
         : aggregateObjects(aggregate, "processOutcomeAssociations"),
+    mechanisms: dossierMechanisms(eligible, config),
+    provenance: reportProvenance(eligible),
+    failureAccounts: reportFailureAccounts(eligible),
     limitations: limitations(config, eligible, excluded),
   });
   const path = await publishReport(output, report);

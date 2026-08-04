@@ -5,6 +5,7 @@ import { runExperimentFromFlags, validateExperimentFromFlags } from "./experimen
 import { isExperimentWorker, superviseExperiment } from "./experiment/supervisor.js";
 import { parseFlags, requiredFlag } from "./flags.js";
 import { gradeRunFromFlags } from "./grading/grade.js";
+import { calibrateReviews } from "./grading/calibrate.js";
 import { reportRuns } from "./grading/report.js";
 import { reviewRun } from "./grading/review.js";
 
@@ -104,6 +105,15 @@ switch (command) {
       excludedRunCount: reported.excludedRunCount,
       path: reported.path,
     };
+    break;
+  }
+  case "calibrate": {
+    allowOnly(flags, ["--artifacts-root", "--output"], "calibrate");
+    const calibrated = await calibrateReviews({
+      artifactsRoot: requiredFlag(flags, "--artifacts-root"),
+      output: requiredFlag(flags, "--output"),
+    });
+    result = calibrated;
     break;
   }
   case "validate":

@@ -266,6 +266,39 @@ describe("grading contracts", () => {
     } as const;
     expect(decodeRunScorecard(scorecard).canonicalOrigins).toHaveLength(1);
     expect(() => decodeRunScorecard({ ...scorecard, composite: 3 })).toThrow(/unknown or missing/i);
+    const scorecardV2 = {
+      ...scorecard,
+      schemaVersion: 2,
+      dossier: {
+        reviewers: [1, 2].map((judge) => ({
+          judge,
+          evidence: {
+            evaluationUnit: { kind: "shared-team", actorIds: ["actor-1"] },
+            opportunities: [],
+            claims: [],
+            epistemicEpisodes: [],
+            influenceChains: [],
+            executionChains: [],
+          },
+        })),
+      },
+      failureAccount: { causalAttribution: "prohibited", layers: [] },
+      provenance: {
+        fixture: {},
+        treatments: {},
+        experimentalUnit: "team",
+        models: [],
+        runRecordDigest: DIGEST,
+        performanceAnalysisId: "performance-1",
+        reviewProtocol: "ledger-packets-v5",
+        bundleDigest: DIGEST,
+        checkerEnabled: false,
+        omissionCount: 0,
+        truncationCount: 0,
+        confounds: [],
+      },
+    } as const;
+    expect(decodeRunScorecard(scorecardV2).schemaVersion).toBe(2);
 
     const report = {
       schemaVersion: 1,

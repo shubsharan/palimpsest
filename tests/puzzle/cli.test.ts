@@ -330,6 +330,72 @@ describe("operator CLI contract", () => {
     expect(result.stderr).toMatch(/must not overlap.*frozen run root/i);
   });
 
+  it("calibrates scorecard-v2 artifacts without provider credentials", async () => {
+    const temporaryRoot = await mkdtemp(join(root, ".git", "palimpsest-cli-calibrate-"));
+    temporaryRoots.push(temporaryRoot);
+    const detailRoot = join(temporaryRoot, "artifacts", "run-1", "grading", "process-review-1");
+    await mkdir(detailRoot, { recursive: true });
+    const dossier = {
+      evaluationUnit: { kind: "shared-team", actorIds: ["actor-1"] },
+      opportunities: [],
+      claims: [],
+      epistemicEpisodes: [],
+      influenceChains: [],
+      executionChains: [],
+    };
+    const scorecard = {
+      schemaVersion: 2,
+      runId: "run-1",
+      canonicalOrigins: [{ originId: "shared", status: "eligible" }],
+      outcome: {},
+      epistemic: { reviewers: [] },
+      social: { reviewers: [] },
+      instrumental: { reviewers: [] },
+      dossier: {
+        reviewers: [
+          { judge: 1, evidence: dossier },
+          { judge: 2, evidence: dossier },
+        ],
+      },
+      failureAccount: { causalAttribution: "prohibited", layers: [] },
+      provenance: {
+        fixture: {},
+        treatments: {},
+        experimentalUnit: "team",
+        models: [],
+        runRecordDigest: "a".repeat(64),
+        performanceAnalysisId: "performance-1",
+        reviewProtocol: "ledger-packets-v5",
+        bundleDigest: "b".repeat(64),
+        checkerEnabled: false,
+        omissionCount: 0,
+        truncationCount: 0,
+        confounds: [],
+      },
+      disagreements: [],
+      eligibility: { status: "completed" },
+      limitations: [],
+    };
+    await writeFile(join(detailRoot, "scorecard.json"), `${JSON.stringify([scorecard])}\n`);
+    const output = join(temporaryRoot, "calibration-output");
+    const result = await execute([
+      "calibrate",
+      "--artifacts-root",
+      join(temporaryRoot, "artifacts"),
+      "--output",
+      output,
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      scorecardCount: 1,
+      path: join(output, "calibration.json"),
+    });
+    await expect(readFile(join(output, "calibration.json"), "utf8")).resolves.toContain(
+      "does not establish construct validity",
+    );
+  });
+
   it("rejects an unsupported matched claim without success JSON", async () => {
     const temporaryRoot = await mkdtemp(join(root, ".git", "palimpsest-cli-report-claim-"));
     temporaryRoots.push(temporaryRoot);

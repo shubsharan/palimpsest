@@ -34,7 +34,7 @@ Origin status is `eligible`, `unavailable`, or `not-applicable` with a required 
   "rubricVersion": "epistemic-process-v1",
   "configurationDigest": "<sha256>",
   "bundleDigest": "<sha256>",
-  "protocolVersion": "ledger-packets-v4",
+  "protocolVersion": "ledger-packets-v5",
   "detailsPath": "grading/process-review-<uuid>/manifest.json",
   "detailsDigest": "<sha256>",
   "reviews": [
@@ -67,7 +67,7 @@ grading/<analysis-id>/
 - Detail files are immutable after the analysis reference enters `run.json`.
 - Unreferenced detail directories are non-evidentiary. A final append race leaves already-paid content-addressed call evidence intact for diagnosis rather than discarding it.
 
-Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity. Current request identities use `ledger-packets-v4`, `ledger-packet-prompt-v4`, and `ledger-packet-output-v4`; all three must match for reuse. Provider JSON does not repeat those request-bound identities.
+Each call file retains either a validated response or a failure together with the exact packet identity. A resumed analysis republishes validated predecessor call artifacts under the same content-addressed names without rewriting the predecessor. The artifact key covers bundle, configuration, rubric, reviewer profile and requested binding, packet ID/digest, routing/projection/prompt/schema versions, and the returned actual identity. Current request identities use `ledger-packets-v5`, `ledger-packet-prompt-v5`, and `ledger-packet-output-v5`; all three must match for reuse. The packet also binds its explicit evaluation unit and deterministic opportunity registry.
 
 ## Packet Output Contract
 
@@ -76,13 +76,26 @@ Each provider call returns one strict object for exactly one ledger packet:
 ```json
 {
   "schemaVersion": 1,
+  "claims": [
+    {
+      "claimId": "claim-001",
+      "opportunityId": "opp-0017",
+      "subjectScope": "evaluation-unit",
+      "actorIds": ["actor-1", "actor-2"],
+      "predicate": "revision",
+      "state": "observed",
+      "qualification": "direct",
+      "evidenceIds": ["c017"],
+      "counterevidenceIds": [],
+      "confidence": "medium",
+      "missingReason": ""
+    }
+  ],
   "dimensions": [
     {
       "dimensionId": "epistemic.revision",
       "assessment": "rated-3",
-      "rationale": "The team changed the mapping after a conflicting stage and tested the replacement.",
-      "evidenceIds": ["c017"],
-      "counterevidenceIds": [],
+      "claimIds": ["claim-001"],
       "confidence": "medium"
     }
   ],
@@ -95,13 +108,13 @@ Validation rules:
 
 - The root and every nested object set `additionalProperties: false`; all declared fields are required.
 - The call artifact request binds the exact packet, bundle, rubric, digest, and ledger; the provider output contains no identity echoes.
-- `dimensions` is an ordered array containing exactly the packet ledger's rubric dimensions, each with its exact `dimensionId`.
-- Every dimension has the same required fields. `assessment` is one of `rated-0` through `rated-4`, `unobservable`, or `not-applicable`; decoding restores the unchanged public `state` and rated-only numeric field.
-- Every rated dimension has at least one valid supporting reference.
+- `claims` contains at most sixteen structured observations, each bound to an exact packet opportunity and citation set with explicit subject scope, predicate, observability, qualification, confidence, and missingness.
+- `dimensions` is an ordered advisory array containing exactly the packet ledger's rubric dimensions. `assessment` is one of `rated-0` through `rated-4`, `unobservable`, or `not-applicable`, and every rated dimension cites at least one claim ID.
+- Public rationales and evidence arrays are rendered deterministically from the cited claims; the provider does not return free-form rating prose.
 - `unobservable` and `not-applicable` omit the public `rating` field and explain why.
 - `episodes` is required for every ledger. Epistemic may return evidence-linked episodes; social and instrumental must return `[]`.
 - Citation fields are arrays of compact strings matching `^c[0-9]{3}$`; the provider schema does not enumerate packet membership.
-- After parse, dimension IDs/order and citation tokens must match the exact request context; citations must be unique, resolve within the exact packet, and reproduce their source reference and excerpt digest.
+- After parse, opportunity IDs, claim IDs, dimension order, and citation tokens must match the exact request context; citations must be unique, resolve within the exact packet, and reproduce their source reference and excerpt digest.
 - No field contains a total score, model guess, unsupported hidden-state claim, or outcome claim.
 
 For isolated origins the system makes no social call and inserts the ordered social dimensions as `not-applicable`. Deterministic review assembly orders all dimensions by the global rubric, takes episodes only from epistemic output, and concatenates cautions in epistemic/social/instrumental order.
@@ -173,7 +186,7 @@ Allowed process context includes anonymous actor IDs, communication availability
 ## Compatibility
 
 - A legacy record without grading analyses decodes unchanged.
-- Legacy window/candidate/integration reviews and packet-protocol v1-v3 analyses remain readable but cannot supply packet checkpoints to protocol-v4 `--resume`.
+- Legacy window/candidate/integration reviews and packet protocols v1-v4 remain readable but cannot supply packet checkpoints to protocol-v5 `--resume`.
 - Historical `git.changed` events without ref targets remain valid. Measures that need an event-time object ID return `unavailable`.
 - A trace without `run.json` remains an interrupted attempt and cannot receive completed-run analyses.
 - Unknown future rubric, grader, or detail schema versions fail explicitly.

@@ -125,6 +125,12 @@ As a researcher, I want comparable scorecards and behavior summaries across matc
 - **FR-021**: Legacy run records MUST remain readable, and measures requiring unavailable historical observations MUST report missing data rather than fabricate or impute behavior.
 - **FR-022**: Paid qualitative review MUST require explicit operator spend authorization after exact artifact, configuration, leakage, and provider-free validation.
 - **FR-023**: The system MUST identify the minimum observable record and explicit infrastructure failure behavior for each added grading dimension without imposing new agent workflow requirements.
+- **FR-024**: Every review MUST declare `shared-team` or `isolated-origin` as its evaluation unit and MUST NOT substitute one actor's trajectory for a shared team result.
+- **FR-025**: The primary qualitative output MUST be a citation-backed evidence dossier of structured epistemic episodes, influence chains, execution chains, and explicit observability states; ordinal ratings remain advisory summaries.
+- **FR-026**: Review packets MUST expose deterministic opportunity IDs so both reviewers assess a common event registry and opportunity-conditioned denominators.
+- **FR-027**: Scorecards and reports MUST retain layered infrastructure, publication, integration, behavioral, and undetermined failure accounts without assigning automated model causation.
+- **FR-028**: Findings-bearing reports MUST expose fixture, treatment, model, record, protocol, omission, checker, and confound provenance after blinded reviews freeze.
+- **FR-029**: Automated calibration MUST measure structural integrity and reviewer stability while explicitly declining construct-validity claims.
 
 ### Key Entities
 
@@ -150,6 +156,9 @@ As a researcher, I want comparable scorecards and behavior summaries across matc
 - **SC-008**: Human audit of a stratified validation sample can locate the supporting artifact for at least 95% of grader citations without reconstructing undocumented identifiers.
 - **SC-009**: Legacy artifacts remain analyzable for supported dimensions, and 100% of unavailable historical measures are represented as missing rather than zero or inferred values.
 - **SC-010**: The grading harness adds no required agent-facing role, turn, checkpoint, report, hypothesis ledger, merge, or coordination step in prompt and run-surface inspections.
+- **SC-011**: Shared-origin prompt and artifact inspections identify the team as the evaluation unit in 100% of review packets.
+- **SC-012**: Identical inputs produce byte-identical opportunity registries and packets no larger than 128 KiB.
+- **SC-013**: Every scorecard-v2 claim resolves to one declared opportunity and retained evidence or is explicitly unobservable or not-applicable.
 
 ## Assumptions
 
@@ -157,7 +166,7 @@ As a researcher, I want comparable scorecards and behavior summaries across matc
 - Existing `RunRecord`, append-only trace, canonical origin Git histories, checker events, and solver outputs remain the authoritative evidence boundary.
 - The first release evaluates completed historical runs where evidence permits and reports missingness honestly; it does not retroactively create observations.
 - Qualitative dimensions use prospective written rubrics and blinded evidence bundles before any findings-bearing batch is reviewed.
-- Two independent automated reviewers provide advisory interpretations; human adjudication remains the calibration and audit reference rather than an assumed oracle.
+- Two independent automated reviewers provide advisory interpretations. Automated calibration measures structural integrity and stability only; the project makes no construct-validity claim and performs no automatic or human adjudication.
 - Outcome and process are linked for analysis only after process reviews are frozen, enabling study of whether apparently good processes reliably produce good results.
 - Model-level conclusions require repeated, appropriately matched observations; a single run can illustrate a mechanism but not establish a stable behavioral trait.
 - New neutral runner observations may be added only when a current grading question cannot be answered from existing artifacts and the observation does not prescribe or reward a model workflow.

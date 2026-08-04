@@ -139,7 +139,7 @@ describe("ledger review packet compilation", () => {
     ).toThrow(/packetId does not match/i);
   });
 
-  it("uses bounded deterministic head/tail projections to keep large packets below 256 KiB", () => {
+  it("uses bounded deterministic head/tail projections to keep large packets below 128 KiB", () => {
     const items = Array.from({ length: 80 }, (_, index) =>
       evidence(index + 1, "model.response", {
         reasoningSummary: `${String(index)}:${"x".repeat(8_000)}:${String(index)}`,
@@ -163,13 +163,39 @@ describe("ledger review packet compilation", () => {
 
   it("returns a social packet for isolated evidence so orchestration can skip it deterministically", () => {
     const packets = compile(
-      [evidence(1, "run.context", { communicationMode: "isolated" }, "runner")],
+      [
+        evidence(1, "run.context", { communicationMode: "isolated" }, "runner"),
+        evidence(2, "model.response", { reasoningSummary: "action" }, "actor-1"),
+      ],
       "isolated",
     );
 
     expect(packets).toHaveLength(3);
     expect(packets[1]).toMatchObject({ ledger: "social", origin: { ordinal: 1 } });
+    expect(packets[1]).toMatchObject({
+      evaluationUnit: { kind: "isolated-origin", actorIds: ["actor-1"] },
+    });
+    expect(packets[1]!.opportunities[0]).toMatchObject({ opportunityId: "opp-0001" });
     expect(JSON.stringify(packets)).not.toContain('"origin":{"id"');
+  });
+
+  it("declares the shared team as the unit and assigns stable opportunity IDs", () => {
+    const packets = compile([
+      evidence(1, "team.message", { text: "candidate" }, "actor-1"),
+      evidence(2, "tool.completed", { id: "call-1", output: "checked" }, "actor-2"),
+    ]);
+    expect(packets.every(({ evaluationUnit }) => evaluationUnit.kind === "shared-team")).toBe(true);
+    expect(
+      packets
+        .flatMap(({ opportunities }) => opportunities)
+        .every(({ opportunityId }) => /^opp-[0-9]{4}$/.test(opportunityId)),
+    ).toBe(true);
+    expect(
+      compile([
+        evidence(1, "team.message", { text: "candidate" }, "actor-1"),
+        evidence(2, "tool.completed", { id: "call-1", output: "checked" }, "actor-2"),
+      ]),
+    ).toEqual(packets);
   });
 
   it("rejects a citation index beyond the portable structured-schema limit", () => {

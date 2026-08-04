@@ -9,9 +9,9 @@ import {
 } from "./contracts.js";
 
 export const REVIEW_PACKET_SCHEMA_VERSION = 1 as const;
-export const REVIEW_PACKET_ROUTING_VERSION = "ledger-routing-v1" as const;
-export const REVIEW_PACKET_PROJECTION_VERSION = "evidence-projection-v1" as const;
-export const REVIEW_PACKET_MAX_BYTES = 256 * 1024;
+export const REVIEW_PACKET_ROUTING_VERSION = "ledger-routing-v2" as const;
+export const REVIEW_PACKET_PROJECTION_VERSION = "evidence-projection-v2" as const;
+export const REVIEW_PACKET_MAX_BYTES = 128 * 1024;
 // OpenAI permits up to 1000 enum values across a schema; reserve one slot below that cap.
 export const REVIEW_PACKET_MAX_CITATIONS = 999;
 export const REVIEW_PACKET_ITEM_EXCERPT_BYTES = 4 * 1024;
@@ -25,6 +25,30 @@ export type ReviewPacketLedger = ProcessLedger;
 
 export interface PacketOrigin {
   readonly ordinal: number;
+}
+
+export interface PacketEvaluationUnit {
+  readonly kind: "shared-team" | "isolated-origin";
+  readonly actorIds: readonly string[];
+}
+
+export type ReviewOpportunityKind =
+  | "stage-boundary"
+  | "peer-message"
+  | "actor-action"
+  | "tool-exchange"
+  | "checker-exchange"
+  | "git-change"
+  | "publication"
+  | "failure"
+  | "session-event";
+
+export interface ReviewOpportunity {
+  readonly opportunityId: string;
+  readonly kind: ReviewOpportunityKind;
+  readonly atMs: number;
+  readonly actorIds: readonly string[];
+  readonly citationIds: readonly string[];
 }
 
 export interface PacketCitation {
@@ -56,6 +80,7 @@ export interface ReviewPacket {
   readonly schemaVersion: typeof REVIEW_PACKET_SCHEMA_VERSION;
   readonly packetId: string;
   readonly origin: PacketOrigin;
+  readonly evaluationUnit: PacketEvaluationUnit;
   readonly ledger: ProcessLedger;
   readonly bundleDigest: string;
   readonly configurationDigest: string;
@@ -63,9 +88,22 @@ export interface ReviewPacket {
   readonly routingVersion: typeof REVIEW_PACKET_ROUTING_VERSION;
   readonly projectionVersion: typeof REVIEW_PACKET_PROJECTION_VERSION;
   readonly citations: readonly PacketCitation[];
+  readonly opportunities: readonly ReviewOpportunity[];
   readonly items: readonly ProjectedEvidence[];
   readonly omissions: readonly PacketOmission[];
   readonly contentDigest: string;
+}
+
+function opportunityKind(source: ProjectionSource): ReviewOpportunityKind {
+  if (source.kind.startsWith("stage.")) return "stage-boundary";
+  if (source.kind.startsWith("team.")) return "peer-message";
+  if (source.kind === "tool.exchange" || source.kind.startsWith("tool.")) return "tool-exchange";
+  if (source.kind.startsWith("checker.")) return "checker-exchange";
+  if (source.kind.includes("error") || source.kind.includes("failure")) return "failure";
+  if (source.kind.startsWith("session.")) return "session-event";
+  if (source.kind === "git.published" || source.kind === "git.frozen") return "publication";
+  if (source.kind.startsWith("git.")) return "git-change";
+  return "actor-action";
 }
 
 export interface CompileReviewPacketsOptions {
@@ -326,7 +364,8 @@ function buildPacket(
           reason: `${REVIEW_PACKET_ROUTING_VERSION} has no route for observation kind ${item.kind}.`,
         }))
       : [];
-  const items: ProjectedEvidence[] = projectionSources(routed).map((source, index) => {
+  const sources = projectionSources(routed);
+  const items: ProjectedEvidence[] = sources.map((source, index) => {
     const bounded = boundedProjection(source.content, contentLimit);
     if (bounded.excerpted) {
       for (const item of source.items) {
@@ -357,9 +396,27 @@ function buildPacket(
       content: bounded.content,
     };
   });
+  const opportunities: ReviewOpportunity[] = sources.map((source, index) => ({
+    opportunityId: `opp-${String(index + 1).padStart(4, "0")}`,
+    kind: opportunityKind(source),
+    atMs: source.atMs,
+    actorIds: source.actorId === "runner" ? [] : [source.actorId],
+    citationIds: source.items.map(({ item }) => citationByEvidence.get(item.evidenceId)!),
+  }));
+  const actorIds = [
+    ...new Set(
+      (options.items ?? options.bundle.items)
+        .map(({ actorId }) => actorId)
+        .filter((actorId) => actorId !== "runner"),
+    ),
+  ].sort();
   const packetBase = {
     schemaVersion: REVIEW_PACKET_SCHEMA_VERSION,
     origin: { ordinal: options.originOrdinal },
+    evaluationUnit: {
+      kind: options.bundle.communicationMode === "shared" ? "shared-team" : "isolated-origin",
+      actorIds,
+    },
     ledger,
     bundleDigest: options.bundle.contentDigest,
     configurationDigest: options.configurationDigest,
@@ -367,6 +424,7 @@ function buildPacket(
     routingVersion: REVIEW_PACKET_ROUTING_VERSION,
     projectionVersion: REVIEW_PACKET_PROJECTION_VERSION,
     citations,
+    opportunities,
     items,
     omissions,
   } as const;
@@ -568,6 +626,7 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
       "schemaVersion",
       "packetId",
       "origin",
+      "evaluationUnit",
       "ledger",
       "bundleDigest",
       "configurationDigest",
@@ -575,6 +634,7 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
       "routingVersion",
       "projectionVersion",
       "citations",
+      "opportunities",
       "items",
       "omissions",
       "contentDigest",
@@ -591,6 +651,18 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
     throw new Error(`${name}.projectionVersion is unsupported.`);
   }
   const origin = exact(decoded.origin, ["ordinal"], `${name}.origin`);
+  const evaluationUnit = exact(
+    decoded.evaluationUnit,
+    ["kind", "actorIds"],
+    `${name}.evaluationUnit`,
+  );
+  if (evaluationUnit.kind !== "shared-team" && evaluationUnit.kind !== "isolated-origin") {
+    throw new Error(`${name}.evaluationUnit.kind is invalid.`);
+  }
+  const actorIds = values(evaluationUnit.actorIds, controlledId, `${name}.evaluationUnit.actorIds`);
+  if (actorIds.length === 0 || new Set(actorIds).size !== actorIds.length) {
+    throw new Error(`${name}.evaluationUnit.actorIds must be non-empty and unique.`);
+  }
   const citations = values(decoded.citations, decodeCitation, `${name}.citations`);
   if (citations.length > REVIEW_PACKET_MAX_CITATIONS) {
     throw new Error(`${name}.citations exceeds the portable structured-schema limit.`);
@@ -602,6 +674,61 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
     throw new Error(`${name}.citations must use ordered packet-local IDs.`);
   }
   const citationIds = new Set(expectedCitationIds);
+  const opportunities = values(
+    decoded.opportunities,
+    (value, opportunityName): ReviewOpportunity => {
+      const opportunity = exact(
+        value,
+        ["opportunityId", "kind", "atMs", "actorIds", "citationIds"],
+        opportunityName,
+      );
+      const opportunityId = text(opportunity.opportunityId, `${opportunityName}.opportunityId`);
+      if (!/^opp-[0-9]{4}$/.test(opportunityId)) {
+        throw new Error(`${opportunityName}.opportunityId is invalid.`);
+      }
+      const kind = opportunity.kind;
+      if (
+        kind !== "stage-boundary" &&
+        kind !== "peer-message" &&
+        kind !== "actor-action" &&
+        kind !== "tool-exchange" &&
+        kind !== "checker-exchange" &&
+        kind !== "git-change" &&
+        kind !== "publication" &&
+        kind !== "failure" &&
+        kind !== "session-event"
+      )
+        throw new Error(`${opportunityName}.kind is invalid.`);
+      const opportunityActors = values(
+        opportunity.actorIds,
+        controlledId,
+        `${opportunityName}.actorIds`,
+      );
+      const opportunityCitations = values(
+        opportunity.citationIds,
+        text,
+        `${opportunityName}.citationIds`,
+      );
+      if (opportunityCitations.some((citationId) => !citationIds.has(citationId))) {
+        throw new Error(`${opportunityName} cites an ID outside the packet reference index.`);
+      }
+      return {
+        opportunityId,
+        kind,
+        atMs: integer(opportunity.atMs, 0, `${opportunityName}.atMs`),
+        actorIds: opportunityActors,
+        citationIds: opportunityCitations,
+      };
+    },
+    `${name}.opportunities`,
+  );
+  if (
+    opportunities.some(
+      ({ opportunityId }, index) => opportunityId !== `opp-${String(index + 1).padStart(4, "0")}`,
+    )
+  ) {
+    throw new Error(`${name}.opportunities must use ordered opportunity IDs.`);
+  }
   const items = values(decoded.items, decodeProjectedEvidence, `${name}.items`);
   if (
     items.some(({ entryId }, index) => entryId !== `entry-${String(index + 1).padStart(4, "0")}`)
@@ -620,6 +747,7 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
     origin: {
       ordinal: integer(origin.ordinal, 1, `${name}.origin.ordinal`),
     },
+    evaluationUnit: { kind: evaluationUnit.kind, actorIds },
     ledger: packetLedger(decoded.ledger, `${name}.ledger`),
     bundleDigest: digest(decoded.bundleDigest, `${name}.bundleDigest`),
     configurationDigest: digest(decoded.configurationDigest, `${name}.configurationDigest`),
@@ -627,6 +755,7 @@ export function decodeReviewPacket(value: unknown, name = "Review packet"): Revi
     routingVersion: REVIEW_PACKET_ROUTING_VERSION,
     projectionVersion: REVIEW_PACKET_PROJECTION_VERSION,
     citations,
+    opportunities,
     items,
     omissions: values(decoded.omissions, decodePacketOmission, `${name}.omissions`),
     contentDigest: digest(decoded.contentDigest, `${name}.contentDigest`),

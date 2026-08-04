@@ -1292,10 +1292,11 @@ function validateRelationships(record: RunRecord): void {
           item.performanceAnalysisId,
           item.configurationDigest,
           item.rubricVersion,
+          item.protocolVersion ?? "legacy",
         ].join("\0");
         if (completedReviewIdentities.has(identity)) {
           throw new Error(
-            "A completed process review already exists for this performance analysis, configuration, and rubric.",
+            "A completed process review already exists for this performance analysis, configuration, rubric, and protocol.",
           );
         }
         completedReviewIdentities.add(identity);

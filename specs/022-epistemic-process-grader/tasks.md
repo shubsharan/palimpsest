@@ -183,6 +183,19 @@
 - [x] T070 Add explicit-resume tests proving immutable predecessors, exact v4 protocol/prompt/output-schema validation, reuse of completed packets only, predecessor usage accounting, missing-only calls, new spend authorization, no auto-discovery/retry, and window/v1-v3 non-resumability in `src/grading/review.test.ts` and `tests/puzzle/cli.test.ts`
 - [x] T071 Reconcile Feature 022 plan, research, data model, CLI/data contracts, quickstart, and task evidence with protocol-v4 request-bound identities, compact ordered dimensions, assessment decoding, episode semantic repair, and no live-provider validation claim in `specs/022-epistemic-process-grader/`
 
+## Phase 9: Research-Aligned Evidence Dossier
+
+**Purpose**: Make observable mechanisms and provenance the primary scientific output while retaining ratings as advisory summaries.
+
+- [x] T072 Add protocol-v5 evaluation-unit and deterministic opportunity-registry packet contracts with a 128 KiB bound in `src/grading/packets.ts`
+- [x] T073 Add structured claim packet output and deterministic prose rendering in `src/grading/packet-output.ts` and `src/grading/review.ts`
+- [x] T074 Add scorecard-v2 evidence dossier, failure, provenance, and typed-disagreement contracts with v1 readability in `src/grading/contracts.ts`
+- [x] T075 Assemble dossier-first scorecards and preserve v4 resume boundaries in `src/grading/review.ts`
+- [x] T076 Aggregate mechanisms, opportunity-conditioned rates, provenance, and typed agreement in `src/grading/report.ts`
+- [x] T077 Add provider-free `puzzle:calibrate` structural calibration in `src/grading/calibrate.ts`, `src/cli.ts`, and `package.json`
+- [x] T078 Add provider-free contract, packet, review, report, migration, and CLI tests for protocol v5 and scorecard v2
+- [x] T079 Reconcile Feature 022 research, data, CLI, quickstart, grading documentation, and requirements evidence with the evidence-dossier boundary
+
 ---
 
 ## Dependencies & Execution Order
