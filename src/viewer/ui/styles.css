@@ -436,7 +436,7 @@ select {
   padding: 2px 5px;
   border: 1px solid var(--rule);
   text-transform: uppercase;
-  font-size: 8px;
+  font-size: 9px;
 }
 .timing-approximate {
   border-style: dashed;
@@ -453,7 +453,7 @@ select {
   padding: 3px 5px;
   background: transparent;
   cursor: pointer;
-  font-size: 8px;
+  font-size: 9px;
   white-space: nowrap;
 }
 .checkpoint-error {
@@ -466,7 +466,7 @@ select {
   gap: 12px;
   border-bottom: 1px solid var(--rule);
   color: var(--ink-soft);
-  font-size: 8px;
+  font-size: 9px;
   text-transform: uppercase;
 }
 .decode-key span::before {
@@ -510,7 +510,7 @@ select {
 .state-newly-correct {
   background: var(--green-new);
   box-shadow: 0 0 0 2px rgba(64, 126, 72, 0.16);
-  animation: reveal 480ms ease-out;
+  animation: reveal 520ms ease-out;
 }
 .state-previously-correct {
   background: var(--green-known);
@@ -543,7 +543,7 @@ select {
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
-  font-size: 8px;
+  font-size: 9px;
   text-transform: uppercase;
 }
 .filter-row button.active {
@@ -602,10 +602,10 @@ select {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
 }
-.transport-row > time {
+.transport-clock {
   font-size: 13px;
 }
-.transport-row > time span {
+.transport-clock span {
   color: var(--ink-soft);
 }
 .transport-row > label {
@@ -667,10 +667,12 @@ select {
     transform: scale(0.75);
   }
 }
+/* Fade in from a bright highlight using only background-color — the previous
+   animated 18px box-shadow blur repainted a large region per frame and janked
+   whenever a checkpoint revealed many words at once. */
 @keyframes reveal {
   from {
     background: #fff2a7;
-    box-shadow: 0 0 18px #fff2a7;
   }
 }
 @keyframes spin {

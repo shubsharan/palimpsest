@@ -8,6 +8,7 @@ import {
   decodeStateName,
   filterViewerLane,
   replayTimeAt,
+  tokenizeLines,
   upperBound,
 } from "./replay-index.js";
 
@@ -163,5 +164,34 @@ describe("viewer replay index", () => {
       ),
     ).toThrow(/exceeds the ciphertext/);
     expect(countCiphertextWords("one two's three\nfour")).toBe(4);
+  });
+
+  it("tokenizes lines into plain and word spans with running word indexes", () => {
+    const lines = tokenizeLines("one two\n  three");
+    expect(lines).toEqual([
+      {
+        key: 0,
+        spans: [
+          { surface: "one", wordIndex: 0 },
+          { surface: " " },
+          { surface: "two", wordIndex: 1 },
+        ],
+      },
+      {
+        key: 1,
+        spans: [{ surface: "  " }, { surface: "three", wordIndex: 2 }],
+      },
+    ]);
+    // Word indexes stay aligned with countCiphertextWords across the whole text.
+    const spanWords = lines.flatMap((line) =>
+      line.spans.filter((span) => span.wordIndex !== undefined),
+    );
+    expect(spanWords).toHaveLength(countCiphertextWords("one two\n  three"));
+  });
+
+  it("keeps a trailing word as the final span without a following plain span", () => {
+    // Regression: rendering a line that ends in a word must not assume a trailing span exists.
+    const [line] = tokenizeLines("alpha beta");
+    expect(line!.spans.at(-1)).toEqual({ surface: "beta", wordIndex: 1 });
   });
 });

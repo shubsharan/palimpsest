@@ -7,6 +7,22 @@ import type {
   ViewerToolCall,
 } from "../contracts.js";
 
+// One definition of a "word" so the tokenizer that renders the reconstruction
+// and the counter that sizes the decode state array cannot drift apart. The `g`
+// flag is required by `matchAll`; `matchAll` does not read or mutate `lastIndex`,
+// so sharing a single instance is safe.
+const WORD_PATTERN = /\p{L}+(?:['’]\p{L}+)*/gu;
+
+export interface TextSpan {
+  surface: string;
+  wordIndex?: number;
+}
+
+export interface TextLine {
+  key: number;
+  spans: readonly TextSpan[];
+}
+
 export type ViewerLaneItem =
   | {
       kind: "event";
@@ -150,7 +166,26 @@ export function replayTimeAt(
 }
 
 export function countCiphertextWords(ciphertext: string): number {
-  return [...ciphertext.matchAll(/\p{L}+(?:['\u2019]\p{L}+)*/gu)].length;
+  return [...ciphertext.matchAll(WORD_PATTERN)].length;
+}
+
+// Split ciphertext into lines of alternating plain and word spans. Each word span
+// carries the running `wordIndex` used to look up its decode candidate and state.
+export function tokenizeLines(value: string): TextLine[] {
+  let wordIndex = 0;
+  return value.split("\n").map((line, key) => {
+    const spans: TextSpan[] = [];
+    let cursor = 0;
+    for (const match of line.matchAll(WORD_PATTERN)) {
+      const index = match.index;
+      if (index > cursor) spans.push({ surface: line.slice(cursor, index) });
+      spans.push({ surface: match[0], wordIndex });
+      wordIndex += 1;
+      cursor = index + match[0].length;
+    }
+    if (cursor < line.length) spans.push({ surface: line.slice(cursor) });
+    return { key, spans };
+  });
 }
 
 export function decodeStateName(code: number): DecodeWordState {
