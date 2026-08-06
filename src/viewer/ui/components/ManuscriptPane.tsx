@@ -1,4 +1,4 @@
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useMemo, useRef, type ReactNode } from "react";
 
 import type { ViewerRun } from "../../contracts.js";
 import {
@@ -7,6 +7,7 @@ import {
   type DecodeSnapshot,
   type TextLine,
 } from "../replay-index.js";
+import { ManuscriptMap } from "./ManuscriptMap.js";
 
 // One line of the manuscript. Every word carries a span so it can surface from
 // ghosted cipher (the scraped-away under-text) to full ink as it is deciphered;
@@ -60,14 +61,21 @@ const DecodedLine = memo(function DecodedLine({
 const DecodedPaper = memo(function DecodedPaper({
   ciphertext,
   snapshot,
+  scrollRef,
 }: {
   ciphertext: string;
   snapshot: DecodeSnapshot | undefined;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const lines = useMemo(() => tokenizeLines(ciphertext), [ciphertext]);
-  if (snapshot === undefined) return <div className="decoded-paper is-raw">{ciphertext}</div>;
+  if (snapshot === undefined)
+    return (
+      <div ref={scrollRef} className="decoded-paper is-raw">
+        {ciphertext}
+      </div>
+    );
   return (
-    <div className="decoded-paper">
+    <div ref={scrollRef} className="decoded-paper">
       {lines.map((line) => (
         <DecodedLine key={line.key} line={line} snapshot={snapshot} />
       ))}
@@ -93,6 +101,7 @@ export const ManuscriptPane = memo(function ManuscriptPane({
   onOriginChange: (originId: string) => void;
 }) {
   const active = snapshot?.checkpoint;
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const jumpTo = (index: number) => {
     document.getElementById(`decode-word-${String(index)}`)?.scrollIntoView({
       behavior: "smooth",
@@ -159,7 +168,15 @@ export const ManuscriptPane = memo(function ManuscriptPane({
         )}
       </div>
 
-      <DecodedPaper ciphertext={run.ciphertext} snapshot={snapshot} />
+      <div className="manuscript-body">
+        <DecodedPaper ciphertext={run.ciphertext} snapshot={snapshot} scrollRef={scrollRef} />
+        <ManuscriptMap
+          ciphertext={run.ciphertext}
+          snapshot={snapshot}
+          scrollRef={scrollRef}
+          wordsLabel={recovered}
+        />
+      </div>
     </section>
   );
 });

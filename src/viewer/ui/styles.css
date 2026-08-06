@@ -612,6 +612,43 @@ pre {
 .state-changed-incorrect {
   border-bottom: 1.5px dotted var(--amber);
 }
+.manuscript-body {
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+.manuscript-body .decoded-paper {
+  flex: 1 1 auto;
+}
+.manuscript-map {
+  position: relative;
+  flex: 0 0 68px;
+  border-left: 1px solid var(--rule);
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  touch-action: none;
+}
+.map-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.map-viewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  background: rgba(51, 69, 107, 0.14);
+  border: 1px solid var(--ink-blue-soft);
+  border-radius: 1px;
+  pointer-events: none;
+}
+@media (max-width: 980px) {
+  .manuscript-map {
+    display: none;
+  }
+}
 
 /* ---------------- temporal register ---------------- */
 .timeline-shell {
