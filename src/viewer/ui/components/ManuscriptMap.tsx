@@ -138,6 +138,7 @@ export const ManuscriptMap = memo(function ManuscriptMap({
 
     const scrollToFraction = (clientY: number) => {
       const rect = container.getBoundingClientRect();
+      if (rect.height <= 0) return;
       const fraction = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
       scroller.scrollTop = fraction * (scroller.scrollHeight - scroller.clientHeight);
     };
@@ -154,11 +155,15 @@ export const ManuscriptMap = memo(function ManuscriptMap({
     scroller.addEventListener("scroll", scheduleSync, { passive: true });
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
+    const resizeObserver = new ResizeObserver(scheduleSync);
+    resizeObserver.observe(container);
+    resizeObserver.observe(scroller);
     return () => {
       cancelAnimationFrame(syncFrame);
       scroller.removeEventListener("scroll", scheduleSync);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
+      resizeObserver.disconnect();
     };
     // Re-bind when the layout changes (new run => new scrollHeight to track).
   }, [scrollRef, layout]);
