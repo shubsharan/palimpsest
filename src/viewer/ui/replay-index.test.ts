@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { DecodeCheckpoint, ViewerRun } from "../contracts.js";
 import {
   appendDecodeCheckpoint,
+  buildMapLayout,
   buildViewerReplayIndex,
   countCiphertextWords,
   decodeStateName,
   filterViewerLane,
+  MAP_COLORS,
   replayTimeAt,
+  stateColor,
   tokenizeLines,
   upperBound,
 } from "./replay-index.js";
@@ -215,5 +218,49 @@ describe("viewer replay index", () => {
     // Regression: rendering a line that ends in a word must not assume a trailing span exists.
     const [line] = tokenizeLines("alpha beta");
     expect(line!.spans.at(-1)).toEqual({ surface: "beta", wordIndex: 1 });
+  });
+});
+
+describe("buildMapLayout", () => {
+  it("groups words per source line with a continuous wordIndex", () => {
+    const layout = buildMapLayout("the sea\nrose high");
+    expect(layout.wordCount).toBe(4);
+    expect(layout.lines).toHaveLength(2);
+    expect(layout.lines[0]!.words).toEqual([
+      { wordIndex: 0, length: 3 },
+      { wordIndex: 1, length: 3 },
+    ]);
+    expect(layout.lines[1]!.words).toEqual([
+      { wordIndex: 2, length: 4 },
+      { wordIndex: 3, length: 4 },
+    ]);
+  });
+
+  it("keeps a blank line as an empty row so paragraph spacing shows", () => {
+    const layout = buildMapLayout("a\n\nb");
+    expect(layout.lines).toHaveLength(3);
+    expect(layout.lines[1]!.words).toEqual([]);
+    expect(layout.wordCount).toBe(2);
+  });
+
+  it("returns no words for empty ciphertext", () => {
+    const layout = buildMapLayout("");
+    expect(layout.wordCount).toBe(0);
+    expect(layout.lines).toHaveLength(1);
+    expect(layout.lines[0]!.words).toEqual([]);
+  });
+});
+
+describe("stateColor", () => {
+  it("maps decode states to the manuscript palette", () => {
+    expect(stateColor(1, true)).toBe(MAP_COLORS.fresh); // newly-correct
+    expect(stateColor(2, true)).toBe(MAP_COLORS.ink); // previously-correct
+    expect(stateColor(3, true)).toBe(MAP_COLORS.regress); // regressed
+    expect(stateColor(4, true)).toBe(MAP_COLORS.amber); // changed-incorrect
+  });
+
+  it("distinguishes ciphered from resolved for unchanged words", () => {
+    expect(stateColor(0, false)).toBe(MAP_COLORS.ciphered);
+    expect(stateColor(0, true)).toBe(MAP_COLORS.ink);
   });
 });

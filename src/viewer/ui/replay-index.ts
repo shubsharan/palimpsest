@@ -192,6 +192,60 @@ export function decodeStateName(code: number): DecodeWordState {
   return STATE_NAMES[code] ?? "unchanged";
 }
 
+export interface MapWord {
+  wordIndex: number;
+  length: number;
+}
+
+export interface MapLine {
+  words: readonly MapWord[];
+}
+
+export interface MapLayout {
+  lines: readonly MapLine[];
+  wordCount: number;
+}
+
+// One row per source line (blank lines included, so paragraph gaps survive) with
+// each word's running index and character length — enough to lay the whole text
+// out in the minimap without re-tokenizing.
+export function buildMapLayout(ciphertext: string): MapLayout {
+  const lines = tokenizeLines(ciphertext).map((line) => ({
+    words: line.spans.flatMap((span) =>
+      span.wordIndex === undefined
+        ? []
+        : [{ wordIndex: span.wordIndex, length: span.surface.length }],
+    ),
+  }));
+  return { lines, wordCount: countCiphertextWords(ciphertext) };
+}
+
+// Canvas mirror of the manuscript ink palette (styles.css --fresh/--ink/--regress
+// /--amber). Kept here so the minimap and the rendered text stay in visual sync.
+export const MAP_COLORS = {
+  ciphered: "rgba(32, 33, 28, 0.22)",
+  fresh: "#2f6d3a",
+  ink: "#20211c",
+  regress: "#a5453a",
+  amber: "#b98a2e",
+} as const;
+
+export function stateColor(state: number, hasCandidate: boolean): string {
+  switch (state) {
+    case STATE_CODES["newly-correct"]:
+      return MAP_COLORS.fresh;
+    case STATE_CODES.regressed:
+      return MAP_COLORS.regress;
+    case STATE_CODES["changed-incorrect"]:
+      return MAP_COLORS.amber;
+    case STATE_CODES["previously-correct"]:
+      return MAP_COLORS.ink;
+    default:
+      // unchanged: resolved-to-same reads as ink, still-ciphered reads faint.
+      return hasCandidate ? MAP_COLORS.ink : MAP_COLORS.ciphered;
+  }
+}
+
 function emptyCandidates(wordCount: number): (string | null | undefined)[] {
   return Array.from({ length: wordCount }, () => undefined);
 }
