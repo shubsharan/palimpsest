@@ -73,7 +73,7 @@ export const ManuscriptMap = memo(function ManuscriptMap({
       ctx.clearRect(0, 0, width, height);
 
       // Shrink the cell width until the flowed rows fit the height at a usable
-      // row height (fewer columns => fewer wraps => fewer rows).
+      // row height (more columns => fewer wraps => fewer rows).
       let cellW = BASE_CELL_W;
       let rows = flowRows(layout.lines, Math.max(1, Math.floor(width / cellW)));
       let rowH = Math.min(TARGET_ROW_H, height / rows.length);
