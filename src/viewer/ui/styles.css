@@ -28,11 +28,14 @@
   --cat-evaluation: #327341;
   --cat-infrastructure: #9d2522;
 
+  /* Three deliberate voices: sans for the interface (headers, labels, chrome),
+     serif for the cypher/manuscript, mono for agent chat and code. */
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: "Newsreader Variable", Georgia, "Times New Roman", serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-synthesis: none;
 }
 
@@ -68,8 +71,8 @@ p {
 h1,
 h2,
 h3 {
-  font-family: var(--serif);
-  font-weight: 560;
+  font-family: var(--sans);
+  font-weight: 600;
 }
 
 .app-shell {
@@ -293,7 +296,6 @@ h3 {
 .waiting-copy {
   padding: 16px 8px;
   color: var(--ink-faint);
-  font-family: var(--serif);
   font-style: italic;
 }
 
@@ -322,9 +324,9 @@ h3 {
   padding: 9px 10px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: var(--serif);
-  font-size: 13.5px;
-  line-height: 1.36;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .response-card .empty-response {
   color: var(--ink-soft);
@@ -350,7 +352,8 @@ h3 {
 .reasoning-note p {
   margin-top: 7px;
   white-space: pre-wrap;
-  line-height: 1.4;
+  font-family: var(--mono);
+  line-height: 1.45;
 }
 .tool-card summary {
   list-style: none;
@@ -360,6 +363,7 @@ h3 {
   align-items: center;
   padding: 8px;
   cursor: pointer;
+  font-family: var(--mono);
   font-size: 10.5px;
 }
 .tool-card summary::-webkit-details-marker {
@@ -383,7 +387,6 @@ h3 {
 }
 .tool-detail-loading {
   color: var(--ink-soft);
-  font-family: var(--serif);
   font-style: italic;
 }
 .tool-detail h4 {
@@ -402,6 +405,7 @@ pre {
   border-radius: 2px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-family: var(--mono);
   font-size: 9px;
   line-height: 1.45;
 }
@@ -462,9 +466,9 @@ pre {
 .team-scroll article p {
   margin-top: 6px;
   white-space: pre-wrap;
-  font-family: var(--serif);
-  font-size: 12.5px;
-  line-height: 1.35;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 /* ---------------- manuscript (hero) ---------------- */
@@ -504,8 +508,7 @@ pre {
   color: var(--ink);
 }
 .ms-metric {
-  font-family: var(--serif);
-  font-size: 15px;
+  font-size: 13px;
   color: var(--ink-soft);
 }
 .ms-caption {
@@ -525,9 +528,8 @@ pre {
   border-radius: 2px;
 }
 .ms-subject {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -559,9 +561,8 @@ pre {
   margin-left: 10px;
 }
 .ms-status {
-  font-family: var(--serif);
   font-style: italic;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 .ms-error {
   color: var(--regress);
