@@ -18,11 +18,28 @@ function run(): ViewerRun {
     fixtureId: "fixture-test",
     variantId: "stationary",
     rekeyAtStage: null,
+    treatmentSummary:
+      "1 agent on a shared channel receives 1 timed evidence drop; the cipher stays fixed. No checker · 1-minute cutoff.",
+    schedule: {
+      releases: [{ ordinal: 1, offsetMs: 0, isRekey: false }],
+      cutoffMs: 60_000,
+      rekeyOrdinal: null,
+      rekeyAtMs: null,
+    },
+    tokenLimitPerAgent: null,
+    spendCeilingCents: 0,
+    hasChecker: false,
     agents: [
       {
         agentId: "agent-1",
         profile: "fake",
         requestedModel: "fake-model",
+        session: {
+          state: "finished",
+          inputTokens: 0,
+          outputTokens: 0,
+          terminationReason: "voluntary final response",
+        },
       },
     ],
     origins: [{ originId: "shared", agentIds: ["agent-1"], finalCommit: null }],

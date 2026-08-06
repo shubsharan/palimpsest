@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { loadFixturePackage } from "../fixture/package.js";
 import { isAgentId, type JsonValue } from "../model/contracts.js";
-import { loadRunRecord, validateRunRecordTrace } from "../run/record.js";
+import { loadRunRecord, validateRunRecordTrace, type RunRecord } from "../run/record.js";
 import { verifyTree } from "../seal.js";
 import { readObservationTrace, type ObservationEvent } from "../trace.js";
 import type {
@@ -210,6 +210,27 @@ export function normalizeViewerTrace(events: readonly ObservationEvent[]): {
   };
 }
 
+/**
+ * One plain-language sentence describing the run's treatment. This is authored
+ * copy composed from structured fields — there is no stored description — so it
+ * reads for a human rather than surfacing raw `variantId` / mode identifiers.
+ */
+function describeTreatment(record: RunRecord): string {
+  const run = record.configuration.run;
+  const agentCount = record.configuration.models.length;
+  const dropCount = run.schedule.releaseOffsetsMs.length;
+  const rekeyOrdinal = run.fixture.rekeyAtStage ?? null;
+  const cutoffMinutes = Math.round(run.schedule.cutoffMs / 60_000);
+  const agents = `${agentCount} agent${agentCount === 1 ? "" : "s"}`;
+  const channel =
+    record.topology.communicationMode === "shared" ? "on a shared channel" : "working in isolation";
+  const drops = `receive ${dropCount} timed evidence drop${dropCount === 1 ? "" : "s"}`;
+  const rekey =
+    rekeyOrdinal === null ? "the cipher stays fixed" : `the cipher re-keys at drop ${rekeyOrdinal}`;
+  const checker = run.capabilities.checker === true ? "Checker on" : "No checker";
+  return `${agents} ${channel} ${drops}; ${rekey}. ${checker} · ${cutoffMinutes}-minute cutoff.`;
+}
+
 export async function loadViewerRun(
   root: string,
   runRoot: string,
@@ -235,6 +256,18 @@ export async function loadViewerRun(
     finalBatch?.results.flatMap((result) =>
       result.score === undefined ? [] : [{ originId: result.originId, ...result.score }],
     ) ?? [];
+  const runConfig = loaded.record.configuration.run;
+  const rekeyOrdinal = runConfig.fixture.rekeyAtStage ?? null;
+  const releases = runConfig.schedule.releaseOffsetsMs.map((offsetMs, index) => ({
+    ordinal: index + 1,
+    offsetMs,
+    isRekey: rekeyOrdinal !== null && index + 1 === rekeyOrdinal,
+  }));
+  // Zip sessions to agents by id (not index) — order is guaranteed today, but a
+  // map is defensive if that ever changes.
+  const sessionByAgent = new Map(
+    loaded.record.sessions.map((session) => [session.agentId, session]),
+  );
   const normalizedTrace = normalizeViewerTrace(trace.events);
   return {
     run: {
@@ -244,15 +277,34 @@ export async function loadViewerRun(
       frozenAt: loaded.record.frozenAt,
       durationMs,
       communicationMode: loaded.record.topology.communicationMode,
-      fixtureId: loaded.record.configuration.run.fixture.id,
-      variantId: loaded.record.configuration.run.fixture.variant,
-      rekeyAtStage: loaded.record.configuration.run.fixture.rekeyAtStage ?? null,
-      agents: loaded.record.configuration.models.map(({ agentId, binding }) => ({
-        agentId,
-        profile: binding.profile,
-        requestedModel: binding.requestedModel,
-        ...(binding.actualModel === undefined ? {} : { actualModel: binding.actualModel }),
-      })),
+      fixtureId: runConfig.fixture.id,
+      variantId: runConfig.fixture.variant,
+      rekeyAtStage: rekeyOrdinal,
+      treatmentSummary: describeTreatment(loaded.record),
+      schedule: {
+        releases,
+        cutoffMs: runConfig.schedule.cutoffMs,
+        rekeyOrdinal,
+        rekeyAtMs: rekeyOrdinal === null ? null : (releases[rekeyOrdinal - 1]?.offsetMs ?? null),
+      },
+      tokenLimitPerAgent: runConfig.limits.tokenLimitPerAgent,
+      spendCeilingCents: runConfig.limits.spendCeilingCents,
+      hasChecker: runConfig.capabilities.checker === true,
+      agents: loaded.record.configuration.models.map(({ agentId, binding }) => {
+        const session = sessionByAgent.get(agentId);
+        return {
+          agentId,
+          profile: binding.profile,
+          requestedModel: binding.requestedModel,
+          ...(binding.actualModel === undefined ? {} : { actualModel: binding.actualModel }),
+          session: {
+            state: session?.state ?? "infrastructure-error",
+            inputTokens: session?.inputTokens ?? 0,
+            outputTokens: session?.outputTokens ?? 0,
+            terminationReason: session?.terminationReason ?? "unknown",
+          },
+        };
+      }),
       origins: loaded.record.topology.origins.map((origin) => ({
         originId: origin.originId,
         agentIds: origin.agentIds,
