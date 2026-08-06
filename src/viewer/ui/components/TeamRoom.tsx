@@ -1,6 +1,7 @@
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 
 import type { ViewerTeamMessage } from "../../contracts.js";
+import { agentAccent } from "../constants.js";
 import { formatTime } from "../format.js";
 
 export const TeamRoom = memo(function TeamRoom({
@@ -12,21 +13,21 @@ export const TeamRoom = memo(function TeamRoom({
 }) {
   return (
     <section className="team-room">
-      <header>
-        <div>
-          <span className="eyebrow">Shared channel</span>
-          <h2>Team room</h2>
-        </div>
-        <span className="message-count">
-          {visibleCount} / {messages.length}
+      <header className="team-head">
+        <h2>Team room</h2>
+        <span className="team-count">
+          {visibleCount} of {messages.length}
         </span>
       </header>
       <div className="team-scroll">
         {visibleCount === 0 ? (
-          <p className="waiting-copy">No messages at this point in the run.</p>
+          <p className="waiting-copy">waiting…</p>
         ) : (
           messages.slice(0, visibleCount).map((message) => (
-            <article key={message.sequence} data-agent={message.author}>
+            <article
+              key={message.sequence}
+              style={{ "--agent-accent": agentAccent(message.author) } as CSSProperties}
+            >
               <header>
                 <strong>{message.author}</strong>
                 <time>{formatTime(message.atMs)}</time>

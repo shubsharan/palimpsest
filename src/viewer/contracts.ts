@@ -73,6 +73,43 @@ export interface ViewerScore {
   accuracy: number;
 }
 
+export type ViewerSessionState =
+  | "working"
+  | "waiting"
+  | "finished"
+  | "token-exhausted"
+  | "time-exhausted"
+  | "infrastructure-error";
+
+export interface ViewerSessionUsage {
+  state: ViewerSessionState;
+  inputTokens: number;
+  outputTokens: number;
+  terminationReason: string;
+}
+
+export interface ViewerAgent {
+  agentId: AgentId;
+  profile: string;
+  requestedModel: string;
+  actualModel?: string;
+  session: ViewerSessionUsage;
+}
+
+/** One scheduled evidence release. Ordinals are 1-based to match how runs talk. */
+export interface ViewerReleaseStage {
+  ordinal: number;
+  offsetMs: number;
+  isRekey: boolean;
+}
+
+export interface ViewerSchedule {
+  releases: readonly ViewerReleaseStage[];
+  cutoffMs: number;
+  rekeyOrdinal: number | null;
+  rekeyAtMs: number | null;
+}
+
 export interface ViewerRun {
   runId: string;
   status: "completed" | "infrastructure-error";
@@ -83,12 +120,13 @@ export interface ViewerRun {
   fixtureId: string;
   variantId: string;
   rekeyAtStage: number | null;
-  agents: readonly {
-    agentId: AgentId;
-    profile: string;
-    requestedModel: string;
-    actualModel?: string;
-  }[];
+  /** One plain-language sentence describing the run's treatment, composed by the loader. */
+  treatmentSummary: string;
+  schedule: ViewerSchedule;
+  tokenLimitPerAgent: number | null;
+  spendCeilingCents: number;
+  hasChecker: boolean;
+  agents: readonly ViewerAgent[];
   origins: readonly ViewerOrigin[];
   finalScores: readonly ViewerScore[];
   ciphertext: string;

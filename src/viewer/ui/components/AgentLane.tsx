@@ -1,5 +1,7 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, type CSSProperties } from "react";
 
+import type { ViewerSessionUsage } from "../../contracts.js";
+import { agentAccent } from "../constants.js";
 import { upperBound, type ViewerLaneIndex } from "../replay-index.js";
 import { MilestoneCard } from "./MilestoneCard.js";
 import { ResponseCard } from "./ResponseCard.js";
@@ -7,10 +9,12 @@ import { ToolCard } from "./ToolCard.js";
 
 export const AgentLane = memo(function AgentLane({
   lane,
+  session,
   boundaryTime,
   playing,
 }: {
   lane: ViewerLaneIndex;
+  session: ViewerSessionUsage | undefined;
   boundaryTime: number;
   playing: boolean;
 }) {
@@ -20,16 +24,25 @@ export const AgentLane = memo(function AgentLane({
     if (playing) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [visibleCount, playing]);
   return (
-    <section className="agent-lane" data-agent={lane.agentId}>
+    <section
+      className="agent-lane"
+      style={{ "--agent-accent": agentAccent(lane.agentId) } as CSSProperties}
+    >
       <header className="lane-header">
-        <span className="agent-mark" aria-hidden="true" />
-        <div>
+        <div className="lane-id">
+          <span className="agent-mark" aria-hidden="true" />
           <h2>{lane.agentId}</h2>
-          <p>{lane.model}</p>
         </div>
+        <p className="lane-model">{lane.model}</p>
+        {session === undefined ? null : (
+          <p className="lane-badge">
+            {session.state.replace(/-/g, " ")}
+            {session.outputTokens > 0 ? ` · ${Math.round(session.outputTokens / 1000)}k tok` : ""}
+          </p>
+        )}
       </header>
       <div className="lane-stream" ref={scrollRef}>
-        {visibleCount === 0 ? <p className="waiting-copy">Waiting for the playhead.</p> : null}
+        {visibleCount === 0 ? <p className="waiting-copy">waiting…</p> : null}
         {lane.items
           .slice(0, visibleCount)
           .map((item) =>

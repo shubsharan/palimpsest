@@ -1,7 +1,6 @@
 import { memo, useMemo, type ReactNode } from "react";
 
 import type { ViewerRun } from "../../contracts.js";
-import { formatPercent } from "../format.js";
 import {
   decodeStateName,
   tokenizeLines,
@@ -9,6 +8,9 @@ import {
   type TextLine,
 } from "../replay-index.js";
 
+// One line of the manuscript. Every word carries a span so it can surface from
+// ghosted cipher (the scraped-away under-text) to full ink as it is deciphered;
+// plain runs (punctuation, spacing) are coalesced into a single text node.
 const DecodedLine = memo(function DecodedLine({
   line,
   snapshot,
@@ -31,13 +33,10 @@ const DecodedLine = memo(function DecodedLine({
     }
     const candidate = snapshot.candidates[span.wordIndex];
     const state = decodeStateName(snapshot.states[span.wordIndex] ?? 0);
-    if (candidate === undefined && state === "unchanged") {
-      plain += span.surface;
-      continue;
-    }
+    const ciphered = candidate === undefined && state === "unchanged";
     flush();
     // Glue an immediately following plain span (punctuation, spacing) onto the
-    // decoded word so it renders adjacent — but only when such a span exists.
+    // word so it renders adjacent — but only when such a span exists.
     const following = line.spans[spanIndex + 1];
     const suffix =
       following !== undefined && following.wordIndex === undefined ? following.surface : "";
@@ -46,16 +45,16 @@ const DecodedLine = memo(function DecodedLine({
       <span
         id={`decode-word-${String(span.wordIndex)}`}
         key={span.wordIndex}
-        className={`decode-word state-${state}`}
+        className={`decode-word state-${ciphered ? "ciphered" : state}`}
         title={`Cipher: ${span.surface} | Candidate: ${candidate ?? "missing"}`}
       >
-        {candidate ?? "[missing]"}
+        {ciphered ? span.surface : (candidate ?? "[missing]")}
         {suffix}
       </span>,
     );
   }
   flush();
-  return <div className="decode-paragraph">{content.length === 0 ? " " : content}</div>;
+  return <div className="decode-paragraph">{content.length === 0 ? " " : content}</div>;
 });
 
 const DecodedPaper = memo(function DecodedPaper({
@@ -66,7 +65,7 @@ const DecodedPaper = memo(function DecodedPaper({
   snapshot: DecodeSnapshot | undefined;
 }) {
   const lines = useMemo(() => tokenizeLines(ciphertext), [ciphertext]);
-  if (snapshot === undefined) return <div className="decoded-paper">{ciphertext}</div>;
+  if (snapshot === undefined) return <div className="decoded-paper is-raw">{ciphertext}</div>;
   return (
     <div className="decoded-paper">
       {lines.map((line) => (
@@ -76,7 +75,7 @@ const DecodedPaper = memo(function DecodedPaper({
   );
 });
 
-export const DecodePane = memo(function DecodePane({
+export const ManuscriptPane = memo(function ManuscriptPane({
   run,
   snapshot,
   replayStatus,
@@ -100,83 +99,66 @@ export const DecodePane = memo(function DecodePane({
       block: "center",
     });
   };
+  const recovered =
+    active?.matchedWords !== undefined && active.totalWords !== undefined
+      ? `${active.matchedWords.toLocaleString()} / ${active.totalWords.toLocaleString()} words recovered`
+      : "reading the ciphertext";
   return (
-    <section className="decode-pane">
-      <header className="decode-header">
-        <div>
-          <span className="eyebrow">Published solver</span>
+    <section className="manuscript">
+      <div className="ms-readout">
+        <div className="ms-lhs">
           <h2>Reconstruction</h2>
+          {run.origins.length > 1 ? (
+            <label className="origin-sel">
+              origin
+              <select value={originId} onChange={(event) => onOriginChange(event.target.value)}>
+                {run.origins.map((origin) => (
+                  <option key={origin.originId}>{origin.originId}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
-        {run.origins.length > 1 ? (
-          <label>
-            Origin
-            <select value={originId} onChange={(event) => onOriginChange(event.target.value)}>
-              {run.origins.map((origin) => (
-                <option key={origin.originId}>{origin.originId}</option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </header>
-      <div className="decode-metrics">
-        <div>
-          <span>Accuracy</span>
-          <strong>{formatPercent(active?.accuracy)}</strong>
-        </div>
-        <div>
-          <span>Correct words</span>
-          <strong className="word-total">
-            {active === undefined
-              ? "-- / --"
-              : `${active.matchedWords?.toLocaleString() ?? "--"} / ${active.totalWords?.toLocaleString() ?? "--"}`}
-          </strong>
-        </div>
-        <div>
-          <span>Checkpoint</span>
-          <strong>
-            {visibleCheckpointCount}/{checkpointCount}
-          </strong>
-        </div>
+        <div className="ms-metric">{recovered}</div>
       </div>
-      <div className="checkpoint-note">
+
+      <div className="ms-caption">
         {active === undefined ? (
-          <p>
+          <span className="ms-status">
             {replayStatus === "preparing"
-              ? "Preparing solver checkpoints in the recorded sandbox."
+              ? "Preparing solver checkpoints in the recorded sandbox…"
               : replayStatus === "complete"
-                ? "Ciphertext at time zero."
+                ? "Ciphertext at time zero — nothing published yet."
                 : `Decode replay unavailable: ${replayStatus}`}
-          </p>
+          </span>
         ) : active.status === "failed" ? (
-          <p className="checkpoint-error">
-            <strong>Checkpoint unavailable.</strong> {active.error}
-          </p>
+          <span className="ms-status ms-error">Checkpoint unavailable. {active.error}</span>
         ) : (
           <>
-            <div>
-              <span className={`timing-badge timing-${active.timing}`}>{active.timing} time</span>
-              <code>{active.commit.slice(0, 8)}</code>
-              <span>{active.author}</span>
-            </div>
-            <p>{active.subject || "Published solver update"}</p>
+            <code>{active.commit.slice(0, 8)}</code>
+            <span className="ms-author">{active.author}</span>
+            <span className="ms-subject">{active.subject || "published solver update"}</span>
             {(active.newlyCorrectRanges?.length ?? 0) > 0 ? (
-              <nav aria-label="Newly decoded ranges">
+              <nav className="ms-jump" aria-label="Newly decoded ranges">
                 {active.newlyCorrectRanges!.slice(0, 6).map((range) => (
-                  <button key={`${range.start}-${range.end}`} onClick={() => jumpTo(range.start)}>
-                    words {range.start + 1}-{range.end + 1}
+                  <button
+                    type="button"
+                    key={`${String(range.start)}-${String(range.end)}`}
+                    onClick={() => jumpTo(range.start)}
+                  >
+                    words {range.start + 1}–{range.end + 1}
                   </button>
                 ))}
               </nav>
             ) : null}
+            <span className="ms-progress">
+              checkpoint {visibleCheckpointCount}/{checkpointCount}
+              {active.timing === "approximate" ? " · approx. time" : ""}
+            </span>
           </>
         )}
       </div>
-      <div className="decode-key" aria-label="Decode highlight legend">
-        <span className="key-new">newly correct</span>
-        <span className="key-known">previously correct</span>
-        <span className="key-regressed">regressed</span>
-        <span className="key-changed">changed, incorrect</span>
-      </div>
+
       <DecodedPaper ciphertext={run.ciphertext} snapshot={snapshot} />
     </section>
   );

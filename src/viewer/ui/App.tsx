@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { ViewerEventCategory } from "../contracts.js";
+import type { ViewerEventCategory, ViewerSessionUsage } from "../contracts.js";
 import { AgentLane } from "./components/AgentLane.js";
-import { DecodePane } from "./components/DecodePane.js";
+import { ManuscriptPane } from "./components/ManuscriptPane.js";
+import { RunBanner } from "./components/RunBanner.js";
 import { TeamRoom } from "./components/TeamRoom.js";
 import { Timeline } from "./components/Timeline.js";
 import { CATEGORIES, MOBILE_PANELS, type MobilePanel } from "./constants.js";
@@ -67,6 +68,28 @@ export function App() {
     });
   }, []);
 
+  // Toggle a group of categories together (the "system" chip). If every member
+  // is already shown, hide them all; otherwise show them all.
+  const toggleCategories = useCallback((categories: readonly ViewerEventCategory[]) => {
+    setFilters((current) => {
+      const next = new Set(current);
+      const allOn = categories.every((category) => next.has(category));
+      for (const category of categories) {
+        if (allOn) next.delete(category);
+        else next.add(category);
+      }
+      return next;
+    });
+  }, []);
+
+  const sessionByAgent = useMemo(
+    () =>
+      new Map<string, ViewerSessionUsage>(
+        run?.agents.map((agent) => [agent.agentId, agent.session]) ?? [],
+      ),
+    [run],
+  );
+
   if (loadError !== undefined)
     return (
       <main className="fatal-screen">
@@ -84,33 +107,7 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <header className="run-header">
-        <div className="brand-lockup">
-          <span className="brand-index">P</span>
-          <div>
-            <span>Palimpsest field record</span>
-            <h1>{run.runId}</h1>
-          </div>
-        </div>
-        <dl>
-          <div>
-            <dt>Status</dt>
-            <dd>{run.status}</dd>
-          </div>
-          <div>
-            <dt>Regime</dt>
-            <dd>{run.variantId}</dd>
-          </div>
-          <div>
-            <dt>Mode</dt>
-            <dd>{run.communicationMode}</dd>
-          </div>
-          <div>
-            <dt>Agents</dt>
-            <dd>{run.agents.length}</dd>
-          </div>
-        </dl>
-      </header>
+      <RunBanner run={run} />
       <nav className="mobile-tabs" aria-label="Replay panels">
         {MOBILE_PANELS.map(({ id, label }) => (
           <button
@@ -123,7 +120,10 @@ export function App() {
         ))}
       </nav>
       <main className="replay-grid" data-mobile-panel={mobilePanel}>
-        <div className="observation-side">
+        <div
+          className="observation-side"
+          data-has-team={run.communicationMode === "shared" ? "true" : "false"}
+        >
           <div className="agent-grid">
             {lanes.map((lane) => {
               const boundaryIndex = upperBound(lane.transitionTimes, contentTime);
@@ -131,15 +131,18 @@ export function App() {
                 <AgentLane
                   key={lane.agentId}
                   lane={lane}
+                  session={sessionByAgent.get(lane.agentId)}
                   boundaryTime={lane.transitionTimes[boundaryIndex - 1] ?? -1}
                   playing={playing}
                 />
               );
             })}
           </div>
-          <TeamRoom messages={run.teamMessages} visibleCount={teamVisibleCount} />
+          {run.communicationMode === "shared" ? (
+            <TeamRoom messages={run.teamMessages} visibleCount={teamVisibleCount} />
+          ) : null}
         </div>
-        <DecodePane
+        <ManuscriptPane
           run={run}
           snapshot={activeSnapshot}
           replayStatus={replayStatus}
@@ -158,6 +161,7 @@ export function App() {
         setSpeed={setSpeed}
         filters={filters}
         toggleFilter={toggleFilter}
+        toggleCategories={toggleCategories}
         checkpoints={checkpoints}
         onSeek={seek}
         sliderRef={sliderRef}
