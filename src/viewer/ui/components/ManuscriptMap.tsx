@@ -65,8 +65,13 @@ export const ManuscriptMap = memo(function ManuscriptMap({
       const height = container.clientHeight;
       if (width <= 0 || height <= 0) return;
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
+      const nextW = Math.round(width * dpr);
+      const nextH = Math.round(height * dpr);
+      // Only resize the backing store when it actually changed. Reassigning
+      // canvas.width/height on every redraw needlessly reallocates it (and drops
+      // the GPU-backed bitmap each time) — wasteful, and a blank-canvas risk.
+      if (canvas.width !== nextW) canvas.width = nextW;
+      if (canvas.height !== nextH) canvas.height = nextH;
       const ctx = canvas.getContext("2d");
       if (ctx === null) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -106,9 +111,26 @@ export const ManuscriptMap = memo(function ManuscriptMap({
     schedule();
     const observer = new ResizeObserver(schedule);
     if (containerRef.current !== null) observer.observe(containerRef.current);
+    // The browser can silently discard the canvas bitmap (GPU context loss, or
+    // reclaiming memory while the tab is backgrounded). The paint effect only
+    // reruns on layout/snapshot changes, so without this the map would stay
+    // blank until the next checkpoint. Repaint when the context is restored or
+    // the tab becomes visible again.
+    const canvas = canvasRef.current;
+    const handleContextLost = (event: Event) => event.preventDefault();
+    const handleRestore = () => schedule();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") schedule();
+    };
+    canvas?.addEventListener("contextlost", handleContextLost);
+    canvas?.addEventListener("contextrestored", handleRestore);
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       cancelAnimationFrame(frame.current);
       observer.disconnect();
+      canvas?.removeEventListener("contextlost", handleContextLost);
+      canvas?.removeEventListener("contextrestored", handleRestore);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [layout, snapshot]);
 
